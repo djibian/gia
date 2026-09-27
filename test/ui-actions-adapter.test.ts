@@ -54,6 +54,26 @@ test("renamePage emits only the bounded _grist_Views name update", async () => {
   ]);
 });
 
+test("deletePage emits only a bounded _grist_Views record removal", async () => {
+  const { adapter, observed } = harness();
+
+  await adapter.deletePage("doc-1", 7);
+
+  assert.deepEqual(observed, [
+    [["RemoveRecord", "_grist_Views", 7]]
+  ]);
+});
+
+test("deletePageWidget emits only a bounded _grist_Views_section record removal", async () => {
+  const { adapter, observed } = harness();
+
+  await adapter.deletePageWidget("doc-1", 11);
+
+  assert.deepEqual(observed, [
+    [["RemoveRecord", "_grist_Views_section", 11]]
+  ]);
+});
+
 test("updatePageWidget combines title, description and direct select-by in one bounded action", async () => {
   const { adapter, observed } = harness();
 
