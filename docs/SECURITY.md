@@ -1,337 +1,194 @@
 # Security model
 
-## Security objective
+## Status
 
-`grist-chatgpt` must let an assistant build and maintain Grist applications only with authority intentionally granted to the authenticated principal, within the deployment resource boundary, the permissions of the **current user's own Grist identity**, the accepted application managed scope and the active execution mandate.
+This document defines the security boundary for the Pareto-recomposed product.
 
-Authorization and effect control are layered and server-side; they are never delegated to the model or to the Builder's own reasoning.
+The objective is **small enforceable invariants**, not a security subsystem larger than the product. Historical J0/J1/J2 mechanisms remain useful only where they directly enforce these invariants.
 
-The current bounded bridge remains the execution substrate. The frozen Agentic Builder target adds an independent Execution Engine boundary; it does not weaken any current credential, scope, resource-policy or Grist-permission control.
-
-See also [Product Vision](PRODUCT_VISION.md), [Architecture](ARCHITECTURE.md), [Execution Engine J0/J1](EXECUTION-ENGINE-J0-J1.md), [OAuth operating model](OAUTH-OPERATIONS.md) and the [authoritative roadmap](ROADMAP.md).
-
-## Trust and authorization boundaries
-
-### Production identity principle
-
-The selected multi-user product model for Grist Community DINUM is:
-
-> each authenticated `grist-chatgpt` user executes upstream Grist operations with that user's own Grist API key.
-
-A shared technical Grist account is not the production target.
-
-Current effective authority is the intersection of:
+## Trust boundary
 
 ```text
-permissions of the user's Grist API key
-∩ deployment resource policy
-∩ principal resource grants
-∩ required operation capability / OAuth scope
+untrusted user/business content
+        |
+        v
+MCP-capable LLM
+        |
+        v
+grist-chatgpt
+  authenticated principal
+  resource/capability restriction
+  bounded semantic validation
+  secret/output minimization
+        |
+        v
+Grist
+  authoritative permissions + state
 ```
 
-For contractual Builder execution, authority is further reduced by the accepted application contract/managed scope, mandate, plan budgets and capability-specific preconditions. No Builder or Execution Engine rule may increase upstream authority.
+The LLM is not trusted with credentials or arbitrary low-level Grist control.
 
-### Builder / Execution Engine separation
+Grist is authoritative for the authority attached to the upstream credential. The bridge can reduce that authority but never elevate it.
 
-The Builder reasons about user intent and proposes changes. It is not an authorization authority.
+## Required invariants
 
-The Execution Engine is the effect-control boundary for capabilities declared part of the contractual Builder surface. Before effectful work it must enforce, as applicable:
+### S1 — credentials are never model data
 
-- immutable execution/plan/contract identity;
-- current principal/resource authorization;
-- accepted mandate and `ManagedScope`;
-- cumulative plan budgets;
-- capability preconditions and expected state;
-- declared concurrency protection or isolation requirements;
-- durable write-ahead effect recording;
-- capability-specific verification and recovery rules.
-
-The Builder cannot weaken those controls, silently relabel an unsupported capability as supported, or treat missing evidence as permission to proceed.
-
-### Grist credentials
-
-A Grist API key has the permissions of its owner and is therefore a high-value secret.
-
-**Current development control:** `GRIST_API_KEY` remains server-side only and is resolved through `StaticApiKeyCredentialProvider`. It is never an MCP/GPT parameter, OpenAPI value, prompt value or client-visible secret.
-
-**Production target:** a user-aware `GristCredentialProvider` resolves the current authenticated principal's own Grist credential. Each request/service context must use only the credential associated with that principal.
-
-A Grist API key must never appear in:
-
-- ChatGPT/Codex conversation content;
-- MCP tool inputs or outputs;
-- GPT Actions/OpenAPI parameters;
-- `structuredContent`;
-- application/execution evidence exposed to the model;
-- audit events;
-- general application logs;
-- error payloads.
-
-### Secure credential onboarding
-
-Users must not paste Grist API keys into model conversations.
-
-The C5 production target is a separate secure bridge-owned flow:
-
-1. authenticate the plugin user;
-2. open a secure bridge-owned Connect Grist page;
-3. submit the API key directly to the bridge;
-4. validate it against the configured Grist Community instance;
-5. associate the verified Grist identity with the authenticated principal;
-6. store the API key encrypted;
-7. expose a disconnect/removal path;
-8. support rotation/revalidation without exposing the secret to the model.
-
-Persistence technology and encryption/key-management architecture remain explicit human gates under `docs/ROADMAP.md` / `docs/C5-DECISION.md`.
-
-J0/J1 may be developed in an isolated controlled environment before C5. That exception does not permit a second real production user to rely on the shared static Grist credential path as if it provided per-user isolation.
-
-### Credential and cache isolation
-
-C3 separates shareable deployment policy from state derived from a Grist credential.
-
-`DeploymentResourcePolicy` contains only the configured document/workspace ceiling and is safe to share. `GristContextFactory.create(principal)` resolves a credential for exactly that principal and creates a fresh `GristClient`, `GristResourceDiscovery` cache, `AccessPolicy`, authorization layer and service graph. The factory deliberately does not retain/reuse principal contexts.
-
-In the current personal/development deployment, different bridge principals still resolve to the same configured Grist API key. Their client/discovery/service contexts are distinct, but that shared upstream credential means the deployment must not be treated as production multi-user isolation. C5 replaces this development substitution with per-principal credentials.
-
-Any client, document discovery result, cache, application evidence or authorization input derived from one user's Grist key must remain isolated by that principal/credential or be reconstructed safely.
-
-### Deployment resource boundary
-
-The Grist identity may access more documents than a specific deployment should expose.
-
-The deployment policy permits only configured document IDs/workspaces through:
-
-- `GRIST_ALLOWED_DOCUMENT_IDS`;
-- `GRIST_ALLOWED_WORKSPACE_IDS`.
-
-This ceiling is independent of the user's Grist ACLs and remains useful in production.
-
-### Client principal boundary
-
-An authenticated bridge client is represented as a `Principal` with the fixed current capabilities:
-
-- `doc:read`;
-- `doc:write`;
-- `doc.schema:write`.
-
-**MCP OAuth mode is already implemented and validated in C4-P0.** It derives dynamic principals/scopes from validated OAuth tokens. Static MCP bearer remains an explicit development/backward-compatibility mode. GPT Actions remains a static-bearer compatibility adapter.
-
-Capabilities can only reduce upstream authority. A `doc:read` principal cannot write even if the upstream Grist key could. Adding/removing a public scope remains a human product/security gate.
-
-### Bridge authentication
-
-`/mcp` and `/api/v1` remain separate entry points.
-
-For MCP:
-
-- `MCP_AUTH_MODE=oauth` validates JWT/JWKS, issuer, audience/resource, expiry and required scopes and builds a dynamic principal;
-- `MCP_AUTH_MODE=static` uses `MCP_BEARER_TOKEN` only for development/backward compatibility;
-- OAuth bearer tokens are never forwarded into the Grist credential boundary.
-
-For GPT Actions compatibility:
-
-- `GPT_ACTION_TOKEN` identifies the static `chatgpt-actions` principal;
-- `GPT_ACTION_CAPABILITIES` constrains its bridge authority.
-
-The validated C4-P0 identity path is Logto OSS as MCP-facing authorization server federated to ProConnect. C4 now concerns productionization and operating evidence, not identity-provider selection.
-
-### Grist upstream permissions
-
-After bridge authorization succeeds, Grist still evaluates the current upstream API-key permissions. `grist-chatgpt` cannot legitimately elevate them.
-
-A future bounded application-specific access-policy capability may author or reconcile only the exact Grist policy state accepted by its `BehavioralContract`, `ManagedScope`, capability contract and roadmap tranche. This is not generic organization/user/ACL administration and does not replace Grist as the final permission-enforcement authority.
-
-## Operation policy registry
-
-`src/operations/registry.ts` is authoritative for each current operation's required capability and risk metadata. Authorization, `grist_help`, MCP registration and submission annotation generation consume this common registry.
-
-A capability promoted into the Builder must additionally declare its preconditions, effects, permissions, concurrency mode, verification, recovery and supported environment/version. Existing v1 operation metadata is not by itself a sufficient Builder execution contract.
-
-## Powerful operations
-
-### Data writes and deletion
-
-Create/update/delete record operations require `doc:write`.
-
-Deletion accepts only explicit unique numeric record IDs; there is no delete-by-filter operation.
-
-Large operations may use sequential internal batches. They are **not atomic as a group**. Blind whole-operation replay after partial or uncertain effect is forbidden.
-
-J0 strengthens the effect model so:
-
-- a first-batch transport ambiguity is `UNCERTAIN`, not flattened into a generic failure;
-- confirmed results/stable IDs from successful earlier batches survive later failure or uncertainty;
-- uncertain and not-yet-started batches remain distinguishable;
-- public results remain data-minimized while internal recovery state retains only what is necessary.
-
-Successful update/delete responses remain minimized semantic acknowledgements containing stable targets needed for safe reconciliation. Creation responses retain functional created IDs.
-
-### Schema mutation
-
-Table/column mutations require `doc.schema:write` and are bounded by `GRIST_MAX_SCHEMA_ITEMS`.
-
-The bridge supports bounded table/column creation, update/deletion, column-ID rename, types, formulas and widget metadata. Fixed internal `/apply` actions such as `RenameColumn` and `RemoveTable` return bounded semantic acknowledgements rather than raw engine response payloads.
-
-### Document UI mutation
-
-Bounded UI operations require `doc.schema:write` and currently include page creation, supported native widget creation, page rename/layout, widget title/description/chart type, saved sort, select-by, existing custom-widget access/mappings and table/grid display options.
-
-The model never receives raw Grist metadata-table write access, arbitrary custom-widget option payloads or internal numeric column refs as write inputs. Safety-sensitive UI mutations fail closed when the current bounded metadata snapshot or required normalized state is incomplete. Ambiguous post-write state must not trigger blind replay.
-
-Current read-modify-write paths that rewrite a complete value may overwrite a concurrent human change even when their final re-read equals the bridge's value. J0 therefore requires contractual concurrency classification: an overwrite-sensitive capability must have an effective tested protection, run only in a justified isolated mode, or refuse the protected mode. An extra read or post-write equality is not sufficient to claim `PROTECTED`.
-
-New page/widget deletion or broader destructive UI surfaces remain human-gated unless a later explicit roadmap/capability contract authorizes a bounded form.
-
-### Low-level Grist actions
-
-Raw `/api/docs/{docId}/apply` is never exposed to ChatGPT/MCP. Fixed bridge methods may use known UserActions internally only behind specifically named bounded operations. The model cannot choose arbitrary UserAction types/payloads.
-
-## Semantic document inspection
-
-`inspect_document` / `inspectGristDocument` requires `doc:read` and returns structural metadata without reading user-table rows.
-
-Current advisory context includes tables/columns/formulas, bounded formula diagnostics, normalized relationships, normalized page/widget state and explicit incompleteness markers instead of guessed metadata.
-
-Formula inspection never executes Python/formulas and does not add a code-execution surface.
-
-Application-level evidence must distinguish what is known, partial and unknown. Missing metadata or failed verification does not become a guessed success.
-
-## Generic escape hatches remain excluded
-
-### Arbitrary HTTP
-
-There is no generic URL/method tool. `GRIST_BASE_URL` is process configuration, preventing the bridge from becoming a model-driven HTTP proxy/SSRF primitive.
-
-### Raw SQL
-
-No SQL execution capability is exposed.
-
-### Raw administration
-
-The product does not expose unrestricted instance/organization/user administration or generic ACL administration.
-
-Application-specific access-policy work is permitted only when a future explicit contract fixes the exact policy semantics, target, managed scope, authority, verification and recovery. It must not become a generic permission-management escape hatch.
-
-### Arbitrary code and integrations
-
-The Builder roadmap does not automatically authorize arbitrary generated executable code, arbitrary network destinations, webhook targets or new public scopes. J5 remains dependency- and capability-gated; each supported integration must declare exact artifacts/destinations/permissions and recovery semantics.
-
-### Model-visible credentials
-
-No tool accepts or returns a Grist API key. Credential onboarding is outside model-visible tool surfaces.
-
-## Guardrails, mandates and budgets
-
-Current default per-operation deployment guardrails include:
-
-- `GRIST_MAX_READ_RECORDS=5000`;
-- `GRIST_MAX_WRITE_RECORDS=500`;
-- `GRIST_WRITE_BATCH_RECORDS=200`;
-- `GRIST_MAX_SCHEMA_ITEMS=100`.
-
-For `MAX_*` settings, `0` means no bridge-side maximum; Grist/upstream limits still apply.
-
-J1 additionally proves cumulative **per-plan** budgeting so a Builder cannot exceed an accepted budget by splitting work across multiple otherwise-valid operations. Authorization/mandate is re-checked before resumed/new effects.
-
-Explicit Grist upstream abort timeout and bounded inbound HTTP request/header reception are already integrated. Remaining C6 work includes per-principal rate limiting, operational metrics/alerting, audit export if required, secret/key rotation and controlled production deployment/rollback evidence.
-
-## Effect knowledge, replay and recovery
-
-For Builder execution, failure and effect knowledge are separate concepts.
-
-The durable effect-knowledge vocabulary is:
-
-```text
-NOT_APPLIED
-PARTIALLY_APPLIED
-APPLIED
-UNCERTAIN
-COMPENSATED
-```
-
-If the system cannot prove that an effect was not applied, it must not report `NOT_APPLIED`.
-
-Recovery is capability-specific and uses durable journal evidence plus current observable state. The system must never implement a generic rule equivalent to `if step failed then replay step`. If ambiguity cannot be reconciled safely, execution suspends for human reconciliation.
-
-## Verification evidence
-
-Verification is property-scoped, contextual evidence, not a global success flag. Durable evidence records the relevant property, criticality, verdict, execution/plan identity, target state/revision when observable, identity used, verification method, timestamp and dependencies needed for later invalidation.
-
-A critical property cannot be silently weakened after execution begins. Changing critical criteria creates a new contract/plan version.
-
-## MCP annotations and client approval
-
-Annotations describe actual operation effects but never grant permission:
-
-- audited reads use `readOnlyHint: false` because the audit event is a state change, while `grist_help` remains the only unaudited `readOnlyHint: true` operation;
-- destructive update/rename/clear/delete operations use `destructiveHint: true` as appropriate;
-- current operations remain confined to the configured Grist environment, so `openWorldHint: false`.
-
-OAuth scopes, principal grants, deployment policy, application mandate/managed scope and Grist permissions remain independent enforcement layers.
-
-GPT Actions `x-openai-isConsequential` is an approval/UX concern for the compatibility adapter, not a server-side security boundary.
-
-## Prompt injection and returned data
-
-Grist cell contents are untrusted data, not instructions. Server-side authorization and execution contracts are unaffected by returned row content.
-
-Model-facing discovery/schema outputs are projected to stable functional metadata rather than forwarding arbitrary Grist internal fields. Success-only mutation results are similarly minimized. Functional IDs required to target/verify bounded operations may remain model-visible.
-
-## Error handling
-
-Public errors must not contain secrets, stack traces or irrelevant internal infrastructure details.
-
-Safety semantics include:
-
-- explicit partial and uncertain writes;
-- retention of confirmed stable identifiers/results needed for reconciliation;
-- no blind replay after partial/non-atomic/uncertain effect;
-- non-retryable verification disagreement where replay is unsafe;
-- minimized public payloads distinct from durable internal recovery evidence.
-
-## Structured audit
-
-Every current operation routed through `AuthorizedGristService` emits bounded JSON operational metadata such as request ID, principal, transport, operation, capability, document ID, item count, status, duration and error type.
-
-Audit excludes bearer tokens, Grist API keys, LinkKeys/query secrets and full row contents. Before successful resource resolution, a raw `documentIdOrUrl` must not be copied into audit; a non-secret failure classification may be recorded instead.
-
-Mutation audit must distinguish ordinary failure, confirmed partial effect and uncertain effect when those states are material. A production institutional deployment may route the same bounded event shape to centralized audit infrastructure.
-
-## Current validated personal/development deployment
-
-```text
-ChatGPT MCP client
-   |
-   | OAuth via Logto / ProConnect
-   | (static MCP bearer optional in development)
-   v
-personal VPS bridge
-   |
-   | StaticApiKeyCredentialProvider
-   | one server-side Grist API key
-   v
-Grist Community DINUM
-```
-
-This is appropriate for one trusted developer. OAuth identity and principal-scoped bridge contexts are validated; the shared upstream Grist credential remains the reason it is not yet production multi-user isolation.
-
-## Secret handling
-
-Never commit, paste into conversations, log or return:
+Never expose in MCP inputs/outputs, model-visible errors, audit payloads or committed files:
 
 - Grist API keys;
-- `MCP_BEARER_TOKEN`;
-- `GPT_ACTION_TOKEN`;
-- OAuth access/refresh tokens;
-- session cookies;
-- LinkKeys/query secrets beyond the exact browser/request context that legitimately requires them;
-- credential-encryption keys;
-- private signing keys;
-- real OpenAI domain-verification tokens.
+- OAuth/bearer/refresh tokens;
+- encryption/key-management material;
+- session secrets;
+- LinkKeys or secret webhook material.
 
-Use protected environment/secret management for infrastructure secrets and, once C5 is decided, encrypted credential storage for per-user Grist API keys.
+Normalize/scrub secret-bearing URLs before logging or returning errors.
 
-## Core invariant
+### S2 — principal isolation
 
-> The Builder may propose what should change, but it cannot authorize its own effects. ChatGPT/Codex authenticates a user to `grist-chatgpt`; in production `grist-chatgpt` uses only that user's Grist credential upstream; Grist remains authoritative for upstream permissions; and every effect must pass server-side resource/capability authorization plus the applicable application mandate, managed scope, budgets, concurrency, durable effect-knowledge, verification and recovery controls. Every layer may only reduce authority, never expand it.
+A principal-derived Grist client, credential, context object, discovery result or cache entry must never be reused across principals without a key that proves the same principal/resource boundary.
+
+Development may use an explicit static credential mode, but it must not be described as multi-user isolation.
+
+### S3 — upstream authority is authoritative
+
+The bridge never turns a read-only Grist principal into a writer and never broadens native Grist access rules.
+
+A local capability check is an additional restriction, not a grant of upstream permission.
+
+### S4 — no generic escape hatches
+
+Do not expose model-controlled:
+
+- generic HTTP forwarding;
+- raw SQL merely for convenience;
+- arbitrary Grist `/apply`;
+- arbitrary UserAction payloads;
+- arbitrary browser commands/JavaScript;
+- arbitrary file/system commands.
+
+When an internal Grist action is unavoidable, hide it behind one versioned bounded semantic operation with fixed translation and validation.
+
+### S5 — bounded mutation intentions
+
+Every public mutation targets explicit resources and a finite supported action schema.
+
+Set limits on relevant record counts, fields, payload size, metadata keys, layout complexity or other inputs that could otherwise create unbounded work/state.
+
+A compact manager tool is acceptable only when its `action` variants remain closed and individually understandable; it must not become a generic dispatcher.
+
+### S6 — stable semantic inputs
+
+Prefer stable Grist document/table/column/page/widget identifiers over private numeric metadata refs.
+
+Resolve private refs server-side and fail closed when exact resolution is unavailable.
+
+### S7 — preserve untargeted state
+
+For supported read-modify-write operations:
+
+- read current state;
+- validate that the targeted sub-state can be identified exactly;
+- preserve unrelated fields/options;
+- write only the bounded semantic change;
+- re-read when exact post-state verification is cheap/material.
+
+Reject malformed/incomplete state when proceeding could overwrite unrelated human configuration.
+
+### S8 — partial results survive
+
+For non-atomic batches, report/retain confirmed completed targets. Do not collapse a partially successful write into a generic failure that invites whole-request replay.
+
+### S9 — ambiguity is not failure
+
+If the upstream effect may have happened but the response is lost/uncertain, do not classify it as definitely not applied.
+
+Do not blindly replay non-idempotent or conditionally idempotent work. Re-read/reconcile when a capability-specific check can establish a safe outcome; otherwise return an explicit ambiguous/unknown result.
+
+This invariant is retained from J0/J1 without requiring every operation to run through a generalized durable workflow engine.
+
+### S10 — output minimization
+
+Return the information required for the next agent decision, not arbitrary upstream response bodies or private Grist metadata.
+
+Discovery/context should prefer schema and metadata. Read business rows only when the requested task needs them and keep query bounds explicit.
+
+Cells, attachments, comments, formulas and external data are untrusted content. They may inform the user's data task but cannot change authorization or tool policy.
+
+## Authorization vocabulary
+
+Keep the public capability model minimal unless evidence requires expansion.
+
+The current useful classes are:
+
+```text
+doc:read
+doc:write
+doc.schema:write
+```
+
+R1 may simplify internal authorization implementation but must preserve the ability to distinguish these authorities and bind them to allowed resources/principals.
+
+Adding a new production/public OAuth scope is an R5 decision and does not block R1-R4; capabilities needing such a scope are deferred rather than weakening current authorization.
+
+## Domain access policies
+
+Stage-tracking ACLs, LinkKeys and other application-specific policies are **not product security architecture**.
+
+The core must preserve Grist's native permission effects and must not bypass them. Whether a particular application policy works as intended is tested in R4 when that application becomes a validation case.
+
+Do not build a generic ACL reader/writer/browser test platform during R1-R3 solely to prove one application.
+
+## Browser security
+
+No generic browser control is part of the initial product.
+
+If R4 needs browser-only evidence for a validated Grist behavior, use a maintained bounded test runner and secret-safe fixtures. That test adapter is validation infrastructure unless a later product decision establishes a generic user-facing browser capability.
+
+The closed J2 custom CDP transport from PR #158 is not an R1 dependency.
+
+## External implementation reuse
+
+Security code copied or adapted from external projects requires:
+
+- confirmed license compatibility;
+- review of threat-model differences;
+- no regression from current invariants simply because the external implementation is shorter;
+- explicit provenance in the PR.
+
+A simpler external authorization model is design evidence; it is not automatically safe for this deployment model.
+
+## Testing policy
+
+### R1-R3 construction
+
+Preserve:
+
+- existing security regression tests still covering active code;
+- focused tests around newly touched authorization/secret/ambiguous-write boundaries;
+- static/type/build/dependency checks.
+
+Do not require a new comprehensive application-security proof platform before the product candidate exists.
+
+### R4 validation
+
+Perform the integrated security campaign against the actual candidate:
+
+- cross-principal isolation;
+- read/write/schema authorization boundaries;
+- secret/error/log leakage;
+- destructive targeting;
+- partial/ambiguous failure;
+- application permission-sensitive cases;
+- browser-dependent policies only where needed;
+- supported Grist Community versions.
+
+Critical defects found in R4 are repaired generically and the affected validation is rerun.
+
+## Production security
+
+Production OAuth, encrypted per-user Grist credential persistence/key custody, rate limiting, operational alerting, secret rotation and deployment/reviewer hardening are R5.
+
+Existing C4/C5/C6 work is retained as historical evidence/components. It is deliberately not a prerequisite for building or validating the lean product in controlled environments.
+
+No R1-R4 success may be represented as proof that production credential custody or multi-user hardening is complete.
