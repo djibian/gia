@@ -401,8 +401,13 @@ export class AuthorizedGristService {
         if (!updatedPage) {
           throw new Error(`Page ${pageId} disappeared while deleting widget ${widgetId}.`);
         }
-        if (updatedPage.widgets.some((widget) => widget.id === widgetId)) {
-          throw new Error(`Deleted widget ${widgetId} was still present on re-read.`);
+        const lingeringPage = after.pages.find((candidate) =>
+          candidate.widgets.some((widget) => widget.id === widgetId)
+        );
+        if (lingeringPage) {
+          throw new Error(
+            `Deleted widget ${widgetId} was still present on page ${lingeringPage.id} on re-read.`
+          );
         }
         return { documentId: id, pageId, deletedWidgetId: widgetId };
       } catch (error) {
