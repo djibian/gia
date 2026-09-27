@@ -281,30 +281,6 @@ export const OPERATION_REGISTRY: readonly OperationDefinition[] = [
       "Rename exactly one existing Grist page and verify the requested name by re-reading the document UI."
   },
   {
-    name: "delete_page",
-    category: "ui",
-    capability: "doc.schema:write",
-    readOnly: false,
-    destructive: true,
-    openWorld: false,
-    title: "Delete a document page",
-    summary: "Delete one explicitly identified Grist page without deleting its data table.",
-    description:
-      "Delete exactly one existing Grist page by stable page ID. The bridge verifies the page exists before writing and is absent after re-reading; deleting the page does not request deletion of the underlying table."
-  },
-  {
-    name: "delete_page_widget",
-    category: "ui",
-    capability: "doc.schema:write",
-    readOnly: false,
-    destructive: true,
-    openWorld: false,
-    title: "Delete a page widget",
-    summary: "Delete one explicitly identified widget from one Grist page.",
-    description:
-      "Delete exactly one existing Grist page widget by stable page and widget IDs. The bridge verifies the target membership before writing, preserves the page, and verifies the widget is absent after re-reading."
-  },
-  {
     name: "update_page_layout",
     category: "ui",
     capability: "doc.schema:write",
