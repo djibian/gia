@@ -1,776 +1,389 @@
 # Roadmap
 
-This roadmap is the authoritative dependency map for autonomous development. It separates product/platform work from public-directory distribution so useful engineering can continue while final publication eligibility remains review-dependent.
+This roadmap is the authoritative dependency map for `grist-chatgpt` after the 2026-09-27 Pareto recomposition decision.
 
-Status vocabulary:
+The project no longer develops around stage tracking or any other business application. It no longer treats a generalized internal Builder/lifecycle architecture as the next dependency. The product is rebuilt from the best existing Grist/MCP components and the useful parts of this repository, then validated only after a coherent candidate exists.
 
-- **DONE** — integrated on `main` and no longer active;
-- **ELIGIBLE** — useful work can start now;
-- **ACTIVE** — work is underway or an implementation/evidence tranche remains open;
-- **BLOCKED** — a named dependency or human decision is missing;
-- **DEFERRED** — intentionally not part of the current critical path.
+## Status vocabulary
 
-Priority does not imply eligibility.
+- **DONE** — integrated historical/current result; no active work remains.
+- **ELIGIBLE** — the finite committed work may start now.
+- **ACTIVE** — committed work is underway.
+- **BLOCKED** — only a named technical dependency blocks the tranche.
+- **DEFERRED** — deliberately outside the current product-construction path.
+- **RETIRED** — an earlier roadmap path remains historical but is no longer a product dependency.
 
-## Roadmap execution contract
+## Current direction
 
-Autonomous expansion is finite. For every major ELIGIBLE/ACTIVE tranche, the roadmap must make the completion path explicit through its goal, exit criteria, finite committed next work and blockers/human gates.
+```text
+R0  RECOMPOSE FROM EXISTING PROJECTS      DONE by this reviewed roadmap pivot
+ |
+ v
+R1  MINIMAL CORE                          ELIGIBLE
+ |
+ v
+R2  MISSING GRIST SEMANTICS ONLY
+ |
+ v
+R3  AUTONOMOUS PRODUCT CANDIDATE
+ |
+ v
+R4  FINAL VALIDATION CAMPAIGN
+ |
+ v
+R5  HARDENING / PRODUCTION / DISTRIBUTION
+```
 
-Rules:
+There are no parallel business-application axes during R1-R3.
 
-- only work explicitly listed as current/remaining/committed work is autonomously eligible;
-- candidate ideas, inspirations and possible enrichments are not eligible merely because they are documented;
-- a new committed slice may be added autonomously only when it is necessary to satisfy an already-defined exit criterion and introduces no new product/security decision;
-- broader scope expansion requires an explicit roadmap decision;
-- when a tranche has no committed work left and its exit criteria appear satisfied, the Controller triggers the integrated tranche-completion review instead of inventing another improvement;
-- a dependent tranche is unlocked only after the required integrated review records PASS against exact `main` and the roadmap is updated accordingly.
+Stage tracking, CCF, pedagogy and all other concrete applications are **R4 validation cases only**.
 
-## Current baseline
+## Historical baseline retained as component bank
+
+The following work was integrated before the recomposition and remains useful evidence/code, but it no longer dictates future architecture:
 
 ```text
 V0.6 bounded document UI          DONE
 C1 credential abstraction         DONE
 C2 MCP contract v1                DONE
 C3 user-aware Grist context       DONE
-C4-P0 Logto/ProConnect MCP POC    DONE
-S1 annotation semantics/package   DONE
-P0 product architecture baseline  DONE
+C4-P0 Logto/ProConnect POC        DONE
+P0 architecture baseline          DONE
 P1 document UI parity             DONE
 P2 formula/schema safety          DONE
 P3 semantic context/discovery     DONE
-P4 compact MCP surface            DONE
-Q0 retrospective code assurance  DONE
+P4 v1 surface evaluation          DONE
+Q0 retrospective assurance       DONE
 J0 engine stabilization           DONE
 J1 contractual execution          DONE
 ```
 
-The repository already contains the bounded Grist business surface, registry-driven MCP contract, credential-provider seam, per-principal Grist context/cache isolation, compact semantic document inspection, audit-aware risk metadata and a bounded document-UI surface. `main` contains bounded direct and Ref/RefList column select-by option discovery/configuration, bounded widget saved-sort configuration through stable column IDs, bounded normalized page-layout inspection and mutation through stable widget IDs, bounded normalized existing-custom-widget access/mapping inspection and mutation through stable column IDs, bounded table/grid display-option inspection and mutation while preserving unrelated widget options, bounded advisory formula-reference and one-hop reference-field inspection with explicit unavailable-target incompleteness, a non-secret OAuth deployment smoke command/runbook, explicit minimization of public discovery metadata and success-only mutation results while preserving functional creation IDs, a documented production observability/audit contract, bounded widget-description mutation with post-write verification, bounded native chart-type configuration for explicitly identified chart widgets, and the completed Q0 repairs that enforce the internal metadata-table boundary, close schema-mutation metadata allowlists and fail closed on potentially truncated UI metadata snapshots.
+These results may be **KEEP**, **SIMPLIFY**, **REUSE AS PRIMITIVES**, or **REMOVE FROM ACTIVE PATH** during R1. Their historical completion records remain valid as history.
 
-The frozen Product Vision now defines `grist-chatgpt` as an agentic Grist application builder and lifecycle maintainer above the existing bounded execution substrate. The Builder / Execution Engine / Connector separation, contractual execution semantics and stage-tracking BehavioralContract are specified in `docs/PRODUCT_VISION.md`, `docs/EXECUTION-ENGINE-J0-J1.md` and `docs/BEHAVIORAL-CONTRACT-STAGE-TRACKING.md`.
+The former sequence `J2 -> J3 -> J4 -> J5 -> J6` is **RETIRED**. It is not a dependency chain and Controllers must not continue it.
 
-The C4 architecture decision is fixed: ProConnect is the upstream institutional identity source, Logto OSS is the reference MCP-facing authorization server, and `grist-chatgpt` remains a provider-neutral standards-based OAuth resource server. Auth0 EU and Curity Standard remain documented fallbacks.
+Former C4/C5/C6 productionization and S0/S1/C7/C8 public-distribution work are **DEFERRED to R5**. Existing completed evidence is retained; no new work on those axes is product-critical before R4 passes.
 
-The project advances on three product/platform/distribution axes. Q0 remains recorded below as the completed retrospective trust-baseline tranche:
+## Global execution rules
 
-```text
-QUALITY ASSURANCE         PLATFORM / SECURITY      PRODUCT / BUILDER            PUBLIC DISTRIBUTION
-Q0 DONE                   C4 -> C5 -> C6           P1 / P2 / P3 / P4 DONE       S0 ACTIVE + S1
-                                                   -> J0 DONE -> J1 DONE -> J2      -> C7 -> C8 -> review
-                                                                    -> J3 -> J4 -> J5 -> J6
-```
+1. **Existing project first.** Before equivalent implementation, inspect official Grist behavior and the external projects listed in `docs/RECOMPOSITION-REVIEW.md`.
+2. **No business coupling.** No R1-R3 task may require a stage/CCF/CRM/inventory fixture, schema or policy.
+3. **No development human gate.** When a choice is unresolved, select the smallest safe standard option or defer the optional capability. External/production authorization belongs to R5.
+4. **Construction tests stay cheap.** Existing CI, unit/contract regressions and focused safety tests remain. Domain E2E, browser matrices and broad failure campaigns wait for R4.
+5. **Remove before adding.** Retire obsolete complexity before building a local replacement.
+6. **MCP first.** GPT Actions/OpenAPI is compatibility debt, not a reason to shape the new core.
+7. **No speculative feature promotion.** A visible ecosystem feature is not R1/R2 work unless required by the finite exit criteria below.
 
-Q0 established the post-audit runtime trust baseline. The frozen Agentic Builder vision is integrated, J0 and J1 have both passed exact-main integrated completion reviews, and J1's finite contractual-execution proof is exhausted. J2 is now the next product dependency. Its one-trace, no-reassignment business semantics are accepted; a partial reference schema/page binding is recorded, while critical LinkKey ACL and teacher-specific UI behavior remain unverified, although the owner reports adding the date to the follow-up sheet and confirms that teacher links in `Enseignants` use LinkKeys with ACL-based filtering. J2 observation and test work remains active because controlled live evidence and the browser verifier are incomplete. Effectful J2 transformation remains gated on a bound, isolated synthetic fixture and browser-path evidence; the Builder may not invent missing bindings. J3-J6 remain dependency-gated exactly as defined below; old deferred P5/P6 ideas do not become eligible merely because the Builder program exists.
+---
 
-OpenAI does not provide a pre-review eligibility determination for this case. Public-directory approval therefore remains review-dependent, but that review-time classification no longer blocks bounded reviewer/submission preparation. It does not block private ChatGPT Developer Mode use, Codex use, product-capability development or production-quality platform engineering that is independently useful.
-
-## Cross-cutting quality assurance
-
-### Q0 — retrospective code assurance
+# R0 — Existing-project recomposition
 
 **Status: DONE**  
-**Priority: completed stabilization baseline**
+**Goal:** replace architecture-first continuation with an evidence-based composition strategy.
 
-Goal: subject the complete integrated runtime inherited from the project's pre-review phases to one finite retrospective assurance pass under the repository's current correctness, security, contract and review standards, then establish a trusted post-Q0 baseline without an open-ended cleanup rewrite.
+Authoritative evidence: `docs/RECOMPOSITION-REVIEW.md`.
 
-Initial runtime audit baseline:
+R0 decisions:
 
-```text
-2f811ee34cbeb32c9c945aeb217de34fba5065f2
-```
+- Grist official MCP/full-edition behavior is the primary functional oracle/convergence target;
+- `gwhthompson/grist-mcp-server` is the strongest compact TypeScript surface reference;
+- `nic01asFr/GristCoder` is the strongest application-context/build-loop reference;
+- `Xe138/grist-mcp-server` informs simple resource/capability authorization but is not copied without a confirmed reusable license;
+- `nic01asFr/mcp-server-grist` is a broad MIT-licensed API/formula reference, not a target surface;
+- current `grist-chatgpt` is treated as a component bank rather than an indivisible architecture;
+- the LLM remains the planner/orchestrator;
+- business-specific proof infrastructure is removed from the product path;
+- comprehensive product validation is deferred to R4;
+- production/distribution axes are deferred to R5.
 
-That exact `main` includes the independently reviewed P2 repair from PR #106 and the bounded grid-display work from PR #102. The Q0 setup documentation itself does not alter that runtime baseline.
-
-Audit method and evidence rules are defined in `docs/RETROSPECTIVE-CODE-ASSURANCE.md`. The fixed read-only inventory against runtime baseline `2f811ee34cbeb32c9c945aeb217de34fba5065f2` found exactly three BLOCKING findings and no separate REQUIRED finding: an incomplete model-facing `_grist_*` metadata-table boundary, open-ended schema metadata mutation dictionaries that violated the stable bounded public contract, and silently truncated document-UI metadata snapshots that could weaken safety-sensitive graph validation. Those findings were repaired by independently reviewed PRs #110 (Q0-F1), #111 (Q0-F2) and #112 (Q0-F3).
+R0 also supersedes and closes the remaining J2 PRs #158 and #160 without merge.
 
 Exit criteria:
 
-- every current runtime domain named in the Q0 protocol has been reviewed at least once against the current repository invariants and exact audited `main` is recorded;
-- no unresolved **BLOCKING** correctness, authorization/security, privacy, data-integrity, contract or replay/ambiguity finding remains;
-- every **REQUIRED** assurance finding has either been repaired through the normal exact-head CI/independent-review process or explicitly reclassified with durable evidence;
-- critical authorization, mutation, partial-failure, stable-ID/normalization and public-contract boundaries have adequate positive, negative and failure/ambiguity characterization where material;
-- operation registry, MCP surface, GPT Actions/OpenAPI compatibility surface, runtime semantics and current-state documentation tell one materially coherent story;
-- remaining cosmetic/style/speculative-refactor/tooling debt is explicitly **DEFERRED** rather than used to keep Q0 open;
-- a fresh integrated Q0 tranche review records `PASS` against an exact post-repair `main` SHA.
+- Product Vision reflects the lean MCP boundary;
+- AGENTS contract implements existing-project-first/no-development-human-gate/build-then-validate policy;
+- current architecture/security docs no longer make J2/J3/J4/J5/J6 future dependencies;
+- a finite R1 set is defined.
 
-Integrated tranche review: **PASS** against exact `main` `998d9db4731f1fdfe9f807b441593d4d92c65e04`. That exact tree is content-identical to the exact tested Q0-F3 head `aba169fced2dcf34f1976e22e4b00a8644aee8e2`; Q0-F1, Q0-F2 and Q0-F3 were each independently reviewed and integrated with exact-head CI. The integrated review found no new BLOCKING or REQUIRED item: F1 rejects model-facing `_grist_*` identifiers while preserving trusted internal metadata reads, F2 applies one closed semantic schema-mutation contract across MCP and GPT Actions/OpenAPI, and F3 makes bounded UI-metadata incompleteness explicit and fail-closed before safety-sensitive mutation or exact post-write verification. Existing identity/isolation, partial-write, stable-ID/normalization and output-minimization evidence from the fixed inventory remains applicable, and the committed Q0 set is exhausted.
+No further R0 slice is committed.
 
-Completed Q0 repair slices:
+---
 
-1. **Q0-F1 — internal metadata table boundary** — PR #110 centralizes and tests rejection of model-facing `_grist_*` record/schema/table identifiers, including create/rename targets, while preserving trusted bridge-internal metadata access.
-2. **Q0-F2 — bounded schema mutation fields** — PR #111 replaces arbitrary table/column metadata mutation dictionaries with one finite stable semantic allowlist shared materially across MCP and GPT Actions/OpenAPI, with accepted/unknown/unstable-field contract tests.
-3. **Q0-F3 — fail-closed UI metadata completeness** — PR #112 marks potentially truncated bounded page/view/section metadata snapshots explicitly and rejects UI mutations whose safety validation or exact verification requires a complete snapshot.
-4. **integrated Q0 completion review** — PASS recorded above against exact post-repair `main` `998d9db4731f1fdfe9f807b441593d4d92c65e04`.
+# R1 — Minimal Core
 
-No fourth cleanup slice is committed. Generic cleanup, style-only, broad rewrite, blanket coverage, lint, complexity and mutation-testing ideas remain deferred unless a future concrete invariant justifies separate roadmap work.
+**Status: ELIGIBLE after R0 integration**  
+**Priority: highest**
 
-Post-Q0 dependency state:
+## Goal
 
-- P1, P2 and P3 have passed their required integrated reviews and are DONE;
-- P4's former P1/Q0/P2/P3 dependency chain was satisfied; P4-E1 has now passed its integrated completion review and P4 is DONE with KEEP as the v1 decision;
-- J0 and J1 have passed their required integrated reviews and are DONE; J2's bounded observation and test slices are ACTIVE, while its effectful transformation waits for their evidence;
-- C6's Q0 prerequisite is satisfied, but C6 finalization still waits for C4/C5;
-- C4 operational evidence and S1's remaining low-risk external evidence remain independently eligible when the required external environment/evidence is available.
+Produce the smallest coherent MCP runtime for Grist Community by composing existing code rather than extending the retired Builder architecture.
 
-## Axis A — platform and security
-
-### C4-P0 — Logto / ProConnect / MCP interoperability POC
-
-**Status: DONE**
-
-Live evidence now covers the full POC exit path:
-
-- Logto OSS + PostgreSQL non-production deployment;
-- ProConnect federation and stable identity mapping;
-- Authorization Code + PKCE `S256`;
-- RFC 8707 canonical resource binding;
-- JWT/JWKS, issuer, audience/resource and expiry validation;
-- fixed scopes `doc:read`, `doc:write`, `doc.schema:write`;
-- dynamic principal and principal-bound Grist context construction;
-- wrong-resource and insufficient-scope rejection before mutation;
-- RFC 9728 protected-resource metadata and OAuth challenges;
-- Logto Dynamic app / CIMD with ChatGPT client metadata accepted;
-- OIDC `openid` / `email` compatibility after enabling the corresponding Dynamic app permissions;
-- real ChatGPT Developer Mode connection through Logto -> ProConnect -> Logto;
-- real ChatGPT MCP reads;
-- bounded additive write followed by targeted re-read;
-- destructive delete with ChatGPT confirmation followed by targeted post-delete verification;
-- connection persistence across a fresh ChatGPT conversation without full reauthentication;
-- ChatGPT-side disconnect removes the connector from subsequent conversations;
-- Logto grant removal leaves an already-issued access token usable only until expiry;
-- after the configured 3600-second access-token lifetime, ChatGPT cannot silently renew the removed authorization and presents a reconnect prompt.
-
-Durable evidence lives in:
+The target conceptual responsibilities are:
 
 ```text
-docs/LOGTO-PROCONNECT-MCP-POC.md
-docs/LOGTO-PROCONNECT-MCP-POC-RESULTS.md
-docs/LOGTO-PROCONNECT-MCP-POC-HTTP-EVIDENCE.md
-docs/CHATGPT-OAUTH-READINESS.md
-docs/LOGTO-PROCONNECT-MCP-POC-NEXT.md
+discover
+inspect
+query
+change_data
+change_structure
+change_ui
+help
 ```
 
-Secondary operational unknowns such as a controlled full-host reboot are not C4-P0 exit blockers.
+The final public schema may use a slightly different count when required to preserve bounded semantic intentions and MCP risk annotations.
 
-### C4 — production OAuth MCP identity
+## Finite committed R1 work
 
-**Status: ELIGIBLE**  
-**Priority: high**
+### R1-A — active-runtime inventory and removal map
 
-Goal: productionize the already proven OAuth design rather than redesign it.
+Audit the current TypeScript runtime by module/import path, not by old roadmap labels.
 
-Fixed architecture:
+Classify every material current runtime area:
 
-- ProConnect upstream identity;
-- Logto OSS reference authorization server;
-- standards-based JWT/JWKS resource server;
-- deployment-configurable canonical resource URI;
-- public scopes remain exactly `doc:read`, `doc:write`, `doc.schema:write`;
-- provider-specific behavior stays at the edge;
-- static bearer may exist only as explicit development/backward-compatible mode.
+- **KEEP** — already the simplest good implementation;
+- **ADAPT** — useful but should be reshaped around the lean core;
+- **REPLACE** — an external implementation/pattern is demonstrably simpler or better;
+- **DORMANT** — keep history/code temporarily but remove from active runtime/product path;
+- **DELETE** — no longer used and provides no reusable value.
 
-Integrated productionization preparation now includes the offline OAuth deployment preflight, the operator release/rollback runbook, and `smoke:oauth-deployment`, a non-secret public smoke check for `/healthz`, protected-resource metadata and the unauthenticated MCP challenge. These checks intentionally do not substitute for authenticated issuer/JWKS, token, federation or Grist evidence.
+Special attention:
 
-Exit criteria:
+- J2 observer/provisioner/isolation/browser code;
+- J1 journal/execution coordinator versus its directly useful safety primitives;
+- GPT Actions/OpenAPI compatibility adapters;
+- operation registry/tool-schema duplication;
+- document-context/UI normalization;
+- auth/principal/context isolation.
 
-- the documented release/rollback path has been exercised on the intended deployment and evidence recorded;
-- issuer/JWKS key-rotation behavior and authorization-server outage/recovery behavior have been exercised and recorded;
-- production configuration/runbooks remain provider-neutral and coherent with the validated OAuth contract.
+Deliver one bounded inventory document plus the minimal mechanical removals that are already provably dead. Do not refactor the whole runtime in this slice.
 
-Committed remaining C4 work:
+### R1-B — compact MCP surface
 
-1. exercise and record the intended deployment release/rollback path;
-2. exercise and record issuer/JWKS key rotation plus outage/recovery behavior.
+Create the lean MCP-facing surface by adapting the best current/external patterns.
 
-No new identity-provider selection work is part of C4.
+Reference-first order:
 
-### C5 — secure Grist onboarding and credential lifecycle
+1. compare Grist official MCP semantics for overlapping functions;
+2. inspect `gwhthompson/grist-mcp-server` manager contracts and help/discovery pattern;
+3. inspect GristCoder context/delta ideas where relevant;
+4. map them onto the strongest existing `grist-chatgpt` business operations.
 
-**Status: BLOCKED by C4 and human persistence/encryption decisions**  
-**Priority: required before multi-user operation**
+Requirements:
 
-Goal: allow an authenticated user to securely connect that user's own Grist Community API key outside model-visible MCP data.
+- no domain-specific inputs;
+- stable semantic identifiers;
+- precise read/write/destructive MCP annotations;
+- bounded payloads;
+- no arbitrary multi-action transaction;
+- no generic `/apply`, raw SQL or HTTP escape hatch;
+- retain partial/ambiguous-write safety at the operation boundary;
+- preserve unrelated Grist state on bounded read-modify-write operations.
 
-Required behavior:
+The current 23-tool v1 surface may remain temporarily behind a compatibility adapter while the lean surface is constructed, but it is not the target architecture. Do not preserve a duplicate public surface indefinitely merely to avoid a version decision; final disposition is part of R3 cleanup.
 
-- bridge-owned secure onboarding flow;
-- validate the supplied key against the configured Grist Community instance;
-- associate the verified Grist identity with the authenticated principal;
-- encrypted-at-rest credential storage;
-- per-principal retrieval only;
-- disconnect/removal;
-- rotation/revalidation lifecycle;
-- never log, return or prompt the credential through MCP/model-visible surfaces.
+### R1-C — compact application context
 
-Human decisions still required:
+Consolidate discovery/inspection around one compact semantic snapshot suitable for LLM reasoning.
 
-- persistence technology;
-- encryption/key-management design;
-- production institutional ownership where required.
+Prefer existing `inspect_document` normalization where strong. Adapt only proven useful ideas from GristCoder, such as:
 
-No second real user/reviewer may rely on the current static Grist credential path as if it were isolated per user.
+- relationship graph/links;
+- pages/sections/widgets relevant to application structure;
+- explicit incompleteness instead of guessed state;
+- a small observable delta between requested/known state and current state when this can be expressed without an internal planner.
 
-The minimum human decision package is maintained in `docs/C5-DECISION.md`;
-it records required choices without selecting a persistence or encryption design.
+Do not add session phases, wizard state, sub-agents, hidden plan persistence or business contracts.
 
-### C6 — production hardening
+### R1-D — simplify active safety path
 
-**Status: BLOCKED by C4/C5 for remaining finalization**  
-**Priority: high**
+Retain the smallest runtime mechanisms needed for safe direct operations:
 
-Already integrated:
+- authority/capability check;
+- input bounds;
+- stable-ID translation where required;
+- exact/targeted post-write verification where cheap and material;
+- partial-result retention;
+- ambiguous-write no-blind-replay behavior;
+- principal isolation;
+- secret/output minimization.
 
-- explicit Grist upstream abort timeout;
-- bounded HTTP request/header reception;
-- repository CI/ruleset protection;
-- deployment/rollback operating documentation;
-- offline OAuth deployment preflight;
-- non-secret public post-deploy/rollback smoke checks;
-- bounded production metrics vocabulary with low-cardinality label rules;
-- review and documentation of the current structured audit event contract, including correlation/privacy boundaries.
+Remove active dependence on generalized execution-contract/journal/orchestration machinery when the lean operation does not need it. Do not delete reusable J0/J1 code merely for aesthetic cleanliness; first make it non-essential, then let R3 remove dead residue.
 
-Remaining finalization after C4/C5:
+## R1 exit criteria
 
-- per-principal rate limiting;
-- operational metrics and alerting;
-- structured audit export if required;
-- secret/key rotation procedure;
-- controlled production deployment and rollback evidence;
-- authenticated post-deploy synthetic smoke evidence.
+- one coherent MCP-first runtime exposes the lean responsibilities;
+- no business application or J2 test infrastructure is required to run the product;
+- an LLM can discover, inspect, query, mutate data, mutate structure and perform the supported UI changes using generic Grist semantics;
+- the active safety path is materially simpler than J1/J2 architecture while retaining the security invariants in `docs/SECURITY.md`;
+- baseline CI is green;
+- no R1 committed slice remains.
 
-## Axis B — product capabilities and Agentic Builder
+No comprehensive domain E2E proof is required for R1 completion.
 
-P0-P4 remain the historical bounded-bridge product baseline. The new product program is the distinct J0-J6 Agentic Builder sequence. The existing narrow v1 MCP operations remain a compatibility/execution substrate; J0-J6 do not imply a generic super-tool or arbitrary `/apply` surface.
+---
 
-Reference inspirations are design provenance, not dependencies:
+# R2 — Missing Grist semantics only
 
-- Grist's official MCP is the main functional oracle for Grist-native semantics;
-- Xe138/grist-mcp-server inspired granular principal/resource/capability policy and audit ideas;
-- gwhthompson/grist-mcp-server inspired a compact, progressively discoverable MCP surface;
-- nic01asFr/mcp-server-grist and GristCoder inspired safe semantic operations, formula inspection and compact document context.
+**Status: BLOCKED by R1**
 
-### P0 — product architecture baseline
+## Goal
 
-**Status: DONE**
+Fill only the generic Grist capabilities whose absence makes the R1 product incoherent or materially weaker than the best existing references.
 
-Already integrated:
+## Method
 
-- one bounded business layer shared by MCP and compatibility adapters;
-- `Principal` + resource grants + capabilities;
-- `AuthorizationService` / authorized Grist service path;
-- credential-provider seam;
-- normative operation registry;
-- audit-aware operation metadata;
-- `grist_help`;
-- compact `inspect_document` context;
-- bounded records and schema operations;
-- initial page/widget inspection and mutation operations;
-- explicit partial/ambiguous-write semantics.
+Run a bounded gap comparison against:
 
-### P1 — document UI parity
+- current official Grist MCP behavior/documentation;
+- `gwhthompson/grist-mcp-server`;
+- `nic01asFr/GristCoder`;
+- `nic01asFr/mcp-server-grist`;
+- the now-simplified R1 runtime.
 
-**Status: DONE**  
-**Priority: completed product-capability tranche**
+For every candidate gap, ask:
 
-Goal: provide the useful bounded subset of Grist document-design semantics needed for realistic page/widget work without exposing arbitrary UserActions.
+1. Is it required for generic application construction/modification?
+2. Does Grist Community expose a stable enough primitive?
+3. Does an existing licensed implementation already solve it?
+4. Can it fit the compact safety boundary without new product architecture?
 
-Current baseline:
+Only candidates answering all relevant questions positively become committed work.
 
-- `get_pages`;
-- `get_page_widgets`;
-- `create_page`;
-- `add_page_widget`;
-- `rename_page`;
-- bounded `update_page_layout` using stable current widget IDs, an exact placed/collapsed partition of all current page widgets, bounded node/depth/collapsed-ID counts, fixed internal `_grist_Views.layoutSpec` mutation and exact normalized post-write verification;
-- bounded `update_page_widget` title/description/native chart-type/saved-sort/select-by/custom-widget-settings/table-grid-display behavior, including explicit description clearing, chart-only enforcement and normalized post-write verification;
-- bounded saved-sort configuration using at most 20 stable current column IDs with `asc`/`desc` plus optional `emptyLast`, Text-only `naturalSort` and Choice/ChoiceList-only `orderByChoice`; internal numeric `colRef` values are resolved server-side only, schema resolution is capped at 5,000 columns, and the exact encoded post-state is verified by re-read;
-- bounded `directSelectByOptions` discovery for supported same-page/same-table sources, with cycle checks and explicit truncation semantics;
-- bounded `columnSelectByOptions` discovery/configuration for explicit non-summary `Ref`/`RefList` links, using reusable column IDs rather than invented numeric refs, excluding Attachments, chart/custom sources and cycles, with a 5,000-column schema ceiling plus response/candidate truncation semantics;
-- read-only page layout normalization preserves the Grist BoxSpec grouping/order and finite non-negative sizes while replacing verified leaves with stable current widget IDs; collapsed/currently unplaced widget IDs are exposed separately, raw `layoutSpec` is retained for compatibility, and stale/duplicate/malformed state produces `layoutNormalizationIncomplete` rather than guessed output;
-- layout normalization is capped at 1,000 tree nodes, depth 50 and 1,000 collapsed/unplaced IDs and performs no additional upstream read;
-- existing `type === "custom"` widgets expose additive bounded `customWidgetSettings` with normalized access, optional stable gallery/bundled `widgetId`, and single/list/null column mappings translated from Grist numeric refs to current stable column IDs; URLs, plugin identifiers and arbitrary widget-owned options are deliberately excluded from that normalized view;
-- custom-widget mapping normalization and mutation are capped at 100 mapping keys, 1,000 mapped columns and 5,000 schema columns, exclude the legacy native-calendar alias `custom.calendar`, and never expose numeric Grist column refs as model inputs;
-- bounded custom-widget mutation may change only access (`none`, `read table`, `full`) and stable-ID column mappings for an explicitly identified existing custom widget; the bridge read-modify-writes the complete `options` object, preserves URL/plugin/widget identity and arbitrary widget-owned options, and verifies the complete expected options object after re-read; malformed or unresolved state is rejected before write and post-write disagreement is non-retryable;
-- table widgets expose normalized bounded `gridOptions` for vertical/horizontal gridlines, zebra stripes and row-number mode; `update_page_widget` may mutate only those named settings for an explicitly identified table widget, preserves every unrelated option through read-modify-write, rejects malformed current options, and verifies the complete expected options object after re-read.
+## Candidate categories, not committed features
 
-Exit criteria:
+Possible examples include document creation/copy, additional native page/widget configuration, safer upsert/import semantics, formula support or other Grist-native configuration. Attachments, webhooks, generated code, generic access administration and lifecycle automation are not automatically promoted.
 
-- the current bounded UI baseline plus the committed slices are integrated with stable-ID inputs, bounded semantics and exact post-write verification for mutations;
-- document-UI contracts, tests and current-state documentation are coherent;
-- no arbitrary UserAction, generic `/apply`, arbitrary custom-option payload or newly destructive UI surface is exposed;
-- no other non-destructive UI slice is required to satisfy the stated P1 goal.
+## Exit criteria
 
-Integrated tranche review: **PASS** against exact `main` `bc44d1f03d30db2e0e3951c96a06cc7ae113548e`. The bounded page-layout mutation from PR #115 is integrated on that exact tree, its exact merge-commit CI passed, and the prior review finding on the service-level read → fixed write → re-read path was repaired with focused regression tests covering successful exact serialization/verification, pre-write refusal of incomplete current layout metadata and non-retryable `UiWriteVerificationError` on post-write divergence. The public MCP and GPT Actions/OpenAPI contracts use the same authorized service path, require `doc.schema:write`, accept only bounded stable current widget IDs, expose no arbitrary UserAction or raw layout metadata write surface, and preserve the existing fail-closed/ambiguous-write semantics. No committed P1 work remains.
+- the bounded gap audit records why each inspected ecosystem capability is REUSE/ADAPT/REIMPLEMENT/REJECT/DEFER;
+- every **required** generic gap is implemented;
+- no speculative gap remains committed;
+- baseline CI is green.
 
-Committed next P1 slices: **none**.
+---
 
-Deferred P1 candidates — not autonomously eligible unless explicitly promoted:
+# R3 — Autonomous Product Candidate
 
-- additional safe widget configuration beyond the committed slices;
-- further select-by variants beyond the currently supported direct and Ref/RefList semantics;
-- widget-owned custom options, which first require a separate bounded JSON size/depth/value contract;
-- page deletion;
-- widget deletion;
-- any operation that can remove/overwrite broader document UI state.
+**Status: BLOCKED by R2**
 
-The destructive candidates remain human-gated. Bounded adapters may internally emit known Grist UserActions, but no arbitrary `/apply` or UserAction payload may be exposed to the model.
+## Goal
 
-### P2 — formula and schema safety
+Turn the lean runtime into a self-contained candidate worth validating, without adding application-specific functionality.
 
-**Status: DONE**  
-**Priority: high**
+## Finite completion work
 
-Goal: provide a bounded non-executing `FormulaInspector`-style layer that detects likely schema/formula mistakes before mutation while leaving Grist authoritative for actual formula evaluation.
+1. remove dead/dormant code that is demonstrably outside the candidate, including retired J2 machinery and obsolete compatibility layers where safe;
+2. freeze/version the MCP contract and migration position for any retained v1 compatibility;
+3. simplify configuration and deployment to the minimum needed for a generic controlled Grist Community instance;
+4. reconcile README/architecture/security/current-state docs with the actual runtime;
+5. produce a short generic usage flow showing how an MCP agent discovers, inspects and modifies Grist without embedding a business scenario;
+6. perform a dependency/licensing/provenance pass over reused/adapted external code.
 
-Integrated advisory slices:
+## Exit criteria
 
-- `inspect_document` detects referenced `$Column` identifiers without executing formulas;
-- references in quoted strings/comments are ignored and analysis is bounded/deduplicated;
-- exact matches, unique case mismatches and missing columns are distinguished;
-- up to three deterministic close existing-column suggestions are surfaced without rewriting user intent;
-- matching/suggested Ref/RefList columns expose their target table;
-- when expanded document schema is already available, exact one-hop `$Ref.Field` and `$RefList.Field` lookups are checked against the referenced table with the same exact/case-mismatch/missing semantics and suggestions;
-- one-hop dereference inspection is independently capped at 100, ignores method-like/deeper-chain Python expressions and implicit `id`, performs no extra upstream read, never invents a warning when target-table metadata is unavailable, and now exposes `dereferencesIncomplete: true` when a current Ref/RefList source resolves but its target-table metadata is unavailable;
-- document context preserves the complete bounded `formulaAnalysis` object while summarizing local formula references, checked dereferences, dereference warnings and aggregate formula warnings.
+- product installation/configuration is coherent;
+- public MCP contract is versioned and documented;
+- no retired Builder/J2/business path is an active dependency;
+- no known dead compatibility surface remains without an explicit reason;
+- baseline CI is green;
+- the candidate is frozen enough that a comprehensive validation campaign is meaningful.
 
-Exit criteria:
+R3 deliberately does **not** require stage-tracking, CCF or browser test matrices.
 
-- local and one-hop reference diagnostics remain bounded, advisory and non-executing;
-- unavailable metadata yields explicit incompleteness rather than invented conclusions;
-- no Python interpreter, raw SQL or generic code-execution surface is introduced;
-- tests/documentation cover the integrated advisory behavior and no committed P2 slice remains.
+---
 
-Integrated tranche review: **PASS** against exact `main` `2f811ee34cbeb32c9c945aeb217de34fba5065f2`. The prior review finding was repaired by independently reviewed PR #106: unavailable Ref/RefList target metadata now produces explicit bounded incompleteness without an extra upstream read or an invented missing-field diagnosis. `DocumentContextService` preserves that analysis in the returned column context, the repair has focused positive/negative tests, and no committed P2 work remains.
+# R4 — Final Validation Campaign
 
-Committed next P2 slices: **none**.
+**Status: BLOCKED by R3**
 
-Further formula/schema ideas remain deferred until an explicit roadmap decision demonstrates additional value and promotes a bounded slice.
+## Goal
 
-### P3 — semantic document context and progressive discovery
+Now test the finished candidate broadly and aggressively.
 
-**Status: DONE**  
-**Priority: high**
+This is the first tranche where domain applications and comprehensive end-to-end proof are product dependencies.
 
-Goal: provide compact semantic document context and progressive discovery that expose useful stable relationships/UI state without indiscriminate row disclosure or guessed normalization.
+## Required validation classes
 
-Integrated tranche review: **PASS** against exact `main` `9aa5cc42edcf1306c2d14b742a1deefa40dfdf43`. The integrated UI/relation normalizers fail closed with explicit incompleteness markers, progressive help derives operation metadata from the normative registry, `inspect_document` does not load user-table rows, and credential-derived contexts/caches remain principal-isolated. No committed P3 slice remains.
+The exact fixtures are prepared only at R4 start, but the campaign must cover at least:
 
-Integrated normalized UI slice:
+1. **new generic application** — construct useful schema/data/UI from an empty or minimal Grist document;
+2. **existing generic application** — inspect and modify while preserving unrelated human data/configuration;
+3. **stage-tracking application** — complex existing schema plus access-sensitive behavior; this is a validation case, not architecture;
+4. **a materially different second application**, with the CCF/pedagogy case a strong candidate;
+5. **rerun/idempotence** — repeat satisfied intentions without duplication/degradation;
+6. **partial/ambiguous failure** — characterize safe behavior and no-blind-replay guarantees;
+7. **authorization/isolation** — principals cannot gain upstream authority or leak credentials/context;
+8. **browser-dependent behavior only where a validated application actually requires it**;
+9. **compatibility** across the supported Grist Community version range declared by the candidate.
 
-- page context exposes additive bounded `layoutNormalized` trees whose leaves are verified stable widget IDs, plus collapsed/unplaced widget IDs and `layoutNormalizationIncomplete` when raw Grist BoxSpec state cannot be represented exactly; raw `layoutSpec` remains for v1 compatibility;
-- existing custom-widget context exposes data-minimized access/widget identity and stable-ID column mappings with explicit normalization incompleteness; custom URLs/plugin internals/widget-owned arbitrary options are not duplicated into the normalized semantic view;
-- when expanded table metadata is available, widget context exposes additive stable-ID `sort` entries derived from native `sortColRefs`, plus `sortNormalizationIncomplete` when malformed, unsupported or unresolved raw entries prevent exact normalization;
-- normalization uses the same 20-key and 5,000-column bounds as saved-sort configuration, never guesses unsupported semantics, and retains raw `sortColRefs` for v1 compatibility;
-- non-expanded internal UI reads do not claim normalized saved-sort state;
-- existing direct select-by links expose additive stable-ID `selectByNormalized: { sourceWidgetId }` when the source widget resolves exactly;
-- existing column select-by links additionally expose stable `sourceColumnId` / `targetColumnId` values when expanded table metadata resolves every numeric reference exactly, while `selectByNormalizationIncomplete` marks unresolved/unsupported raw state and no partial normalized link is guessed;
-- select-by normalization is bounded to 5,000 columns and retains raw v1 numeric `selectBy` metadata for compatibility.
+R4 may add test infrastructure because the product is now stable enough to justify it. Prefer maintained standard test/browser libraries over bespoke transports.
 
-Integrated normalized relation slice:
+## Outcome rules
 
-- `Ref` / `RefList` relationships keep their stable forward table/column IDs and, when Grist declares a two-way `reverseCol`, expose additive stable-ID `reverse: { table, column, kind }` metadata only after exact bidirectional verification;
-- reverse normalization requires the reverse column to belong to the target table, point semantically back to the source table and have a `reverseCol` that points back to the source `colRef`;
-- unresolved or inconsistent declared reverse links expose only `reverseResolutionIncomplete: true`; numeric `colRef` / `reverseCol` values stay internal and no additional upstream read is performed.
+- a domain failure becomes a generic product bug only when the missing behavior is genuinely generic;
+- repair the smallest generic defect, rerun affected validation, and continue;
+- do not import stage/CCF business concepts into the core;
+- record unsupported behavior honestly rather than expanding scope indefinitely.
 
-Integrated progressive-discovery slice:
+## Exit criteria
 
-- `grist_help` keeps the historical complete-catalog default while adding compact per-category operation counts and an optional category filter that is mutually exclusive with explicit operation-name filtering;
-- opt-in `includeWorkflows` returns common discover/read/create+verify/schema-change+verify/UI-configure+verify sequences, with every step title/capability/destructive flag resolved from the normative registry rather than duplicated;
-- workflows are descriptive only, execute no operation and duplicate no tool input payload schema.
+- the campaign's required classes have current results;
+- no unresolved critical correctness/security/data-integrity defect remains in the declared supported scope;
+- supported/unsupported boundaries are explicit;
+- repeated runs do not reveal systematic duplication or destructive drift;
+- an integrated product-candidate review records PASS.
 
-Exit criteria:
+---
 
-- semantic context exposes stable normalized schema/relation/UI state only when it can be resolved exactly, with explicit incompleteness otherwise;
-- discovery remains compact/progressive and does not duplicate unsafe payload schemas;
-- user-table rows are not indiscriminately loaded into context;
-- principal-derived caches/context remain isolated;
-- tests/documentation cover the integrated behavior and no committed P3 slice remains.
+# R5 — Hardening, production and distribution
 
-Committed next P3 slices: **none**.
+**Status: BLOCKED by R4**
 
-Deferred P3 candidates — not autonomously eligible unless explicitly promoted:
+## Goal
 
-- further relation-graph enrichment;
-- more compact large-schema summaries;
-- additional normalized UI/select-by context;
-- new cache/invalidation behavior;
-- optional MCP resource forms such as `grist://documents/{id}/context`.
+Productionize only a product that already proved useful and coherent.
 
-### P4 — compact MCP surface
+Re-evaluate, rather than mechanically resume, the earlier production/distribution work:
 
-**Status: DONE**  
-**Priority: completed product-capability evaluation**
+- C4 production OAuth identity;
+- C5 per-user Grist credential onboarding/custody;
+- C6 operational hardening;
+- S0/S1 OpenAI submission work;
+- C7 reviewer environment;
+- C8 publisher/submission package.
 
-Goal: evaluate whether the public surface should converge from many narrow tools toward a smaller user-intent surface such as records/schema/pages managers while preserving:
+Existing completed POC/submission evidence may be reused when still current.
 
-```text
-1 invocation = 1 bounded semantic intention
-```
+This is also the place for unavoidable external actions such as production secrets, institutional ownership/authorization and public submission. Those actions do not block R1-R4.
 
-Do not create a broad multi-action super-tool or pseudo-transaction that obscures partial success and risk annotations.
+## R5 exit criteria
 
-The existing public v1 operations remain the stable compatibility surface until a migration contract is explicitly designed and tested.
+Defined only after R4, against the actual candidate and current distribution requirements. Do not pre-build production architecture for a product shape that may still change.
 
-Exit criteria:
+---
 
-- the exact current v1 operation set is inventoried by category, capability and risk semantics, including read/write/destructive and partial/ambiguous-write behavior where material;
-- plausible compaction patterns are evaluated against per-operation MCP risk metadata, stable bounded intent, authorization capability boundaries, partial-success/replay semantics, progressive discovery and compatibility/data-minimization constraints;
-- one explicit decision is recorded: **KEEP** the current narrow v1 surface, or **MIGRATE** toward a precisely bounded alternative;
-- the evaluation itself changes no runtime behavior, public tool schema, OAuth scope or compatibility contract;
-- if the decision is MIGRATE, no implementation becomes eligible until a separate reviewed roadmap slice defines the exact migration/deprecation contract and tests; if the decision is KEEP, no speculative compaction work remains.
+# Permanently deferred unless promoted by evidence
 
-Integrated tranche review: **PASS** against exact `main` `2e2a9a6457a709fce630d7c1e21a0e12eb5a58d8`. PR #119 integrated the P4-E1 evaluation from exact head `aaef06427d6464af5d85933d6a06fdb52830ee04` after exact-head CI success and an independent exact-head PASS. The integrated change is documentation-only: `src/operations/registry.ts` on the reviewed `main` still exposes exactly the 23 operations inventoried by P4-E1, with the same category/capability/risk split and operation-specific partial/ambiguous-write semantics. The recorded KEEP decision preserves the stable v1 tool schemas, OAuth scopes, authorization boundaries and runtime behavior; no implementation or migration slice follows from P4-E1, and no committed P4 work remains.
+The following are not active roadmap items merely because existing projects implement them:
 
-Completed P4 slice:
-
-1. **P4-E1 — bounded compact-surface evaluation** — exact 23-operation inventory and concrete grouping alternatives evaluated; decision **KEEP** the current narrow v1 execution surface. Documentation/evaluation only; no public tool or runtime change.
-
-Committed next P4 slices: **none**.
-
-Any future compaction or v2 surface requires a new explicit roadmap decision; it is not continuation of P4-E1.
-
-## Agentic Builder sequence
-
-The sequence below is the authoritative continuation of the product axis after P4. `docs/AGENTIC-BUILDER-ROADMAP-DELTA.md` records the proposal that led to this integration; this roadmap controls eligibility.
-
-```text
-P0-P4 bounded bridge baseline  DONE
-             |
-             v
-J0 engine stabilization       DONE
-             |
-             v
-J1 contractual execution      DONE
-             |
-             v
-J2 stage-tracking reference application  ACTIVE — bounded observation and test infrastructure first
-             |
-             v
-J3 second independent reference application
-             |
-             v
-J4 native Builder generalization
-             |
-             v
-J5 code + integrations
-             |
-             v
-J6 durable lifecycle maintenance
-```
-
-### J0 — engine stabilization
-
-**Status: DONE**  
-**Priority: completed product-runtime stabilization**
-
-Goal: make current mutation outcomes safe inputs for a future orchestrator by correcting the four reproduced audit fragilities without implementing the Builder itself.
-
-Authoritative specification: `docs/EXECUTION-ENGINE-J0-J1.md`, J0 sections.
-
-Committed J0 slices were finite:
-
-1. explicit uncertain-write semantics including first-batch ambiguity;
-2. preserve confirmed partial results/stable IDs across later failure or uncertainty;
-3. safe audit target normalization so rejected secret-bearing URLs are not logged raw;
-4. concurrency classification/protection for overwrite-sensitive current mutations, with refusal where an effective protected mode is unavailable;
-5. focused regression tests reproducing the four audit findings;
-6. integrated J0 completion review.
-
-J0 exit criteria:
-
-- required tests T0-T3 pass;
-- uncertain first writes are structurally distinguishable from proven no-effect failure;
-- successful earlier batch results survive later failure/uncertainty;
-- supported contractual concurrency claims are backed by an effective tested mechanism, otherwise the capability refuses that mode;
-- rejected raw resource URLs cannot leak query secrets into audit;
-- existing non-replay safety is preserved;
-- public/runtime documentation states the exact guarantee boundaries;
-- a fresh integrated J0 completion review records PASS against exact `main`.
-
-Integrated tranche review: **PASS** against exact `main` `70d6e918219189b1aed82a209afc3049df9f10ec`. PR #125 integrated explicit uncertain/partial-write effect knowledge and T0/T1 evidence after independent exact-head review; PR #127 integrated fail-closed contractual concurrency classification/refusal and T2 evidence after independent exact-head review; PR #126 integrated fail-closed audit-target handling and T3 evidence after independent exact-head review. Exact `main` is tree-identical to the exact tested #126 head `98dac82cb3a4731183de531e1c52e2701a06d775`, whose CI passed production dependency audit, TypeScript check, the complete test suite and build with the earlier J0 slices already integrated. The integrated review found no new blocking correctness, authorization/security, data-integrity, replay or contract finding; the committed J0 set is exhausted.
-
-Completed J0 slices:
-
-1. **J0-F1/F2 — uncertain and partial writes** — PR #125 preserves confirmed effects/stable IDs, represents first/later ambiguous write outcomes explicitly and forbids whole-operation replay.
-2. **J0-F3 — concurrency classification** — PR #127 classifies every current operation and refuses overwrite-sensitive contractual direct execution where no proven effective concurrency protection exists.
-3. **J0-F4 — safe audit targets** — PR #126 prevents unresolved/rejected raw document targets from reaching audit output while retaining normalized non-URL IDs for successful events.
-4. **integrated J0 completion review** — PASS recorded above against exact post-repair `main` `70d6e918219189b1aed82a209afc3049df9f10ec`.
-
-Committed next J0 slices: **none**.
-
-J0 runtime changes required independent exact-head review. J1 may be developed and tested against an isolated synthetic/controlled environment before C5, but that does not make the system ready for real multi-user production.
-
-### J1 — first contractual transformation
-
-**Status: DONE**  
-**Priority: completed product-runtime tranche**
-
-Goal: prove one bounded synthetic multi-step transformation using immutable execution contracts, cumulative plan budgets, a durable write-ahead journal, multidimensional state, contextual evidence and recovery/suspension after injected failures.
-
-Authoritative specification: `docs/EXECUTION-ENGINE-J0-J1.md`, J1 sections.
-
-Integrated J1 foundation:
-
-1. **immutable execution/plan/contract identity** — PR #130, integrated on exact `main` `54f742ccd97bb0c53994d4d4b36414a0616c40d1`;
-2. **`ExecutionJournal` abstraction plus one durable controlled-environment implementation** — PR #130, including restart persistence, bounded contractual state vocabulary, same-process CAS protection and explicit one-writer-process filesystem limitation;
-3. **write-ahead step lifecycle and restart uncertainty** — PR #133, independently reviewed and integrated on exact `main` `8568a8cbca55d0da7b15dcca5c4e48c65fb57c68`, including immutable bounded effect-intent identity, durable `RUNNING` preparation before any dispatch, retained confirmed effect evidence and pessimistic `UNCERTAIN` + `SUSPENDED` restart semantics without blind replay;
-4. **cumulative per-plan budget enforcement** — PR #135, integrated before exact `main` `6d42b731415f25ce1d67a2c61cc7c2931aae97dd`, with durable reservation/consumption accounting and refusal before dispatch when the plan budget would be exceeded;
-5. **durable contextual property evidence** — PR #136, integrated before exact `main` `6d42b731415f25ce1d67a2c61cc7c2931aae97dd`, with immutable step/property linkage and append-only evidence revisions;
-6. **point-in-time current-authority gate** — PR #137, integrated on exact `main` `aaea89f08d1a58d6d81e9fdd6ef2e9c451e1b359`, with principal/mandate/target/capability re-resolution and no cached positive authorization;
-7. **verification requirements and safe completion transition** — PR #138, independently reviewed and integrated before exact `main` `6d42b731415f25ce1d67a2c61cc7c2931aae97dd`, freezing bounded verification criteria before execution and requiring latest `VERIFIED` evidence for every required property;
-8. **capability-specific deterministic `update_records` recovery** — PR #139, independently reviewed and integrated before exact `main` `6d42b731415f25ce1d67a2c61cc7c2931aae97dd`, distinguishing frozen before/after states, safe explicit retry and fail-closed suspension on ambiguity;
-9. **bounded synthetic `update_records` effect boundary** — PR #140, independently reviewed and integrated on exact `main` `6d42b731415f25ce1d67a2c61cc7c2931aae97dd`, enforcing fresh isolated-state precondition observation, current authority, durable budget/write-ahead preparation and pessimistic response-loss handling before any recovery decision;
-10. **integrated deterministic synthetic transformation and crash matrix** — PR #142, independently exact-head reviewed and integrated on `main` `afd5e1ef2a1ea26c939cfa0ae2792210ed3b7205`, exercising the two-step `update_records` contract across every required J1 interruption boundary, exact-before safe retry, exact-after confirmation without replay, ambiguity suspension, retained prior confirmed effects, latest-verdict verification and cumulative-budget refusal.
-
-J1 exit criteria are the complete criteria in `docs/EXECUTION-ENGINE-J0-J1.md`: persistent write-ahead execution, cumulative budgets, authority re-check, multidimensional effect knowledge, retained partial results, uncertainty after crash, capability-specific recovery, suspension on unsafe ambiguity, durable contextual evidence, convergence without duplicate effect where supported, and no new generic Grist escape hatch.
-
-Integrated tranche review: **PASS** against exact `main` `afd5e1ef2a1ea26c939cfa0ae2792210ed3b7205`. That merge tree is content-identical to exact tested PR #142 head `9ed9706d660023e03eb9cef013c2523ff74d2f6d`, whose CI run #480 passed `npm ci`, the production dependency audit, TypeScript/check, the complete test suite and build. The review found no new blocking correctness, authorization/security, replay, data-integrity or contract issue: all five required crash boundaries derive restart behavior from durable journal/evidence state; cumulative budgets cannot be evaded by splitting the plan; every new or explicitly retried effect crosses the fresh current-authority gate; response-loss after an upstream effect becomes durable `UNCERTAIN` and is confirmed without replay only from the capability-specific exact-postcondition plus stable-effect evidence; exact-before recovery merely returns the step to `PENDING` so authority/precondition/budget/write-ahead gates run again; observational ambiguity remains suspended; contextual verification uses the frozen requirement contract and latest linked durable verdict; and the controlled synthetic evidence does not claim Grist multi-writer CAS or introduce a generic dispatcher, `/apply`, UserAction, ACL-authoring or scheduler surface. The committed J1 set is exhausted.
-
-Committed next J1 slices: **none**.
-
-No generalized Builder planner, ACL authoring, browser LinkKey suite or durable scheduler is part of J1.
-
-### J2 — stage-tracking reference application
-
-**Status: ACTIVE for bounded observation and test infrastructure; effectful transformation GATED by its evidence.**
-
-Goal: demonstrate one realistic cross-cutting application transformation covering schema, preservation of the existing access policy, UI, human-change preservation, concurrency and recovery. An ACL **write** is not required merely to exercise access-policy verification; add one only if the observed policy and an accepted plan actually require it.
-
-Authoritative behavioral specification: `docs/BEHAVIORAL-CONTRACT-STAGE-TRACKING.md`. Accepted business decisions: `docs/J2-STAGE-TRACKING-ACCEPTED-SEMANTICS.md`. Partially observed reference: `docs/J2-STAGE-TRACKING-REFERENCE-BINDING.md`.
-
-The assigned teacher writes one mutable call/visit trace on the existing `Stages` row and is its business author when recording a contact. The accepted workflow has no reassignment: contact entry, correction, clearing and transformation leave `Suivi_par` unchanged. A separate historical-author field is not required. No separate Visit/contact history or technical editor audit is required. `Date_du_contact` was added directly to the live reference and reported visible by the owner; this is fixture state, not a J1/Builder execution proof.
-
-The accepted BehavioralContract is the **independent test oracle**. Reading ACLs describes the implementation; it must never generate or relax expected outcomes simply because the implementation would otherwise fail. No synthetic run copies real student or teacher records, and no live document mutation is needed to prove J2.
-
-Current integrated J2 implementation/evidence state through `main` `1f1e6726b8c21530d41258995439e7897894d1d6` (PR #155):
-
-- J2-A bounded internal `AccessModelObserver` foundation is integrated; the model-facing/public bridge still intentionally rejects `_grist_*` metadata reads, so completion requires executing the internal observer with the owner-authorized fixture credential on the target Grist version.
-- A fixture-only, owner-preflighted read-only probe can execute the integrated observer from the repository with a dedicated owner credential; its presence is operational tooling, not a completed remote observation or a new public MCP capability.
-- J2-B date-present/human-modified structural/data/UI fixture evidence is integrated for `J2-stage-tracking-fixture`, and the internal bounded synthetic LinkKey/ACL provisioner is integrated with exact-postcondition/no-blind-replay semantics; the provisioner has not yet been executed against a disposable isolated fixture.
-- PR #155 adds the internal fail-closed model-facing isolation probe and `j2:provision-synthetic-access` operator command. `DENIED` is accepted only from static resource-boundary exclusion, contradictory same-origin read success is `READABLE`, and ambiguous failures remain `UNKNOWN`; no public ACL surface or model-supplied credential/URL path was added. This instrumentation is integrated but has not yet supplied live J2-B provisioning evidence.
-- The current connected public Grist surface cannot substitute for either internal step: an attempted `_grist_ACLRules` read is rejected by the bridge metadata-table boundary as designed.
-- The internal owner-scoped observer may be run read-only against the fixture from a protected environment. **Do not provision LinkKeys into the currently connected fixture:** the public model-facing bridge can query its `Enseignants` rows with a shared owner credential, so upstream ACLs cannot keep those keys out of model-visible results. The synthetic provisioner must use a fixture excluded from every model-facing bridge path (or a separate isolated test origin) and obtain a fresh controlled `DENIED` result for the exact fixture and bridge configuration. An unavailable or inconclusive probe is not isolation evidence. Only then can owner-authorized ACL/LinkKey provisioning and J2-C browser verification proceed; do not implement a public ACL surface to bypass this boundary.
-
-Finite committed slices, in dependency order:
-
-1. **J2-A — owner-scoped AccessModel observation (read-only, internal first).** In a controlled Grist Community fixture, establish whether the target version permits owner-authorized reads of `_grist_ACLRules`, `_grist_ACLResources` and necessary supporting metadata. Implement a bounded semantic adapter that resolves resources, ordered permission rules, user attributes, relevant sharing/default/virtual-rule context and dependencies on LinkKeys, `Suivi_par` and `Acces_Stages_Actif`. Record document/version/revision or a bounded metadata fingerprint and completeness; unknown or unsupported constructs stay `UNKNOWN`. Keep raw rules and literals server-side; model-facing evidence omits raw formulas, secret constants and token values. Use an owner-authorized, explicit document/mandate context: the present shared owner key must never expose ACL details to another bridge principal. Do not publish an MCP operation or equate this with existing `doc:read`; a future public permission model is a separate security/product decision. If safe metadata access fails, record the failure and seek a narrowly authorized observation path rather than downloading the real document or bypassing Grist permissions.
-2. **J2-B — synthetic fixture and independent expected matrix.** Build disposable Grist Community documents with two fictional teachers, distinct synthetic LinkKeys and stages, retaining only the schema, UI and access dependencies needed for this case. Prepare a date-absent starting state to test the change and a date-present/human-modified state to test reconciliation. A manifest fixes accepted outcomes for assigned, other, missing/invalid/revoked-key, relation-tampering and correction/clearing with unchanged assignment independently of observed rules. Before generating or writing keys, isolate the fixture from every model-facing path and verify denial through a controlled probe using the configured bridge's strongest fixture read principal; authentication/probe failure remains `UNKNOWN`. Compare the fixture's relevant normalized AccessModel/UI with the real reference when owner-authorized observation is available; a mismatch or inaccessible dependency is `UNKNOWN`, not proof of equivalence. Fixture scaffolding may proceed alongside J2-A; parity claims wait for J2-A.
-3. **J2-C — controlled browser verifier (internal/test surface).** Against a configured Grist origin and fixture IDs only, run separate non-owner sessions using server-held synthetic links; never accept a model-supplied URL, browser command, JavaScript snippet or credential. Automate the contract's positive and negative read/write cases on the teacher page, other reachable pages and Raw Data, plus date visibility, correction/clearing on the same Stage with unchanged `Suivi_par`. Include a deliberate denial/control case so a verifier that only observes a filtered sheet cannot pass. Produce bounded property evidence with the tested fixture/revision/version, expected and observed outcomes, method and completeness; keep URLs, LinkKeys, cookies, screenshots containing business data and row contents out of model output/audit. Fail closed on a blocked session, uncertain UI state or unsupported Grist version. Browser evidence on a local fixture does not silently become evidence for DINUM; the target Grist version and access-policy binding must be recorded.
-4. **J2-D — bounded J1-backed reference transformation.** Once J2-A/B/C establish the synthetic fixture's critical access/UI behavior, add the smallest needed engine effect adapters for the contact-date column and its teacher-facing field placement, with preconditions, exact target, durable effect knowledge, bounded recovery and postcondition verification. Leave `Suivi_par` unchanged and do not add a historical-author field for this workflow. Reuse supported bounded operations; the current J1 synthetic `update_records` proof is not yet a live schema/UI dispatcher. Preserve the already present field and human layout on the second fixture; avoid ACL mutation if the observed Stage policy already covers the new field. If an ACL write is truly necessary, specify that operation separately under the accepted ManagedScope and review its authorization/intermediate-state/recovery semantics before implementing it. Run both starting states, interruption/concurrency cases and idempotent reruns through the same execution engine. Missing live-reference parity does not block this isolated implementation work, but it prevents a reference-specific `VERIFIED` claim.
-5. **J2 integrated completion review.** On exact `main`, independently challenge the property-to-test-to-evidence map, isolation negatives, fixture/reference parity, engine recovery and supported-version limits. Mark J2 DONE only when all impacted critical properties of the reference application have current `VERIFIED` evidence and no committed J2 work remains. If authorized live-reference binding is unavailable, retain its unknown claims and continue the eligible isolated engineering without misreporting completion.
-
-Human intervention is limited to an actual missing authority or policy decision: obtaining an approved owner/test environment if no safe access exists, choosing a new public authorization scope or credential architecture, resolving an observed business-policy contradiction, and production authorization. The accepted one-trace and no-reassignment rules do not need to be asked again. CI or a synthetic fixture alone never proves the real teacher LinkKey path.
-
-J3-J6 remain dependency-gated. Application-level access-policy work here does not authorize generic user/org/ACL administration, raw `_grist_*` access, unrestricted browsing or a generic permission-management tool.
-
-### J3 — second independent reference application
-
-**Status: BLOCKED by J2**
-
-Goal: demonstrate that the architecture is not accidentally specialized for stage tracking.
-
-The reference case should be materially different, with a candidate shape such as:
-
-```text
-file/data import
--> structural transformation
--> formulas/calculations
--> analysis
--> restitution
-```
-
-The exact J3 BehavioralContract requires an explicit roadmap/specification decision after J2 evidence exists; do not invent its detailed scope early.
-
-### J4 — native Builder generalization
-
-**Status: BLOCKED by J3**
-
-Goal: generalize capabilities proven by reference scenarios into explicitly versioned `SUPPORTED` native-Builder capabilities.
-
-Every promoted capability must declare preconditions, effects, permissions, supported Grist versions/environments, verification, concurrency protection, recovery and known limitations.
-
-J4 is not a mandate to expose 100% of the Grist REST API.
-
-### J5 — code and integrations
-
-**Status: BLOCKED by J4 and any capability-specific security/product gates**
-
-Goal: add versioned custom-widget/GitHub/integration workflows under the same execution/evidence model.
-
-This does **not** automatically authorize arbitrary generated code, generic HTTP, arbitrary network destinations or new public scopes. Those remain separately gated where required.
-
-Exit direction includes exact artifact/version identity, declared Grist permissions, declared network destinations, document contract, tests, progressive deployment and compensation/recovery.
-
-### J6 — durable lifecycle maintenance
-
-**Status: BLOCKED by J5**
-
-Goal: add persistent lifecycle operation rather than new basic mutation power.
-
-Candidate committed categories once J6 is explicitly activated:
-
-- durable scheduled/event-triggered jobs;
+- generated HTML/React application framework;
+- custom-widget IDE;
+- wizard UI;
+- sub-agent delegation;
+- lifecycle scheduler;
 - dependency/version monitoring;
-- evidence invalidation and re-verification;
-- drift detection;
-- KnownException review;
-- widget/integration maintenance;
-- bounded upstream Grist issue/PR/release tracking.
-
-J6 must not use conversation memory as job state.
-
-### P5 — attachments
-
-**Status: DEFERRED**
-
-Attachments are useful but not independently eligible. They may be promoted only when a committed Builder scenario requires them and exact read/write semantics, data minimization, size bounds, recovery behavior and any authorization-scope impact are defined. Adding/removing a public scope remains a human gate.
-
-### P6 — webhooks
-
-**Status: DEFERRED / HUMAN GATE BEFORE PUBLIC SCOPE CHANGES**
-
-Webhooks/integrations are considered under J5 when a committed Builder scenario requires them, with effect-oriented authorization and explicit destinations. Do not add a `doc:webhooks`-style public scope or generic webhook-management surface without an explicit product/security decision.
-
-### Later product experiments
-
-Not independently eligible merely because the Builder program exists:
-
-- companion Grist widget for visual confirmation/context selection;
-- Apps SDK UI;
-- distributed skills;
-- generated executable custom widgets outside an activated, capability-gated J5 contract.
-
-Generated executable code remains a materially higher-risk capability and requires the capability-specific security/product decisions required by J5.
-
-## Permanent product/security non-goals
-
-These are architectural boundaries, not deferred feature requests:
-
-- generic HTTP forwarding;
+- general webhook/integration framework;
+- attachments;
+- generic ACL/user/org administration;
 - raw SQL model surface;
-- arbitrary Grist `/apply`;
-- arbitrary Grist UserActions;
-- generic organization/user/ACL administration by the model outside an explicit bounded ApplicationContract and ManagedScope;
-- model-visible credentials or secrets;
-- deletion by broad filter when explicit stable identifiers can be required;
-- blind automatic replay of partial/ambiguous writes;
-- arbitrary multi-instance Grist routing in the initial product.
+- arbitrary browser control;
+- arbitrary generated code/network destinations;
+- multi-instance routing.
 
-## Axis C — public distribution
+Promotion requires a post-R4 product decision or a demonstrated generic R2 gap.
 
-### S0 — public-plugin eligibility
+# Superseded domain documents
 
-**Status: ACTIVE — final classification occurs during OpenAI review**  
-**Priority: highest only for public OpenAI directory publication**
+Stage-tracking/J2 documents remain historical design and future validation material. They do not control eligibility, architecture, testing order or implementation selection.
 
-Goal: reach an actual OpenAI review with an accurate, defensible bounded-product submission and record the resulting eligibility decision without implying any unofficial affiliation.
-
-Durable pre-review evidence now exists in issue #58:
-
-- a real MCP-only draft submission was created in the OpenAI portal;
-- the current MCP hostname was successfully domain-verified;
-- Tool Scan completed successfully on the current draft endpoint;
-- OpenAI AI-assisted support explicitly declined to pre-confirm eligibility outside review;
-- after receiving the exact architecture, support described the fixed single-instance, finite semantic-tool design as materially different from a generic relay/proxy or usual pass-through intermediary, while warning that reviewers may still apply the guideline's primary-function test and view the product as primarily connecting ChatGPT to Grist;
-- support stated that explicit Grist/operator permission can reduce policy risk but does not guarantee approval or override the primary-function test.
-
-This is **not an approval**. It establishes that a separate written pre-approval is not an available prerequisite: the actual review is the decision point.
-
-Submission positioning must therefore remain factual and product-oriented:
-
-- describe the concrete workflow/value — inspecting, structuring and maintaining Grist documents through bounded semantic operations — rather than presenting a generic “Grist connector”;
-- preserve the fixed single configured Grist instance boundary and the permanent non-goals above;
-- maintain the explicit independent/non-official relationship unless durable authorization says otherwise;
-- keep any Grist Labs / DINUM / operator permission or branding evidence separate, factual and no broader than what was actually granted.
-
-Exit criteria:
-
-- reviewer/submission prerequisites in C4-C8 are complete enough for a real review;
-- the submitted listing and reviewer package accurately describe the bounded workflow, fixed deployment target and independent status;
-- the actual OpenAI review returns an approval or a concrete eligibility finding that can be durably recorded and acted on.
-
-Committed remaining S0 work:
-
-1. keep submission copy aligned with the bounded-workflow positioning and issue #58 evidence;
-2. obtain/document the minimum factual rights/permission basis needed to operate against the intended Grist deployment and use any submitted branding, without claiming partnership unless granted;
-3. when C4-C8 permit review, submit the real draft and record the review outcome as the final S0 decision.
-
-A rejection under the unofficial-connector/primary-function rule returns S0 to BLOCKED pending the smallest explicit authorization, product-boundary or submission-positioning change identified by the review. Do not guess around a rejection.
-
-### S1 — low-risk OpenAI submission protocol preparation
-
-**Status: ELIGIBLE (partially completed)**
-
-Completed:
-
-- annotation semantics and per-tool justifications;
-- submission artifact generation;
-- draft `chatgpt-app-submission.json` with 23 tools, five positive and three negative routing scenarios;
-- canonical reviewer-test specification for exactly five positive and three negative submission cases, with explicit prompts, expected behavior/result structure and synthetic fixture requirements; repository tests lock the tracked artifact's 5+3 shape while live fixture execution remains a C7 concern;
-- real ChatGPT CIMD/OIDC connection proving `openid` / `email` compatibility after enabling the corresponding Dynamic app permissions;
-- document discovery now explicitly projects only the public org/workspace/document identifiers, names and access metadata needed by the bridge contract instead of forwarding arbitrary upstream extension fields;
-- table/column discovery now projects only stable functional schema metadata while keeping Grist engine references and arbitrary upstream extension fields server-side for internal bridge use;
-- fixed internal `RenameColumn` / `RemoveTable` operations now discard raw Grist `/apply` engine responses and return only bounded semantic acknowledgements with stable target identifiers;
-- success-only record/schema update and delete operations discard upstream success bodies and return bounded acknowledgements containing only the exact requested stable targets; create operations project successful upstream results to functional table/column/record IDs and mark successful but unexpectedly shaped responses with `resultNormalizationIncomplete: true` instead of forwarding arbitrary engine fields;
-- safe optional `/.well-known/openai-apps-challenge` deployment path: absent by default, exact plain-text token response only when `OPENAI_APPS_CHALLENGE_TOKEN` is explicitly supplied, with ambiguous whitespace/newline values rejected;
-- bounded current-surface public-output minimization audit recorded in `docs/PUBLIC-OUTPUT-MINIMIZATION-AUDIT.md`; its only concrete finding, `S1-OUT-1`, remains accepted v1 compatibility debt after P4-E1 KEEP; any future removal requires a separate explicit versioned migration/deprecation contract and tests;
-- real OpenAI submission draft created on 2026-09-20, with the current `grist-chatgpt.loeildumaitre.fr` domain successfully verified and Tool Scan completed successfully; formal `outputSchema` coverage gaps remain separately tracked as contract-quality follow-up.
-
-Exit criteria:
-
-- the final reviewer-compatible identity path has durable evidence that UserInfo returns `email` with `email_verified: true`;
-- one bounded audit of the current public operation outputs against the repository's data-minimization contract is completed, with concrete unnecessary-field findings fixed or explicitly dispositioned;
-- the tracked submission preparation artifacts remain coherent with the current public contract.
-
-Committed remaining S1 work:
-
-1. prove and record UserInfo `email` with `email_verified: true` on the final reviewer-compatible path.
-
-A real portal challenge token has now been issued and verified against the current draft hostname. The token remains deployment-only secret-like configuration and must never be committed. If the final production MCP hostname changes, repeat portal domain verification against that final hostname rather than assuming the draft verification transfers.
-
-### C7 — reviewer environment
-
-**Status: BLOCKED by C5; final auth path also depends on production C4**
-
-S0 no longer imposes a separate pre-approval dependency because OpenAI support states that final eligibility classification occurs during review. Once C4/C5 permit the reviewer identity path, provision a synthetic reviewer account/document and ready-to-use credentials without MFA/SMS/email-confirmation/private-network dependencies, while not weakening normal production authentication.
-
-### C8 — publisher/submission package
-
-**Status: BLOCKED by C6 and C7; final publication remains contingent on the S0 review outcome**
-
-Final package includes the current production MCP URL, Tool Scan, domain challenge, publisher/legal metadata, annotations and justifications, reviewer credentials/instructions, demo recording and the exact current review-test package.
-
-Initial submission remains MCP-only. Custom UI and skills are not required. The C8 submit-for-review transition is the mechanism that resolves S0's remaining primary-function classification; do not require a circular S0 pre-approval before reaching it.
-
-## Parallelism policy
-
-Normal maximum active development:
-
-```text
-1 Controller
-+ 2 Workers
-(+ 1 exceptional independent Worker)
-```
-
-Preferred steady state after J1 completion:
-
-```text
-Worker A: J2-A read-only access observation or J2-B synthetic fixture; effectful J2-D waits for J2-A/B/C evidence
-Worker B: platform/security operational evidence (C4) when the intended environment/operator is available
-Controller: integration/review/dependency control plus S0/S1/C7/C8 coordination
-```
-
-J2-A/J2-B are eligible without waiting for manual ACL transcription. J2-C depends on a controlled synthetic fixture; J2-D waits for fixture access/UI binding and controlled browser evidence; live-reference parity is required for reference-specific completion claims, not for isolated adapter development. J1 isolated engineering is complete, and no second real user or production Builder deployment may rely on the shared static Grist credential path as if it provided per-user isolation.
-
-Do not deploy a product-feature branch onto the shared POC/production endpoint merely to test code if that would destroy an active authentication/security experiment. Use isolated test evidence when needed.
-
-## Controller integration order
-
-When multiple actions are eligible, prefer:
-
-1. close a ready existing dependency or prior-execution review-required PR;
-2. progress eligible J2-A/J2-B observation and fixture work now; run J2-C after a fixture exists, and J2-D only after synthetic critical binding and browser evidence; do not invent missing access decisions;
-3. progress independent C4 operational evidence when the required intended environment/operator support is available;
-4. progress S1 and S0 submission evidence, and begin C7 reviewer preparation as soon as C4/C5 dependencies permit rather than waiting for unavailable pre-approval;
-5. stop at remaining human gates rather than embedding unapproved persistence, scope, destructive-surface, institutional or branding decisions.
-
-After every durable transition, resolve the new exact `main` SHA and re-evaluate this roadmap against current code and current external requirements.
+Controllers must not revive J2/J3/J4/J5/J6 simply because those documents remain in the repository.
