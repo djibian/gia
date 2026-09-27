@@ -179,6 +179,20 @@ export class GristUiActionsAdapter {
     ]);
   }
 
+  async deletePage(documentId: string, pageId: number): Promise<void> {
+    assertPositiveId(pageId, "Grist page ID");
+    await this.client.applyUserActions(documentId, [
+      ["RemoveRecord", "_grist_Views", pageId]
+    ]);
+  }
+
+  async deletePageWidget(documentId: string, widgetId: number): Promise<void> {
+    assertPositiveId(widgetId, "Grist widget ID");
+    await this.client.applyUserActions(documentId, [
+      ["RemoveRecord", "_grist_Views_section", widgetId]
+    ]);
+  }
+
   async updatePageLayout(
     documentId: string,
     pageId: number,
