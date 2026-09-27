@@ -18,7 +18,7 @@ A candidate is implemented only when all four conditions hold:
 ## References inspected
 
 - Official Grist MCP documentation, inspected 2026-09-27: current surface includes document/schema/data/UI operations including page and page-widget removal.
-- `gristlabs/grist-core@34542eab62f0decb309a7e0476c3009fc6567f29`: Community user actions show `RemoveView` and `RemoveViewSection` as deprecated wrappers and explicitly prefer `RemoveRecord` on `_grist_Views` and `_grist_Views_section` respectively.
+- `gristlabs/grist-core@34542eab62f0decb309a7e0476c3009fc6567f29`: Community user actions show `RemoveView` and `RemoveViewSection` as deprecated wrappers and explicitly prefer `RemoveRecord` on `_grist_Views` and `_grist_Views_section` respectively. The native page UI also disables removal when only one visible document page remains; the bridge preserves that semantic boundary before issuing a destructive write.
 - `gwhthompson/grist-mcp-server@d75706c2dec283502e2bedd1cd1feae8f709f379`: compact TypeScript behavior reference. Its README advertises Apache-2.0, but no root `LICENSE` file was present at the inspected ref; no source code is copied from it.
 - `nic01asFr/GristCoder@9362a58382937334afd3330e9f25bd96bdcad9c0`: broad application-building/context reference. Wizard, agent/session lifecycle, generated artifacts and application-specific orchestration are intentionally not adopted.
 - `nic01asFr/mcp-server-grist@8958198d008223e1c9e43d4a55ac7b31cab0ca51`: broad Python behavior reference. No source code is copied.
@@ -27,7 +27,7 @@ A candidate is implemented only when all four conditions hold:
 
 | Candidate semantic | Classification | Decision |
 | --- | --- | --- |
-| Delete one page | **REIMPLEMENT** | Required to evolve/repair a generic application rather than only append UI. Use one targeted `RemoveRecord` on `_grist_Views`, behind existing `doc.schema:write`, with complete pre-read and absence verification after write. |
+| Delete one page | **REIMPLEMENT** | Required to evolve/repair a generic application rather than only append UI. Preserve Grist's native last-visible-page guard, then use one targeted `RemoveRecord` on `_grist_Views`, behind existing `doc.schema:write`, with complete pre-read and absence verification after write. |
 | Delete one page widget | **REIMPLEMENT** | Same reasoning. Use one targeted `RemoveRecord` on `_grist_Views_section`, verify exact page/widget membership before write and widget absence/page preservation after write. |
 | Formula creation/update | **REUSE** | Already present in the bounded column mutation contract; no new public feature needed. |
 | Organisation/workspace discovery tools | **REUSE** | Existing document discovery already returns organisation/workspace context for allowed documents. Separate tools would enlarge the surface without unlocking construction. |
@@ -47,7 +47,7 @@ The only required generic gap is closed without adding an MCP tool:
 - `grist_change_ui(action="delete_page", documentId, pageId)`;
 - `grist_change_ui(action="delete_widget", documentId, pageId, widgetId)`.
 
-Both reuse the existing authorization/audit path. Both require stable explicit IDs and a complete UI metadata snapshot. Both perform one targeted Community user action and verify the postcondition by re-reading current state. If verification is ambiguous after the write, the bridge returns the existing `UiWriteVerificationError` semantics so the whole destructive operation is not blindly replayed.
+Both reuse the existing authorization/audit path. Both require stable explicit IDs and a complete UI metadata snapshot. Page deletion additionally checks that another visible Grist page exists before the destructive action. Both perform one targeted Community user action and verify the postcondition by re-reading current state. If verification is ambiguous after the write, the bridge returns the existing `UiWriteVerificationError` semantics so the whole destructive operation is not blindly replayed.
 
 No external implementation source was copied.
 
