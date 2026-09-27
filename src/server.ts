@@ -45,12 +45,9 @@ import {
   StaticApiKeyCredentialProvider
 } from "./grist/credentials.js";
 import { UiWriteVerificationError } from "./grist/uiActionsAdapter.js";
-import { registerCoreTools } from "./mcp/coreTools.js";
-import { registerDiscoveryTools } from "./mcp/discoveryTools.js";
+import { registerLeanTools } from "./mcp/leanTools.js";
 import { installOAuthToolAuthChallenges } from "./mcp/oauthToolChallenge.js";
 import { installOAuthToolSecuritySchemes } from "./mcp/oauthToolSecurity.js";
-import { registerSchemaTools } from "./mcp/schemaTools.js";
-import { registerUiTools } from "./mcp/uiTools.js";
 import {
   parseOpenAiAppsChallengeToken,
   registerOpenAiAppsChallenge
@@ -118,13 +115,11 @@ function buildServer(grist: AuthorizedGristService): McpServer {
     version: VERSION
   });
 
-  registerCoreTools(server, grist, {
+  registerLeanTools(server, grist, {
     maxReadRecords: config.maxReadRecords,
-    maxWriteRecords: config.maxWriteRecords
+    maxWriteRecords: config.maxWriteRecords,
+    maxSchemaItems: config.maxSchemaItems
   });
-  registerSchemaTools(server, grist, config.maxSchemaItems);
-  registerDiscoveryTools(server, grist);
-  registerUiTools(server, grist);
   return server;
 }
 
