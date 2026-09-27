@@ -1,4 +1,8 @@
-import type { DocumentUiContext } from "./documentUi.js";
+import type {
+  DocumentUiContext,
+  GristPage,
+  GristPageWidget
+} from "./documentUi.js";
 import {
   FormulaInspector,
   type FormulaColumnMetadata,
@@ -33,6 +37,10 @@ type DocumentRelation = {
   reverseResolutionIncomplete?: true;
 };
 
+type CompletenessAwareDocumentUiContext = DocumentUiContext & {
+  metadataSnapshotIncomplete?: true;
+};
+
 function record(value: unknown): JsonRecord | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonRecord)
@@ -62,13 +70,93 @@ function relationType(type: string): ParsedRelationType | undefined {
   };
 }
 
+function compactWidget(widget: GristPageWidget) {
+  return {
+    id: widget.id,
+    ...(widget.tableId !== undefined ? { tableId: widget.tableId } : {}),
+    type: widget.type,
+    title: widget.title,
+    ...(widget.description !== undefined
+      ? { description: widget.description }
+      : {}),
+    ...(widget.chartType !== undefined ? { chartType: widget.chartType } : {}),
+    ...(widget.sort !== undefined ? { sort: widget.sort } : {}),
+    ...(widget.sortNormalizationIncomplete
+      ? { sortNormalizationIncomplete: true as const }
+      : {}),
+    ...(widget.selectByNormalized !== undefined
+      ? { selectBy: widget.selectByNormalized }
+      : {}),
+    ...(widget.selectByNormalizationIncomplete
+      ? { selectByNormalizationIncomplete: true as const }
+      : {}),
+    ...(widget.customWidgetSettings !== undefined
+      ? { customWidgetSettings: widget.customWidgetSettings }
+      : {}),
+    ...(widget.customWidgetSettingsNormalizationIncomplete
+      ? { customWidgetSettingsNormalizationIncomplete: true as const }
+      : {}),
+    ...(widget.gridOptions !== undefined ? { gridOptions: widget.gridOptions } : {}),
+    ...(widget.gridOptionsNormalizationIncomplete
+      ? { gridOptionsNormalizationIncomplete: true as const }
+      : {})
+  };
+}
+
+function compactPage(page: GristPage) {
+  return {
+    id: page.id,
+    name: page.name,
+    type: page.type,
+    indentation: page.indentation,
+    ...(page.pagePos !== undefined ? { pagePos: page.pagePos } : {}),
+    ...(page.layoutNormalized !== undefined
+      ? { layoutNormalized: page.layoutNormalized }
+      : {}),
+    ...(page.layoutNormalizationIncomplete
+      ? { layoutNormalizationIncomplete: true as const }
+      : {}),
+    widgets: page.widgets.map(compactWidget)
+  };
+}
+
+function hasIncompleteUiNormalization(ui: CompletenessAwareDocumentUiContext): boolean {
+  if (ui.metadataSnapshotIncomplete) return true;
+  return ui.pages.some(
+    (page) =>
+      page.layoutNormalizationIncomplete ||
+      page.widgets.some(
+        (widget) =>
+          widget.sortNormalizationIncomplete ||
+          widget.selectByNormalizationIncomplete ||
+          widget.customWidgetSettingsNormalizationIncomplete ||
+          widget.gridOptionsNormalizationIncomplete
+      )
+  );
+}
+
+function compactUiContext(ui: CompletenessAwareDocumentUiContext) {
+  const incomplete = hasIncompleteUiNormalization(ui);
+  return {
+    documentId: ui.documentId,
+    summary: {
+      ...ui.summary,
+      incomplete
+    },
+    ...(ui.metadataSnapshotIncomplete
+      ? { metadataSnapshotIncomplete: true as const }
+      : {}),
+    pages: ui.pages.map(compactPage)
+  };
+}
+
 export class DocumentContextService {
   private readonly formulaInspector = new FormulaInspector();
 
   build(
     documentId: string,
     tableResponse: unknown,
-    ui?: DocumentUiContext
+    ui?: CompletenessAwareDocumentUiContext
   ): unknown {
     const raw = record(tableResponse);
     const sourceTables = Array.isArray(raw?.tables) ? raw.tables : [];
@@ -190,6 +278,7 @@ export class DocumentContextService {
       return [{ id: table.id, columns }];
     }).flat();
 
+    const compactUi = ui ? compactUiContext(ui) : undefined;
     return {
       documentId,
       summary: {
@@ -203,13 +292,14 @@ export class DocumentContextService {
         ...(ui
           ? {
               pageCount: ui.summary.pageCount,
-              widgetCount: ui.summary.widgetCount
+              widgetCount: ui.summary.widgetCount,
+              uiIncomplete: hasIncompleteUiNormalization(ui)
             }
           : {})
       },
       tables,
       relations,
-      ...(ui ? { ui } : {})
+      ...(compactUi ? { ui: compactUi } : {})
     };
   }
 }
