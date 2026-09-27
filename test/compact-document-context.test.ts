@@ -57,7 +57,7 @@ function sampleUi(): DocumentUiContext & { metadataSnapshotIncomplete?: true } {
               verticalGridlines: true,
               horizontalGridlines: true,
               zebraStripes: false,
-              rowNumbers: "normal"
+              rowNumbers: "number"
             },
             gridOptionsNormalizationIncomplete: true
           }
