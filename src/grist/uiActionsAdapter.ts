@@ -30,7 +30,8 @@ export interface WidgetUiUpdate {
   optionsJson?: string;
 }
 
-type UiActionsClient = Pick<GristClient, "applyUserActions" | "queryRecords">;
+type UiActionsClient = Pick<GristClient, "applyUserActions"> &
+  Partial<Pick<GristClient, "queryRecords">>;
 type JsonRecord = Record<string, unknown>;
 
 function record(value: unknown): JsonRecord | null {
@@ -186,6 +187,9 @@ export class GristUiActionsAdapter {
 
   async deletePage(documentId: string, pageId: number): Promise<void> {
     assertPositiveId(pageId, "Grist page ID");
+    if (!this.client.queryRecords) {
+      throw new Error("Cannot verify the visible Grist page count before deletion.");
+    }
     const pages = await this.client.queryRecords(documentId, "_grist_Pages", {
       limit: 2
     });
