@@ -30,7 +30,7 @@ export interface WidgetUiUpdate {
   optionsJson?: string;
 }
 
-type ApplyUserActionsClient = Pick<GristClient, "applyUserActions">;
+type UiActionsClient = Pick<GristClient, "applyUserActions" | "queryRecords">;
 type JsonRecord = Record<string, unknown>;
 
 function record(value: unknown): JsonRecord | null {
@@ -61,6 +61,11 @@ function assertPositiveId(value: number, label: string): void {
   }
 }
 
+function visiblePageCount(response: unknown): number {
+  const root = record(response);
+  return Array.isArray(root?.records) ? root.records.length : 0;
+}
+
 export class UiWriteVerificationError extends Error {
   public readonly createdId: number | undefined;
 
@@ -87,7 +92,7 @@ export class UiWriteVerificationError extends Error {
 }
 
 export class GristUiActionsAdapter {
-  constructor(private readonly client: ApplyUserActionsClient) {}
+  constructor(private readonly client: UiActionsClient) {}
 
   async createEmptyPage(
     documentId: string,
@@ -181,6 +186,12 @@ export class GristUiActionsAdapter {
 
   async deletePage(documentId: string, pageId: number): Promise<void> {
     assertPositiveId(pageId, "Grist page ID");
+    const pages = await this.client.queryRecords(documentId, "_grist_Pages", {
+      limit: 2
+    });
+    if (visiblePageCount(pages) <= 1) {
+      throw new Error("Cannot delete the last visible Grist page.");
+    }
     await this.client.applyUserActions(documentId, [
       ["RemoveRecord", "_grist_Views", pageId]
     ]);
