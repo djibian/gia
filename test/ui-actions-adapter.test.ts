@@ -4,15 +4,30 @@ import test from "node:test";
 import type { GristClient } from "../src/grist/client.js";
 import { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
 
-function harness(retValues: unknown[] = []) {
+function harness(retValues: unknown[] = [], visiblePageIds: number[] = [7, 8]) {
   const observed: unknown[][][] = [];
+  const pageQueries: unknown[] = [];
   const client = {
     applyUserActions: async (_documentId: string, actions: unknown[][]) => {
       observed.push(actions);
       return { actionNum: 1, retValues };
+    },
+    queryRecords: async (
+      documentId: string,
+      tableId: string,
+      options: { limit?: number } = {}
+    ) => {
+      pageQueries.push({ documentId, tableId, options });
+      return {
+        records: visiblePageIds.map((id) => ({ id, fields: { viewRef: id } }))
+      };
     }
-  } as Pick<GristClient, "applyUserActions">;
-  return { adapter: new GristUiActionsAdapter(client), observed };
+  } as Pick<GristClient, "applyUserActions" | "queryRecords">;
+  return {
+    adapter: new GristUiActionsAdapter(client),
+    observed,
+    pageQueries
+  };
 }
 
 test("createEmptyPage emits exactly one bounded AddView action", async () => {
@@ -54,14 +69,31 @@ test("renamePage emits only the bounded _grist_Views name update", async () => {
   ]);
 });
 
-test("deletePage emits only a bounded _grist_Views record removal", async () => {
-  const { adapter, observed } = harness();
+test("deletePage verifies there is another visible page before bounded removal", async () => {
+  const { adapter, observed, pageQueries } = harness();
 
   await adapter.deletePage("doc-1", 7);
 
+  assert.deepEqual(pageQueries, [
+    { documentId: "doc-1", tableId: "_grist_Pages", options: { limit: 2 } }
+  ]);
   assert.deepEqual(observed, [
     [["RemoveRecord", "_grist_Views", 7]]
   ]);
+});
+
+test("deletePage refuses to remove the last visible Grist page before writing", async () => {
+  const { adapter, observed, pageQueries } = harness([], [7]);
+
+  await assert.rejects(
+    () => adapter.deletePage("doc-1", 7),
+    /last visible Grist page/
+  );
+
+  assert.deepEqual(pageQueries, [
+    { documentId: "doc-1", tableId: "_grist_Pages", options: { limit: 2 } }
+  ]);
+  assert.deepEqual(observed, []);
 });
 
 test("deletePageWidget emits only a bounded _grist_Views_section record removal", async () => {
