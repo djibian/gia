@@ -4,16 +4,76 @@ import test from "node:test";
 import type { GristClient } from "../src/grist/client.js";
 import { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
 
-function harness(retValues: unknown[] = []) {
+function harness(
+  retValues: unknown[] = [],
+  pageIds: number[] = [7, 8],
+  pageNames: Record<number, string> = {},
+  hiddenPrimaryViewIds: number[] = []
+) {
   const observed: unknown[][][] = [];
+  const metadataQueries: unknown[] = [];
   const client = {
     applyUserActions: async (_documentId: string, actions: unknown[][]) => {
       observed.push(actions);
       return { actionNum: 1, retValues };
+    },
+    queryRecords: async (
+      documentId: string,
+      tableId: string,
+      options: { limit?: number; hidden?: boolean } = {}
+    ) => {
+      metadataQueries.push({ documentId, tableId, options });
+      if (tableId === "_grist_Pages") {
+        return {
+          records: pageIds.map((id) => ({ id, fields: { viewRef: id } }))
+        };
+      }
+      if (tableId === "_grist_Views") {
+        return {
+          records: pageIds.map((id) => ({
+            id,
+            fields: { name: pageNames[id] ?? `Page ${id}` }
+          }))
+        };
+      }
+      if (tableId === "_grist_Tables") {
+        return {
+          records: hiddenPrimaryViewIds.map((primaryViewId, index) => ({
+            id: index + 1,
+            fields: {
+              tableId: `GristHidden_${index + 1}`,
+              primaryViewId
+            }
+          }))
+        };
+      }
+      return { records: [] };
     }
-  } as Pick<GristClient, "applyUserActions">;
-  return { adapter: new GristUiActionsAdapter(client), observed };
+  } as Pick<GristClient, "applyUserActions" | "queryRecords">;
+  return {
+    adapter: new GristUiActionsAdapter(client),
+    observed,
+    metadataQueries
+  };
 }
+
+const expectedVisibilityQueries = [
+  {
+    documentId: "doc-1",
+    tableId: "_grist_Pages",
+    options: { limit: 5000, hidden: true }
+  },
+  {
+    documentId: "doc-1",
+    tableId: "_grist_Views",
+    options: { limit: 5000, hidden: true }
+  },
+  {
+    documentId: "doc-1",
+    tableId: "_grist_Tables",
+    options: { limit: 5000, hidden: true }
+  }
+];
 
 test("createEmptyPage emits exactly one bounded AddView action", async () => {
   const { adapter, observed } = harness([{ id: 7, sections: [] }]);
@@ -51,6 +111,70 @@ test("renamePage emits only the bounded _grist_Views name update", async () => {
 
   assert.deepEqual(observed, [
     [["UpdateRecord", "_grist_Views", 7, { name: "Nouvelle page" }]]
+  ]);
+});
+
+test("deletePage proves there is another visible page before bounded removal", async () => {
+  const { adapter, observed, metadataQueries } = harness();
+
+  await adapter.deletePage("doc-1", 7);
+
+  assert.deepEqual(metadataQueries, expectedVisibilityQueries);
+  assert.deepEqual(observed, [
+    [["RemoveRecord", "_grist_Views", 7]]
+  ]);
+});
+
+test("deletePage refuses to remove the last visible Grist page before writing", async () => {
+  const { adapter, observed, metadataQueries } = harness([], [7]);
+
+  await assert.rejects(
+    () => adapter.deletePage("doc-1", 7),
+    /last visible Grist page/
+  );
+
+  assert.deepEqual(metadataQueries, expectedVisibilityQueries);
+  assert.deepEqual(observed, []);
+});
+
+test("deletePage does not count a special Grist page as a second visible page", async () => {
+  const { adapter, observed } = harness(
+    [],
+    [7, 8],
+    { 7: "Main", 8: "GristDocTour" }
+  );
+
+  await assert.rejects(
+    () => adapter.deletePage("doc-1", 7),
+    /last visible Grist page/
+  );
+
+  assert.deepEqual(observed, []);
+});
+
+test("deletePage does not count a hidden-table primary view as a second visible page", async () => {
+  const { adapter, observed } = harness(
+    [],
+    [7, 8],
+    { 7: "Main", 8: "Hidden table" },
+    [8]
+  );
+
+  await assert.rejects(
+    () => adapter.deletePage("doc-1", 7),
+    /last visible Grist page/
+  );
+
+  assert.deepEqual(observed, []);
+});
+
+test("deletePageWidget emits only a bounded _grist_Views_section record removal", async () => {
+  const { adapter, observed } = harness();
+
+  await adapter.deletePageWidget("doc-1", 11);
+
+  assert.deepEqual(observed, [
+    [["RemoveRecord", "_grist_Views_section", 11]]
   ]);
 });
 

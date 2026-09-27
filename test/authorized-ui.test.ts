@@ -11,6 +11,7 @@ import type { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
 function buildHarness() {
   let pageCreated = false;
   let widgetCreated = false;
+  let widget12Deleted = false;
   let pageName = "Vue générale";
   let widgetTitle = "";
   let widgetDescription = "";
@@ -43,7 +44,7 @@ function buildHarness() {
       }
       if (tableId === "_grist_Views_section") {
         return {
-          records: widgetCreated
+          records: widgetCreated && pageCreated
             ? [
                 {
                   id: 11,
@@ -62,23 +63,27 @@ function buildHarness() {
                     linkTargetColRef: 0
                   }
                 },
-                {
-                  id: 12,
-                  fields: {
-                    parentId: 7,
-                    tableRef: 2,
-                    parentKey: "record",
-                    title: widgetTitle,
-                    description: widgetDescription,
-                    chartType: "",
-                    options: "{}",
-                    layoutSpec: "",
-                    sortColRefs: "[]",
-                    linkSrcSectionRef: selectBySource,
-                    linkSrcColRef: 0,
-                    linkTargetColRef: 0
-                  }
-                }
+                ...(!widget12Deleted
+                  ? [
+                      {
+                        id: 12,
+                        fields: {
+                          parentId: 7,
+                          tableRef: 2,
+                          parentKey: "record",
+                          title: widgetTitle,
+                          description: widgetDescription,
+                          chartType: "",
+                          options: "{}",
+                          layoutSpec: "",
+                          sortColRefs: "[]",
+                          linkSrcSectionRef: selectBySource,
+                          linkSrcColRef: 0,
+                          linkTargetColRef: 0
+                        }
+                      }
+                    ]
+                  : [])
               ]
             : []
         };
@@ -130,11 +135,21 @@ function buildHarness() {
     ) => {
       uiCalls.push({ action: "widget", documentId, pageId, tableRef, type });
       widgetCreated = true;
+      widget12Deleted = false;
       return { pageId, tableRef, widgetId: 11 };
     },
     renamePage: async (documentId: string, pageId: number, name: string) => {
       uiCalls.push({ action: "rename-page", documentId, pageId, name });
       pageName = name;
+    },
+    deletePage: async (documentId: string, pageId: number) => {
+      uiCalls.push({ action: "delete-page", documentId, pageId });
+      pageCreated = false;
+      widgetCreated = false;
+    },
+    deletePageWidget: async (documentId: string, widgetId: number) => {
+      uiCalls.push({ action: "delete-widget", documentId, widgetId });
+      if (widgetId === 12) widget12Deleted = true;
     },
     updatePageWidget: async (
       documentId: string,
@@ -261,6 +276,57 @@ test("page rename is re-read and verified", async () => {
     }
   ]);
   assert.deepEqual((result as { page: { name: string } }).page.name, "Suivi personnes");
+});
+
+test("page deletion verifies exact target disappearance", async () => {
+  const { service, capabilities, uiCalls } = buildHarness();
+
+  await service.createPage("doc-1", "Personnes", "Vue générale");
+  capabilities.length = 0;
+  uiCalls.length = 0;
+
+  const result = await service.deletePage("doc-1", 7);
+
+  assert.deepEqual(capabilities, ["doc.schema:write"]);
+  assert.deepEqual(uiCalls, [
+    { action: "delete-page", documentId: "doc-1", pageId: 7 }
+  ]);
+  assert.deepEqual(result, { documentId: "doc-1", deletedPageId: 7 });
+});
+
+test("widget deletion verifies membership before write and absence after re-read", async () => {
+  const { service, capabilities, uiCalls } = buildHarness();
+
+  await service.createPage("doc-1", "Personnes", "Vue générale");
+  await service.addPageWidget("doc-1", 7, "Personnes", "record");
+  capabilities.length = 0;
+  uiCalls.length = 0;
+
+  const result = await service.deletePageWidget("doc-1", 7, 12);
+
+  assert.deepEqual(capabilities, ["doc.schema:write"]);
+  assert.deepEqual(uiCalls, [
+    { action: "delete-widget", documentId: "doc-1", widgetId: 12 }
+  ]);
+  assert.deepEqual(result, {
+    documentId: "doc-1",
+    pageId: 7,
+    deletedWidgetId: 12
+  });
+});
+
+test("widget deletion rejects an unknown target before any write", async () => {
+  const { service, uiCalls } = buildHarness();
+
+  await service.createPage("doc-1", "Personnes", "Vue générale");
+  await service.addPageWidget("doc-1", 7, "Personnes", "record");
+  uiCalls.length = 0;
+
+  await assert.rejects(
+    () => service.deletePageWidget("doc-1", 7, 99),
+    /does not exist on page 7/
+  );
+  assert.deepEqual(uiCalls, []);
 });
 
 test("widget title, description and same-table direct select-by are re-read and verified", async () => {

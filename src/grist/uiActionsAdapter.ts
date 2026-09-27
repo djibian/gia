@@ -30,8 +30,16 @@ export interface WidgetUiUpdate {
   optionsJson?: string;
 }
 
-type ApplyUserActionsClient = Pick<GristClient, "applyUserActions">;
+type UiActionsClient = Pick<GristClient, "applyUserActions"> &
+  Partial<Pick<GristClient, "queryRecords">>;
 type JsonRecord = Record<string, unknown>;
+
+interface MetadataRecord {
+  id: number;
+  fields: JsonRecord;
+}
+
+const VISIBILITY_METADATA_LIMIT = 5000;
 
 function record(value: unknown): JsonRecord | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -61,6 +69,66 @@ function assertPositiveId(value: number, label: string): void {
   }
 }
 
+function metadataRecords(response: unknown, label: string): MetadataRecord[] {
+  const root = record(response);
+  if (!root || !Array.isArray(root.records)) {
+    throw new Error(`Cannot verify visible Grist pages: ${label} metadata is unavailable.`);
+  }
+  if (root.records.length >= VISIBILITY_METADATA_LIMIT) {
+    throw new Error(
+      `Cannot verify visible Grist pages: ${label} metadata reached the bounded read limit.`
+    );
+  }
+
+  return root.records.map((entry) => {
+    const item = record(entry);
+    const id = positiveInteger(item?.id);
+    const fields = record(item?.fields);
+    if (!id || !fields) {
+      throw new Error(`Cannot verify visible Grist pages: malformed ${label} metadata.`);
+    }
+    return { id, fields };
+  });
+}
+
+function classifyPageVisibility(
+  pagesResponse: unknown,
+  viewsResponse: unknown,
+  tablesResponse: unknown
+): { allPageIds: Set<number>; visiblePageIds: Set<number> } {
+  const pages = metadataRecords(pagesResponse, "page");
+  const views = metadataRecords(viewsResponse, "view");
+  const tables = metadataRecords(tablesResponse, "table");
+
+  const viewsById = new Map(views.map((view) => [view.id, view]));
+  const hiddenPrimaryViewIds = new Set<number>();
+  for (const table of tables) {
+    const primaryViewId = positiveInteger(table.fields.primaryViewId);
+    if (!primaryViewId) continue;
+    const tableId = table.fields.tableId;
+    if (typeof tableId !== "string" || tableId.startsWith("GristHidden_")) {
+      hiddenPrimaryViewIds.add(primaryViewId);
+    }
+  }
+
+  const allPageIds = new Set<number>();
+  const visiblePageIds = new Set<number>();
+  for (const page of pages) {
+    const pageId = positiveInteger(page.fields.viewRef);
+    if (!pageId) continue;
+    allPageIds.add(pageId);
+
+    const view = viewsById.get(pageId);
+    const name = view?.fields.name;
+    if (typeof name !== "string" || name.length === 0) continue;
+    if (name === "GristDocTour" || name === "GristDocTutorial") continue;
+    if (hiddenPrimaryViewIds.has(pageId)) continue;
+    visiblePageIds.add(pageId);
+  }
+
+  return { allPageIds, visiblePageIds };
+}
+
 export class UiWriteVerificationError extends Error {
   public readonly createdId: number | undefined;
 
@@ -87,7 +155,7 @@ export class UiWriteVerificationError extends Error {
 }
 
 export class GristUiActionsAdapter {
-  constructor(private readonly client: ApplyUserActionsClient) {}
+  constructor(private readonly client: UiActionsClient) {}
 
   async createEmptyPage(
     documentId: string,
@@ -176,6 +244,42 @@ export class GristUiActionsAdapter {
 
     await this.client.applyUserActions(documentId, [
       ["UpdateRecord", "_grist_Views", pageId, { name: pageName }]
+    ]);
+  }
+
+  async deletePage(documentId: string, pageId: number): Promise<void> {
+    assertPositiveId(pageId, "Grist page ID");
+    if (!this.client.queryRecords) {
+      throw new Error("Cannot verify the visible Grist page count before deletion.");
+    }
+
+    const metadataOptions = { limit: VISIBILITY_METADATA_LIMIT, hidden: true } as const;
+    const [pages, views, tables] = await Promise.all([
+      this.client.queryRecords(documentId, "_grist_Pages", metadataOptions),
+      this.client.queryRecords(documentId, "_grist_Views", metadataOptions),
+      this.client.queryRecords(documentId, "_grist_Tables", metadataOptions)
+    ]);
+    const { allPageIds, visiblePageIds } = classifyPageVisibility(
+      pages,
+      views,
+      tables
+    );
+    if (!allPageIds.has(pageId)) {
+      throw new Error(`Cannot verify Grist page ${pageId} immediately before deletion.`);
+    }
+    if (visiblePageIds.has(pageId) && visiblePageIds.size <= 1) {
+      throw new Error("Cannot delete the last visible Grist page.");
+    }
+
+    await this.client.applyUserActions(documentId, [
+      ["RemoveRecord", "_grist_Views", pageId]
+    ]);
+  }
+
+  async deletePageWidget(documentId: string, widgetId: number): Promise<void> {
+    assertPositiveId(widgetId, "Grist widget ID");
+    await this.client.applyUserActions(documentId, [
+      ["RemoveRecord", "_grist_Views_section", widgetId]
     ]);
   }
 

@@ -657,6 +657,21 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("delete_page"),
+            documentId: documentIdSchema,
+            pageId: positiveIdSchema
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal("delete_widget"),
+            documentId: documentIdSchema,
+            pageId: positiveIdSchema,
+            widgetId: positiveIdSchema
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_layout"),
             documentId: documentIdSchema,
             pageId: positiveIdSchema,
@@ -683,6 +698,18 @@ export function registerLeanTools(
                 input.documentId,
                 input.pageId,
                 input.name
+              )
+            );
+          case "delete_page":
+            return textResult(
+              await grist.deletePage(input.documentId, input.pageId)
+            );
+          case "delete_widget":
+            return textResult(
+              await grist.deletePageWidget(
+                input.documentId,
+                input.pageId,
+                input.widgetId
               )
             );
           case "update_layout":

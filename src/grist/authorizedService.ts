@@ -341,6 +341,84 @@ export class AuthorizedGristService {
     });
   }
 
+  async deletePage(documentIdOrUrl: string, pageId: number): Promise<unknown> {
+    if (!Number.isInteger(pageId) || pageId < 1) {
+      throw new Error("Grist page ID must be a positive integer.");
+    }
+
+    return this.execute("delete_page", documentIdOrUrl, 1, async (id) => {
+      const before = await this.loadDocumentUi(id);
+      assertCompleteUiSnapshot(before);
+      if (!before.pages.some((page) => page.id === pageId)) {
+        throw new Error(`Grist page ${pageId} does not exist in document "${id}".`);
+      }
+
+      await this.uiActions.deletePage(id, pageId);
+      try {
+        const after = await this.loadDocumentUi(id);
+        assertCompleteUiSnapshot(after);
+        if (after.pages.some((page) => page.id === pageId)) {
+          throw new Error(`Deleted page ${pageId} was still present on re-read.`);
+        }
+        return { documentId: id, deletedPageId: pageId };
+      } catch (error) {
+        throw new UiWriteVerificationError(
+          "delete_page",
+          error instanceof Error ? error.message : "Deleted page could not be verified."
+        );
+      }
+    });
+  }
+
+  async deletePageWidget(
+    documentIdOrUrl: string,
+    pageId: number,
+    widgetId: number
+  ): Promise<unknown> {
+    if (!Number.isInteger(pageId) || pageId < 1) {
+      throw new Error("Grist page ID must be a positive integer.");
+    }
+    if (!Number.isInteger(widgetId) || widgetId < 1) {
+      throw new Error("Grist widget ID must be a positive integer.");
+    }
+
+    return this.execute("delete_page_widget", documentIdOrUrl, 1, async (id) => {
+      const before = await this.loadDocumentUi(id);
+      assertCompleteUiSnapshot(before);
+      const page = before.pages.find((candidate) => candidate.id === pageId);
+      if (!page) {
+        throw new Error(`Grist page ${pageId} does not exist in document "${id}".`);
+      }
+      if (!page.widgets.some((widget) => widget.id === widgetId)) {
+        throw new Error(`Grist widget ${widgetId} does not exist on page ${pageId}.`);
+      }
+
+      await this.uiActions.deletePageWidget(id, widgetId);
+      try {
+        const after = await this.loadDocumentUi(id);
+        assertCompleteUiSnapshot(after);
+        const updatedPage = after.pages.find((candidate) => candidate.id === pageId);
+        if (!updatedPage) {
+          throw new Error(`Page ${pageId} disappeared while deleting widget ${widgetId}.`);
+        }
+        const lingeringPage = after.pages.find((candidate) =>
+          candidate.widgets.some((widget) => widget.id === widgetId)
+        );
+        if (lingeringPage) {
+          throw new Error(
+            `Deleted widget ${widgetId} was still present on page ${lingeringPage.id} on re-read.`
+          );
+        }
+        return { documentId: id, pageId, deletedWidgetId: widgetId };
+      } catch (error) {
+        throw new UiWriteVerificationError(
+          "delete_page_widget",
+          error instanceof Error ? error.message : "Deleted widget could not be verified."
+        );
+      }
+    });
+  }
+
   async updatePageLayout(
     documentIdOrUrl: string,
     pageId: number,

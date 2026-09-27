@@ -16,16 +16,16 @@ The project no longer develops around stage tracking or any other business appli
 ## Current direction
 
 ```text
-R0  RECOMPOSE FROM EXISTING PROJECTS      DONE by this reviewed roadmap pivot
+R0  RECOMPOSE FROM EXISTING PROJECTS      DONE
  |
  v
-R1  MINIMAL CORE                          ELIGIBLE
+R1  MINIMAL CORE                          DONE
  |
  v
-R2  MISSING GRIST SEMANTICS ONLY
+R2  MISSING GRIST SEMANTICS ONLY          DONE
  |
  v
-R3  AUTONOMOUS PRODUCT CANDIDATE
+R3  AUTONOMOUS PRODUCT CANDIDATE          ELIGIBLE after R2 integration
  |
  v
 R4  FINAL VALIDATION CAMPAIGN
@@ -111,7 +111,7 @@ No further R0 slice is committed.
 
 # R1 — Minimal Core
 
-**Status: ELIGIBLE after R0 integration**  
+**Status: DONE**  
 **Priority: highest**
 
 ## Goal
@@ -220,11 +220,15 @@ Remove active dependence on generalized execution-contract/journal/orchestration
 
 No comprehensive domain E2E proof is required for R1 completion.
 
+R1-A, R1-B, R1-C and R1-D are integrated. No further R1 slice is committed.
+
 ---
 
 # R2 — Missing Grist semantics only
 
-**Status: BLOCKED by R1**
+**Status: DONE on this candidate; effective on `main` after R2 integration**
+
+Authoritative evidence: `docs/R2-MISSING-GRIST-SEMANTICS-AUDIT.md`.
 
 ## Goal
 
@@ -260,11 +264,13 @@ Possible examples include document creation/copy, additional native page/widget 
 - no speculative gap remains committed;
 - baseline CI is green.
 
+The bounded audit found only two required generic gaps: deletion of one page and deletion of one page widget. They are implemented as bounded `grist_change_ui` actions without adding an MCP tool or expanding the historical v1 operation surface. No other inspected gap is committed.
+
 ---
 
 # R3 — Autonomous Product Candidate
 
-**Status: BLOCKED by R2**
+**Status: ELIGIBLE after R2 integration**
 
 ## Goal
 

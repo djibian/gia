@@ -319,7 +319,40 @@ export const OPERATION_REGISTRY: readonly OperationDefinition[] = [
   }
 ] as const;
 
-const OPERATION_MAP = new Map(OPERATION_REGISTRY.map((operation) => [operation.name, operation]));
+const RUNTIME_ONLY_OPERATION_REGISTRY: readonly OperationDefinition[] = [
+  {
+    name: "delete_page",
+    category: "ui",
+    capability: "doc.schema:write",
+    readOnly: false,
+    destructive: true,
+    openWorld: false,
+    title: "Delete a document page",
+    summary: "Delete one explicitly identified Grist page.",
+    description: "Internal lean-runtime semantic for deleting one explicitly identified Grist page."
+  },
+  {
+    name: "delete_page_widget",
+    category: "ui",
+    capability: "doc.schema:write",
+    readOnly: false,
+    destructive: true,
+    openWorld: false,
+    title: "Delete a page widget",
+    summary: "Delete one explicitly identified Grist page widget.",
+    description: "Internal lean-runtime semantic for deleting one explicitly identified Grist page widget."
+  }
+] as const;
+
+const PUBLIC_OPERATION_MAP = new Map(
+  OPERATION_REGISTRY.map((operation) => [operation.name, operation])
+);
+const OPERATION_MAP = new Map(
+  [...OPERATION_REGISTRY, ...RUNTIME_ONLY_OPERATION_REGISTRY].map((operation) => [
+    operation.name,
+    operation
+  ])
+);
 
 export function getOperation(name: string): OperationDefinition {
   const operation = OPERATION_MAP.get(name);
@@ -352,5 +385,11 @@ export function operationHelp(names?: readonly string[]): { operations: Operatio
   if (!names || names.length === 0) {
     return { operations: [...OPERATION_REGISTRY] };
   }
-  return { operations: names.map(getOperation) };
+  return {
+    operations: names.map((name) => {
+      const operation = PUBLIC_OPERATION_MAP.get(name);
+      if (!operation) throw new Error(`Unknown operation "${name}".`);
+      return operation;
+    })
+  };
 }
