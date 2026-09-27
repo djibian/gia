@@ -186,6 +186,44 @@ test("structure and UI managers preserve stable semantic identifiers at their bo
   ]);
 });
 
+test("UI manager routes page and widget deletion without exposing a new tool", async () => {
+  const observed: unknown[] = [];
+  const registrations = capture({
+    deletePage: async (documentId: string, pageId: number) => {
+      observed.push({ action: "delete_page", documentId, pageId });
+      return { ok: true };
+    },
+    deletePageWidget: async (
+      documentId: string,
+      pageId: number,
+      widgetId: number
+    ) => {
+      observed.push({ action: "delete_widget", documentId, pageId, widgetId });
+      return { ok: true };
+    }
+  });
+  const ui = registrations.find((entry) => entry.name === "grist_change_ui");
+  assert.ok(ui);
+
+  await ui.callback({
+    action: "delete_widget",
+    documentId: "doc-1",
+    pageId: 3,
+    widgetId: 9
+  });
+  await ui.callback({
+    action: "delete_page",
+    documentId: "doc-1",
+    pageId: 3
+  });
+
+  assert.equal(registrations.length, 10);
+  assert.deepEqual(observed, [
+    { action: "delete_widget", documentId: "doc-1", pageId: 3, widgetId: 9 },
+    { action: "delete_page", documentId: "doc-1", pageId: 3 }
+  ]);
+});
+
 test("lean help discloses only the lean public contract", async () => {
   const registrations = capture();
   const help = registrations.find((entry) => entry.name === "grist_help");
