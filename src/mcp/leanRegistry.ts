@@ -1,3 +1,5 @@
+export const MCP_CONTRACT_VERSION = "2" as const;
+
 export type LeanToolCategory =
   | "discovery"
   | "context"
@@ -146,6 +148,7 @@ export function leanToolHelp(names?: readonly string[]) {
     ? [...LEAN_TOOL_REGISTRY]
     : names.map(getLeanTool);
   return {
+    contractVersion: MCP_CONTRACT_VERSION,
     tools,
     concepts: [
       "discover",
