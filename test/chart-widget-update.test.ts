@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildUiOpenApiPaths } from "../src/actions/uiApi.js";
 import type { AuditLogger } from "../src/audit/auditLogger.js";
 import type { AuthorizationService } from "../src/auth/authorizationService.js";
 import type { Principal } from "../src/auth/principal.js";
@@ -150,20 +149,4 @@ test("chart type update rejects a non-chart widget before any write", async () =
     /is not a chart widget/
   );
   assert.deepEqual(uiCalls, []);
-});
-
-test("GPT Actions publishes exactly the supported native chart types", () => {
-  const paths = buildUiOpenApiPaths() as Record<string, unknown>;
-  const path = paths[
-    "/api/v1/documents/{documentId}/pages/{pageId}/widgets/{widgetId}"
-  ] as Record<string, unknown>;
-  const patch = path.patch as Record<string, unknown>;
-  const requestBody = patch.requestBody as Record<string, unknown>;
-  const content = requestBody.content as Record<string, unknown>;
-  const json = content["application/json"] as Record<string, unknown>;
-  const schema = json.schema as Record<string, unknown>;
-  const properties = schema.properties as Record<string, unknown>;
-  const chartType = properties.chartType as Record<string, unknown>;
-
-  assert.deepEqual(chartType.enum, [...GRIST_CHART_TYPES]);
 });

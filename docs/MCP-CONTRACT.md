@@ -23,13 +23,13 @@ A v2 server exposes exactly these ten tools:
 
 `grist_help` returns `contractVersion: "2"` so a client can identify the contract without relying on implementation version strings.
 
-One invocation still represents one bounded semantic intention. Manager-style tools use an `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
+One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
 ## Compatibility and migration
 
 ### Historical MCP v1
 
-The historical MCP v1 exposed 23 granular tools. It stopped being registered by the server when the lean R1-B surface became active. R3 removes the dormant v1 registration modules and their contract-only regression test rather than shipping two MCP contracts in parallel.
+The historical MCP v1 exposed 23 granular tools. It stopped being registered when the lean R1-B surface became active. R3 removed its dormant registration modules and contract-only compatibility tests rather than shipping two MCP contracts in parallel.
 
 There is deliberately:
 
@@ -39,9 +39,11 @@ There is deliberately:
 
 A v1 MCP client must migrate to the v2 manager tools. The semantic Grist service underneath is reused, but the public tool names/schemas are not compatibility-promised across that boundary.
 
-### GPT Actions/OpenAPI
+### Historical GPT Actions/OpenAPI surface
 
-GPT Actions/OpenAPI is a separate HTTP compatibility surface, not MCP v1. Its presence or removal does not change the MCP v2 contract version. R3 decides that compatibility surface independently as part of candidate deployment simplification.
+GPT Actions/OpenAPI was a separate HTTP compatibility surface, not MCP v1. R3 retires it from the product candidate: the runtime no longer registers `/api/v1`, `/openapi.json` or the OpenAI submission challenge route, and no GPT Actions token is required to start the bridge.
+
+Historical GPT Actions and submission documents remain repository history only. Any future distribution compatibility work is reconsidered in R5 and must not silently expand or alias the MCP v2 contract.
 
 ## Versioning rule
 

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildUiOpenApiPaths } from "../src/actions/uiApi.js";
 import type { AuditLogger } from "../src/audit/auditLogger.js";
 import type { AuthorizationService } from "../src/auth/authorizationService.js";
 import type { Principal } from "../src/auth/principal.js";
@@ -9,10 +8,7 @@ import { AuthorizedGristService } from "../src/grist/authorizedService.js";
 import type { GristClient } from "../src/grist/client.js";
 import type { GristService } from "../src/grist/service.js";
 import { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
-import {
-  MAX_WIDGET_SORT_COLUMNS,
-  resolveWidgetSort
-} from "../src/grist/widgetSort.js";
+import { resolveWidgetSort } from "../src/grist/widgetSort.js";
 
 const expandedTables = {
   tables: [
@@ -255,27 +251,4 @@ test("null clears saved sort and unknown columns fail before write", async () =>
     /does not exist/
   );
   assert.deepEqual(invalid.uiCalls, []);
-});
-
-test("GPT Actions publishes bounded stable-column sort schema", () => {
-  const paths = buildUiOpenApiPaths() as Record<string, unknown>;
-  const path = paths[
-    "/api/v1/documents/{documentId}/pages/{pageId}/widgets/{widgetId}"
-  ] as Record<string, unknown>;
-  const patch = path.patch as Record<string, unknown>;
-  const requestBody = patch.requestBody as Record<string, unknown>;
-  const content = requestBody.content as Record<string, unknown>;
-  const json = content["application/json"] as Record<string, unknown>;
-  const schema = json.schema as Record<string, unknown>;
-  const properties = schema.properties as Record<string, unknown>;
-  const sort = properties.sort as Record<string, unknown>;
-  const variants = sort.anyOf as Array<Record<string, unknown>>;
-  const arrayVariant = variants[0];
-  const items = arrayVariant.items as Record<string, unknown>;
-  const itemProperties = items.properties as Record<string, unknown>;
-  const direction = itemProperties.direction as Record<string, unknown>;
-
-  assert.equal(arrayVariant.maxItems, MAX_WIDGET_SORT_COLUMNS);
-  assert.deepEqual(direction.enum, ["asc", "desc"]);
-  assert.deepEqual(items.required, ["columnId", "direction"]);
 });
