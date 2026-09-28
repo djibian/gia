@@ -23,10 +23,6 @@ function printPass(label: string, value: boolean): void {
   console.log(`${label}: ${value ? "PASS" : "FAIL"}`);
 }
 
-function printBoolean(label: string, value: boolean): void {
-  console.log(`${label}: ${value ? "yes" : "no"}`);
-}
-
 function isObject(value: unknown): value is JsonObject {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -234,7 +230,6 @@ async function run(): Promise<boolean> {
   const grantTypes = stringArray(authorizationMetadata.grant_types_supported) ?? [];
 
   const cimdAdvertised = authorizationMetadata.client_id_metadata_document_supported === true;
-  const publicClientSupported = tokenAuthMethods.includes("none");
   const pkceS256 = pkceMethods.includes("S256");
   const authCode = grantTypes.includes("authorization_code");
   const refresh = grantTypes.includes("refresh_token");
@@ -243,42 +238,48 @@ async function run(): Promise<boolean> {
 
   printPass("Authorization metadata issuer matches protected-resource issuer", authorizationMetadata.issuer === issuer);
   printPass("CIMD/dynamic-client support advertised", cimdAdvertised);
-  printPass("Public-client token authentication method none advertised", publicClientSupported);
   printPass("PKCE S256 advertised", pkceS256);
   printPass("Authorization Code grant advertised", authCode);
   printPass("Refresh-token grant advertised", refresh);
-  printBoolean("RFC 9207 authorization-response issuer identification advertised", issuerIdentification);
+  printPass("RFC 9207 issuer identification enables stable ChatGPT CIMD", issuerIdentification);
 
-  const chatGptCimd = await fetchJson(CHATGPT_STABLE_CIMD_URL, "chatgpt_cimd_fetch_failed");
-  const clientIdMatches = chatGptCimd.client_id === CHATGPT_STABLE_CIMD_URL;
-  const selectedTokenAuthMethod =
-    typeof chatGptCimd.token_endpoint_auth_method === "string"
-      ? chatGptCimd.token_endpoint_auth_method
-      : undefined;
-  const selectedTokenAuthSupported =
-    selectedTokenAuthMethod !== undefined && tokenAuthMethods.includes(selectedTokenAuthMethod);
-  const declaredClientMethods =
-    stringArray(chatGptCimd.token_endpoint_auth_methods_supported) ?? [];
-  const selectedMethodDeclared =
-    selectedTokenAuthMethod !== undefined && declaredClientMethods.includes(selectedTokenAuthMethod);
-  const redirectUris = stringArray(chatGptCimd.redirect_uris) ?? [];
-  const redirectsUsable = redirectUris.length > 0 && redirectUris.every(isHttpsUrl);
-  const privateKeyJwtJwksUsable =
-    selectedTokenAuthMethod !== "private_key_jwt" || isHttpsUrl(chatGptCimd.jwks_uri);
+  let chatGptCimdChecks = false;
+  if (issuerIdentification) {
+    const chatGptCimd = await fetchJson(CHATGPT_STABLE_CIMD_URL, "chatgpt_cimd_fetch_failed");
+    const clientIdMatches = chatGptCimd.client_id === CHATGPT_STABLE_CIMD_URL;
+    const legacyPreferredMethod =
+      typeof chatGptCimd.token_endpoint_auth_method === "string"
+        ? chatGptCimd.token_endpoint_auth_method
+        : undefined;
+    const declaredClientMethods =
+      stringArray(chatGptCimd.token_endpoint_auth_methods_supported) ?? [];
+    const legacyPreferenceDeclared =
+      legacyPreferredMethod === undefined || declaredClientMethods.includes(legacyPreferredMethod);
+    const compatibleTokenAuthMethods = declaredClientMethods.filter((method) =>
+      tokenAuthMethods.includes(method)
+    );
+    const tokenAuthCompatible = compatibleTokenAuthMethods.length > 0;
+    const redirectUris = stringArray(chatGptCimd.redirect_uris) ?? [];
+    const redirectsUsable = redirectUris.length > 0 && redirectUris.every(isHttpsUrl);
+    const privateKeyJwtJwksUsable =
+      !compatibleTokenAuthMethods.includes("private_key_jwt") || isHttpsUrl(chatGptCimd.jwks_uri);
 
-  printPass("Stable ChatGPT CIMD reachable", true);
-  printPass("Stable ChatGPT CIMD client_id matches document URL", clientIdMatches);
-  printPass("ChatGPT selected token authentication method is declared by its CIMD", selectedMethodDeclared);
-  printPass("Authorization server supports ChatGPT selected token authentication method", selectedTokenAuthSupported);
-  printPass("ChatGPT CIMD redirect URIs are HTTPS", redirectsUsable);
-  printPass("ChatGPT private_key_jwt JWKS metadata is usable", privateKeyJwtJwksUsable);
+    printPass("Stable ChatGPT CIMD reachable", true);
+    printPass("Stable ChatGPT CIMD client_id matches document URL", clientIdMatches);
+    printPass("ChatGPT legacy token-auth preference is declared by its supported-method array", legacyPreferenceDeclared);
+    printPass("Authorization server supports at least one ChatGPT CIMD token authentication method", tokenAuthCompatible);
+    printPass("ChatGPT CIMD redirect URIs are HTTPS", redirectsUsable);
+    printPass("ChatGPT private_key_jwt JWKS metadata is usable when applicable", privateKeyJwtJwksUsable);
 
-  const chatGptCimdChecks =
-    clientIdMatches &&
-    selectedMethodDeclared &&
-    selectedTokenAuthSupported &&
-    redirectsUsable &&
-    privateKeyJwtJwksUsable;
+    chatGptCimdChecks =
+      clientIdMatches &&
+      legacyPreferenceDeclared &&
+      tokenAuthCompatible &&
+      redirectsUsable &&
+      privateKeyJwtJwksUsable;
+  } else {
+    console.log("Stable ChatGPT CIMD probe: SKIPPED (RFC 9207 issuer identification unavailable)");
+  }
 
   const unauthenticated = await postMcp({
     resourceUri,
@@ -319,10 +320,10 @@ async function run(): Promise<boolean> {
     scopesMatch &&
     authorizationMetadata.issuer === issuer &&
     cimdAdvertised &&
-    publicClientSupported &&
     pkceS256 &&
     authCode &&
     refresh &&
+    issuerIdentification &&
     chatGptCimdChecks &&
     challengeOk &&
     authenticatedChecks
