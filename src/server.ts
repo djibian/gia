@@ -1,18 +1,7 @@
 import { createMcpExpressApp } from "@modelcontextprotocol/express";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
-import * as z from "zod/v4";
 
-import {
-  buildOpenApiDocument,
-  registerGptActionApi,
-  sendApiError
-} from "./actions/api.js";
-import {
-  buildUiOpenApiPaths,
-  buildUiOpenApiSchemas,
-  registerUiActionApi
-} from "./actions/uiApi.js";
 import { AuditLogger } from "./audit/auditLogger.js";
 import { OAuthAccessTokenError } from "./auth/oauthAccessToken.js";
 import {
@@ -44,15 +33,9 @@ import {
   GristClientFactory,
   StaticApiKeyCredentialProvider
 } from "./grist/credentials.js";
-import { UiWriteVerificationError } from "./grist/uiActionsAdapter.js";
 import { registerLeanTools } from "./mcp/leanTools.js";
 import { installOAuthToolAuthChallenges } from "./mcp/oauthToolChallenge.js";
 import { installOAuthToolSecuritySchemes } from "./mcp/oauthToolSecurity.js";
-import {
-  parseOpenAiAppsChallengeToken,
-  registerOpenAiAppsChallenge
-} from "./openaiAppsChallenge.js";
-import { operationHelp } from "./operations/registry.js";
 import { VERSION } from "./version.js";
 
 const config = loadConfig();
@@ -89,20 +72,11 @@ const staticMcpPrincipal =
       })
     : undefined;
 
-const gptPrincipal = createPrincipal({
-  id: "chatgpt-actions",
-  transport: "gpt-actions",
-  documentIds: config.allowedDocumentIds,
-  workspaceIds: config.allowedWorkspaceIds,
-  capabilities: config.gptActionCapabilities
-});
-
-// Keep the historical static development MCP context only in explicit static
-// mode. OAuth mode creates a fresh Principal-bound context for every request.
+// Static mode creates one controlled deployment principal. OAuth mode creates
+// a fresh Principal-bound Grist context for every authenticated request.
 const staticMcpGrist = staticMcpPrincipal
   ? await contextFactory.create(staticMcpPrincipal)
   : undefined;
-const gptGrist = await contextFactory.create(gptPrincipal);
 
 const oauthMcpVerifier =
   config.mcpAuth.mode === "oauth"
@@ -168,106 +142,10 @@ function oauthProtectedResourceMetadataUrl(req: {
   return buildOAuthProtectedResourceMetadataUrl(publicBaseUrl(req));
 }
 
-function buildExtendedOpenApiDocument(baseUrl: string): Record<string, unknown> {
-  const document = buildOpenApiDocument(baseUrl, {
-    maxReadRecords: config.maxReadRecords,
-    maxWriteRecords: config.maxWriteRecords,
-    maxSchemaItems: config.maxSchemaItems
-  });
-  const paths = document.paths as Record<string, unknown>;
-  Object.assign(paths, buildUiOpenApiPaths());
-  const components = document.components as Record<string, unknown>;
-  const schemas = (components.schemas ?? {}) as Record<string, unknown>;
-  components.schemas = {
-    ...schemas,
-    ...buildUiOpenApiSchemas()
-  };
-  const documentIdParameter = {
-    name: "documentId",
-    in: "path",
-    required: true,
-    schema: { type: "string" }
-  };
-  const readResponses = {
-    "401": { description: "Missing or invalid GPT Actions bearer token" },
-    "403": { description: "Document or read capability is not allowed" },
-    "502": { description: "Grist upstream error" }
-  };
-
-  paths["/api/v1/help"] = {
-    get: {
-      operationId: "getGristHelp",
-      summary: "Discover available Grist bridge operations and required capabilities",
-      "x-openai-isConsequential": false,
-      responses: { "200": { description: "Operation catalog" } }
-    }
-  };
-  paths["/api/v1/documents/{documentId}/context"] = {
-    get: {
-      operationId: "inspectGristDocument",
-      summary: "Inspect the semantic structure and UI of a Grist document",
-      description:
-        "Read-only. Returns tables, columns, formulas, Ref/RefList relationships, pages and widgets without reading user-table rows.",
-      "x-openai-isConsequential": false,
-      parameters: [documentIdParameter],
-      responses: {
-        "200": { description: "Compact semantic document context" },
-        ...readResponses
-      }
-    }
-  };
-  const pagesPath = (paths["/api/v1/documents/{documentId}/pages"] ?? {}) as Record<string, unknown>;
-  paths["/api/v1/documents/{documentId}/pages"] = {
-    ...pagesPath,
-    get: {
-      operationId: "getGristPages",
-      summary: "List Grist pages and their widget IDs",
-      description:
-        "Read-only. Returns normalized page metadata without reading user-table rows.",
-      "x-openai-isConsequential": false,
-      parameters: [documentIdParameter],
-      responses: {
-        "200": { description: "Grist page metadata" },
-        ...readResponses
-      }
-    }
-  };
-  const widgetsPath = (paths["/api/v1/documents/{documentId}/pages/{pageId}/widgets"] ?? {}) as Record<string, unknown>;
-  paths["/api/v1/documents/{documentId}/pages/{pageId}/widgets"] = {
-    ...widgetsPath,
-    get: {
-      operationId: "getGristPageWidgets",
-      summary: "Inspect widgets on one Grist page",
-      description:
-        "Read-only. Returns normalized widget metadata, layout options and select-by links.",
-      "x-openai-isConsequential": false,
-      parameters: [
-        documentIdParameter,
-        {
-          name: "pageId",
-          in: "path",
-          required: true,
-          schema: { type: "integer", minimum: 1 }
-        }
-      ],
-      responses: {
-        "200": { description: "Grist page widgets" },
-        ...readResponses
-      }
-    }
-  };
-  return document;
-}
-
 const app = createMcpExpressApp({
   host: config.host,
   allowedHosts: [...config.mcpAllowedHosts]
 });
-
-registerOpenAiAppsChallenge(
-  app,
-  parseOpenAiAppsChallengeToken(process.env.OPENAI_APPS_CHALLENGE_TOKEN)
-);
 
 app.get("/healthz", (_req, res) => {
   res.json({
@@ -289,69 +167,6 @@ if (config.mcpAuth.mode === "oauth") {
     );
   });
 }
-
-// Register first so it shadows the compatibility OpenAPI route installed below.
-app.get("/openapi.json", (req, res) => {
-  res.json(buildExtendedOpenApiDocument(publicBaseUrl(req)));
-});
-
-registerGptActionApi(app, {
-  token: config.gptActionToken,
-  grist: gptGrist,
-  maxReadRecords: config.maxReadRecords,
-  maxWriteRecords: config.maxWriteRecords,
-  maxSchemaItems: config.maxSchemaItems
-});
-
-registerUiActionApi(app, {
-  grist: gptGrist,
-  sendError: (res, error) => {
-    if (error instanceof UiWriteVerificationError) {
-      res.status(502).json({
-        error: "Grist UI write verification failed",
-        operation: error.operation,
-        createdId: error.createdId,
-        retryWholeOperation: false
-      });
-      return;
-    }
-    sendApiError(res, error);
-  }
-});
-
-// These routes are registered after registerGptActionApi so its /api/v1 bearer
-// middleware protects them as well.
-app.get("/api/v1/help", (_req, res) => {
-  res.json(operationHelp());
-});
-
-app.get("/api/v1/documents/:documentId/context", async (req, res) => {
-  try {
-    const documentId = z.string().min(1).parse(req.params.documentId);
-    res.json(await gptGrist.inspectDocument(documentId));
-  } catch (error) {
-    sendApiError(res, error);
-  }
-});
-
-app.get("/api/v1/documents/:documentId/pages", async (req, res) => {
-  try {
-    const documentId = z.string().min(1).parse(req.params.documentId);
-    res.json(await gptGrist.getPages(documentId));
-  } catch (error) {
-    sendApiError(res, error);
-  }
-});
-
-app.get("/api/v1/documents/:documentId/pages/:pageId/widgets", async (req, res) => {
-  try {
-    const documentId = z.string().min(1).parse(req.params.documentId);
-    const pageId = z.coerce.number().int().positive().parse(req.params.pageId);
-    res.json(await gptGrist.getPageWidgets(documentId, pageId));
-  } catch (error) {
-    sendApiError(res, error);
-  }
-});
 
 app.all("/mcp", async (req, res) => {
   if (config.mcpAuth.mode === "static") {
@@ -427,7 +242,7 @@ app.all("/mcp", async (req, res) => {
 
 const httpServer = app.listen(config.port, config.host, () => {
   console.log(
-    `grist-chatgpt listening on http://${config.host}:${config.port} (MCP /mcp, GPT Actions /api/v1; MCP auth ${config.mcpAuth.mode})`
+    `grist-chatgpt listening on http://${config.host}:${config.port} (MCP /mcp; auth ${config.mcpAuth.mode})`
   );
 });
 

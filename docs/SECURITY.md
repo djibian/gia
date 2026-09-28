@@ -2,9 +2,9 @@
 
 ## Status
 
-This document defines the security boundary for the Pareto-recomposed product.
+This document defines the security boundary for the R3 MCP product candidate.
 
-The objective is **small enforceable invariants**, not a security subsystem larger than the product. Historical J0/J1/J2 mechanisms remain useful only where they directly enforce these invariants.
+The objective is a small set of enforceable invariants. Historical J0/J1/J2 mechanisms remain relevant only where their direct safety semantics survive in the active runtime.
 
 ## Trust boundary
 
@@ -26,9 +26,18 @@ Grist
   authoritative permissions + state
 ```
 
-The LLM is not trusted with credentials or arbitrary low-level Grist control.
+The LLM is not trusted with credentials or arbitrary low-level Grist control. Grist is authoritative for the permissions attached to the configured upstream credential. The bridge can reduce that authority but never elevate it.
 
-Grist is authoritative for the authority attached to the upstream credential. The bridge can reduce that authority but never elevate it.
+## Candidate authentication
+
+The HTTP MCP endpoint supports two configured modes:
+
+- **static bearer** — the minimum controlled-deployment mode; one configured MCP principal is created from the deployment resource ceiling and `MCP_CAPABILITIES`;
+- **OAuth JWT/JWKS** — provider-neutral request authentication that creates a fresh principal-bound context per request.
+
+The candidate still uses one server-side `GRIST_API_KEY` through `StaticApiKeyCredentialProvider`. OAuth therefore proves request-principal separation at the bridge but does **not** provide per-user upstream Grist credentials. Production identity, credential custody, rotation and multi-user hardening are R5 work.
+
+The historical GPT Actions bearer and OpenAI challenge routes are not part of the candidate runtime.
 
 ## Required invariants
 
@@ -42,19 +51,17 @@ Never expose in MCP inputs/outputs, model-visible errors, audit payloads or comm
 - session secrets;
 - LinkKeys or secret webhook material.
 
-Normalize/scrub secret-bearing URLs before logging or returning errors.
+Normalize or scrub secret-bearing URLs before logging or returning errors.
 
 ### S2 — principal isolation
 
 A principal-derived Grist client, credential, context object, discovery result or cache entry must never be reused across principals without a key that proves the same principal/resource boundary.
 
-Development may use an explicit static credential mode, but it must not be described as multi-user isolation.
+Static mode is explicitly a single controlled deployment principal and must not be described as multi-user upstream credential isolation.
 
 ### S3 — upstream authority is authoritative
 
-The bridge never turns a read-only Grist principal into a writer and never broadens native Grist access rules.
-
-A local capability check is an additional restriction, not a grant of upstream permission.
+The bridge never turns a read-only upstream Grist credential into a writer and never broadens native Grist access rules. A local capability check is an additional restriction, not a grant of upstream permission.
 
 ### S4 — no generic escape hatches
 
@@ -67,59 +74,49 @@ Do not expose model-controlled:
 - arbitrary browser commands/JavaScript;
 - arbitrary file/system commands.
 
-When an internal Grist action is unavoidable, hide it behind one versioned bounded semantic operation with fixed translation and validation.
+When a low-level Grist action is unavoidable internally, hide it behind one versioned bounded semantic operation with fixed translation and validation.
 
 ### S5 — bounded mutation intentions
 
-Every public mutation targets explicit resources and a finite supported action schema.
+Every public mutation targets explicit resources and a finite supported action schema. Relevant counts, metadata fields and layout/configuration inputs are bounded.
 
-Set limits on relevant record counts, fields, payload size, metadata keys, layout complexity or other inputs that could otherwise create unbounded work/state.
-
-A compact manager tool is acceptable only when its `action` variants remain closed and individually understandable; it must not become a generic dispatcher.
+Manager tools are acceptable only because their action variants are closed and individually understandable; they must not become generic dispatchers.
 
 ### S6 — stable semantic inputs
 
-Prefer stable Grist document/table/column/page/widget identifiers over private numeric metadata refs.
-
-Resolve private refs server-side and fail closed when exact resolution is unavailable.
+Prefer stable document/table/column/page/widget identifiers over private numeric metadata refs. Resolve private refs server-side and fail closed when exact resolution is unavailable.
 
 ### S7 — preserve untargeted state
 
 For supported read-modify-write operations:
 
 - read current state;
-- validate that the targeted sub-state can be identified exactly;
+- identify the targeted sub-state exactly;
 - preserve unrelated fields/options;
 - write only the bounded semantic change;
-- re-read when exact post-state verification is cheap/material.
+- re-read when exact post-state verification is cheap and material.
 
-Reject malformed/incomplete state when proceeding could overwrite unrelated human configuration.
+Reject malformed or incomplete state when proceeding could overwrite unrelated human configuration.
 
 ### S8 — partial results survive
 
-For non-atomic batches, report/retain confirmed completed targets. Do not collapse a partially successful write into a generic failure that invites whole-request replay.
+For non-atomic batches, retain/report confirmed completed targets. Do not collapse a partial write into a generic failure that invites whole-request replay.
 
 ### S9 — ambiguity is not failure
 
-If the upstream effect may have happened but the response is lost/uncertain, do not classify it as definitely not applied.
+If an upstream effect may have happened but the response is lost or uncertain, do not classify it as definitely not applied and do not blindly replay non-idempotent work.
 
-Do not blindly replay non-idempotent or conditionally idempotent work. Re-read/reconcile when a capability-specific check can establish a safe outcome; otherwise return an explicit ambiguous/unknown result.
-
-This invariant is retained from J0/J1 without requiring every operation to run through a generalized durable workflow engine.
+Re-read/reconcile when a capability-specific check can establish a safe outcome; otherwise return an explicit uncertain result. The generalized durable J1 execution journal is not required for this invariant.
 
 ### S10 — output minimization
 
-Return the information required for the next agent decision, not arbitrary upstream response bodies or private Grist metadata.
+Return what is required for the agent's next decision, not arbitrary upstream bodies or private Grist metadata. Discovery/inspection favors structure; business rows are read only through bounded queries.
 
-Discovery/context should prefer schema and metadata. Read business rows only when the requested task needs them and keep query bounds explicit.
-
-Cells, attachments, comments, formulas and external data are untrusted content. They may inform the user's data task but cannot change authorization or tool policy.
+All cell/formula/comment/external content is untrusted data and cannot alter authorization or tool policy.
 
 ## Authorization vocabulary
 
-Keep the public capability model minimal unless evidence requires expansion.
-
-The current useful classes are:
+The candidate uses three capability classes:
 
 ```text
 doc:read
@@ -127,68 +124,45 @@ doc:write
 doc.schema:write
 ```
 
-R1 may simplify internal authorization implementation but must preserve the ability to distinguish these authorities and bind them to allowed resources/principals.
+The effective ceiling is the intersection of upstream Grist authority, deployment document/workspace policy, principal resource grants and the operation capability.
 
-Adding a new production/public OAuth scope is an R5 decision and does not block R1-R4; capabilities needing such a scope are deferred rather than weakening current authorization.
+Adding a new production/public OAuth scope is an R5 decision. Do not weaken current authorization to avoid that future decision.
 
 ## Domain access policies
 
-Stage-tracking ACLs, LinkKeys and other application-specific policies are **not product security architecture**.
+Stage-tracking ACLs, LinkKeys and other application-specific policies are not product security architecture.
 
-The core must preserve Grist's native permission effects and must not bypass them. Whether a particular application policy works as intended is tested in R4 when that application becomes a validation case.
-
-Do not build a generic ACL reader/writer/browser test platform during R1-R3 solely to prove one application.
+The core must preserve Grist's native permission effects and must not bypass them. Specific application-policy behavior is exercised during R4 validation rather than by embedding a generic ACL reader/writer/browser platform into the bridge.
 
 ## Browser security
 
-No generic browser control is part of the initial product.
-
-If R4 needs browser-only evidence for a validated Grist behavior, use a maintained bounded test runner and secret-safe fixtures. That test adapter is validation infrastructure unless a later product decision establishes a generic user-facing browser capability.
-
-The closed J2 custom CDP transport from PR #158 is not an R1 dependency.
-
-## External implementation reuse
-
-Security code copied or adapted from external projects requires:
-
-- confirmed license compatibility;
-- review of threat-model differences;
-- no regression from current invariants simply because the external implementation is shorter;
-- explicit provenance in the PR.
-
-A simpler external authorization model is design evidence; it is not automatically safe for this deployment model.
+No generic browser control is part of the candidate. If R4 requires browser-only evidence, use bounded validation infrastructure; do not promote it to a model-facing capability without a later product decision.
 
 ## Testing policy
 
-### R1-R3 construction
+### R0-R3 construction
 
-Preserve:
+Preserve active security regressions plus focused tests around touched authorization, secret, stable-ID and ambiguous-write boundaries, alongside type/build/dependency checks.
 
-- existing security regression tests still covering active code;
-- focused tests around newly touched authorization/secret/ambiguous-write boundaries;
-- static/type/build/dependency checks.
-
-Do not require a new comprehensive application-security proof platform before the product candidate exists.
+Do not create a comprehensive application-security proof platform during construction.
 
 ### R4 validation
 
-Perform the integrated security campaign against the actual candidate:
+Exercise the integrated candidate against:
 
-- cross-principal isolation;
-- read/write/schema authorization boundaries;
+- principal isolation;
+- read/write/schema authorization;
 - secret/error/log leakage;
 - destructive targeting;
 - partial/ambiguous failure;
-- application permission-sensitive cases;
-- browser-dependent policies only where needed;
-- supported Grist Community versions.
+- permission-sensitive applications;
+- browser-dependent behavior only where required;
+- declared Grist Community compatibility.
 
-Critical defects found in R4 are repaired generically and the affected validation is rerun.
+Critical defects are repaired generically and affected validation rerun.
 
 ## Production security
 
-Production OAuth, encrypted per-user Grist credential persistence/key custody, rate limiting, operational alerting, secret rotation and deployment/reviewer hardening are R5.
+Production identity ownership, encrypted per-user Grist credential custody/key management, rate limiting, operational alerting, secret rotation and hardened deployment/reviewer environments are R5.
 
-Existing C4/C5/C6 work is retained as historical evidence/components. It is deliberately not a prerequisite for building or validating the lean product in controlled environments.
-
-No R1-R4 success may be represented as proof that production credential custody or multi-user hardening is complete.
+Historical C4/C5/C6 evidence may be reused when still current, but no R1-R4 result should be represented as proof that those production concerns are complete.

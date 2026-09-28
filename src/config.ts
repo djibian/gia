@@ -25,9 +25,7 @@ export interface Config {
   writeBatchRecords: number;
   maxSchemaItems: number;
   mcpAuth: McpAuthConfig;
-  gptActionToken: string;
   mcpCapabilities: readonly GristCapability[];
-  gptActionCapabilities: readonly GristCapability[];
   mcpAllowedHosts: readonly string[];
   host: string;
   port: number;
@@ -205,12 +203,6 @@ export function loadConfig(): Config {
     );
   }
 
-  const mcpAuth = parseMcpAuth();
-  const gptActionToken = requiredToken("GPT_ACTION_TOKEN");
-  if (mcpAuth.mode === "static" && gptActionToken === mcpAuth.bearerToken) {
-    throw new Error("GPT_ACTION_TOKEN must differ from MCP_BEARER_TOKEN.");
-  }
-
   return {
     gristBaseUrl: normalizeBaseUrl(required("GRIST_BASE_URL")),
     gristApiKey: required("GRIST_API_KEY"),
@@ -220,15 +212,10 @@ export function loadConfig(): Config {
     maxWriteRecords: parseLimit("GRIST_MAX_WRITE_RECORDS", 500),
     writeBatchRecords: parsePositiveInt("GRIST_WRITE_BATCH_RECORDS", 200),
     maxSchemaItems: parseLimit("GRIST_MAX_SCHEMA_ITEMS", 100),
-    mcpAuth,
-    gptActionToken,
+    mcpAuth: parseMcpAuth(),
     mcpCapabilities: parseCapabilities(
       "MCP_CAPABILITIES",
       process.env.MCP_CAPABILITIES
-    ),
-    gptActionCapabilities: parseCapabilities(
-      "GPT_ACTION_CAPABILITIES",
-      process.env.GPT_ACTION_CAPABILITIES
     ),
     mcpAllowedHosts: parseAllowedHosts(process.env.MCP_ALLOWED_HOSTS),
     host,

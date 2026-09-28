@@ -15,7 +15,6 @@ function runWithEnv(
       GRIST_ALLOWED_DOCUMENT_IDS: "doc-1",
       GRIST_ALLOWED_WORKSPACE_IDS: "",
       MCP_BEARER_TOKEN: "0123456789abcdef0123456789abcdef",
-      GPT_ACTION_TOKEN: "abcdef0123456789abcdef0123456789",
       HOST: "127.0.0.1",
       PORT: "3000"
     });
@@ -29,27 +28,22 @@ function runWithEnv(
   }
 }
 
-test("defaults both principals to read, write and schema capabilities", () => {
-  runWithEnv(
-    { MCP_CAPABILITIES: undefined, GPT_ACTION_CAPABILITIES: undefined },
-    () => {
-      const config = loadConfig();
-      assert.deepEqual(config.mcpCapabilities, [
-        "doc:read",
-        "doc:write",
-        "doc.schema:write"
-      ]);
-      assert.deepEqual(config.gptActionCapabilities, config.mcpCapabilities);
-    }
-  );
+test("defaults the MCP principal to read, write and schema capabilities", () => {
+  runWithEnv({ MCP_CAPABILITIES: undefined }, () => {
+    assert.deepEqual(loadConfig().mcpCapabilities, [
+      "doc:read",
+      "doc:write",
+      "doc.schema:write"
+    ]);
+  });
 });
 
-test("accepts restricted capabilities and rejects unknown values", () => {
+test("accepts restricted MCP capabilities and rejects unknown values", () => {
   runWithEnv({ MCP_CAPABILITIES: "doc:read" }, () => {
     assert.deepEqual(loadConfig().mcpCapabilities, ["doc:read"]);
   });
 
-  runWithEnv({ GPT_ACTION_CAPABILITIES: "doc:read,admin" }, () => {
+  runWithEnv({ MCP_CAPABILITIES: "doc:read,admin" }, () => {
     assert.throws(() => loadConfig(), /unsupported capability "admin"/);
   });
 });
