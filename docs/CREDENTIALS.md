@@ -88,7 +88,7 @@ The bridge cannot elevate a service account beyond Grist's own grants.
 
 ## Remaining R5-C proof
 
-Repository implementation is not the live completion proof. R5-C remains ACTIVE until an authorized Grist Community deployment exercises at least two real service accounts and records sanitized evidence that:
+Repository implementation is not the live completion proof. R5-C remains incomplete until an authorized Grist Community deployment exercises at least two real service accounts and records sanitized evidence that:
 
 - principal A and principal B resolve to distinct upstream service-account authority;
 - each principal can access only the Grist resources natively granted to its service account;
