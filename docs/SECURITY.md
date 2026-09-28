@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the security boundary for the R3 MCP product candidate.
+This document defines the security boundary for the MCP v2 product during R5 production hardening.
 
 The objective is a small set of enforceable invariants. Historical J0/J1/J2 mechanisms remain relevant only where their direct safety semantics survive in the active runtime.
 
@@ -26,7 +26,7 @@ Grist
   authoritative permissions + state
 ```
 
-The LLM is not trusted with credentials or arbitrary low-level Grist control. Grist is authoritative for the permissions attached to the configured upstream credential. The bridge can reduce that authority but never elevate it.
+The LLM is not trusted with credentials or arbitrary low-level Grist control. Grist is authoritative for the permissions attached to the selected upstream credential. The bridge can reduce that authority but never elevate it.
 
 ## Candidate authentication
 
@@ -35,7 +35,12 @@ The HTTP MCP endpoint supports two configured modes:
 - **static bearer** — the minimum controlled-deployment mode; one configured MCP principal is created from the deployment resource ceiling and `MCP_CAPABILITIES`;
 - **OAuth JWT/JWKS** — provider-neutral request authentication that creates a fresh principal-bound context per request.
 
-The candidate still uses one server-side `GRIST_API_KEY` through `StaticApiKeyCredentialProvider`. OAuth therefore proves request-principal separation at the bridge but does **not** provide per-user upstream Grist credentials. Production identity, credential custody, rotation and multi-user hardening are R5 work.
+Upstream Grist credentials are configured independently:
+
+- **static** — one server-side `GRIST_API_KEY` through `StaticApiKeyCredentialProvider`, only for controlled single-principal/development deployments;
+- **principal-map** — `FilePrincipalApiKeyCredentialProvider` reads an operator-mounted read-only mapping from opaque OAuth principal IDs to Grist Community service-account API keys.
+
+Principal-map mode forbids a configured `GRIST_API_KEY`. Missing or invalid mappings fail closed with no shared-key fallback. The mapping is loaded once at startup, never written by the bridge and never model-visible. See `docs/CREDENTIALS.md`.
 
 The historical GPT Actions bearer and OpenAI challenge routes are not part of the candidate runtime.
 
@@ -45,7 +50,7 @@ The historical GPT Actions bearer and OpenAI challenge routes are not part of th
 
 Never expose in MCP inputs/outputs, model-visible errors, audit payloads or committed files:
 
-- Grist API keys;
+- Grist API keys or principal credential mapping contents;
 - OAuth/bearer/refresh tokens;
 - encryption/key-management material;
 - session secrets;
@@ -57,11 +62,15 @@ Normalize or scrub secret-bearing URLs before logging or returning errors.
 
 A principal-derived Grist client, credential, context object, discovery result or cache entry must never be reused across principals without a key that proves the same principal/resource boundary.
 
+Principal-map credential selection uses the bridge's opaque non-reversible OAuth principal ID, not the raw provider subject.
+
 Static mode is explicitly a single controlled deployment principal and must not be described as multi-user upstream credential isolation.
 
 ### S3 — upstream authority is authoritative
 
 The bridge never turns a read-only upstream Grist credential into a writer and never broadens native Grist access rules. A local capability check is an additional restriction, not a grant of upstream permission.
+
+In multi-principal production mode, each mapped service account keeps its own Grist-native grants, expiry and revocation boundary.
 
 ### S4 — no generic escape hatches
 
@@ -124,7 +133,7 @@ doc:write
 doc.schema:write
 ```
 
-The effective ceiling is the intersection of upstream Grist authority, deployment document/workspace policy, principal resource grants and the operation capability.
+The effective ceiling is the intersection of selected upstream Grist authority, deployment document/workspace policy, principal resource grants and the operation capability.
 
 Adding a new production/public OAuth scope is an R5 decision. Do not weaken current authorization to avoid that future decision.
 
@@ -163,6 +172,6 @@ Critical defects are repaired generically and affected validation rerun.
 
 ## Production security
 
-Production identity ownership, encrypted per-user Grist credential custody/key management, rate limiting, operational alerting, secret rotation and hardened deployment/reviewer environments are R5.
+R5-C replaces shared upstream authority for multi-principal production with Grist Community service-account credential selection from a protected read-only operator mapping. Live R5-C completion still requires at least two real service accounts proving distinct upstream authority and no cross-principal client/context/cache reuse.
 
-Historical C4/C5/C6 evidence may be reused when still current, but no R1-R4 result should be represented as proof that those production concerns are complete.
+R5-D owns rate limiting, operational alert inputs, outage/recovery and exercised service-account credential rotation/revocation. Secret-manager implementation, alert transport and log backend remain deployment infrastructure unless a concrete need proves otherwise.

@@ -2,7 +2,7 @@
 
 ## Status
 
-This document describes the **R3 MCP product candidate** after the 2026-09-27 Pareto recomposition.
+This document describes the **MCP v2 product** after R4 validation and during R5 production hardening.
 
 `docs/ROADMAP.md` remains authoritative for tranche eligibility. Historical architecture and milestone documents remain evidence only.
 
@@ -50,6 +50,7 @@ Owns:
 - translation between public identifiers and private Grist references;
 - input/output bounds;
 - principal/resource/capability enforcement;
+- server-side selection of the current principal's upstream credential;
 - partial/ambiguous-write classification;
 - preservation of unrelated state during supported read-modify-write operations;
 - targeted post-write verification where material;
@@ -57,7 +58,7 @@ Owns:
 
 ### Grist
 
-Owns application state: records, formulas, native schema behavior, pages/widgets and native permissions.
+Owns application state: records, formulas, native schema behavior, pages/widgets and native permissions. In multi-principal production mode, Grist Community service accounts are the upstream least-privilege identity primitive.
 
 ## Runtime composition
 
@@ -86,7 +87,9 @@ HTTP /mcp
        Grist Community
 ```
 
-The current candidate uses `StaticApiKeyCredentialProvider`, so all contexts ultimately use one configured server-side Grist API key. Context/client/cache state is still created per principal. Per-user Grist credential custody is deliberately deferred to R5.
+`GristContextFactory` creates a fresh credential-derived client, discovery cache, access policy and authorization/service graph for every principal context; principal-derived state is not reused across principals.
+
+`StaticApiKeyCredentialProvider` remains for controlled single-principal/development use. R5-C adds `FilePrincipalApiKeyCredentialProvider`: it reads an operator-mounted mapping once at startup and resolves the exact opaque OAuth principal to a Grist Community service-account key. `principal-map` configuration forbids a shared `GRIST_API_KEY` fallback.
 
 ## Public MCP contract
 
@@ -156,6 +159,8 @@ One semantic mutation may internally perform the small read/translate/write/re-r
 
 Public inputs prefer document IDs, table IDs, column IDs and stable current page/widget IDs. Private numeric metadata refs stay server-side.
 
+The R5-C credential mapping likewise uses the bridge's non-reversible stable `oauth:<sha256>` principal ID rather than a raw provider subject.
+
 ### Preservation
 
 For a supported composite update, the bridge resolves current state, preserves untargeted state and refuses the write if exact preservation cannot be established.
@@ -181,9 +186,9 @@ doc:write
 doc.schema:write
 ```
 
-Effective bridge authority is bounded by the configured Grist credential, deployment document/workspace ceiling, principal grants and required capability. The bridge may reduce upstream authority but cannot elevate it.
+Effective bridge authority is bounded by the selected upstream Grist credential, deployment document/workspace ceiling, principal grants and required capability. The bridge may reduce upstream authority but cannot elevate it.
 
-Static bearer mode is the minimum controlled deployment. Provider-neutral OAuth/JWKS mode creates request principals and preserves the earlier interoperability seam, but production identity and per-user upstream credential custody remain R5 concerns.
+Static bearer mode plus static Grist credential mode is the minimum controlled deployment. Provider-neutral OAuth/JWKS plus `principal-map` credentials is the production multi-principal path. Service-account creation/grants/expiry/rotation/revocation remain operator-side Grist administration, not model-facing product operations.
 
 ## Deliberate exclusions
 
@@ -197,25 +202,27 @@ The R3 candidate excludes:
 - generated custom-widget platform;
 - lifecycle scheduler/monitor;
 - generic webhooks/integrations;
-- generic ACL/user/org administration;
+- generic ACL/user/org/service-account administration;
 - raw SQL model surface;
 - arbitrary `/apply`, UserAction or HTTP escape hatches;
-- GPT Actions/OpenAPI duplicate public transport.
+- GPT Actions/OpenAPI duplicate public transport;
+- an internal credential database or secret-manager implementation.
 
 Historical code/documents for later production or distribution work may remain outside the runtime path.
 
 ## External reference position
 
 - Grist official behavior is the functional oracle.
+- Grist Community service accounts are **ADAPTED** for R5-C as the upstream identity/least-privilege primitive; no Grist server code is copied.
 - `gwhthompson/grist-mcp-server` informed compact manager-style tools/help.
 - `nic01asFr/GristCoder` informed semantic application context.
 - `Xe138/grist-mcp-server` informed the small capability/resource vocabulary without code reuse where licensing was unclear.
 - `nic01asFr/mcp-server-grist` served as broad API/formula reference.
 
-See `docs/RECOMPOSITION-REVIEW.md` and `docs/R3-DEPENDENCY-PROVENANCE.md` for provenance/licensing decisions.
+See `docs/RECOMPOSITION-REVIEW.md`, `docs/R3-DEPENDENCY-PROVENANCE.md`, `docs/R5-PRODUCTION-DISTRIBUTION-AUDIT.md` and `docs/CREDENTIALS.md` for provenance/licensing decisions.
 
 ## Construction versus validation
 
-R0-R3 keep only baseline CI and focused unit/contract regressions needed to maintain the candidate.
+R0-R3 kept only baseline CI and focused unit/contract regressions needed to maintain the candidate. R4 performed broad product validation. R5 adds production-specific identity, credential, operations and distribution evidence.
 
-R4 is the comprehensive validation campaign against new and existing applications, business validation cases, reruns, failure/recovery, authorization/isolation and the supported Grist Community range.
+R5-C repository implementation remains incomplete as production evidence until at least two real Community service accounts demonstrate distinct upstream authority and no cross-principal client/cache reuse.

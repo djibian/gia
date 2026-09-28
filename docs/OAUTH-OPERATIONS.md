@@ -1,6 +1,6 @@
 # OAuth operating model — R5
 
-This is the current operating runbook for the MCP v2 candidate. The bridge remains a provider-neutral OAuth 2.1 resource server. Logto OSS is the reference authorization server and ProConnect may remain an upstream identity source, but no Logto SDK or provider-specific login logic is embedded in bridge core.
+This is the current operating runbook for the MCP v2 product. The bridge remains a provider-neutral OAuth 2.1 resource server. Logto OSS is the reference authorization server and ProConnect may remain an upstream identity source, but no Logto SDK or provider-specific login logic is embedded in bridge core.
 
 Public bridge scopes remain exactly:
 
@@ -12,7 +12,7 @@ doc.schema:write
 
 The ten-tool MCP v2 registry is the single source of each tool's required capability. Root `securitySchemes`, compatibility `_meta.securitySchemes`, and insufficient-scope `mcp/www_authenticate` challenges must all agree with that registry.
 
-Never record OAuth access/refresh/ID tokens, authorization codes, PKCE verifiers, cookies, Logto/ProConnect secrets, raw provider identities or Grist API keys in GitHub, chat, durable evidence or probe output.
+Never record OAuth access/refresh/ID tokens, authorization codes, PKCE verifiers, cookies, Logto/ProConnect secrets, raw provider identities, Grist API keys or principal credential mapping contents in GitHub, chat, durable evidence or probe output.
 
 ## Offline deployment preflight
 
@@ -32,16 +32,27 @@ For an existing protected `.env` file:
 node --env-file=.env --import tsx tools/oauth-deployment-preflight.ts
 ```
 
-The preflight is offline and sanitized. It does not make network requests, start the server, mutate Grist or print configuration values. It checks OAuth mode, the canonical HTTPS `/mcp` resource, the public-host allowlist, HTTPS Grist upstream configuration and bounded operation limits.
+The preflight is offline and sanitized. It does not make network requests, start the server, mutate Grist or print configuration values. It checks OAuth mode, canonical HTTPS `/mcp` resource, public-host allowlist, HTTPS Grist upstream, bounded operation limits and `GRIST_CREDENTIAL_MODE=principal-map`.
 
-Until R5-C replaces the upstream static credential path, a successful preflight deliberately reports:
+A production-ready R5-C credential configuration includes:
+
+```dotenv
+GRIST_CREDENTIAL_MODE=principal-map
+GRIST_PRINCIPAL_CREDENTIALS_FILE=/run/secrets/grist-principals.json
+```
+
+and deliberately omits `GRIST_API_KEY`.
+
+Expected credential status:
 
 ```text
-multi_principal_grist_credentials: BLOCKED_R5_C_STATIC_GRIST_CREDENTIAL
+multi_principal_grist_credentials: PASS
 live_oauth_validation: REQUIRED_SEPARATELY
 ```
 
-That is not an OAuth failure. It records that R5-B validates ChatGPT/Codex -> bridge identity while R5-C separately owns multi-principal Grist service-account credentials.
+A static Grist credential makes `multi_principal_grist_credentials` fail and makes the preflight exit non-zero. This is intentional: static upstream credentials remain valid for controlled development but cannot be represented as production multi-principal isolation.
+
+The mapping file itself is parsed by the server at startup, not by the offline preflight. See `docs/CREDENTIALS.md`.
 
 ## Unauthenticated public smoke
 
@@ -62,49 +73,35 @@ MCP_RESOURCE_URI='https://example.invalid/mcp' \
   npm run probe:chatgpt-oauth-readiness
 ```
 
-The probe checks:
+The probe checks RFC 9728 metadata/resource binding, the fixed three scopes, authorization-server discovery, Authorization Code + refresh support, PKCE `S256`, CIMD/dynamic-client support and the unauthenticated `/mcp` resource challenge.
 
-- RFC 9728 protected-resource metadata and exact canonical resource;
-- exactly the fixed three bridge scopes;
-- authorization-server discovery;
-- Authorization Code and refresh-token support;
-- PKCE `S256`;
-- CIMD/dynamic-client support;
-- compatibility of the current stable ChatGPT CIMD document with the authorization server;
-- unauthenticated `/mcp` resource challenge.
+For an authenticated proof, supply a fresh access token only through protected local environment state. The authenticated extension performs only `tools/list`, requires exactly the ten MCP v2 tools and verifies their OAuth schemes. It never prints the token or performs a Grist write.
 
-For an authenticated proof, supply a fresh access token only through the protected local environment:
-
-```sh
-MCP_RESOURCE_URI='https://example.invalid/mcp' \
-OAUTH_ACCESS_TOKEN='<protected environment only>' \
-  npm run probe:chatgpt-oauth-readiness
-```
-
-The authenticated extension performs only `tools/list`. It requires the live surface to be **exactly the ten MCP v2 tools** and verifies the exact root plus compatibility OAuth schemes for every tool. It does not print the token and does not perform a Grist write.
-
-Issuer, audience/resource, expiry and scope rejection remain covered by the existing verifier/unit tests and the isolated `probe:oauth-negative` cases. Do not weaken those checks to make a deployment pass.
+Issuer, audience/resource, expiry and scope rejection remain covered by verifier/unit tests and isolated negative probes. Do not weaken those checks to make a deployment pass.
 
 ## Reviewer-capable identity path
 
-R5-B requires an isolated Logto identity path suitable for a reviewer or automated review session. The account used for this path must be able to complete authorization without access to the operator's private network, phone, SMS inbox, personal email inbox or an operator-mediated MFA step.
+R5-B established an isolated Logto identity path suitable for a reviewer or automated review session without operator-only MFA/SMS/email/private-network steps.
 
-This reviewer path is separate from ProConnect institutional login. It may use a dedicated Logto-native reviewer identity, but it must preserve the same MCP resource, fixed scopes, PKCE/resource binding and token validation as the normal path. Reviewer credentials are external protected deployment material and are never committed.
+R5-C adds a separate upstream requirement: every production OAuth principal used for Grist access must have an exact opaque principal entry in the operator-mounted credential mapping and a distinct/narrow Grist Community service account where isolation requires it.
 
-## Release/evidence sequence
+OAuth authorization never creates, rotates or grants that service account. Service-account lifecycle remains operator-side Grist administration.
 
-1. Resolve the exact candidate SHA and require green baseline CI.
-2. Run the offline preflight against the intended protected environment.
-3. Deploy only after the operator authorizes the candidate and retains a rollback reference.
-4. Run `smoke:oauth-deployment` against the canonical public MCP resource.
-5. Run `probe:chatgpt-oauth-readiness` without a token, then with a fresh protected token for the authenticated ten-tool `tools/list` proof.
-6. Run the existing isolated negative cases for wrong audience/resource and insufficient scope; retain only sanitized PASS/FAIL results.
-7. Connect ChatGPT/Codex through the current OAuth flow and verify discovery plus a bounded read using a synthetic/reviewer-safe Grist fixture. R5-C must complete before treating distinct principals as isolated Grist upstream identities.
-8. Record only exact commit, UTC time, environment label, probe name and sanitized result. Never record bearer tokens, provider subjects, cookies, codes or keys.
-9. On failure, stop stronger operations and restore the previous reviewed artifact/configuration. Never downgrade to static bearer merely to obtain a PASS.
+## R5-C release/evidence sequence
+
+1. Resolve the exact reviewed candidate SHA and require green exact-head CI.
+2. Provision at least two Grist Community service accounts outside the bridge, each with narrow native grants and finite expiry.
+3. Build the protected mapping using the bridge's opaque `oauth:<sha256>` principal IDs; do not store raw provider subjects.
+4. Mount the mapping read-only, set `GRIST_CREDENTIAL_MODE=principal-map`, remove `GRIST_API_KEY`, and restart.
+5. Run the offline preflight and require `multi_principal_grist_credentials: PASS`.
+6. Run public OAuth smoke/readiness checks.
+7. Through authenticated principals A and B, exercise bounded reads against resources whose native grants differ.
+8. Verify an unmapped principal fails closed and no shared fallback credential is attempted.
+9. Retain only sanitized evidence: exact commit, UTC time, environment label, service-account labels/IDs only if non-secret, allowed/denied resource result, probe name and PASS/FAIL. Never record API keys or raw provider subjects.
+10. Exercise one rotation/restart and one revocation/expiry path when R5-D performs operational hardening.
 
 ## Current boundary
 
-R5-B does **not** create or store Grist service-account credentials; that is R5-C. It does not add scopes, implement a credential database, make ProConnect mandatory for reviewers or submit a public plugin.
+R5-B is complete. R5-C repository implementation supplies the principal-aware read-only service-account selector and production preflight boundary, but R5-C remains incomplete until the two-real-service-account isolation proof is recorded.
 
-A live authenticated proof necessarily depends on a deployed candidate plus external authorization-server/reviewer credentials. Repository work can prepare and validate the code path, but those protected external actions are the final R5-B gate.
+R5-C does not add scopes, a credential database, service-account administration, generic ACL administration or model-facing secret inputs. R5-D remains blocked until R5-C completion evidence is durable.

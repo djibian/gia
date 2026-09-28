@@ -30,6 +30,7 @@ import { DeploymentResourcePolicy } from "./grist/accessPolicy.js";
 import type { AuthorizedGristService } from "./grist/authorizedService.js";
 import { GristContextFactory } from "./grist/contextFactory.js";
 import {
+  FilePrincipalApiKeyCredentialProvider,
   GristClientFactory,
   StaticApiKeyCredentialProvider
 } from "./grist/credentials.js";
@@ -39,7 +40,12 @@ import { installOAuthToolSecuritySchemes } from "./mcp/oauthToolSecurity.js";
 import { VERSION } from "./version.js";
 
 const config = loadConfig();
-const credentialProvider = new StaticApiKeyCredentialProvider(config.gristApiKey);
+const credentialProvider =
+  config.gristCredentials.mode === "static"
+    ? new StaticApiKeyCredentialProvider(config.gristCredentials.apiKey)
+    : await FilePrincipalApiKeyCredentialProvider.fromFile(
+        config.gristCredentials.mappingFile
+      );
 const clientFactory = new GristClientFactory(
   config.gristBaseUrl,
   credentialProvider

@@ -24,7 +24,9 @@ function withEnv(
 
 const BASE_ENV = {
   GRIST_BASE_URL: "https://grist.example.org",
+  GRIST_CREDENTIAL_MODE: undefined,
   GRIST_API_KEY: "test-key",
+  GRIST_PRINCIPAL_CREDENTIALS_FILE: undefined,
   GRIST_ALLOWED_DOCUMENT_IDS: "doc-1",
   GRIST_ALLOWED_WORKSPACE_IDS: undefined,
   GRIST_MAX_READ_RECORDS: undefined,
@@ -37,6 +39,95 @@ const BASE_ENV = {
   HOST: "127.0.0.1",
   PORT: "3000"
 };
+
+test("defaults Grist credentials to controlled static mode", () => {
+  withEnv(BASE_ENV, () => {
+    const config = loadConfig();
+    assert.deepEqual(config.gristCredentials, {
+      mode: "static",
+      apiKey: "test-key"
+    });
+  });
+});
+
+test("loads principal-map Grist credentials without a shared fallback key", () => {
+  withEnv(
+    {
+      ...BASE_ENV,
+      GRIST_CREDENTIAL_MODE: "principal-map",
+      GRIST_API_KEY: undefined,
+      GRIST_PRINCIPAL_CREDENTIALS_FILE: "/run/secrets/grist-principals.json"
+    },
+    () => {
+      const config = loadConfig();
+      assert.deepEqual(config.gristCredentials, {
+        mode: "principal-map",
+        mappingFile: "/run/secrets/grist-principals.json"
+      });
+    }
+  );
+});
+
+test("principal-map mode rejects a shared Grist API key and requires an absolute mapping path", () => {
+  withEnv(
+    {
+      ...BASE_ENV,
+      GRIST_CREDENTIAL_MODE: "principal-map",
+      GRIST_PRINCIPAL_CREDENTIALS_FILE: "/run/secrets/grist-principals.json"
+    },
+    () => {
+      assert.throws(
+        () => loadConfig(),
+        /GRIST_API_KEY must not be configured/
+      );
+    }
+  );
+
+  withEnv(
+    {
+      ...BASE_ENV,
+      GRIST_CREDENTIAL_MODE: "principal-map",
+      GRIST_API_KEY: undefined,
+      GRIST_PRINCIPAL_CREDENTIALS_FILE: "relative/mapping.json"
+    },
+    () => {
+      assert.throws(
+        () => loadConfig(),
+        /GRIST_PRINCIPAL_CREDENTIALS_FILE must be an absolute path/
+      );
+    }
+  );
+});
+
+test("static Grist credential mode rejects a principal mapping file", () => {
+  withEnv(
+    {
+      ...BASE_ENV,
+      GRIST_PRINCIPAL_CREDENTIALS_FILE: "/run/secrets/grist-principals.json"
+    },
+    () => {
+      assert.throws(
+        () => loadConfig(),
+        /GRIST_PRINCIPAL_CREDENTIALS_FILE must not be configured/
+      );
+    }
+  );
+});
+
+test("rejects unsupported Grist credential modes", () => {
+  withEnv(
+    {
+      ...BASE_ENV,
+      GRIST_CREDENTIAL_MODE: "automatic"
+    },
+    () => {
+      assert.throws(
+        () => loadConfig(),
+        /GRIST_CREDENTIAL_MODE must be either "static" or "principal-map"/
+      );
+    }
+  );
+});
 
 test("defaults MCP authentication to static bearer mode", () => {
   withEnv(BASE_ENV, () => {

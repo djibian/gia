@@ -36,6 +36,7 @@ See:
 - [MCP v2 contract](docs/MCP-CONTRACT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Security model](docs/SECURITY.md)
+- [Grist credential boundary](docs/CREDENTIALS.md)
 - [Generic usage flow](docs/R3-GENERIC-USAGE-FLOW.md)
 - [Dependency/provenance audit](docs/R3-DEPENDENCY-PROVENANCE.md)
 
@@ -84,7 +85,7 @@ Supported UI operations cover bounded creation/modification/deletion of native p
 
 ## Security boundary
 
-Grist remains authoritative for the authority of the configured upstream credential. The bridge can restrict that authority through:
+Grist remains authoritative for the authority of the selected upstream credential. The bridge can restrict that authority through:
 
 ```text
 upstream Grist permissions
@@ -99,9 +100,9 @@ The compact capability vocabulary is:
 - `doc:write`
 - `doc.schema:write`
 
-Credentials, bearer/OAuth tokens and API keys are never tool inputs or model-visible outputs.
+Credentials, bearer/OAuth tokens, API keys and principal credential mappings are never tool inputs or model-visible outputs.
 
-The candidate still uses one configured server-side `GRIST_API_KEY`. OAuth mode can authenticate distinct MCP principals, but it does **not** turn that shared upstream API key into per-user Grist credential isolation. Production identity, credential custody and operational hardening remain R5 work.
+Upstream Grist credentials have two explicit modes. `static` preserves one server-side `GRIST_API_KEY` for controlled single-principal/development use. `principal-map` is the R5-C multi-principal production path: it loads an operator-mounted read-only mapping from opaque OAuth principal IDs to Grist Community service-account keys. Principal-map mode forbids `GRIST_API_KEY`, so an unmapped principal fails closed rather than falling back to shared authority. See [docs/CREDENTIALS.md](docs/CREDENTIALS.md).
 
 ## Installation
 
@@ -117,6 +118,7 @@ For the smallest controlled deployment, configure:
 
 ```dotenv
 GRIST_BASE_URL=https://grist.example.org
+GRIST_CREDENTIAL_MODE=static
 GRIST_API_KEY=<server-side Grist API key>
 GRIST_ALLOWED_DOCUMENT_IDS=<one-or-more-document-ids>
 MCP_BEARER_TOKEN=<random-value-at-least-32-characters>
@@ -151,7 +153,14 @@ OAUTH_JWKS_URI=https://auth.example.org/oidc/jwks
 MCP_RESOURCE_URI=https://mcp.example.org/mcp
 ```
 
-When OAuth mode is selected, `MCP_BEARER_TOKEN` must be absent. This mode preserves earlier interoperability work but is not a claim of production identity/credential readiness.
+When OAuth mode is selected, `MCP_BEARER_TOKEN` must be absent. For production multi-principal OAuth, also configure:
+
+```dotenv
+GRIST_CREDENTIAL_MODE=principal-map
+GRIST_PRINCIPAL_CREDENTIALS_FILE=/run/secrets/grist-principals.json
+```
+
+and omit `GRIST_API_KEY`. Production OAuth preflight rejects a static upstream Grist credential as insufficient multi-principal isolation.
 
 ## Endpoints
 

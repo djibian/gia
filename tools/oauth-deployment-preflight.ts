@@ -27,6 +27,10 @@ export function checkOAuthDeployment(config: Config): DeploymentCheck[] {
     {
       id: "bounded_operation_limits",
       passed: config.maxReadRecords > 0 && config.maxWriteRecords > 0 && config.maxSchemaItems > 0
+    },
+    {
+      id: "multi_principal_grist_credentials",
+      passed: config.gristCredentials.mode === "principal-map"
     }
   ];
 }
@@ -43,7 +47,6 @@ export function runPreflight(): number {
   const checks = checkOAuthDeployment(config);
   console.log("configuration_valid: PASS");
   for (const check of checks) console.log(`${check.id}: ${check.passed ? "PASS" : "FAIL"}`);
-  console.log("multi_principal_grist_credentials: BLOCKED_R5_C_STATIC_GRIST_CREDENTIAL");
   console.log("live_oauth_validation: REQUIRED_SEPARATELY");
   return checks.every((check) => check.passed) ? 0 : 1;
 }
