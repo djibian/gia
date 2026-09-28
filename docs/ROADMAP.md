@@ -25,13 +25,13 @@ R1  MINIMAL CORE                          DONE
 R2  MISSING GRIST SEMANTICS ONLY          DONE
  |
  v
-R3  AUTONOMOUS PRODUCT CANDIDATE          ELIGIBLE after R2 integration
+R3  AUTONOMOUS PRODUCT CANDIDATE          DONE
  |
  v
-R4  FINAL VALIDATION CAMPAIGN
+R4  FINAL VALIDATION CAMPAIGN             ELIGIBLE
  |
  v
-R5  HARDENING / PRODUCTION / DISTRIBUTION
+R5  HARDENING / PRODUCTION / DISTRIBUTION BLOCKED by R4
 ```
 
 There are no parallel business-application axes during R1-R3.
@@ -226,7 +226,7 @@ R1-A, R1-B, R1-C and R1-D are integrated. No further R1 slice is committed.
 
 # R2 — Missing Grist semantics only
 
-**Status: DONE on this candidate; effective on `main` after R2 integration**
+**Status: DONE**
 
 Authoritative evidence: `docs/R2-MISSING-GRIST-SEMANTICS-AUDIT.md`.
 
@@ -270,7 +270,7 @@ The bounded audit found only two required generic gaps: deletion of one page and
 
 # R3 — Autonomous Product Candidate
 
-**Status: ELIGIBLE after R2 integration**
+**Status: DONE**
 
 ## Goal
 
@@ -285,6 +285,14 @@ Turn the lean runtime into a self-contained candidate worth validating, without 
 5. produce a short generic usage flow showing how an MCP agent discovers, inspects and modifies Grist without embedding a business scenario;
 6. perform a dependency/licensing/provenance pass over reused/adapted external code.
 
+Integrated completion evidence:
+
+- #167 removes retired J1/J2 executable residue;
+- #168 freezes MCP contract v2 and removes the dormant v1 registration layer;
+- #169 records the dependency/licensing/provenance audit;
+- #170 documents the generic MCP usage flow;
+- #171 simplifies runtime/configuration to the MCP-only candidate and reconciles README/architecture/security/current-state docs.
+
 ## Exit criteria
 
 - product installation/configuration is coherent;
@@ -294,13 +302,13 @@ Turn the lean runtime into a self-contained candidate worth validating, without 
 - baseline CI is green;
 - the candidate is frozen enough that a comprehensive validation campaign is meaningful.
 
-R3 deliberately does **not** require stage-tracking, CCF or browser test matrices.
+All R3 exit criteria are satisfied on integrated `main`. No further R3 slice is committed.
 
 ---
 
 # R4 — Final Validation Campaign
 
-**Status: BLOCKED by R3**
+**Status: ELIGIBLE**
 
 ## Goal
 
@@ -310,7 +318,7 @@ This is the first tranche where domain applications and comprehensive end-to-end
 
 ## Required validation classes
 
-The exact fixtures are prepared only at R4 start, but the campaign must cover at least:
+The committed R4 set is the nine validation classes below. Fixture preparation is part of R4 execution, not a separate human gate.
 
 1. **new generic application** — construct useful schema/data/UI from an empty or minimal Grist document;
 2. **existing generic application** — inspect and modify while preserving unrelated human data/configuration;
