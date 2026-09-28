@@ -25,15 +25,24 @@ grist-chatgpt
 Grist Community
 ```
 
-The bridge is deliberately **not** an internal planner, business workflow engine, generic Grist proxy, ACL/service-account administration layer, raw SQL surface, arbitrary `/apply` endpoint or browser automation framework.
+The bridge is deliberately **not** an internal planner, business workflow engine, generic Grist proxy, ACL administration layer, raw SQL surface, arbitrary `/apply` endpoint or browser automation framework.
 
 Business applications such as stage tracking or pedagogy are validation cases, not architecture dependencies.
 
-See [Product vision](docs/PRODUCT_VISION.md), [Authoritative roadmap](docs/ROADMAP.md), [MCP v2 contract](docs/MCP-CONTRACT.md), [Architecture](docs/ARCHITECTURE.md), [Security model](docs/SECURITY.md) and [Grist credential boundary](docs/CREDENTIALS.md).
+See:
+
+- [Product vision](docs/PRODUCT_VISION.md)
+- [Authoritative roadmap](docs/ROADMAP.md)
+- [MCP v2 contract](docs/MCP-CONTRACT.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security model](docs/SECURITY.md)
+- [Grist credential boundary](docs/CREDENTIALS.md)
+- [Generic usage flow](docs/R3-GENERIC-USAGE-FLOW.md)
+- [Dependency/provenance audit](docs/R3-DEPENDENCY-PROVENANCE.md)
 
 ## Current candidate
 
-The product exposes exactly ten model-facing MCP v2 tools:
+The R3 candidate is MCP-first and exposes exactly ten model-facing tools:
 
 | Tool | Purpose |
 | --- | --- |
@@ -48,29 +57,52 @@ The product exposes exactly ten model-facing MCP v2 tools:
 | `grist_change_ui` | change or delete supported page/widget state |
 | `grist_help` | progressively disclose the contract |
 
-`grist_help` reports MCP contract version `2`. The historical 23-tool v1 and GPT Actions/OpenAPI compatibility surfaces are retired from the active product.
+`grist_help` reports MCP contract version `2`.
+
+The historical 23-tool MCP v1 surface is retired. The historical GPT Actions/OpenAPI compatibility surface is also retired from the candidate rather than maintained as a second public product. Historical design and submission artefacts remain in the repository as history and possible R5 evidence; they do not control the current runtime.
+
+## What the agent can do
+
+### Discover and inspect
+
+The agent can discover resources allowed by deployment policy and inspect compact application structure without indiscriminately loading business rows. Inspection includes supported table/column metadata, formulas and relationships plus normalized page/widget information where Grist state can be resolved exactly.
+
+Unresolvable or unsupported private metadata is reported as incomplete rather than guessed.
+
+### Query and change data
+
+Reads are bounded by explicit query limits. Record creation, update and deletion target one table and a bounded set of records.
+
+Large record mutations may be sent to Grist in sequential internal batches. Those batches are not atomic as a group. Confirmed partial results are preserved and an ambiguous upstream write is never treated as a proven no-effect suitable for blind replay.
+
+### Change structure
+
+The bridge supports bounded table/column creation and targeted structural changes through stable semantic inputs. Arbitrary Grist UserActions and `/apply` payloads are not public inputs.
+
+### Change UI
+
+Supported UI operations cover bounded creation/modification/deletion of native pages and widgets. Private metadata references are resolved server-side. Read-modify-write operations preserve unrelated configuration and re-read material postconditions where practical.
 
 ## Security boundary
 
-Grist remains authoritative for upstream authority. The bridge can only restrict it through:
+Grist remains authoritative for the authority of the selected upstream credential. The bridge can restrict that authority through:
 
 ```text
-selected upstream Grist service-account permissions
+upstream Grist permissions
 ∩ deployment document/workspace ceiling
 ∩ principal resource grant
 ∩ required capability
 ```
 
-The capability vocabulary remains `doc:read`, `doc:write`, `doc.schema:write`.
+The compact capability vocabulary is:
 
-Credentials, bearer/OAuth tokens, Grist API keys and principal credential mappings are never tool inputs or model-visible outputs.
+- `doc:read`
+- `doc:write`
+- `doc.schema:write`
 
-Two upstream credential modes exist:
+Credentials, bearer/OAuth tokens, API keys and principal credential mappings are never tool inputs or model-visible outputs.
 
-- `static` — one server-side `GRIST_API_KEY`, only for controlled single-principal/development use;
-- `principal-map` — production multi-principal mode, selecting one operator-provisioned Grist Community service-account key per opaque OAuth principal from a protected read-only file.
-
-`principal-map` mode forbids a shared `GRIST_API_KEY` fallback. Missing principals fail closed. The mapping is loaded once at startup and never written by the bridge.
+Upstream Grist credentials have two explicit modes. `static` preserves one server-side `GRIST_API_KEY` for controlled single-principal/development use. `principal-map` is the R5-C multi-principal production path: it loads an operator-mounted read-only mapping from opaque OAuth principal IDs to Grist Community service-account keys. Principal-map mode forbids `GRIST_API_KEY`, so an unmapped principal fails closed rather than falling back to shared authority. See [docs/CREDENTIALS.md](docs/CREDENTIALS.md).
 
 ## Installation
 
@@ -82,37 +114,53 @@ npm ci
 npm run dev
 ```
 
-For the smallest controlled single-principal deployment:
+For the smallest controlled deployment, configure:
 
 ```dotenv
 GRIST_BASE_URL=https://grist.example.org
 GRIST_CREDENTIAL_MODE=static
 GRIST_API_KEY=<server-side Grist API key>
 GRIST_ALLOWED_DOCUMENT_IDS=<one-or-more-document-ids>
+MCP_BEARER_TOKEN=<random-value-at-least-32-characters>
+```
+
+`GRIST_ALLOWED_WORKSPACE_IDS` may be used instead of or alongside document IDs. The process refuses to start unless at least one deployment resource boundary is configured.
+
+Optional guardrails:
+
+- `MCP_CAPABILITIES` — defaults to all three capability classes;
+- `GRIST_MAX_READ_RECORDS` — default `5000`;
+- `GRIST_MAX_WRITE_RECORDS` — default `500`;
+- `GRIST_WRITE_BATCH_RECORDS` — default `200`;
+- `GRIST_MAX_SCHEMA_ITEMS` — default `100`;
+- `MCP_ALLOWED_HOSTS` — additional public hostnames accepted by the MCP HTTP application;
+- `PORT` — default `3000`;
+- `HOST` — intentionally restricted to localhost.
+
+The default authentication mode is static bearer:
+
+```dotenv
 MCP_AUTH_MODE=static
 MCP_BEARER_TOKEN=<random-value-at-least-32-characters>
 ```
 
-For production multi-principal OAuth, mount the operator-managed service-account mapping read-only:
+A provider-neutral JWT/JWKS OAuth mode also exists:
 
 ```dotenv
-GRIST_BASE_URL=https://grist.example.org
-GRIST_CREDENTIAL_MODE=principal-map
-GRIST_PRINCIPAL_CREDENTIALS_FILE=/run/secrets/grist-principals.json
-GRIST_ALLOWED_DOCUMENT_IDS=<deployment-ceiling>
 MCP_AUTH_MODE=oauth
 OAUTH_ISSUER=https://auth.example.org/oidc
 OAUTH_JWKS_URI=https://auth.example.org/oidc/jwks
 MCP_RESOURCE_URI=https://mcp.example.org/mcp
 ```
 
-`GRIST_API_KEY` and `MCP_BEARER_TOKEN` must be absent from that production OAuth configuration. See [docs/CREDENTIALS.md](docs/CREDENTIALS.md) for service-account provisioning, mapping, rotation and revocation.
+When OAuth mode is selected, `MCP_BEARER_TOKEN` must be absent. For production multi-principal OAuth, also configure:
 
-`GRIST_ALLOWED_WORKSPACE_IDS` may be used instead of or alongside document IDs. The process refuses to start unless at least one deployment resource boundary is configured.
+```dotenv
+GRIST_CREDENTIAL_MODE=principal-map
+GRIST_PRINCIPAL_CREDENTIALS_FILE=/run/secrets/grist-principals.json
+```
 
-Optional guardrails include `MCP_CAPABILITIES`, `GRIST_MAX_READ_RECORDS`, `GRIST_MAX_WRITE_RECORDS`, `GRIST_WRITE_BATCH_RECORDS`, `GRIST_MAX_SCHEMA_ITEMS`, `MCP_ALLOWED_HOSTS`, `PORT` and `HOST`.
-
-Production OAuth preflight additionally requires `GRIST_CREDENTIAL_MODE=principal-map`; this prevents a shared upstream key from being represented as multi-principal Grist isolation.
+and omit `GRIST_API_KEY`. Production OAuth preflight rejects a static upstream Grist credential as insufficient multi-principal isolation.
 
 ## Endpoints
 
@@ -126,6 +174,8 @@ The Node process binds only to localhost. Use a reverse proxy for remote HTTPS e
 
 ## Development checks
 
+The construction baseline is intentionally small:
+
 ```bash
 npm ci
 npm audit --omit=dev --audit-level=high
@@ -134,8 +184,10 @@ npm test
 npm run build
 ```
 
-R4 completed broad product validation. R5 adds focused production OAuth, credential, operational and reviewer/distribution evidence rather than changing the compact MCP contract.
+R0-R3 use these checks as engineering feedback, not as comprehensive product proof. Domain scenarios, real-document campaigns, rerun/failure characterization and broader compatibility testing belong to R4.
 
 ## Repository history
 
-Historical P0-P4, C4-C8, J0-J2 and distribution documents remain evidence/component-bank material. `docs/ROADMAP.md`, `docs/PRODUCT_VISION.md` and the current runtime define active project state.
+The repository contains substantial historical P0-P4, C4-C8, J0-J2 and public-distribution design/evidence documents. They remain useful evidence or component-bank material, but `docs/ROADMAP.md`, `docs/PRODUCT_VISION.md` and the current runtime define the active project.
+
+Do not infer current requirements from a historical milestone merely because its files remain present.

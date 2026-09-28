@@ -2,7 +2,7 @@
 
 ## Status
 
-This document describes the compact MCP v2 product after R4 validation and during R5 production hardening.
+This document describes the **MCP v2 product** after R4 validation and during R5 production hardening.
 
 `docs/ROADMAP.md` remains authoritative for tranche eligibility. Historical architecture and milestone documents remain evidence only.
 
@@ -20,7 +20,6 @@ grist-chatgpt
   compact Grist context
   bounded generic mutations
   authorization + safety normalization
-  principal -> service-account credential selection
         |
         v
 Grist Community REST / bounded internal adapters
@@ -32,15 +31,34 @@ The product does not contain a general reasoning planner, business workflow engi
 
 ### MCP client / LLM
 
-Owns understanding user intent, deciding relevant Grist information, multi-step reasoning/sequencing, satisfaction decisions and adaptation after tool results.
+Owns:
+
+- understanding user intent;
+- deciding which Grist information is relevant;
+- multi-step reasoning and sequencing;
+- deciding what result satisfies the user's request;
+- adapting after tool results.
 
 ### `grist-chatgpt`
 
-Owns discovery, compact semantic context, stable semantic inputs/outputs, bounded data/schema/UI intentions, private-reference translation, input/output bounds, principal/resource/capability enforcement, server-side selection of the current principal's configured upstream service-account credential, partial/ambiguous-write classification, preservation of unrelated state, targeted post-write verification and secret minimization.
+Owns:
+
+- discovery of allowed Grist resources;
+- compact semantic context;
+- stable semantic inputs/outputs;
+- bounded data/schema/UI intentions;
+- translation between public identifiers and private Grist references;
+- input/output bounds;
+- principal/resource/capability enforcement;
+- server-side selection of the current principal's upstream credential;
+- partial/ambiguous-write classification;
+- preservation of unrelated state during supported read-modify-write operations;
+- targeted post-write verification where material;
+- data and secret minimization.
 
 ### Grist
 
-Owns records, formulas, native schema behavior, pages/widgets and native permissions. In multi-principal production mode, Grist Community service accounts are also the authoritative upstream identity/least-privilege primitive.
+Owns application state: records, formulas, native schema behavior, pages/widgets and native permissions. In multi-principal production mode, Grist Community service accounts are the upstream least-privilege identity primitive.
 
 ## Runtime composition
 
@@ -57,9 +75,6 @@ HTTP /mcp
       |      |       `-- deployment resource policy
       |      `---------- authorization + audit
       `----------------- credential-derived Grist client
-                         |
-                         +-- static key (controlled/dev), or
-                         `-- principal-map -> service-account key
             |
             v
    AuthorizedGristService
@@ -72,9 +87,9 @@ HTTP /mcp
        Grist Community
 ```
 
-`GristContextFactory` creates a fresh credential-derived client, discovery cache, access policy and authorized service graph for every principal context. It does not retain user-derived contexts across principals.
+`GristContextFactory` creates a fresh credential-derived client, discovery cache, access policy and authorization/service graph for every principal context; principal-derived state is not reused across principals.
 
-`StaticApiKeyCredentialProvider` remains for controlled single-principal/development use. `FilePrincipalApiKeyCredentialProvider` is the R5-C production multi-principal path: it loads an operator-mounted read-only JSON mapping once at startup and resolves only the exact opaque OAuth principal ID. Principal-map mode forbids a shared `GRIST_API_KEY` fallback.
+`StaticApiKeyCredentialProvider` remains for controlled single-principal/development use. R5-C adds `FilePrincipalApiKeyCredentialProvider`: it reads an operator-mounted mapping once at startup and resolves the exact opaque OAuth principal to a Grist Community service-account key. `principal-map` configuration forbids a shared `GRIST_API_KEY` fallback.
 
 ## Public MCP contract
 
@@ -93,19 +108,73 @@ grist_change_ui
 grist_help
 ```
 
-These map to `discover`, `inspect`, `query`, `change_data`, `change_structure`, `change_ui` and `help`. Manager tools use closed action variants; there is no arbitrary multi-action dispatcher.
+These map to the conceptual responsibilities:
 
-The historical MCP v1 registrars and GPT Actions/OpenAPI duplicate public surface are retired from the active product.
+```text
+discover
+inspect
+query
+change_data
+change_structure
+change_ui
+help
+```
 
-## Context and mutation architecture
+Manager tools use closed action variants. One invocation is still one bounded semantic intention; there is no arbitrary multi-action dispatcher.
 
-The agent needs an application map, not a copy of all data. Compact inspection preferentially includes tables/columns, types/formulas, relations, pages/widgets, supported normalized layout/configuration and explicit incompleteness markers. Business rows are read only through bounded queries.
+The historical MCP v1 registrars were removed in R3. GPT Actions/OpenAPI is also retired from the active candidate instead of being maintained as a second public contract.
 
-Mutations are ordinary bounded semantic operations, not persisted Builder plans. One semantic mutation may internally perform the small read/translate/write/re-read sequence needed for safety. Cross-operation orchestration remains with the MCP client.
+## Context architecture
 
-Public inputs prefer stable Grist identifiers; private numeric metadata refs stay server-side. OAuth credential mapping likewise uses the bridge's stable opaque `oauth:<sha256>` principal ID rather than a raw provider subject.
+The agent needs an application map, not a copy of all data.
 
-For supported composite updates, the bridge resolves current state, preserves untargeted state and refuses the write when exact preservation cannot be established. Confirmed partial results survive; uncertain non-idempotent effects are never blindly replayed.
+Compact inspection preferentially includes:
+
+- tables and stable column IDs;
+- types and formulas;
+- Ref/RefList relationships;
+- safe reverse-relation information when exactly resolvable;
+- pages and stable widget IDs;
+- supported normalized layout/configuration;
+- explicit incompleteness/truncation markers.
+
+Business rows are read only through bounded query operations. Unresolvable private Grist metadata is reported as incomplete rather than guessed.
+
+## Mutation architecture
+
+Mutations are ordinary bounded semantic operations, not persisted Builder plans.
+
+A typical agent sequence is:
+
+```text
+grist_inspect
+  -> grist_change_structure
+  -> grist_change_ui
+  -> grist_query
+```
+
+One semantic mutation may internally perform the small read/translate/write/re-read sequence needed for safety. Cross-operation orchestration remains with the MCP client.
+
+### Stable identifiers
+
+Public inputs prefer document IDs, table IDs, column IDs and stable current page/widget IDs. Private numeric metadata refs stay server-side.
+
+The R5-C credential mapping likewise uses the bridge's non-reversible stable `oauth:<sha256>` principal ID rather than a raw provider subject.
+
+### Preservation
+
+For a supported composite update, the bridge resolves current state, preserves untargeted state and refuses the write if exact preservation cannot be established.
+
+### Partial and ambiguous effects
+
+The retained J0/J1 semantic rules are direct operation invariants:
+
+- preserve confirmed completed targets/results;
+- distinguish proven no-effect from uncertain effect;
+- never blindly replay an uncertain non-idempotent write;
+- expose compact information for the agent's next safe decision.
+
+The retired generalized J1 journal/coordinator is not part of the active candidate.
 
 ## Authorization architecture
 
@@ -117,18 +186,34 @@ doc:write
 doc.schema:write
 ```
 
-Effective bridge authority is bounded by native Grist authority of the selected upstream credential, deployment document/workspace ceiling, principal grants and required capability. The bridge may reduce upstream authority but cannot elevate it.
+Effective bridge authority is bounded by the selected upstream Grist credential, deployment document/workspace ceiling, principal grants and required capability. The bridge may reduce upstream authority but cannot elevate it.
 
-Static bearer + static Grist credential mode is the minimum controlled deployment. Provider-neutral OAuth/JWKS plus `principal-map` credentials is the production multi-principal path. Grist service-account creation/grants/rotation/revocation remain operator-side administration and are not model-facing product operations.
+Static bearer mode plus static Grist credential mode is the minimum controlled deployment. Provider-neutral OAuth/JWKS plus `principal-map` credentials is the production multi-principal path. Service-account creation/grants/expiry/rotation/revocation remain operator-side Grist administration, not model-facing product operations.
 
 ## Deliberate exclusions
 
-The product excludes business-specific stage/CCF/CRM logic, internal planners, generic browser automation, wizard/sub-agent frameworks, lifecycle schedulers, generic webhooks/integrations, generic ACL/user/org/service-account administration, raw SQL, arbitrary `/apply`/UserAction/HTTP escape hatches, GPT Actions/OpenAPI duplicate transport and an internal credential database/secret-manager implementation.
+The R3 candidate excludes:
+
+- business-specific stage/CCF/CRM logic;
+- internal application planner/contract engine;
+- generalized ImpactGraph/ManagedScope machinery;
+- generic browser automation;
+- wizard or sub-agent frameworks;
+- generated custom-widget platform;
+- lifecycle scheduler/monitor;
+- generic webhooks/integrations;
+- generic ACL/user/org/service-account administration;
+- raw SQL model surface;
+- arbitrary `/apply`, UserAction or HTTP escape hatches;
+- GPT Actions/OpenAPI duplicate public transport;
+- an internal credential database or secret-manager implementation.
+
+Historical code/documents for later production or distribution work may remain outside the runtime path.
 
 ## External reference position
 
 - Grist official behavior is the functional oracle.
-- Grist Community service accounts are **ADAPTED** as the R5-C upstream identity and least-privilege primitive; no Grist server code is copied.
+- Grist Community service accounts are **ADAPTED** for R5-C as the upstream identity/least-privilege primitive; no Grist server code is copied.
 - `gwhthompson/grist-mcp-server` informed compact manager-style tools/help.
 - `nic01asFr/GristCoder` informed semantic application context.
 - `Xe138/grist-mcp-server` informed the small capability/resource vocabulary without code reuse where licensing was unclear.
@@ -136,8 +221,8 @@ The product excludes business-specific stage/CCF/CRM logic, internal planners, g
 
 See `docs/RECOMPOSITION-REVIEW.md`, `docs/R3-DEPENDENCY-PROVENANCE.md`, `docs/R5-PRODUCTION-DISTRIBUTION-AUDIT.md` and `docs/CREDENTIALS.md` for provenance/licensing decisions.
 
-## Construction versus production proof
+## Construction versus validation
 
-R0-R3 constructed the candidate and R4 completed broad product validation. R5 adds only production-specific identity, credential, operations and distribution work.
+R0-R3 kept only baseline CI and focused unit/contract regressions needed to maintain the candidate. R4 performed broad product validation. R5 adds production-specific identity, credential, operations and distribution evidence.
 
-R5-C repository implementation remains incomplete as production evidence until at least two real Grist Community service accounts demonstrate distinct upstream authority and no cross-principal client/cache reuse.
+R5-C repository implementation remains incomplete as production evidence until at least two real Community service accounts demonstrate distinct upstream authority and no cross-principal client/cache reuse.
