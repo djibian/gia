@@ -38,7 +38,7 @@ function toolCall(name: string) {
   };
 }
 
-test("adds mcp/www_authenticate when the OAuth principal lacks the tool capability", async () => {
+test("adds mcp/www_authenticate when the OAuth principal lacks the lean tool capability", async () => {
   const principal = createPrincipal({
     id: "oauth:test",
     transport: "mcp",
@@ -60,7 +60,7 @@ test("adds mcp/www_authenticate when the OAuth principal lacks the tool capabili
   );
 
   const response = await handler.fetch(new Request("https://example.test/mcp"), {
-    parsedBody: toolCall("create_records")
+    parsedBody: toolCall("grist_add_records")
   });
   const body = (await response.json()) as {
     result: { _meta: Record<string, unknown> };
@@ -71,6 +71,38 @@ test("adds mcp/www_authenticate when the OAuth principal lacks the tool capabili
   assert.equal(body.result._meta.existing, "keep-me");
   assert.deepEqual(body.result._meta["mcp/www_authenticate"], [
     `Bearer resource_metadata="${METADATA_URL}", error="insufficient_scope", error_description="Additional authorization is required for scope doc:write.", scope="doc:write"`
+  ]);
+});
+
+test("adds schema-write step-up for destructive lean UI tools", async () => {
+  const principal = createPrincipal({
+    id: "oauth:test",
+    transport: "mcp",
+    documentIds: ["doc-1"],
+    workspaceIds: [],
+    capabilities: ["doc:read", "doc:write"]
+  });
+  const handler = installOAuthToolAuthChallenges(
+    fakeHandler({
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        isError: true,
+        content: [{ type: "text", text: "schema denied" }]
+      }
+    }),
+    { principal, resourceMetadataUrl: METADATA_URL }
+  );
+
+  const response = await handler.fetch(new Request("https://example.test/mcp"), {
+    parsedBody: toolCall("grist_change_ui")
+  });
+  const body = (await response.json()) as {
+    result: { _meta: Record<string, unknown> };
+  };
+
+  assert.deepEqual(body.result._meta["mcp/www_authenticate"], [
+    `Bearer resource_metadata="${METADATA_URL}", error="insufficient_scope", error_description="Additional authorization is required for scope doc.schema:write.", scope="doc.schema:write"`
   ]);
 });
 
@@ -96,7 +128,7 @@ test("does not request OAuth step-up when the principal already has the capabili
   });
 
   const response = await handler.fetch(new Request("https://example.test/mcp"), {
-    parsedBody: toolCall("create_records")
+    parsedBody: toolCall("grist_add_records")
   });
   assert.deepEqual(await response.json(), originalBody);
 });
@@ -122,7 +154,7 @@ test("does not attach a challenge to a successful response even if a capability 
   });
 
   const response = await handler.fetch(new Request("https://example.test/mcp"), {
-    parsedBody: toolCall("create_records")
+    parsedBody: toolCall("grist_add_records")
   });
   assert.deepEqual(await response.json(), originalBody);
 });

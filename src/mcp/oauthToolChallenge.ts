@@ -2,7 +2,7 @@ import type { McpHandlerRequestOptions, McpHttpHandler } from "@modelcontextprot
 
 import { buildInsufficientScopeToolChallenge } from "../auth/oauthProtectedResource.js";
 import type { GristCapability, Principal } from "../auth/principal.js";
-import { getOperation } from "../operations/registry.js";
+import { getLeanTool } from "./leanRegistry.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -18,7 +18,7 @@ function requestedToolName(options: McpHandlerRequestOptions | undefined): strin
 
 function requiredCapability(toolName: string): GristCapability | undefined {
   try {
-    return getOperation(toolName).capability ?? undefined;
+    return getLeanTool(toolName).capability ?? undefined;
   } catch {
     return undefined;
   }

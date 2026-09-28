@@ -1,32 +1,67 @@
-# ChatGPT MCP OAuth readiness — C4-P0
+# ChatGPT / Codex MCP OAuth readiness
 
-**Initial readiness check:** 2026-09-18  
-**Live interoperability completed:** 2026-09-19  
-**Scope:** non-production C4-P0 only
+**Historical live proof:** 2026-09-19  
+**R5-B revalidation:** 2026-09-28  
+**Current public contract:** MCP v2, ten tools
 
-This document records the readiness contract that preceded the real ChatGPT MCP OAuth proof. C4-P0 is now complete; the final live results are in `docs/LOGTO-PROCONNECT-MCP-POC-RESULTS.md`.
+This document separates the historical live interoperability proof from the current R5-B production revalidation. The 2026-09-19 proof established that ChatGPT could complete the standards-based Logto/ProConnect OAuth path. R5-B revalidates that same provider-neutral architecture against the **current ten-tool MCP v2 runtime** rather than assuming the retired v1 tool surface is still authoritative.
 
-Never record OAuth access/refresh/ID tokens, authorization codes, PKCE verifiers, cookies, ProConnect/Logto client secrets, raw provider identities, or Grist API keys in this document, GitHub, chat, or test output.
+Never record OAuth access/refresh/ID tokens, authorization codes, PKCE verifiers, cookies, ProConnect/Logto client secrets, raw provider identities or Grist API keys in this document, GitHub, chat or test output.
 
-## Bridge prerequisites proven
+## Current bridge contract
 
-The bridge exposes the OAuth/MCP signals required by the tested ChatGPT flow:
+The OAuth resource server exposes:
 
-1. RFC 9728 protected-resource metadata at:
+1. RFC 9728 protected-resource metadata at `/.well-known/oauth-protected-resource`;
+2. the canonical MCP resource URI through that metadata and `WWW-Authenticate` challenges;
+3. fixed public scopes only: `doc:read`, `doc:write`, `doc.schema:write`;
+4. OAuth `securitySchemes` on each of the ten lean tools, derived from the lean MCP registry and mirrored in `_meta` for compatibility;
+5. runtime `_meta["mcp/www_authenticate"]` insufficient-scope challenges derived from the same lean-tool capability;
+6. provider-neutral JWT/JWKS verification with fail-closed issuer, audience/resource, expiry and scope enforcement.
 
-   ```text
-   /.well-known/oauth-protected-resource
-   ```
+The bridge does not implement Logto client registration and does not depend on a Logto SDK.
 
-2. OAuth `securitySchemes` on every tool in `tools/list`, derived from the normative operation registry and mirrored in `_meta` for compatibility.
+## Ten-tool OAuth capability map
 
-3. Runtime `_meta["mcp/www_authenticate"]` insufficient-scope challenges with `resource_metadata`, `error`, `error_description`, and `scope`.
+| MCP v2 tool | OAuth capability |
+| --- | --- |
+| `grist_discover` | `doc:read` |
+| `grist_inspect` | `doc:read` |
+| `grist_query` | `doc:read` |
+| `grist_add_records` | `doc:write` |
+| `grist_change_records` | `doc:write` |
+| `grist_add_structure` | `doc.schema:write` |
+| `grist_change_structure` | `doc.schema:write` |
+| `grist_add_ui` | `doc.schema:write` |
+| `grist_change_ui` | `doc.schema:write` |
+| `grist_help` | OAuth required, no additional document scope |
 
-The bridge remains provider-neutral. No Logto SDK or client-registration behavior is embedded in bridge core.
+This map is metadata, not an authority elevation. Grist permissions remain authoritative and bridge policy may only reduce them.
 
-## Client-registration path proven
+## Current readiness probe
 
-The real ChatGPT Developer Mode connection used:
+Public, non-destructive checks:
+
+```bash
+MCP_RESOURCE_URI='https://grist-chatgpt.loeildumaitre.fr/mcp' \
+  npm run probe:chatgpt-oauth-readiness
+```
+
+Optional authenticated ten-tool proof, using a fresh token only from protected local environment state:
+
+```bash
+MCP_RESOURCE_URI='https://grist-chatgpt.loeildumaitre.fr/mcp' \
+OAUTH_ACCESS_TOKEN='<protected environment only>' \
+  npm run probe:chatgpt-oauth-readiness
+```
+
+The authenticated probe performs only `tools/list`. It requires the exact ten-tool v2 set and exact root plus compatibility OAuth schemes. It never prints the token and never performs a Grist write.
+
+Use `npm run probe:oauth-negative` separately for isolated wrong-audience/resource and insufficient-scope evidence. The runtime verifier/unit suite also locks issuer, audience, expiry and scope rejection.
+
+## Historical live result retained
+
+The 2026-09-19 ChatGPT Developer Mode flow used:
 
 ```text
 MCP resource: https://grist-chatgpt.loeildumaitre.fr/mcp
@@ -35,56 +70,23 @@ Client metadata: https://chatgpt.com/oauth/client.json
 Callback: https://chatgpt.com/connector_platform_oauth_redirect
 ```
 
-Logto 1.43.0 Dynamic app / CIMD accepted the ChatGPT client metadata document. ChatGPT successfully discovered the authorization/token endpoints, resource URI, OIDC metadata, UserInfo endpoint and the three fixed MCP scopes.
+Logto 1.43.0 accepted the ChatGPT CIMD metadata. Authorization Code + PKCE `S256`, RFC 8707 resource binding, JWT/JWKS verification, session persistence and reconnect behavior were exercised successfully. The initial Logto `email` permission mismatch was a provider configuration issue and was corrected without adding a bridge scope.
 
-## OIDC permissions discovered during the live test
+The historical proof also confirmed bounded read/write/delete behavior, but it ran against the older public tool surface and used `StaticApiKeyCredentialProvider` upstream of the bridge. It therefore **does not by itself prove the current ten-tool v2 deployment or R5-C multi-principal Grist credentials**.
 
-The first real authorization attempt failed with `invalid_scope` for `email`. A direct sanitized authorization diagnostic reproduced the failure.
+Configured access-token lifetime for the historical revocation proof was 3600 seconds. Removing the Logto grant did not retroactively revoke the already-issued self-contained JWT; after expiry, ChatGPT required reconnection.
 
-The cause was configuration, not bridge incompatibility: Logto advertised OIDC `email`, but the Dynamic app had not granted the corresponding user permission.
+## R5-B completion gate
 
-After enabling the minimum required OIDC user permissions (`email`, plus `profile` for the advertised profile path), the authorization request proceeded to sign-in and the complete ChatGPT -> Logto -> ProConnect -> Logto -> ChatGPT flow succeeded.
+Repository-level R5-B work is complete only when code/CI and the operating probes agree on the ten-tool v2 contract. Final live completion additionally requires an authorized deployment of the reviewed candidate and sanitized evidence that:
 
-No public bridge scope or authorization boundary was weakened.
+- protected-resource discovery succeeds;
+- PKCE `S256`, resource binding and current CIMD registration succeed;
+- authenticated `tools/list` exposes exactly ten v2 tools with exact schemes;
+- issuer/audience/expiry/scope failures remain fail-closed;
+- a reviewer-capable Logto identity can authenticate without operator-only MFA/SMS/email/private-network access;
+- ChatGPT/Codex can complete the current OAuth connection and a bounded reviewer-safe read.
 
-## Public readiness probe
+Those deployment identities and credentials are external protected material. They are not created, copied or committed by the repository Controller.
 
-The non-destructive readiness probe remains useful for future deployments:
-
-```bash
-MCP_RESOURCE_URI='https://grist-chatgpt.loeildumaitre.fr/mcp' \
-  npm run probe:chatgpt-oauth-readiness
-```
-
-It checks protected-resource metadata, canonical resource matching, authorization-server discovery, fixed bridge scopes, CIMD support, PKCE `S256`, Authorization Code, refresh-token support and unauthenticated `/mcp` resource challenges.
-
-An optional authenticated `tools/list` proof may use a fresh token through the local environment only. The probe must never print the token or perform Grist writes.
-
-## Real ChatGPT result
-
-The live-client contract is now PASS for:
-
-```text
-ChatGPT discovers protected MCP resource
-ChatGPT CIMD client accepted by Logto
-ChatGPT reaches Logto authorization
-Logto -> ProConnect login completes
-ChatGPT callback/code exchange completes
-ChatGPT bearer reaches /mcp
-Dynamic Principal/context is created
-OAuth bearer remains outside the Grist credential boundary
-read-only Grist calls
-bounded additive write and targeted re-read
-bounded destructive delete and targeted verification
-session persistence without unnecessary full login
-ChatGPT-side disconnect
-Logto grant removal followed by access-token expiry forces reconnect
-```
-
-Configured access-token lifetime for the revocation proof was 3600 seconds. Removing the Logto grant did not invalidate an already-issued self-contained JWT immediately; once that token expired, ChatGPT could no longer continue silently and displayed a reconnect prompt.
-
-## Boundary after C4-P0
-
-C4-P0 is **DONE**.
-
-The next platform task is C4 productionization. The live POC still used `StaticApiKeyCredentialProvider` for upstream Grist access, so per-user Grist credential onboarding/isolation remains a separate C5 requirement before multi-user operation.
+R5-C separately replaces the static upstream Grist credential with operator-provisioned service-account mappings for multi-principal production.

@@ -1,4 +1,5 @@
-import { OPERATION_REGISTRY } from "../src/operations/registry.js";
+import { LEAN_TOOL_REGISTRY } from "../src/mcp/leanRegistry.js";
+import { oauthSecuritySchemesForTool } from "../src/mcp/oauthToolSecurity.js";
 
 const PROTOCOL_VERSION = "2026-07-28";
 const REQUIRED_SCOPES = ["doc:read", "doc:write", "doc.schema:write"] as const;
@@ -20,10 +21,6 @@ function optional(name: string): string | undefined {
 
 function printPass(label: string, value: boolean): void {
   console.log(`${label}: ${value ? "PASS" : "FAIL"}`);
-}
-
-function printBoolean(label: string, value: boolean): void {
-  console.log(`${label}: ${value ? "yes" : "no"}`);
 }
 
 function isObject(value: unknown): value is JsonObject {
@@ -84,8 +81,8 @@ function requestMeta(): JsonObject {
   return {
     "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
     "io.modelcontextprotocol/clientInfo": {
-      name: "grist-chatgpt-chatgpt-readiness-probe",
-      version: "1.0.0"
+      name: "grist-chatgpt-oauth-v2-readiness-probe",
+      version: "2.0.0"
     },
     "io.modelcontextprotocol/clientCapabilities": {}
   };
@@ -140,29 +137,20 @@ async function postMcp(options: {
   };
 }
 
-function expectedSecuritySchemes(capability: string | null): JsonObject[] {
-  return [
-    {
-      type: "oauth2",
-      scopes: capability === null ? [] : [capability]
-    }
-  ];
-}
-
 function sameJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function inspectToolSecurity(body: unknown): {
   toolsListAccepted: boolean;
-  allRegistryToolsPresent: boolean;
+  exactLeanToolSet: boolean;
   rootSecuritySchemesMatch: boolean;
   compatibilityMirrorMatches: boolean;
 } {
   if (!isObject(body) || !isObject(body.result)) {
     return {
       toolsListAccepted: false,
-      allRegistryToolsPresent: false,
+      exactLeanToolSet: false,
       rootSecuritySchemesMatch: false,
       compatibilityMirrorMatches: false
     };
@@ -172,7 +160,7 @@ function inspectToolSecurity(body: unknown): {
   if (!Array.isArray(tools)) {
     return {
       toolsListAccepted: false,
-      allRegistryToolsPresent: false,
+      exactLeanToolSet: false,
       rootSecuritySchemesMatch: false,
       compatibilityMirrorMatches: false
     };
@@ -183,31 +171,28 @@ function inspectToolSecurity(body: unknown): {
     if (isObject(tool) && typeof tool.name === "string") byName.set(tool.name, tool);
   }
 
-  let rootSecuritySchemesMatch = true;
-  let compatibilityMirrorMatches = true;
-  let allRegistryToolsPresent = true;
+  const expectedNames = LEAN_TOOL_REGISTRY.map((tool) => tool.name).sort();
+  const actualNames = [...byName.keys()].sort();
+  const exactLeanToolSet = sameJson(actualNames, expectedNames);
+  let rootSecuritySchemesMatch = exactLeanToolSet;
+  let compatibilityMirrorMatches = exactLeanToolSet;
 
-  for (const operation of OPERATION_REGISTRY) {
-    const tool = byName.get(operation.name);
-    if (!tool) {
-      allRegistryToolsPresent = false;
+  for (const definition of LEAN_TOOL_REGISTRY) {
+    const tool = byName.get(definition.name);
+    const expected = oauthSecuritySchemesForTool(definition.name);
+    if (!tool || !expected || !sameJson(tool.securitySchemes, expected)) {
       rootSecuritySchemesMatch = false;
-      compatibilityMirrorMatches = false;
-      continue;
     }
 
-    const expected = expectedSecuritySchemes(operation.capability);
-    if (!sameJson(tool.securitySchemes, expected)) rootSecuritySchemesMatch = false;
-
-    const meta = isObject(tool._meta) ? tool._meta : undefined;
-    if (!meta || !sameJson(meta.securitySchemes, expected)) {
+    const meta = tool && isObject(tool._meta) ? tool._meta : undefined;
+    if (!meta || !expected || !sameJson(meta.securitySchemes, expected)) {
       compatibilityMirrorMatches = false;
     }
   }
 
   return {
     toolsListAccepted: true,
-    allRegistryToolsPresent,
+    exactLeanToolSet,
     rootSecuritySchemesMatch,
     compatibilityMirrorMatches
   };
@@ -226,12 +211,14 @@ async function run(): Promise<boolean> {
 
   const resourceMatches = metadata.resource === resourceUri;
   const authorizationServerPresent = authorizationServers.length > 0;
-  const scopesMatch = REQUIRED_SCOPES.every((scope) => scopesSupported.includes(scope));
+  const scopesMatch =
+    REQUIRED_SCOPES.every((scope) => scopesSupported.includes(scope)) &&
+    scopesSupported.every((scope) => REQUIRED_SCOPES.includes(scope as typeof REQUIRED_SCOPES[number]));
 
   printPass("Protected-resource metadata reachable", true);
   printPass("Protected-resource resource matches canonical MCP URI", resourceMatches);
   printPass("Authorization server advertised", authorizationServerPresent);
-  printPass("Protected-resource metadata advertises fixed bridge scopes", scopesMatch);
+  printPass("Protected-resource metadata exposes exactly the fixed bridge scopes", scopesMatch);
 
   if (!authorizationServerPresent) return false;
   const issuer = authorizationServers[0]!;
@@ -243,7 +230,6 @@ async function run(): Promise<boolean> {
   const grantTypes = stringArray(authorizationMetadata.grant_types_supported) ?? [];
 
   const cimdAdvertised = authorizationMetadata.client_id_metadata_document_supported === true;
-  const publicClientSupported = tokenAuthMethods.includes("none");
   const pkceS256 = pkceMethods.includes("S256");
   const authCode = grantTypes.includes("authorization_code");
   const refresh = grantTypes.includes("refresh_token");
@@ -251,43 +237,44 @@ async function run(): Promise<boolean> {
     authorizationMetadata.authorization_response_iss_parameter_supported === true;
 
   printPass("Authorization metadata issuer matches protected-resource issuer", authorizationMetadata.issuer === issuer);
-  printPass("Logto CIMD/dynamic-client support advertised", cimdAdvertised);
-  printPass("Public-client token authentication method none advertised", publicClientSupported);
+  printPass("CIMD/dynamic-client support advertised", cimdAdvertised);
   printPass("PKCE S256 advertised", pkceS256);
   printPass("Authorization Code grant advertised", authCode);
   printPass("Refresh-token grant advertised", refresh);
-  printBoolean("RFC 9207 authorization-response issuer identification advertised", issuerIdentification);
+  printPass("RFC 9207 issuer identification enables stable ChatGPT CIMD", issuerIdentification);
 
-  let chatGptCimdChecks = true;
+  let chatGptCimdChecks = false;
   if (issuerIdentification) {
     const chatGptCimd = await fetchJson(CHATGPT_STABLE_CIMD_URL, "chatgpt_cimd_fetch_failed");
     const clientIdMatches = chatGptCimd.client_id === CHATGPT_STABLE_CIMD_URL;
-    const selectedTokenAuthMethod =
+    const legacyPreferredMethod =
       typeof chatGptCimd.token_endpoint_auth_method === "string"
         ? chatGptCimd.token_endpoint_auth_method
         : undefined;
-    const selectedTokenAuthSupported =
-      selectedTokenAuthMethod !== undefined && tokenAuthMethods.includes(selectedTokenAuthMethod);
     const declaredClientMethods =
       stringArray(chatGptCimd.token_endpoint_auth_methods_supported) ?? [];
-    const selectedMethodDeclared =
-      selectedTokenAuthMethod !== undefined && declaredClientMethods.includes(selectedTokenAuthMethod);
+    const legacyPreferenceDeclared =
+      legacyPreferredMethod === undefined || declaredClientMethods.includes(legacyPreferredMethod);
+    const compatibleTokenAuthMethods = declaredClientMethods.filter((method) =>
+      tokenAuthMethods.includes(method)
+    );
+    const tokenAuthCompatible = compatibleTokenAuthMethods.length > 0;
     const redirectUris = stringArray(chatGptCimd.redirect_uris) ?? [];
     const redirectsUsable = redirectUris.length > 0 && redirectUris.every(isHttpsUrl);
     const privateKeyJwtJwksUsable =
-      selectedTokenAuthMethod !== "private_key_jwt" || isHttpsUrl(chatGptCimd.jwks_uri);
+      !compatibleTokenAuthMethods.includes("private_key_jwt") || isHttpsUrl(chatGptCimd.jwks_uri);
 
     printPass("Stable ChatGPT CIMD reachable", true);
     printPass("Stable ChatGPT CIMD client_id matches document URL", clientIdMatches);
-    printPass("ChatGPT selected token authentication method is declared by its CIMD", selectedMethodDeclared);
-    printPass("Authorization server supports ChatGPT selected token authentication method", selectedTokenAuthSupported);
+    printPass("ChatGPT legacy token-auth preference is declared by its supported-method array", legacyPreferenceDeclared);
+    printPass("Authorization server supports at least one ChatGPT CIMD token authentication method", tokenAuthCompatible);
     printPass("ChatGPT CIMD redirect URIs are HTTPS", redirectsUsable);
-    printPass("ChatGPT private_key_jwt JWKS metadata is usable", privateKeyJwtJwksUsable);
+    printPass("ChatGPT private_key_jwt JWKS metadata is usable when applicable", privateKeyJwtJwksUsable);
 
     chatGptCimdChecks =
       clientIdMatches &&
-      selectedMethodDeclared &&
-      selectedTokenAuthSupported &&
+      legacyPreferenceDeclared &&
+      tokenAuthCompatible &&
       redirectsUsable &&
       privateKeyJwtJwksUsable;
   } else {
@@ -314,13 +301,13 @@ async function run(): Promise<boolean> {
     const authenticated = toolList.status === 200 && toolSecurity.toolsListAccepted;
 
     printPass("Authenticated tools/list succeeds", authenticated);
-    printPass("All normative MCP tools are present", toolSecurity.allRegistryToolsPresent);
-    printPass("Root OAuth securitySchemes match operation registry", toolSecurity.rootSecuritySchemesMatch);
+    printPass("Live tools/list is exactly the ten-tool MCP v2 contract", toolSecurity.exactLeanToolSet);
+    printPass("Root OAuth securitySchemes match lean tool capabilities", toolSecurity.rootSecuritySchemesMatch);
     printPass("Compatibility _meta securitySchemes mirror matches", toolSecurity.compatibilityMirrorMatches);
 
     authenticatedChecks =
       authenticated &&
-      toolSecurity.allRegistryToolsPresent &&
+      toolSecurity.exactLeanToolSet &&
       toolSecurity.rootSecuritySchemesMatch &&
       toolSecurity.compatibilityMirrorMatches;
   } else {
@@ -333,10 +320,10 @@ async function run(): Promise<boolean> {
     scopesMatch &&
     authorizationMetadata.issuer === issuer &&
     cimdAdvertised &&
-    publicClientSupported &&
     pkceS256 &&
     authCode &&
     refresh &&
+    issuerIdentification &&
     chatGptCimdChecks &&
     challengeOk &&
     authenticatedChecks

@@ -1,3 +1,5 @@
+import type { GristCapability } from "../auth/principal.js";
+
 export const MCP_CONTRACT_VERSION = "2" as const;
 
 export type LeanToolCategory =
@@ -11,6 +13,7 @@ export type LeanToolCategory =
 export interface LeanToolDefinition {
   name: string;
   category: LeanToolCategory;
+  capability: GristCapability | null;
   readOnly: boolean;
   destructive: boolean;
   title: string;
@@ -31,6 +34,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
   {
     name: "grist_discover",
     category: "discovery",
+    capability: "doc:read",
     readOnly: true,
     destructive: false,
     title: "Discover Grist resources",
@@ -40,6 +44,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
   {
     name: "grist_inspect",
     category: "context",
+    capability: "doc:read",
     readOnly: true,
     destructive: false,
     title: "Inspect a Grist application",
@@ -49,6 +54,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
   {
     name: "grist_query",
     category: "data",
+    capability: "doc:read",
     readOnly: true,
     destructive: false,
     title: "Query Grist records",
@@ -58,6 +64,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
   {
     name: "grist_add_records",
     category: "data",
+    capability: "doc:write",
     readOnly: false,
     destructive: false,
     title: "Add Grist records",
@@ -67,6 +74,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
   {
     name: "grist_change_records",
     category: "data",
+    capability: "doc:write",
     readOnly: false,
     destructive: true,
     title: "Change existing Grist records",
@@ -76,6 +84,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
   {
     name: "grist_add_structure",
     category: "schema",
+    capability: "doc.schema:write",
     readOnly: false,
     destructive: false,
     title: "Add Grist structure",
@@ -85,6 +94,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
   {
     name: "grist_change_structure",
     category: "schema",
+    capability: "doc.schema:write",
     readOnly: false,
     destructive: true,
     title: "Change existing Grist structure",
@@ -94,6 +104,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
   {
     name: "grist_add_ui",
     category: "ui",
+    capability: "doc.schema:write",
     readOnly: false,
     destructive: false,
     title: "Add Grist pages or widgets",
@@ -103,6 +114,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
   {
     name: "grist_change_ui",
     category: "ui",
+    capability: "doc.schema:write",
     readOnly: false,
     destructive: true,
     title: "Change existing Grist UI",
@@ -112,6 +124,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
   {
     name: "grist_help",
     category: "utility",
+    capability: null,
     readOnly: true,
     destructive: false,
     title: "Discover supported Grist capabilities",
