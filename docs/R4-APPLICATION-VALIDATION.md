@@ -120,6 +120,18 @@ For these fixtures:
 
 Therefore a green run is sufficient to mark browser escalation **NOT TRIGGERED** for these R4 classes. This does not claim that future browser-only behaviors can never require browser testing.
 
-## Result
+## Initial successful result
 
-**PENDING** until both baseline CI and the exact-head `R4 application validation` workflow pass.
+**PASS** on exact candidate head `7fec60ff05da82a70ca2633f957795cb03d9b4c8`.
+
+- baseline CI run 610: PASS;
+- `R4 application validation` run 1: PASS on Grist Community 1.7.19;
+- R4-2 existing generic application: PASS;
+- R4-3 synthetic stage-tracking application: PASS, including native row-level read/write isolation before and after the candidate evolution;
+- R4-4 materially different CCF/pedagogy application: PASS;
+- R4-5 semantic rerun/idempotence: PASS;
+- R4-8 browser escalation: NOT TRIGGERED because every committed material postcondition was observable through MCP/API semantics.
+
+The successful log shows the actual MCP v2 operations on the candidate (`get_pages`, `create_page`, `list_columns`, `create_columns`, `query_records`, `update_records`) and then explicit PASS markers for each class. No runtime/product fix was needed to obtain the result.
+
+This commit records the first successful head. Pull-request CI and the application workflow must rerun on the final documentation head before integration; a later documentation-only head does not broaden the behavioral claim without that rerun.
