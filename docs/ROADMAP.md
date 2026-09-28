@@ -388,7 +388,7 @@ No model-facing service-account administration, generic ACL administration, user
 
 ### R5-B — production OAuth revalidation
 
-**Status: ACTIVE — repository implementation integrated in #179 after independent exact-head PASS; remaining completion evidence requires the protected live OAuth deployment/reviewer-identity proof below.**
+**Status: DONE — repository implementation integrated in #179 after independent exact-head PASS; protected live completion evidence is recorded in `docs/R5-OAUTH-LIVE-EVIDENCE.md`.**
 
 Revalidate the existing provider-neutral OAuth path against the current ten-tool MCP v2 candidate and current OpenAI contract.
 
@@ -401,19 +401,20 @@ Integrated repository result:
 - current OAuth operating/preflight docs are reconciled with MCP v2 and the R5 credential plan;
 - exact-head CI and independent review passed before #179 integrated.
 
-Remaining completion evidence:
+Live completion evidence on the reviewed candidate additionally proves:
 
-- current ChatGPT/Codex OAuth connection with protected-resource metadata, PKCE `S256`, resource binding and CIMD where supported against an authorized deployment of the reviewed candidate;
-- authenticated `tools/list` proves exactly the ten lean tools and their exact OAuth schemes using protected tokens that are never recorded;
-- isolated wrong-resource/insufficient-scope live probes remain fail-closed;
-- an isolated reviewer-capable Logto identity path authenticates without inaccessible MFA/SMS/email steps;
-- one bounded reviewer-safe read succeeds through the current ChatGPT/Codex OAuth connection.
+- current ChatGPT OAuth connection against the authorized deployment with protected-resource metadata, PKCE `S256`, resource binding and current CIMD compatibility;
+- authenticated Tool Scan exposes exactly the ten lean MCP v2 tools and their bounded read/write contract;
+- an isolated Logto-native reviewer identity authenticates without operator-only MFA/SMS/email/private-network steps;
+- one bounded reviewer-safe Grist read succeeds through ChatGPT;
+- a reviewer lacking `doc:write` receives a fail-closed authorization rejection before permitted mutation;
+- a validly signed wrong-resource token is rejected before Principal/context construction.
 
-No additional repository implementation is currently eligible under R5-B unless that live evidence exposes a concrete defect. Production ProConnect registration, secrets, deployment credentials and identity provisioning remain external actions rather than invented test values.
+Production ProConnect registration, secrets, deployment credentials and identity provisioning remain external actions rather than invented test values.
 
 ### R5-C — Community service-account credentials
 
-**Status: BLOCKED by R5-B.**
+**Status: ELIGIBLE.**
 
 Use Grist Community's own service accounts instead of storing personal user API keys.
 
