@@ -40,6 +40,19 @@ The provider reads and validates the file once at process startup, copies it int
 
 The mapping must be supplied by protected deployment state and mounted read-only. Suitable sources include systemd credentials, Docker/Kubernetes-style secrets or another secret manager that can materialize the file. The repository does not implement a secret database.
 
+### Deriving the opaque principal mapping key
+
+The mapping key is exactly the same non-reversible identifier produced by the runtime from the already-validated OAuth issuer + subject pair. An operator may derive it locally without printing the raw subject:
+
+```sh
+export OAUTH_ISSUER='<validated OAuth issuer>'
+read -rsp 'OAuth subject: ' OAUTH_SUBJECT; export OAUTH_SUBJECT; echo
+npm run credential:principal-id
+unset OAUTH_SUBJECT
+```
+
+The helper prints only `principal_id: oauth:<opaque-hash>` and emits a generic failure status otherwise. Do not pass the raw subject as a command-line argument or copy it into tickets, GitHub, chat or durable evidence. Obtain issuer/subject only from the protected authorization-server/operator context used to provision the identity.
+
 ## Grist Community service accounts
 
 R5-C adapts Grist Community's native service-account primitive instead of collecting users' personal API keys.
@@ -63,7 +76,7 @@ Decision: **ADAPT** the native Grist identity/grant/rotation model, while **REIM
 2. Using an operator account outside the bridge, create a narrowly scoped service account with a finite `expiresAt`.
 3. Grant that service-account user only the required Grist documents/workspaces using native Grist sharing/access controls.
 4. Capture the returned API key directly into the deployment secret mechanism. Never place it in chat, GitHub, logs or an MCP field.
-5. Map the target opaque OAuth principal ID to that key in the protected JSON file.
+5. Derive the target opaque OAuth principal ID with `npm run credential:principal-id`, then map that ID to the service-account key in the protected JSON file.
 6. Mount the file read-only, remove `GRIST_API_KEY`, select `GRIST_CREDENTIAL_MODE=principal-map`, then restart the bridge.
 7. Run `npm run check:oauth-deployment`; production OAuth readiness requires `multi_principal_grist_credentials: PASS`.
 8. For rotation, generate the service account's replacement key, atomically replace the mounted secret file, restart the bridge, verify the new path, then ensure the old key no longer authorizes requests.
