@@ -363,11 +363,11 @@ All R4 exit criteria are satisfied. No further R4 validation class is committed.
 
 Productionize the compact MCP v2 product R4 actually validated, then prepare the smallest truthful distribution package. Do not restore the old v1/GPT-Actions or Builder architecture.
 
-Authoritative R5-A audit candidate: `docs/R5-PRODUCTION-DISTRIBUTION-AUDIT.md`.
+Authoritative R5-A audit: `docs/R5-PRODUCTION-DISTRIBUTION-AUDIT.md`.
 
 ## R5-A — current production/distribution gap audit
 
-**Status: DONE on this transition; becomes authoritative only when independently reviewed and integrated.**
+**Status: DONE — independently reviewed and integrated in #178.**
 
 The audit rechecks current OpenAI plugin/MCP requirements, current Grist Community capabilities and current Logto MCP/OAuth behavior before selecting implementation work.
 
@@ -388,20 +388,28 @@ No model-facing service-account administration, generic ACL administration, user
 
 ### R5-B — production OAuth revalidation
 
-**Status: ELIGIBLE after this R5-A transition is integrated.**
+**Status: ACTIVE — repository implementation integrated in #179 after independent exact-head PASS; remaining completion evidence requires the protected live OAuth deployment/reviewer-identity proof below.**
 
 Revalidate the existing provider-neutral OAuth path against the current ten-tool MCP v2 candidate and current OpenAI contract.
 
-Required result:
+Integrated repository result:
 
-- current ChatGPT/Codex OAuth connection with protected-resource metadata, PKCE `S256`, resource binding and CIMD where supported;
-- exact per-tool OAuth `securitySchemes` for all ten lean tools;
+- the ten-tool MCP v2 registry is the single source of OAuth capability metadata;
+- exact per-tool OAuth `securitySchemes` and insufficient-scope challenges now resolve from the lean registry;
+- the current ChatGPT readiness probe checks the exact ten-tool contract, PKCE `S256`, resource binding, current CIMD compatibility and RFC 9207 issuer identification for the stable ChatGPT CIMD path;
 - issuer/audience/expiry/scope failures remain fail-closed;
-- current Logto configuration/probes/deployment docs match actual behavior without Logto-specific bridge-core coupling;
-- an isolated reviewer-capable Logto identity path can authenticate without inaccessible MFA/SMS/email steps;
-- no new public scope unless a separately reviewed current need demonstrates it.
+- current OAuth operating/preflight docs are reconciled with MCP v2 and the R5 credential plan;
+- exact-head CI and independent review passed before #179 integrated.
 
-Production ProConnect registration, secrets and institutional approval remain external actions rather than invented test values.
+Remaining completion evidence:
+
+- current ChatGPT/Codex OAuth connection with protected-resource metadata, PKCE `S256`, resource binding and CIMD where supported against an authorized deployment of the reviewed candidate;
+- authenticated `tools/list` proves exactly the ten lean tools and their exact OAuth schemes using protected tokens that are never recorded;
+- isolated wrong-resource/insufficient-scope live probes remain fail-closed;
+- an isolated reviewer-capable Logto identity path authenticates without inaccessible MFA/SMS/email steps;
+- one bounded reviewer-safe read succeeds through the current ChatGPT/Codex OAuth connection.
+
+No additional repository implementation is currently eligible under R5-B unless that live evidence exposes a concrete defect. Production ProConnect registration, secrets, deployment credentials and identity provisioning remain external actions rather than invented test values.
 
 ### R5-C — Community service-account credentials
 
