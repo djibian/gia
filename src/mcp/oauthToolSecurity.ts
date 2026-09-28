@@ -1,6 +1,6 @@
 import type { McpHttpHandler } from "@modelcontextprotocol/server";
 
-import { getOperation } from "../operations/registry.js";
+import { getLeanTool } from "./leanRegistry.js";
 
 export interface OAuth2ToolSecurityScheme {
   type: "oauth2";
@@ -14,9 +14,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function oauthSecuritySchemesForTool(
   name: string
 ): OAuth2ToolSecurityScheme[] | undefined {
-  let operation;
+  let tool;
   try {
-    operation = getOperation(name);
+    tool = getLeanTool(name);
   } catch {
     return undefined;
   }
@@ -24,7 +24,7 @@ export function oauthSecuritySchemesForTool(
   return [
     {
       type: "oauth2",
-      scopes: operation.capability ? [operation.capability] : []
+      scopes: tool.capability ? [tool.capability] : []
     }
   ];
 }
