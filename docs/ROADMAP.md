@@ -28,10 +28,10 @@ R2  MISSING GRIST SEMANTICS ONLY          DONE
 R3  AUTONOMOUS PRODUCT CANDIDATE          DONE
  |
  v
-R4  FINAL VALIDATION CAMPAIGN             ELIGIBLE
+R4  FINAL VALIDATION CAMPAIGN             DONE
  |
  v
-R5  HARDENING / PRODUCTION / DISTRIBUTION BLOCKED by R4
+R5  HARDENING / PRODUCTION / DISTRIBUTION ELIGIBLE
 ```
 
 There are no parallel business-application axes during R1-R3.
@@ -308,11 +308,11 @@ All R3 exit criteria are satisfied on integrated `main`. No further R3 slice is 
 
 # R4 — Final Validation Campaign
 
-**Status: ELIGIBLE**
+**Status: DONE**
 
 ## Goal
 
-Now test the finished candidate broadly and aggressively.
+Test the finished candidate broadly and aggressively before productionization.
 
 This is the first tranche where domain applications and comprehensive end-to-end proof are product dependencies.
 
@@ -332,6 +332,17 @@ The committed R4 set is the nine validation classes below. Fixture preparation i
 
 R4 may add test infrastructure because the product is now stable enough to justify it. Prefer maintained standard test/browser libraries over bespoke transports.
 
+## Integrated validation evidence
+
+- #173 establishes the finite campaign, evidence rules and independent real-application fixture classes;
+- #174 records deterministic PASS results for partial/ambiguous failure and the declared authorization/isolation boundary;
+- #175 runs the actual MCP v2 candidate against real ephemeral Grist Community 1.7.16, 1.7.17, 1.7.18 and 1.7.19 instances, closing the new-application and compatibility classes;
+- #176 runs existing-generic, synthetic stage-tracking and materially different CCF/pedagogy applications against a real Grist Community 1.7.19 instance, including native row-level ACL preservation, semantic reruns and duplicate/drift assertions;
+- `docs/R4-DETERMINISTIC-RESULTS.md`, `docs/R4-COMPATIBILITY.md`, `docs/R4-APPLICATION-VALIDATION.md` and `docs/R4-COMPLETION-CANDIDATE.md` record the detailed claims and exclusions;
+- the completion transition is merge-gated by an independent exact-head product-candidate review under `AGENTS.md` G7.
+
+R4-8 remained conditional and was **NOT TRIGGERED**: every committed material UI/access postcondition was observable through MCP plus real Grist API/user semantics, so no browser-only product requirement emerged.
+
 ## Outcome rules
 
 - a domain failure becomes a generic product bug only when the missing behavior is genuinely generic;
@@ -347,17 +358,38 @@ R4 may add test infrastructure because the product is now stable enough to justi
 - repeated runs do not reveal systematic duplication or destructive drift;
 - an integrated product-candidate review records PASS.
 
+The first four criteria are satisfied by the integrated evidence above. The final criterion is the independent exact-head review gate on the completion transition; this `DONE` state becomes authoritative only when that reviewed transition is integrated to `main`.
+
+No further R4 validation class is committed.
+
 ---
 
 # R5 — Hardening, production and distribution
 
-**Status: BLOCKED by R4**
+**Status: ELIGIBLE**
 
 ## Goal
 
-Productionize only a product that already proved useful and coherent.
+Productionize only the product that R4 proved useful and coherent.
 
-Re-evaluate, rather than mechanically resume, the earlier production/distribution work:
+Earlier production/distribution plans are evidence, not automatically resumed architecture. R5 starts by re-evaluating them against the current MCP v2 candidate and current external requirements.
+
+## Finite opening work
+
+### R5-A — current production/distribution gap audit
+
+Before implementing new production capability:
+
+1. inspect the current OpenAI/ChatGPT plugin or connector submission requirements and the current Grist Community deployment/authentication capabilities;
+2. compare them with the integrated candidate and retained historical C4/C5/C6/S0/S1/C7/C8 evidence;
+3. classify each historical production/distribution component as **KEEP**, **REVALIDATE**, **REDO**, **REJECT** or **EXTERNAL ACTION**;
+4. identify the smallest generic production gaps, especially production identity, per-user Grist credential custody/onboarding, operational hardening and distribution/reviewer requirements;
+5. distinguish code work from genuinely external actions such as production secrets, institutional ownership/authorization and public submission;
+6. produce the finite R5 implementation set. Do not implement speculative production architecture in the audit slice.
+
+No other R5 implementation slice is committed until R5-A establishes that current need.
+
+## Previously deferred areas to re-evaluate
 
 - C4 production OAuth identity;
 - C5 per-user Grist credential onboarding/custody;
@@ -368,11 +400,11 @@ Re-evaluate, rather than mechanically resume, the earlier production/distributio
 
 Existing completed POC/submission evidence may be reused when still current.
 
-This is also the place for unavoidable external actions such as production secrets, institutional ownership/authorization and public submission. Those actions do not block R1-R4.
+This is also the place for unavoidable external actions such as production secrets, institutional ownership/authorization and public submission.
 
 ## R5 exit criteria
 
-Defined only after R4, against the actual candidate and current distribution requirements. Do not pre-build production architecture for a product shape that may still change.
+Defined by R5-A against the actual validated candidate and current distribution requirements. Do not pre-build production architecture from retired assumptions.
 
 ---
 
@@ -398,6 +430,6 @@ Promotion requires a post-R4 product decision or a demonstrated generic R2 gap.
 
 # Superseded domain documents
 
-Stage-tracking/J2 documents remain historical design and future validation material. They do not control eligibility, architecture, testing order or implementation selection.
+Stage-tracking/J2 documents remain historical design and validation material. They do not control eligibility, architecture, testing order or implementation selection.
 
 Controllers must not revive J2/J3/J4/J5/J6 simply because those documents remain in the repository.
