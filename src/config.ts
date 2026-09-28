@@ -1,3 +1,5 @@
+import { isAbsolute } from "node:path";
+
 import {
   GRIST_CAPABILITIES,
   type GristCapability
@@ -15,9 +17,19 @@ export type McpAuthConfig =
       resourceUri: string;
     };
 
+export type GristCredentialConfig =
+  | {
+      mode: "static";
+      apiKey: string;
+    }
+  | {
+      mode: "principal-map";
+      mappingFile: string;
+    };
+
 export interface Config {
   gristBaseUrl: string;
-  gristApiKey: string;
+  gristCredentials: GristCredentialConfig;
   allowedDocumentIds: readonly string[];
   allowedWorkspaceIds: readonly string[];
   maxReadRecords: number;
@@ -180,6 +192,42 @@ function parseMcpAuth(): McpAuthConfig {
   throw new Error('MCP_AUTH_MODE must be either "static" or "oauth".');
 }
 
+function parseGristCredentials(): GristCredentialConfig {
+  const mode = process.env.GRIST_CREDENTIAL_MODE?.trim() || "static";
+
+  if (mode === "static") {
+    if (process.env.GRIST_PRINCIPAL_CREDENTIALS_FILE?.trim()) {
+      throw new Error(
+        "GRIST_PRINCIPAL_CREDENTIALS_FILE must not be configured when GRIST_CREDENTIAL_MODE=static."
+      );
+    }
+    return {
+      mode,
+      apiKey: required("GRIST_API_KEY")
+    };
+  }
+
+  if (mode === "principal-map") {
+    if (process.env.GRIST_API_KEY?.trim()) {
+      throw new Error(
+        "GRIST_API_KEY must not be configured when GRIST_CREDENTIAL_MODE=principal-map."
+      );
+    }
+    const mappingFile = required("GRIST_PRINCIPAL_CREDENTIALS_FILE");
+    if (!isAbsolute(mappingFile)) {
+      throw new Error("GRIST_PRINCIPAL_CREDENTIALS_FILE must be an absolute path.");
+    }
+    return {
+      mode,
+      mappingFile
+    };
+  }
+
+  throw new Error(
+    'GRIST_CREDENTIAL_MODE must be either "static" or "principal-map".'
+  );
+}
+
 export function loadConfig(): Config {
   const port = Number(process.env.PORT ?? "3000");
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -205,7 +253,7 @@ export function loadConfig(): Config {
 
   return {
     gristBaseUrl: normalizeBaseUrl(required("GRIST_BASE_URL")),
-    gristApiKey: required("GRIST_API_KEY"),
+    gristCredentials: parseGristCredentials(),
     allowedDocumentIds,
     allowedWorkspaceIds,
     maxReadRecords: parseLimit("GRIST_MAX_READ_RECORDS", 5000),
