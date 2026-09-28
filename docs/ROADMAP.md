@@ -31,7 +31,7 @@ R3  AUTONOMOUS PRODUCT CANDIDATE          DONE
 R4  FINAL VALIDATION CAMPAIGN             DONE
  |
  v
-R5  HARDENING / PRODUCTION / DISTRIBUTION ELIGIBLE
+R5  HARDENING / PRODUCTION / DISTRIBUTION ACTIVE
 ```
 
 There are no parallel business-application axes during R1-R3.
@@ -62,7 +62,7 @@ These results may be **KEEP**, **SIMPLIFY**, **REUSE AS PRIMITIVES**, or **REMOV
 
 The former sequence `J2 -> J3 -> J4 -> J5 -> J6` is **RETIRED**. It is not a dependency chain and Controllers must not continue it.
 
-Former C4/C5/C6 productionization and S0/S1/C7/C8 public-distribution work are **DEFERRED to R5**. Existing completed evidence is retained; no new work on those axes is product-critical before R4 passes.
+Former C4/C5/C6 productionization and S0/S1/C7/C8 public-distribution work were deferred to R5. They are historical component/evidence labels, not an instruction to restore their old architecture.
 
 ## Global execution rules
 
@@ -339,16 +339,9 @@ R4 may add test infrastructure because the product is now stable enough to justi
 - #175 runs the actual MCP v2 candidate against real ephemeral Grist Community 1.7.16, 1.7.17, 1.7.18 and 1.7.19 instances, closing the new-application and compatibility classes;
 - #176 runs existing-generic, synthetic stage-tracking and materially different CCF/pedagogy applications against a real Grist Community 1.7.19 instance, including native row-level ACL preservation, semantic reruns and duplicate/drift assertions;
 - `docs/R4-DETERMINISTIC-RESULTS.md`, `docs/R4-COMPATIBILITY.md`, `docs/R4-APPLICATION-VALIDATION.md` and `docs/R4-COMPLETION-CANDIDATE.md` record the detailed claims and exclusions;
-- the completion transition is merge-gated by an independent exact-head product-candidate review under `AGENTS.md` G7.
+- #177 receives an independent exact-head autonomous PASS and integrates the completion transition to `main`.
 
 R4-8 remained conditional and was **NOT TRIGGERED**: every committed material UI/access postcondition was observable through MCP plus real Grist API/user semantics, so no browser-only product requirement emerged.
-
-## Outcome rules
-
-- a domain failure becomes a generic product bug only when the missing behavior is genuinely generic;
-- repair the smallest generic defect, rerun affected validation, and continue;
-- do not import stage/CCF business concepts into the core;
-- record unsupported behavior honestly rather than expanding scope indefinitely.
 
 ## Exit criteria
 
@@ -358,53 +351,130 @@ R4-8 remained conditional and was **NOT TRIGGERED**: every committed material UI
 - repeated runs do not reveal systematic duplication or destructive drift;
 - an integrated product-candidate review records PASS.
 
-The first four criteria are satisfied by the integrated evidence above. The final criterion is the independent exact-head review gate on the completion transition; this `DONE` state becomes authoritative only when that reviewed transition is integrated to `main`.
-
-No further R4 validation class is committed.
+All R4 exit criteria are satisfied. No further R4 validation class is committed.
 
 ---
 
 # R5 — Hardening, production and distribution
 
-**Status: ELIGIBLE**
+**Status: ACTIVE**
 
 ## Goal
 
-Productionize only the product that R4 proved useful and coherent.
+Productionize the compact MCP v2 product R4 actually validated, then prepare the smallest truthful distribution package. Do not restore the old v1/GPT-Actions or Builder architecture.
 
-Earlier production/distribution plans are evidence, not automatically resumed architecture. R5 starts by re-evaluating them against the current MCP v2 candidate and current external requirements.
+Authoritative R5-A audit candidate: `docs/R5-PRODUCTION-DISTRIBUTION-AUDIT.md`.
 
-## Finite opening work
+## R5-A — current production/distribution gap audit
 
-### R5-A — current production/distribution gap audit
+**Status: DONE on this transition; becomes authoritative only when independently reviewed and integrated.**
 
-Before implementing new production capability:
+The audit rechecks current OpenAI plugin/MCP requirements, current Grist Community capabilities and current Logto MCP/OAuth behavior before selecting implementation work.
 
-1. inspect the current OpenAI/ChatGPT plugin or connector submission requirements and the current Grist Community deployment/authentication capabilities;
-2. compare them with the integrated candidate and retained historical C4/C5/C6/S0/S1/C7/C8 evidence;
-3. classify each historical production/distribution component as **KEEP**, **REVALIDATE**, **REDO**, **REJECT** or **EXTERNAL ACTION**;
-4. identify the smallest generic production gaps, especially production identity, per-user Grist credential custody/onboarding, operational hardening and distribution/reviewer requirements;
-5. distinguish code work from genuinely external actions such as production secrets, institutional ownership/authorization and public submission;
-6. produce the finite R5 implementation set. Do not implement speculative production architecture in the audit slice.
+Key decisions:
 
-No other R5 implementation slice is committed until R5-A establishes that current need.
+- **KEEP** the provider-neutral MCP OAuth resource-server seam;
+- **REVALIDATE** Logto/ProConnect rather than replacing working standards-based identity architecture by default;
+- **REJECT** the former C5 design that would collect/store each user's personal Grist API key;
+- **ADAPT** Grist Community service accounts as the per-principal upstream least-privilege identity/credential primitive;
+- **KEEP/SIMPLIFY** existing deployment/preflight/smoke work and implement only missing identity-aware production controls;
+- **REJECT** GPT Actions/OpenAPI as a primary distribution surface;
+- **REDO** the stale 23-tool submission artifact around the ten-tool MCP v2 contract;
+- treat OpenAI public-directory eligibility, publisher verification, production secrets/institutional authorization and final submit/publish actions as explicit external gates.
 
-## Previously deferred areas to re-evaluate
+No model-facing service-account administration, generic ACL administration, user-secret input, new public OAuth scope, generic secret database or multi-instance router is committed.
 
-- C4 production OAuth identity;
-- C5 per-user Grist credential onboarding/custody;
-- C6 operational hardening;
-- S0/S1 OpenAI submission work;
-- C7 reviewer environment;
-- C8 publisher/submission package.
+## Finite R5 implementation set
 
-Existing completed POC/submission evidence may be reused when still current.
+### R5-B — production OAuth revalidation
 
-This is also the place for unavoidable external actions such as production secrets, institutional ownership/authorization and public submission.
+**Status: ELIGIBLE after this R5-A transition is integrated.**
+
+Revalidate the existing provider-neutral OAuth path against the current ten-tool MCP v2 candidate and current OpenAI contract.
+
+Required result:
+
+- current ChatGPT/Codex OAuth connection with protected-resource metadata, PKCE `S256`, resource binding and CIMD where supported;
+- exact per-tool OAuth `securitySchemes` for all ten lean tools;
+- issuer/audience/expiry/scope failures remain fail-closed;
+- current Logto configuration/probes/deployment docs match actual behavior without Logto-specific bridge-core coupling;
+- an isolated reviewer-capable Logto identity path can authenticate without inaccessible MFA/SMS/email steps;
+- no new public scope unless a separately reviewed current need demonstrates it.
+
+Production ProConnect registration, secrets and institutional approval remain external actions rather than invented test values.
+
+### R5-C — Community service-account credentials
+
+**Status: BLOCKED by R5-B.**
+
+Use Grist Community's own service accounts instead of storing personal user API keys.
+
+Required result:
+
+- a principal-aware `GristCredentialProvider` reads a protected **operator-mounted, read-only** principal-to-service-account-key mapping;
+- the bridge never writes that secret mapping and no MCP/API/tool accepts a Grist credential;
+- `StaticApiKeyCredentialProvider` remains only for controlled single-principal/development deployments;
+- missing/invalid mappings fail closed and never fall back to a shared master key in multi-principal mode;
+- operator documentation covers native Grist service-account creation, resource grants, expiry, rotation and revocation;
+- integration evidence with at least two real Community service accounts proves distinct upstream authority and no cross-principal credential/context reuse;
+- no generic service-account, user or ACL administration surface is added.
+
+The initial product does not need an internal encrypted credential database. Operators may source/mount the read-only mapping from systemd credentials, Docker secrets or another secret manager.
+
+### R5-D — minimal operational hardening
+
+**Status: BLOCKED by R5-C.**
+
+Required result:
+
+- per-principal request/rate bounds appropriate to the ten-tool surface;
+- secret-safe operational counters/events sufficient for external alerting;
+- production dependency/security checks plus controlled release/rollback smoke;
+- exercised OAuth issuer/JWKS outage/recovery and service-account credential rotation/revocation;
+- logging/retention guidance aligned with current privacy/data-minimization requirements;
+- alert transport, log backend and secret-manager implementation remain deployment infrastructure unless a concrete product need proves otherwise.
+
+### R5-E — reviewer environment and current plugin package
+
+**Status: BLOCKED by R5-D.**
+
+Rebuild distribution material from the frozen v2 product only.
+
+Required repository/technical result:
+
+- stale v1/23-tool submission artifacts/tests are removed or replaced;
+- current ten-tool names/schemas/annotations/OAuth schemes match the live MCP endpoint;
+- exactly five positive and three negative reviewer cases target the final generic synthetic fixture;
+- one isolated reviewer identity/document/service-account path is exercised end to end;
+- listing/starter-prompt/release-note/privacy-data inventory material reflects actual v2 behavior;
+- a bounded final-host domain-verification route exists for a real portal-issued token when needed;
+- final endpoint is ready for current Tool Scan and the reviewer scenarios.
+
+No portal token, production credential, verified publisher identity or review outcome is invented in repository code.
+
+### R5-F — external publication gate
+
+**Status: BLOCKED by R5-E and external actions.**
+
+This is not autonomous implementation work. It consists of real-world authority and publication actions:
+
+- own/select the production hostname and supply production secrets;
+- enable/provision final Grist Community service accounts and grants;
+- complete any required institutional ProConnect registration/authorization;
+- use an OpenAI publishing project with the currently required data-residency eligibility;
+- complete verified publisher/business identity and Apps Management permissions;
+- publish public website/support/privacy/terms material and demo recording;
+- establish the factual API/instance/branding authorization basis without implying an official relationship;
+- apply the portal-issued domain challenge, run final Tool Scan and provide reviewer credentials;
+- submit for OpenAI review, respond to findings and make the explicit publish decision after approval.
+
+OpenAI's current unofficial-connector rule remains a real review-time risk. It must be resolved by truthful evidence/review, never by misleading naming or by turning the bridge into a generic proxy.
 
 ## R5 exit criteria
 
-Defined by R5-A against the actual validated candidate and current distribution requirements. Do not pre-build production architecture from retired assumptions.
+Technical readiness requires R5-B through R5-E to be integrated with green exact-head evidence and without broadening the lean product boundary.
+
+Public-directory completion additionally requires the R5-F external review/publication actions. If external publication is rejected, preserve the production/private deployment rather than weakening security or inventing affiliation; record the concrete review finding before any new roadmap work is promoted.
 
 ---
 
