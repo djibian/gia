@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { McpHttpHandler } from "@modelcontextprotocol/server";
 
+import { LEAN_TOOL_REGISTRY } from "../src/mcp/leanRegistry.js";
 import {
   addRootOAuthSecuritySchemesToToolList,
   installOAuthToolSecuritySchemes,
@@ -18,20 +19,33 @@ function fakeHandler(response: Response): McpHttpHandler {
   };
 }
 
-test("derives OAuth scopes from the normative operation registry", () => {
-  assert.deepEqual(oauthSecuritySchemesForTool("list_documents"), [
+test("derives OAuth scopes from the lean MCP registry", () => {
+  assert.deepEqual(oauthSecuritySchemesForTool("grist_discover"), [
     { type: "oauth2", scopes: ["doc:read"] }
   ]);
-  assert.deepEqual(oauthSecuritySchemesForTool("create_records"), [
+  assert.deepEqual(oauthSecuritySchemesForTool("grist_add_records"), [
     { type: "oauth2", scopes: ["doc:write"] }
   ]);
-  assert.deepEqual(oauthSecuritySchemesForTool("create_tables"), [
+  assert.deepEqual(oauthSecuritySchemesForTool("grist_add_structure"), [
     { type: "oauth2", scopes: ["doc.schema:write"] }
   ]);
   assert.deepEqual(oauthSecuritySchemesForTool("grist_help"), [
     { type: "oauth2", scopes: [] }
   ]);
+  assert.equal(oauthSecuritySchemesForTool("list_documents"), undefined);
   assert.equal(oauthSecuritySchemesForTool("unknown_tool"), undefined);
+});
+
+test("every public lean tool has an explicit OAuth security scheme", () => {
+  assert.equal(LEAN_TOOL_REGISTRY.length, 10);
+  for (const tool of LEAN_TOOL_REGISTRY) {
+    assert.deepEqual(oauthSecuritySchemesForTool(tool.name), [
+      {
+        type: "oauth2",
+        scopes: tool.capability ? [tool.capability] : []
+      }
+    ]);
+  }
 });
 
 test("adds root and compatibility OAuth securitySchemes without disturbing tool metadata", () => {
@@ -41,13 +55,13 @@ test("adds root and compatibility OAuth securitySchemes without disturbing tool 
     result: {
       tools: [
         {
-          name: "list_documents",
-          description: "List documents",
+          name: "grist_discover",
+          description: "Discover resources",
           annotations: { readOnlyHint: true },
           _meta: { custom: "keep-me" }
         },
         {
-          name: "create_records",
+          name: "grist_add_records",
           description: "Create records"
         },
         {
@@ -94,7 +108,7 @@ test("wire adapter transforms JSON tool lists and removes stale content-length",
         JSON.stringify({
           jsonrpc: "2.0",
           id: 1,
-          result: { tools: [{ name: "create_tables", inputSchema: {} }] }
+          result: { tools: [{ name: "grist_add_structure", inputSchema: {} }] }
         }),
         {
           status: 200,
