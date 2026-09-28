@@ -37,13 +37,13 @@ test("deployment preflight rejects incompatible transport and unlimited limits",
   }
 });
 
-test("CLI reports only sanitized status and never claims multi-user readiness", () => {
+test("CLI reports only sanitized status and preserves the R5-C credential gate", () => {
   const run = (extra: Record<string, string> = {}) => spawnSync(process.execPath,
     ["--import", "tsx", "tools/oauth-deployment-preflight.ts"],
     { env: { PATH: process.env.PATH, ...environment, ...extra }, encoding: "utf8" });
   const good = run();
   assert.equal(good.status, 0, good.stderr);
-  assert.match(good.stdout, /multi_user_readiness: BLOCKED_C5_STATIC_GRIST_CREDENTIAL/);
+  assert.match(good.stdout, /multi_principal_grist_credentials: BLOCKED_R5_C_STATIC_GRIST_CREDENTIAL/);
   const bad = run({ MCP_CAPABILITIES: "secret-invalid-capability-sentinel" });
   assert.equal(bad.status, 1);
   assert.equal(bad.stdout, "configuration_valid: FAIL\n");
