@@ -102,6 +102,6 @@ OAuth authorization never creates, rotates or grants that service account. Servi
 
 ## Current boundary
 
-R5-B is complete. R5-C repository implementation supplies the principal-aware read-only service-account selector and production preflight boundary, but R5-C remains incomplete until the two-real-service-account isolation proof is recorded.
+R5-B and R5-C are complete. The repository implementation for principal-aware service-account selection is integrated in #182, and `docs/R5-C-LIVE-EVIDENCE.md` records the 2026-09-29 sanitized live two-service-account isolation and unmapped-principal fail-closed proof.
 
-R5-C does not add scopes, a credential database, service-account administration, generic ACL administration or model-facing secret inputs. R5-D remains blocked until R5-C completion evidence is durable.
+R5-C does not add scopes, a credential database, service-account administration, generic ACL administration or model-facing secret inputs. R5-D is now the next eligible tranche and owns operational rate/counter hardening plus exercised OAuth issuer/JWKS outage/recovery and service-account rotation/revocation.

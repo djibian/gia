@@ -414,7 +414,7 @@ Production ProConnect registration, secrets, deployment credentials and identity
 
 ### R5-C — Community service-account credentials
 
-**Status: ELIGIBLE.**
+**Status: DONE — repository implementation integrated in #182; sanitized live completion evidence is recorded in `docs/R5-C-LIVE-EVIDENCE.md`.**
 
 Use Grist Community's own service accounts instead of storing personal user API keys.
 
@@ -428,11 +428,13 @@ Required result:
 - integration evidence with at least two real Community service accounts proves distinct upstream authority and no cross-principal credential/context reuse;
 - no generic service-account, user or ACL administration surface is added.
 
+Repository implementation landed in #182. The 2026-09-29 authorized live qualification on Grist Community 1.7.19 then exercised two real finite-expiry service accounts and two distinct OAuth principals through the same bridge deployment. Native Grist grants produced the expected A/B allow-deny matrix; live MCP discovery/read selected the matching upstream authority; an explicit cross-resource request failed closed; removal of one principal mapping caused the still-valid OAuth principal to fail closed with no `GRIST_API_KEY` fallback; restoring the exact mapping restored only its intended access. `docs/R5-C-LIVE-EVIDENCE.md` records the sanitized evidence and exclusions.
+
 The initial product does not need an internal encrypted credential database. Operators may source/mount the read-only mapping from systemd credentials, Docker secrets or another secret manager.
 
 ### R5-D — minimal operational hardening
 
-**Status: BLOCKED by R5-C.**
+**Status: ELIGIBLE.**
 
 Required result:
 

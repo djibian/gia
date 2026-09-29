@@ -99,13 +99,17 @@ native service-account Grist permissions
 
 The bridge cannot elevate a service account beyond Grist's own grants.
 
-## Remaining R5-C proof
+## R5-C live proof
 
-Repository implementation is not the live completion proof. R5-C remains incomplete until an authorized Grist Community deployment exercises at least two real service accounts and records sanitized evidence that:
+R5-C repository implementation is integrated in #182 and the required live multi-principal proof was completed on 2026-09-29 against an authorized self-hosted Grist Community 1.7.19 deployment.
 
-- principal A and principal B resolve to distinct upstream service-account authority;
-- each principal can access only the Grist resources natively granted to its service account;
-- missing mappings fail closed without a shared fallback;
-- no client, discovery result or cache crosses the principal boundary.
+`docs/R5-C-LIVE-EVIDENCE.md` records the sanitized evidence that:
 
-No credential value or raw provider subject may appear in that evidence.
+- two authenticated OAuth principals resolved to distinct upstream service-account authority;
+- each principal observed only the Grist resources granted to its selected service account, with an explicit cross-resource denial recorded for principal B;
+- the native A/B service-account matrix independently produced the expected allow/deny results;
+- removing principal B from the immutable startup mapping caused its still-valid OAuth session to fail closed while `GRIST_API_KEY` was absent;
+- restoring the exact mapping and restarting restored only B's intended authority;
+- no credential value or raw provider subject was recorded in durable evidence.
+
+R5-D owns the still-required exercised rotation/revocation and broader operational hardening work; those are no longer R5-C completion blockers.
