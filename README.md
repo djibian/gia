@@ -104,6 +104,8 @@ Credentials, bearer/OAuth tokens, API keys and principal credential mappings are
 
 Upstream Grist credentials have two explicit modes. `static` preserves one server-side `GRIST_API_KEY` for controlled single-principal/development use. `principal-map` is the R5-C multi-principal production path: it loads an operator-mounted read-only mapping from opaque OAuth principal IDs to Grist Community service-account keys. Principal-map mode forbids `GRIST_API_KEY`, so an unmapped principal fails closed rather than falling back to shared authority. See [docs/CREDENTIALS.md](docs/CREDENTIALS.md).
 
+Authenticated MCP requests are also bounded independently per principal at the outer HTTP boundary. The default ceiling is 120 requests/minute; exhausted principals receive HTTP `429` with `Retry-After`. Principal identifiers remain private limiter keys and are not exported in general operational events.
+
 ## Installation
 
 Requirements: **Node.js 22+**.
@@ -133,6 +135,7 @@ Optional guardrails:
 - `GRIST_MAX_WRITE_RECORDS` — default `500`;
 - `GRIST_WRITE_BATCH_RECORDS` — default `200`;
 - `GRIST_MAX_SCHEMA_ITEMS` — default `100`;
+- `MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE` — positive per-principal authenticated request ceiling, default `120`;
 - `MCP_ALLOWED_HOSTS` — additional public hostnames accepted by the MCP HTTP application;
 - `PORT` — default `3000`;
 - `HOST` — intentionally restricted to localhost.
