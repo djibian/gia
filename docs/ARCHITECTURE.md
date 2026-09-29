@@ -225,4 +225,4 @@ See `docs/RECOMPOSITION-REVIEW.md`, `docs/R3-DEPENDENCY-PROVENANCE.md`, `docs/R5
 
 R0-R3 kept only baseline CI and focused unit/contract regressions needed to maintain the candidate. R4 performed broad product validation. R5 adds production-specific identity, credential, operations and distribution evidence.
 
-R5-C repository implementation remains incomplete as production evidence until at least two real Community service accounts demonstrate distinct upstream authority and no cross-principal client/cache reuse.
+R5-C production evidence is complete: `docs/R5-C-LIVE-EVIDENCE.md` records the 2026-09-29 two-service-account/two-OAuth-principal qualification, native grant separation, explicit cross-resource denial and unmapped-principal fail-closed behavior. R5-D is the next operational-hardening tranche.
