@@ -150,7 +150,9 @@ function enforcePrincipalRateLimit(
   const decision = principalRateLimiter.consume(principalId);
   if (decision.allowed) return true;
 
-  operationalEvents.record("rate_limited");
+  if (decision.firstRejectionInWindow) {
+    operationalEvents.record("rate_limited");
+  }
   res.setHeader("Retry-After", String(decision.retryAfterSeconds));
   res.status(429).json({ error: "Too Many Requests" });
   return false;
@@ -256,10 +258,12 @@ app.all("/mcp", async (req, res) => {
     }
 
     if (isOAuthAuthenticationFailure(error)) {
-      operationalEvents.record("oauth_rejected");
       const missingBearer =
         error instanceof OAuthRequestAuthenticationError &&
         error.code === "missing_bearer";
+      if (!missingBearer) {
+        operationalEvents.record("oauth_rejected");
+      }
       const resourceMetadataUrl = oauthProtectedResourceMetadataUrl(req);
       res.setHeader(
         "WWW-Authenticate",
