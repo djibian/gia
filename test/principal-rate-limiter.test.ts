@@ -10,30 +10,41 @@ test("limits principals independently and resets after the fixed window", () => 
   assert.deepEqual(limiter.consume("principal-a"), {
     allowed: true,
     remaining: 1,
-    retryAfterSeconds: 0
+    retryAfterSeconds: 0,
+    firstRejectionInWindow: false
   });
   assert.deepEqual(limiter.consume("principal-a"), {
     allowed: true,
     remaining: 0,
-    retryAfterSeconds: 0
+    retryAfterSeconds: 0,
+    firstRejectionInWindow: false
   });
   assert.deepEqual(limiter.consume("principal-a"), {
     allowed: false,
     remaining: 0,
-    retryAfterSeconds: 60
+    retryAfterSeconds: 60,
+    firstRejectionInWindow: true
+  });
+  assert.deepEqual(limiter.consume("principal-a"), {
+    allowed: false,
+    remaining: 0,
+    retryAfterSeconds: 60,
+    firstRejectionInWindow: false
   });
 
   assert.deepEqual(limiter.consume("principal-b"), {
     allowed: true,
     remaining: 1,
-    retryAfterSeconds: 0
+    retryAfterSeconds: 0,
+    firstRejectionInWindow: false
   });
 
   now = 60_000;
   assert.deepEqual(limiter.consume("principal-a"), {
     allowed: true,
     remaining: 1,
-    retryAfterSeconds: 0
+    retryAfterSeconds: 0,
+    firstRejectionInWindow: false
   });
 });
 
@@ -46,7 +57,8 @@ test("reports a bounded positive retry-after within the active window", () => {
   assert.deepEqual(limiter.consume("principal"), {
     allowed: false,
     remaining: 0,
-    retryAfterSeconds: 31
+    retryAfterSeconds: 31,
+    firstRejectionInWindow: true
   });
 });
 
