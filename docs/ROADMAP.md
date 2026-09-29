@@ -451,7 +451,7 @@ No monitoring platform, alert transport, secret database or model-facing credent
 
 ### R5-E — reviewer environment and current plugin package
 
-**Status: ELIGIBLE.**
+**Status: DONE — technical package integrated in #186; partial live evidence recorded in #187; final sanitized completion evidence is recorded in `docs/R5-E-LIVE-EVIDENCE.md`.**
 
 Rebuild distribution material from the frozen v2 product only.
 
@@ -465,11 +465,13 @@ Required repository/technical result:
 - a bounded final-host domain-verification route exists for a real portal-issued token when needed;
 - final endpoint is ready for current Tool Scan and the reviewer scenarios.
 
+The 2026-09-29 final authorized qualification deployed and restarted the exact reviewed package candidate `b514a24d0244a387debef3b43cf8d13c23cbc0c5`, passed production OAuth preflight and live smoke, recorded Grist Community 1.7.19, verified operator-side fixture reset/repeatability, exercised canonical N1-N3 through the actual reviewer ChatGPT routing path with no Grist tool invocation, and passed a secret-safe journal check with zero configured credential-value hits. `docs/R5-E-LIVE-EVIDENCE.md` records only sanitized evidence and retains the final-host/publication actions in R5-F.
+
 No portal token, production credential, verified publisher identity or review outcome is invented in repository code.
 
 ### R5-F — external publication gate
 
-**Status: BLOCKED by R5-E and external actions.**
+**Status: BLOCKED by external actions.**
 
 This is not autonomous implementation work. It consists of real-world authority and publication actions:
 
