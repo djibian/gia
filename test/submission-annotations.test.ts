@@ -2,99 +2,93 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { OPERATION_REGISTRY } from "../src/operations/registry.js";
+import { LEAN_TOOL_REGISTRY } from "../src/mcp/leanRegistry.js";
 import {
   buildSubmissionArtifactTools,
   buildSubmissionToolAnnotations
 } from "../src/operations/submissionAnnotations.js";
 
+const expectedTools = [
+  "grist_discover",
+  "grist_inspect",
+  "grist_query",
+  "grist_add_records",
+  "grist_change_records",
+  "grist_add_structure",
+  "grist_change_structure",
+  "grist_add_ui",
+  "grist_change_ui",
+  "grist_help"
+];
+
 const destructiveWrites = [
-  "delete_columns",
-  "delete_records",
-  "delete_table",
-  "rename_column",
-  "rename_page",
-  "update_columns",
-  "update_page_layout",
-  "update_page_widget",
-  "update_records",
-  "update_tables"
+  "grist_change_records",
+  "grist_change_structure",
+  "grist_change_ui"
 ].sort();
 
 const additiveWrites = [
-  "add_page_widget",
-  "create_columns",
-  "create_page",
-  "create_records",
-  "create_tables"
+  "grist_add_records",
+  "grist_add_structure",
+  "grist_add_ui"
 ].sort();
 
-const auditedReads = [
-  "list_documents",
-  "list_tables",
-  "list_columns",
-  "query_records",
-  "inspect_document",
-  "get_pages",
-  "get_page_widgets"
+const readOnlyTools = [
+  "grist_discover",
+  "grist_help",
+  "grist_inspect",
+  "grist_query"
 ].sort();
 
-test("MCP destructive annotations distinguish overwrite/delete from additive writes", () => {
+test("submission metadata is derived from exactly the frozen MCP v2 tool set", () => {
   assert.deepEqual(
-    OPERATION_REGISTRY.filter((operation) => !operation.readOnly && operation.destructive)
-      .map((operation) => operation.name)
+    LEAN_TOOL_REGISTRY.map((tool) => tool.name),
+    expectedTools
+  );
+  assert.equal(buildSubmissionToolAnnotations().length, 10);
+});
+
+test("MCP v2 submission annotations preserve the lean registry risk classes", () => {
+  assert.deepEqual(
+    LEAN_TOOL_REGISTRY.filter((tool) => !tool.readOnly && tool.destructive)
+      .map((tool) => tool.name)
       .sort(),
     destructiveWrites
   );
-
   assert.deepEqual(
-    OPERATION_REGISTRY.filter((operation) => !operation.readOnly && !operation.destructive)
-      .map((operation) => operation.name)
+    LEAN_TOOL_REGISTRY.filter((tool) => !tool.readOnly && !tool.destructive)
+      .map((tool) => tool.name)
       .sort(),
-    [...additiveWrites, ...auditedReads].sort()
+    additiveWrites
+  );
+  assert.deepEqual(
+    LEAN_TOOL_REGISTRY.filter((tool) => tool.readOnly)
+      .map((tool) => tool.name)
+      .sort(),
+    readOnlyTools
   );
 });
 
-test("every public tool has non-empty submission justifications for all three annotations", () => {
+test("every v2 tool has non-empty submission justifications for all annotations", () => {
   const submission = buildSubmissionToolAnnotations();
-  assert.equal(submission.length, OPERATION_REGISTRY.length);
 
-  for (const tool of submission) {
-    assert.ok(tool.justifications.readOnlyHint.trim().length > 0, tool.name);
-    assert.ok(tool.justifications.destructiveHint.trim().length > 0, tool.name);
-    assert.ok(tool.justifications.openWorldHint.trim().length > 0, tool.name);
-    assert.equal(tool.annotations.openWorldHint, false, tool.name);
+  for (const entry of submission) {
+    const registry = LEAN_TOOL_REGISTRY.find((tool) => tool.name === entry.name);
+    assert.ok(registry, entry.name);
+    assert.deepEqual(entry.annotations, {
+      readOnlyHint: registry.readOnly,
+      destructiveHint: registry.destructive,
+      openWorldHint: false
+    });
+    assert.ok(entry.justifications.readOnlyHint.trim().length > 0, entry.name);
+    assert.ok(entry.justifications.destructiveHint.trim().length > 0, entry.name);
+    assert.ok(entry.justifications.openWorldHint.trim().length > 0, entry.name);
   }
 });
 
-test("tracked ChatGPT submission tool metadata cannot drift from the operation registry", async () => {
+test("tracked ChatGPT submission tool metadata cannot drift from the lean registry", async () => {
   const raw = await readFile(new URL("../chatgpt-app-submission.json", import.meta.url), "utf8");
   const artifact = JSON.parse(raw) as { tools?: unknown };
 
   assert.deepEqual(artifact.tools, buildSubmissionArtifactTools());
-});
-
-test("audited reads retain read capability and report only additive audit side effects", () => {
-  assert.deepEqual(
-    OPERATION_REGISTRY.filter((operation) => operation.auditOnly)
-      .map((operation) => operation.name)
-      .sort(),
-    auditedReads
-  );
-  for (const name of auditedReads) {
-    const operation = OPERATION_REGISTRY.find((entry) => entry.name === name)!;
-    assert.equal(operation.capability, "doc:read");
-    const tool = buildSubmissionToolAnnotations().find((entry) => entry.name === name)!;
-    assert.deepEqual(tool.annotations, {
-      readOnlyHint: false,
-      destructiveHint: false,
-      openWorldHint: false
-    });
-    assert.match(tool.justifications.readOnlyHint, /appends an audit event/);
-    assert.match(tool.justifications.destructiveHint, /does not overwrite or delete user data/);
-  }
-  assert.deepEqual(
-    OPERATION_REGISTRY.filter((operation) => operation.readOnly).map((operation) => operation.name),
-    ["grist_help"]
-  );
 });
