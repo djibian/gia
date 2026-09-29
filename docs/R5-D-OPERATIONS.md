@@ -175,11 +175,11 @@ The product emits enough bounded signals for an external system to alert on rate
 
 ## R5-D completion boundary
 
-Repository completion requires the runtime controls, regressions, preflight/smoke integration and this runbook to be independently reviewed with green exact-head CI.
+Repository implementation is a candidate only until the runtime controls, regressions, preflight/smoke integration and this runbook are independently reviewed with green exact-head CI and integrated into `main`.
 
-R5-D itself remains **ACTIVE** until sanitized live evidence records both:
+Even after that repository implementation is integrated, R5-D remains incomplete until sanitized live evidence records both:
 
 - OAuth/JWKS outage **and recovery** on an authorized deployment; and
 - service-account credential **rotation and revocation** with preserved least privilege.
 
-Only then may the roadmap advance R5-D to DONE and make R5-E eligible.
+Only then may the authoritative roadmap advance R5-D to DONE and make R5-E eligible.
