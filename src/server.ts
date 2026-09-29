@@ -1,6 +1,7 @@
 import { createMcpExpressApp } from "@modelcontextprotocol/express";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import type { Response } from "express";
 
 import { AuditLogger } from "./audit/auditLogger.js";
 import { OAuthAccessTokenError } from "./auth/oauthAccessToken.js";
@@ -32,11 +33,14 @@ import { GristContextFactory } from "./grist/contextFactory.js";
 import {
   FilePrincipalApiKeyCredentialProvider,
   GristClientFactory,
+  PrincipalCredentialMappingError,
   StaticApiKeyCredentialProvider
 } from "./grist/credentials.js";
 import { registerLeanTools } from "./mcp/leanTools.js";
 import { installOAuthToolAuthChallenges } from "./mcp/oauthToolChallenge.js";
 import { installOAuthToolSecuritySchemes } from "./mcp/oauthToolSecurity.js";
+import { OperationalEventLogger } from "./ops/operationalEvents.js";
+import { PrincipalRateLimiter } from "./ops/principalRateLimiter.js";
 import { VERSION } from "./version.js";
 
 const config = loadConfig();
@@ -55,6 +59,10 @@ const deploymentPolicy = new DeploymentResourcePolicy({
   allowedWorkspaceIds: config.allowedWorkspaceIds
 });
 const audit = new AuditLogger();
+const operationalEvents = new OperationalEventLogger();
+const principalRateLimiter = new PrincipalRateLimiter(
+  config.mcpPrincipalRateLimitPerMinute
+);
 const contextFactory = new GristContextFactory(
   clientFactory,
   deploymentPolicy,
@@ -135,6 +143,19 @@ function isOAuthVerifierAvailabilityFailure(error: unknown): boolean {
   );
 }
 
+function enforcePrincipalRateLimit(
+  principalId: string,
+  res: Response
+): boolean {
+  const decision = principalRateLimiter.consume(principalId);
+  if (decision.allowed) return true;
+
+  operationalEvents.record("rate_limited");
+  res.setHeader("Retry-After", String(decision.retryAfterSeconds));
+  res.status(429).json({ error: "Too Many Requests" });
+  return false;
+}
+
 function publicBaseUrl(req: { get(name: string): string | undefined; protocol: string }): string {
   const forwarded = req.get("X-Forwarded-Proto")?.split(",")[0]?.trim();
   const protocol = forwarded === "https" || forwarded === "http" ? forwarded : req.protocol;
@@ -187,10 +208,13 @@ app.all("/mcp", async (req, res) => {
       return;
     }
 
-    if (!staticMcpNodeHandler) {
+    if (!staticMcpPrincipal || !staticMcpNodeHandler) {
+      operationalEvents.record("mcp_internal_error");
       res.status(500).json({ error: "Internal server error" });
       return;
     }
+
+    if (!enforcePrincipalRateLimit(staticMcpPrincipal.id, res)) return;
 
     void staticMcpNodeHandler(req, res, req.body);
     return;
@@ -198,6 +222,7 @@ app.all("/mcp", async (req, res) => {
 
   try {
     if (!oauthMcpVerifier) {
+      operationalEvents.record("mcp_internal_error");
       res.status(500).json({ error: "Internal server error" });
       return;
     }
@@ -216,6 +241,8 @@ app.all("/mcp", async (req, res) => {
       contextFactory
     });
 
+    if (!enforcePrincipalRateLimit(principal.id, res)) return;
+
     const oauthNodeHandler = buildNodeMcpHandler(context, {
       principal,
       resourceMetadataUrl: oauthProtectedResourceMetadataUrl(req)
@@ -223,11 +250,13 @@ app.all("/mcp", async (req, res) => {
     void oauthNodeHandler(req, res, req.body);
   } catch (error) {
     if (isOAuthVerifierAvailabilityFailure(error)) {
+      operationalEvents.record("oauth_jwks_unavailable");
       res.status(503).json({ error: "Authorization service unavailable" });
       return;
     }
 
     if (isOAuthAuthenticationFailure(error)) {
+      operationalEvents.record("oauth_rejected");
       const missingBearer =
         error instanceof OAuthRequestAuthenticationError &&
         error.code === "missing_bearer";
@@ -242,6 +271,13 @@ app.all("/mcp", async (req, res) => {
       return;
     }
 
+    if (error instanceof PrincipalCredentialMappingError) {
+      operationalEvents.record("grist_credential_resolution_failed");
+      res.status(500).json({ error: "Internal server error" });
+      return;
+    }
+
+    operationalEvents.record("mcp_internal_error");
     res.status(500).json({ error: "Internal server error" });
   }
 });
