@@ -41,9 +41,9 @@ A v1 MCP client must migrate to the v2 manager tools. The semantic Grist service
 
 ### Historical GPT Actions/OpenAPI surface
 
-GPT Actions/OpenAPI was a separate HTTP compatibility surface, not MCP v1. R3 retires it from the product candidate: the runtime no longer registers `/api/v1`, `/openapi.json` or the OpenAI submission challenge route, and no GPT Actions token is required to start the bridge.
+GPT Actions/OpenAPI was a separate HTTP compatibility surface, not MCP v1. R3 retired it from the product candidate: the runtime does not register `/api/v1` or `/openapi.json`, and no GPT Actions token is required to start the bridge.
 
-Historical GPT Actions and submission documents remain repository history only. Any future distribution compatibility work is reconsidered in R5 and must not silently expand or alias the MCP v2 contract.
+R5-E reintroduces only the optional `/.well-known/openai-apps-challenge` domain-verification route required for remote-MCP distribution. It is absent unless an exact portal-issued `OPENAI_APPS_CHALLENGE_TOKEN` is configured, returns only that token as plain text, and does **not** add a model-facing tool or compatibility API. It therefore does not change the MCP v2 contract version.
 
 ## Versioning rule
 
