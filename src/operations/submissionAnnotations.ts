@@ -1,7 +1,7 @@
 import {
-  OPERATION_REGISTRY,
-  type OperationDefinition
-} from "./registry.js";
+  LEAN_TOOL_REGISTRY,
+  type LeanToolDefinition
+} from "../mcp/leanRegistry.js";
 
 export interface SubmissionAnnotationJustifications {
   readOnlyHint: string;
@@ -14,7 +14,7 @@ export interface SubmissionToolAnnotations {
   annotations: {
     readOnlyHint: boolean;
     destructiveHint: boolean;
-    openWorldHint: boolean;
+    openWorldHint: false;
   };
   justifications: SubmissionAnnotationJustifications;
 }
@@ -29,25 +29,19 @@ export interface SubmissionArtifactTool {
 }
 
 export function buildSubmissionAnnotationJustifications(
-  operation: OperationDefinition
+  tool: LeanToolDefinition
 ): SubmissionAnnotationJustifications {
-  const readOnlyHint = operation.auditOnly
-    ? `${operation.title} retrieves Grist information and appends an audit event without changing Grist user data.`
-    : operation.readOnly
-    ? `${operation.title} only retrieves or computes Grist information and does not change Grist state.`
-    : `${operation.title} changes Grist state, so it is not read-only.`;
+  const readOnlyHint = tool.readOnly
+    ? `${tool.title} only retrieves or computes Grist information and does not change Grist user state.`
+    : `${tool.title} changes Grist user state, so it is not read-only.`;
 
-  const destructiveHint = operation.auditOnly
-    ? `${operation.title} only appends an audit event and does not overwrite or delete user data.`
-    : operation.readOnly
-    ? `${operation.title} performs no write and therefore cannot destructively change Grist state.`
-    : operation.destructive
-      ? `${operation.title} can overwrite, rename, clear, or delete existing Grist state, so the change may be destructive or require an explicit confirmation.`
-      : `${operation.title} only adds new Grist state and does not overwrite or delete existing user state.`;
+  const destructiveHint = tool.readOnly
+    ? `${tool.title} performs no write and therefore cannot destructively change Grist user state.`
+    : tool.destructive
+      ? `${tool.title} can overwrite, rename, clear, reconfigure, or delete explicitly targeted Grist state, so the change may be destructive or require explicit confirmation.`
+      : `${tool.title} only adds new Grist state and does not overwrite or delete existing user state.`;
 
-  const openWorldHint = operation.openWorld
-    ? `${operation.title} can interact with external entities outside a pre-bounded private account or workspace.`
-    : `${operation.title} is confined to the configured Grist deployment and the principal's bounded documents or workspaces; it does not access arbitrary public Internet entities.`;
+  const openWorldHint = `${tool.title} is confined to the configured Grist deployment and the principal's bounded documents or workspaces; it does not access arbitrary public Internet entities.`;
 
   return {
     readOnlyHint,
@@ -57,14 +51,14 @@ export function buildSubmissionAnnotationJustifications(
 }
 
 export function buildSubmissionToolAnnotations(): SubmissionToolAnnotations[] {
-  return OPERATION_REGISTRY.map((operation) => ({
-    name: operation.name,
+  return LEAN_TOOL_REGISTRY.map((tool) => ({
+    name: tool.name,
     annotations: {
-      readOnlyHint: operation.readOnly,
-      destructiveHint: operation.destructive,
-      openWorldHint: operation.openWorld
+      readOnlyHint: tool.readOnly,
+      destructiveHint: tool.destructive,
+      openWorldHint: false
     },
-    justifications: buildSubmissionAnnotationJustifications(operation)
+    justifications: buildSubmissionAnnotationJustifications(tool)
   }));
 }
 
