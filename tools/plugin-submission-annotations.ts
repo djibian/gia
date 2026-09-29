@@ -3,7 +3,7 @@ import { buildSubmissionToolAnnotations } from "../src/operations/submissionAnno
 console.log(
   JSON.stringify(
     {
-      generatedFrom: "src/operations/registry.ts",
+      generatedFrom: "src/mcp/leanRegistry.ts",
       tools: buildSubmissionToolAnnotations()
     },
     null,
