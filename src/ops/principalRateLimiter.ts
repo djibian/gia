@@ -2,11 +2,13 @@ export interface PrincipalRateLimitDecision {
   allowed: boolean;
   remaining: number;
   retryAfterSeconds: number;
+  firstRejectionInWindow: boolean;
 }
 
 interface PrincipalWindow {
   count: number;
   resetAt: number;
+  rejectionSignaled: boolean;
 }
 
 /**
@@ -37,14 +39,17 @@ export class PrincipalRateLimiter {
     const window =
       existing && existing.resetAt > now
         ? existing
-        : { count: 0, resetAt: now + 60_000 };
+        : { count: 0, resetAt: now + 60_000, rejectionSignaled: false };
 
     if (window.count >= this.maxRequestsPerMinute) {
+      const firstRejectionInWindow = !window.rejectionSignaled;
+      window.rejectionSignaled = true;
       this.windows.set(principalId, window);
       return {
         allowed: false,
         remaining: 0,
-        retryAfterSeconds: Math.max(1, Math.ceil((window.resetAt - now) / 1000))
+        retryAfterSeconds: Math.max(1, Math.ceil((window.resetAt - now) / 1000)),
+        firstRejectionInWindow
       };
     }
 
@@ -53,7 +58,8 @@ export class PrincipalRateLimiter {
     return {
       allowed: true,
       remaining: this.maxRequestsPerMinute - window.count,
-      retryAfterSeconds: 0
+      retryAfterSeconds: 0,
+      firstRejectionInWindow: false
     };
   }
 
