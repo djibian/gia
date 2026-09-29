@@ -23,9 +23,10 @@ Rules:
 - one principal cannot consume another principal's window;
 - principal IDs are private map keys only and are not exported by the limiter;
 - inactive entries are swept after expiry;
+- the `rate_limited` operational signal is emitted only for the first rejection in each principal/window, avoiding log amplification from a client that keeps retrying while limited;
 - the limiter is intentionally process-local: a multi-replica deployment must apply an equivalent shared/reverse-proxy ceiling if a globally coordinated limit is required.
 
-The bridge keeps operation-size bounds (`GRIST_MAX_*`) separately. Request rate and Grist mutation/read size solve different risks.
+The bridge keeps operation-size bounds (`GRIST_MAX_*`) separately. Request rate and Grist mutation/read size solve different risks. Anonymous/pre-authentication traffic should additionally be bounded at the deployment/reverse-proxy edge because per-principal identity is available only after authentication.
 
 ### Secret-safe operational events
 
@@ -48,7 +49,7 @@ Each event contains exactly:
 }
 ```
 
-`count` is monotonic only within the current process lifetime and is reset on restart. Durable aggregation, alert thresholds and delivery are deployment infrastructure.
+`count` is monotonic only within the current process lifetime and is reset on restart. Durable aggregation, alert thresholds and delivery are deployment infrastructure. The unauthenticated OAuth discovery challenge is not counted as an `oauth_rejected` event.
 
 General operational events never contain principal IDs, document/workspace/table/record IDs, request IDs, bearer/JWT values, Grist API keys, mapping contents, request/response bodies, URLs or arbitrary exception messages.
 
