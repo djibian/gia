@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { LEAN_TOOL_REGISTRY } from "../src/mcp/leanRegistry.js";
+
 type SubmissionCase = {
   description?: unknown;
   user_prompt?: unknown;
@@ -33,7 +35,7 @@ const positiveDescriptions = [
   "Inspect a synthetic reviewer document without unnecessary row disclosure.",
   "Filter and limit synthetic records, including a no-match query.",
   "Create bounded records and verify independently.",
-  "Create and update a bounded synthetic schema.",
+  "Create and verify a bounded synthetic schema.",
   "Create a page and configure a safe direct select-by link."
 ];
 
@@ -42,6 +44,8 @@ const negativeDescriptions = [
   "Do not invoke for arbitrary HTTP forwarding.",
   "Do not invoke for Grist account or ACL administration."
 ];
+
+const v2Tools = new Set(LEAN_TOOL_REGISTRY.map((tool) => tool.name));
 
 test("tracked submission contains exactly the canonical five positive reviewer cases", async () => {
   const artifact = await loadSubmission();
@@ -57,6 +61,10 @@ test("tracked submission contains exactly the canonical five positive reviewer c
     assert.ok(nonEmptyString(entry.expected_output));
     assert.equal(entry.file_attachment_urls, null);
     assert.equal(entry.expected_output_url, null);
+
+    for (const name of entry.tools_triggered.split(",").map((value) => value.trim())) {
+      assert.ok(v2Tools.has(name), `reviewer case references retired/non-v2 tool ${name}`);
+    }
   }
 });
 
