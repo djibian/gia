@@ -434,7 +434,7 @@ The initial product does not need an internal encrypted credential database. Ope
 
 ### R5-D — minimal operational hardening
 
-**Status: ELIGIBLE.**
+**Status: DONE — repository implementation integrated in #184; sanitized live completion evidence is recorded in `docs/R5-D-LIVE-EVIDENCE.md`.**
 
 Required result:
 
@@ -445,9 +445,13 @@ Required result:
 - logging/retention guidance aligned with current privacy/data-minimization requirements;
 - alert transport, log backend and secret-manager implementation remain deployment infrastructure unless a concrete product need proves otherwise.
 
+Repository implementation landed in #184. The 2026-09-29 authorized live qualification on Grist Community 1.7.19 then completed production preflight and release smoke, established a bounded OAuth read, forced the real JWKS dependency unavailable at the deployment boundary, observed authenticated `/mcp` requests fail closed with HTTP `503` plus secret-safe `oauth_jwks_unavailable` events, restored the real JWKS and recovered the same OAuth read without a bridge restart. A replacement finite-expiry Community service account was then granted the same minimum native authority, verified against the intended/denied matrix, atomically selected in the protected principal mapping, verified through the same OAuth principal, and followed by native revocation of the old credential. The old credential returned `401`, the replacement retained the `200`/`403` allow-deny matrix, and live OAuth access remained functional. `docs/R5-D-LIVE-EVIDENCE.md` records only sanitized status/timing/resource-alias evidence and excludes credentials, tokens, raw subjects and mapping contents.
+
+No monitoring platform, alert transport, secret database or model-facing credential/ACL administration was added.
+
 ### R5-E — reviewer environment and current plugin package
 
-**Status: BLOCKED by R5-D.**
+**Status: ELIGIBLE.**
 
 Rebuild distribution material from the frozen v2 product only.
 
