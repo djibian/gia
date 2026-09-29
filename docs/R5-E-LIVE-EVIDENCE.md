@@ -27,6 +27,8 @@ The production OAuth preflight was then executed with the same protected systemd
 
 The service was restarted only after those checks. The replacement process started at 2026-09-29 19:41:46 UTC with working directory `/opt/grist-chatgpt/app` and command `/usr/bin/node /opt/grist-chatgpt/app/dist/server.js`; a post-restart repository check still returned the exact candidate SHA above.
 
+Immediately before the final reviewer rerun, the operator rechecked the running service and observed the same exact checkout SHA, `MainPID=578799`, `ActiveState=active`, `SubState=running`, the same start timestamp, the same working directory and the same Node command. This binds the final Tool Scan and P1-P5 rerun below to the confirmed candidate process rather than inferring identity from its visible tool surface.
+
 The live OAuth operational smoke against the restarted process reported PASS for:
 
 - health endpoint;
@@ -48,32 +50,108 @@ gristlabs/grist:1.7.19
 
 The bridge ran as the dedicated `grist-chatgpt` system user through `grist-chatgpt.service`, with the protected environment loaded by systemd rather than copied into model-visible evidence.
 
-## Positive reviewer package — PASS
+## Exact final-candidate Tool Scan — PASS
 
-The earlier live qualification already exercised the exact ten-tool MCP v2 surface through the reviewer principal and recorded PASS for all five canonical positive cases:
+After the exact running candidate identity was re-established, the connected ChatGPT reviewer namespace exposed exactly these ten MCP v2 tools:
 
-- P1 — compact structure inspection without loading user-table rows;
-- P2 — bounded filter/sort/no-match query behavior;
-- P3 — two bounded synthetic record creations followed by verification by returned IDs;
-- P4 — bounded `ReviewMetrics` schema creation and semantic re-read;
-- P5 — bounded page/widget creation plus direct select-by reconfiguration and semantic re-read.
+```text
+grist_discover
+grist_inspect
+grist_query
+grist_add_records
+grist_change_records
+grist_add_structure
+grist_change_structure
+grist_add_ui
+grist_change_ui
+grist_help
+```
 
-The same run also recorded an unrelated-resource DENY through the reviewer bridge path. See `docs/R5-E-PARTIAL-LIVE-EVIDENCE.md` for the bounded functional details.
+`grist_help` independently reported `contractVersion: 2` and the expected bounded classes:
+
+- discovery/inspection/query/help are read-only;
+- `grist_add_records` is a non-destructive `doc:write` operation;
+- `grist_change_records` is destructive `doc:write`;
+- `grist_add_structure` and `grist_add_ui` are non-destructive `doc.schema:write`;
+- `grist_change_structure` and `grist_change_ui` are destructive `doc.schema:write`.
+
+This is the exact reviewer Tool Scan required by R5-E. The separate final OpenAI portal Tool Scan remains an R5-F external action.
+
+## Exact final-candidate positive reviewer package P1-P5 — PASS
+
+The canonical P1-P5 package from `docs/OPENAI-REVIEWER-TESTS.md` was rerun through the actual reviewer ChatGPT path after the exact candidate process above had been confirmed.
+
+### P1 — inspect structure without row disclosure: PASS
+
+The reviewer discovered the isolated reviewer document and then used `grist_inspect` for document structure only. The result returned normalized tables, columns, the `Related -> ReviewTasks` Ref relationship, pages and widgets without loading user-table rows and without mutation.
+
+### P2 — bounded filter/sort/no-match: PASS
+
+The reviewer rediscovered the `ReviewTasks` columns, then queried `Status = Open` sorted by `Title` with `limit = 2`. Exactly two ordered rows were returned. A separate bounded query for `Title = NoSuchSyntheticTask` returned an empty result. No mutation occurred.
+
+### P3 — add bounded records and verify returned IDs: PASS
+
+Before P3, the operator restored the clean fixture and a reviewer read-only inspection/query verified:
+
+- only `Table1` and `ReviewTasks` existed;
+- only the three `Seed Alpha`, `Seed Beta`, `Seed Gamma` rows remained in `ReviewTasks`;
+- `ReviewMetrics` and `Review dashboard` were absent;
+- the `Related -> ReviewTasks` Ref relationship remained intact.
+
+One bounded `grist_add_records` call created exactly:
+
+- `Review Alpha` / `Open`;
+- `Review Beta` / `Open`.
+
+The bridge returned record IDs `4` and `5`. A subsequent bounded query by those IDs re-read the exact stored titles/status values. No blind replay occurred.
+
+### P4 — create and verify bounded schema: PASS
+
+Before P4, the operator removed the P3 rows and reviewer read-only checks re-established the same clean baseline. One valid bounded `grist_add_structure` creation added `ReviewMetrics` with:
+
+- `Amount` — `Numeric`, non-formula;
+- `DoubleAmount` — `Numeric`, formula `$Amount * 2`, label `Double amount`.
+
+A separate column discovery re-read the exact requested types, formula flag, formula text and label. No unrelated schema was altered.
+
+### P5 — create page/widgets and verify direct select-by: PASS
+
+Before P5, the operator removed `ReviewMetrics` and its associated page. Reviewer read-only checks confirmed only the two base pages/tables remained and no P3 rows were present.
+
+The reviewer then:
+
+1. created an empty `Review dashboard` page for `ReviewTasks` (page ID `3`);
+2. added two `ReviewTasks` record widgets (widget IDs `7` and `8`);
+3. updated widget `8` with direct select-by from widget `7`;
+4. re-read the page widgets with `grist_inspect`.
+
+The final normalized result reported `selectByNormalized.sourceWidgetId = 7` for widget `8`, with normalization complete. No ambiguous write was replayed.
+
+## Reviewer authority isolation — PASS
+
+After the exact-candidate P1-P5 rerun, a direct semantic inspection was attempted against an existing Grist document outside the reviewer bridge grant. The bridge rejected the request as not allowed before protected document content was returned.
+
+Retained result only:
+
+```text
+reviewer synthetic document: ALLOW
+unrelated control document: DENY
+```
+
+The unrelated document identifier is deliberately omitted from durable evidence.
 
 ## Operator-side fixture reset / repeatability — PASS
 
-After the positive reviewer run, the authorized operator reset the synthetic fixture outside the MCP model-facing path.
+The mutating positive cases were each preceded by the required operator-side fixture reset rather than by blind MCP replay. Read-only reviewer checks were used to verify the clean state before P3, P4 and P5.
 
-A subsequent reviewer read-only inspection confirmed the clean baseline:
+The clean baseline retained:
 
-- only `Table1` and `ReviewTasks` remained;
-- `ReviewMetrics` was absent;
-- `Review dashboard` was absent;
-- `ReviewTasks` retained exactly the three baseline rows `Seed Alpha`, `Seed Beta`, and `Seed Gamma`, all with `Status = Open`;
-- the `Related -> ReviewTasks` self-reference remained present;
-- no P3 record (`Review Alpha` / `Review Beta`) remained.
+- `Table1` and `ReviewTasks`;
+- exactly `Seed Alpha`, `Seed Beta`, and `Seed Gamma` with `Status = Open`;
+- the `Related -> ReviewTasks` self-reference;
+- no P3 records, `ReviewMetrics` or `Review dashboard` before the corresponding mutating case.
 
-This demonstrates that the documented reviewer fixture can be restored through the authorized operator path without blind replay of MCP mutations.
+This demonstrates repeatable fixture restoration through the authorized operator path while preserving the no-blind-replay boundary.
 
 ## Canonical negative routing cases N1-N3 — PASS
 
@@ -97,7 +175,7 @@ Prompt intent: create a Grist user and grant workspace administrator access.
 
 Observed result: ChatGPT stated that user and ACL administration is outside the plugin scope. **No Grist tool was invoked.**
 
-All three canonical negative cases therefore satisfy the required non-invocation boundary.
+All three canonical negative cases therefore satisfy the required non-invocation boundary on the same deployed final candidate path.
 
 ## Secret-safe deployment-log inspection — PASS
 
@@ -120,15 +198,17 @@ No configured Grist service-account credential value and no suspicious token/pas
 
 ## R5-E conclusion
 
-All R5-E repository/technical and final operator/live evidence conditions are now satisfied:
+All R5-E repository/technical and final operator/live evidence conditions are now satisfied on the same confirmed final candidate path:
 
-1. the exact independently reviewed R5-E package candidate was built, preflighted, restarted and smoke-tested;
-2. the ten-tool reviewer path had already passed P1-P5 plus unrelated-resource DENY;
-3. canonical N1-N3 each produced a Grist non-invocation;
-4. the synthetic fixture was restored through the authorized operator path and verified read-only;
-5. current Grist Community version and non-secret deployment facts were recorded;
-6. deployment logs passed the credential/secret-safe inspection.
+1. the exact independently reviewed R5-E package candidate was built, preflighted, restarted, smoke-tested and re-identified immediately before the final reviewer rerun;
+2. the exact ten-tool MCP v2 Tool Scan passed on that connected reviewer path;
+3. canonical P1-P5 were rerun on that path and all postconditions passed;
+4. canonical N1-N3 each produced a Grist non-invocation after the same exact candidate deployment;
+5. the synthetic fixture was repeatedly restored through the authorized operator path and verified read-only before mutating cases;
+6. unrelated Grist authority was denied on the same reviewer path;
+7. current Grist Community version and non-secret deployment facts were recorded;
+8. deployment logs passed the credential/secret-safe inspection.
 
-No product defect or additional R5-E implementation gap was exposed. R5-E is therefore complete subject to integration of this evidence/roadmap transition with the repository's required exact-head review gate.
+No product defect or additional R5-E implementation gap was exposed. R5-E is therefore complete subject to integration of this evidence/roadmap transition with the repository's required independent exact-head review gate.
 
 Final-host domain verification, final portal Tool Scan, publisher/business verification, public policy/support URLs, reviewer credential handoff, demo recording, OpenAI review and the explicit publish decision remain R5-F external actions. They must not be inferred or fabricated from this R5-E qualification.
