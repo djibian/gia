@@ -39,6 +39,7 @@ export interface Config {
   mcpAuth: McpAuthConfig;
   mcpCapabilities: readonly GristCapability[];
   mcpAllowedHosts: readonly string[];
+  mcpPrincipalRateLimitPerMinute: number;
   host: string;
   port: number;
 }
@@ -266,6 +267,10 @@ export function loadConfig(): Config {
       process.env.MCP_CAPABILITIES
     ),
     mcpAllowedHosts: parseAllowedHosts(process.env.MCP_ALLOWED_HOSTS),
+    mcpPrincipalRateLimitPerMinute: parsePositiveInt(
+      "MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE",
+      120
+    ),
     host,
     port
   };

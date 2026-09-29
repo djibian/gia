@@ -30,13 +30,15 @@ test("deployment preflight rejects incompatible transport, shared credentials an
         resourceUri: "https://other.example.org/wrong?query=1" },
       gristCredentials: { mode: "static", apiKey: "secret-grist-sentinel" },
       gristBaseUrl: "http://localhost:8484",
-      maxReadRecords: 0
+      maxReadRecords: 0,
+      mcpPrincipalRateLimitPerMinute: 0
     }).filter((check) => !check.passed).map((check) => check.id);
     assert.deepEqual(failures, [
       "canonical_mcp_resource",
       "public_resource_host_allowed",
       "grist_https",
       "bounded_operation_limits",
+      "per_principal_rate_limit",
       "multi_principal_grist_credentials"
     ]);
     assert.equal(checkOAuthDeployment({
@@ -54,6 +56,7 @@ test("CLI reports only sanitized status and requires R5-C principal mapping", ()
     { env: { PATH: process.env.PATH, ...environment, ...extra }, encoding: "utf8" });
   const good = run();
   assert.equal(good.status, 0, good.stderr);
+  assert.match(good.stdout, /per_principal_rate_limit: PASS/);
   assert.match(good.stdout, /multi_principal_grist_credentials: PASS/);
 
   const staticCredential = run({
