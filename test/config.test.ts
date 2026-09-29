@@ -36,6 +36,7 @@ const BASE_ENV = {
   OAUTH_ISSUER: undefined,
   OAUTH_JWKS_URI: undefined,
   MCP_RESOURCE_URI: undefined,
+  MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE: undefined,
   HOST: "127.0.0.1",
   PORT: "3000"
 };
@@ -301,6 +302,35 @@ test("loads configurable record guardrails and supports zero as unlimited", () =
       const config = loadConfig();
       assert.equal(config.maxReadRecords, 12000);
       assert.equal(config.maxWriteRecords, 0);
+    }
+  );
+});
+
+test("defaults and validates the per-principal MCP request ceiling", () => {
+  withEnv(BASE_ENV, () => {
+    assert.equal(loadConfig().mcpPrincipalRateLimitPerMinute, 120);
+  });
+
+  withEnv(
+    {
+      ...BASE_ENV,
+      MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE: "240"
+    },
+    () => {
+      assert.equal(loadConfig().mcpPrincipalRateLimitPerMinute, 240);
+    }
+  );
+
+  withEnv(
+    {
+      ...BASE_ENV,
+      MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE: "0"
+    },
+    () => {
+      assert.throws(
+        () => loadConfig(),
+        /MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE must be a positive integer/
+      );
     }
   );
 });
