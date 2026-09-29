@@ -172,6 +172,6 @@ Critical defects are repaired generically and affected validation rerun.
 
 ## Production security
 
-R5-C replaces shared upstream authority for multi-principal production with Grist Community service-account credential selection from a protected read-only operator mapping. Live R5-C completion still requires at least two real service accounts proving distinct upstream authority and no cross-principal client/context/cache reuse.
+R5-C replaces shared upstream authority for multi-principal production with Grist Community service-account credential selection from a protected read-only operator mapping. Its live completion evidence is now recorded in `docs/R5-C-LIVE-EVIDENCE.md`: two real service accounts and two OAuth principals demonstrated distinct authority, native grant separation and unmapped-principal fail-closed behavior without a shared `GRIST_API_KEY` fallback.
 
 R5-D owns rate limiting, operational alert inputs, outage/recovery and exercised service-account credential rotation/revocation. Secret-manager implementation, alert transport and log backend remain deployment infrastructure unless a concrete need proves otherwise.
