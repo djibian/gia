@@ -29,6 +29,10 @@ export function checkOAuthDeployment(config: Config): DeploymentCheck[] {
       passed: config.maxReadRecords > 0 && config.maxWriteRecords > 0 && config.maxSchemaItems > 0
     },
     {
+      id: "per_principal_rate_limit",
+      passed: config.mcpPrincipalRateLimitPerMinute > 0
+    },
+    {
       id: "multi_principal_grist_credentials",
       passed: config.gristCredentials.mode === "principal-map"
     }
