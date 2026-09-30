@@ -15,7 +15,7 @@ untrusted user/business content
 MCP-capable LLM
         |
         v
-grist-chatgpt
+Gia
   authenticated principal
   resource/capability restriction
   bounded semantic validation
