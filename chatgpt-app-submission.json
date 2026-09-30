@@ -2,9 +2,9 @@
   "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
   "schema_version": 1,
   "app_info": {
-    "display_name": "grist-chatgpt",
-    "subtitle": "Concevoir des documents Grist",
-    "description": "Inspecter, structurer et faire évoluer des documents Grist Community avec dix outils MCP sémantiques bornés pour les données, le schéma, les pages et les widgets. Grist reste l'autorité des permissions; les identifiants et secrets restent côté serveur. Projet indépendant, sans affiliation officielle à Grist Labs, DINUM ou OpenAI.",
+    "display_name": "Structured Workspace Builder",
+    "subtitle": "Build and evolve structured workspaces",
+    "description": "Inspect, structure and evolve documents on a configured self-hosted Grist Community deployment through ten bounded semantic MCP tools for data, schema, pages and widgets. Native Grist permissions remain authoritative, and credentials and secrets stay server-side. Independent project; not affiliated with Grist Labs, DINUM or OpenAI.",
     "category": "PRODUCTIVITY"
   },
   "tools": {
