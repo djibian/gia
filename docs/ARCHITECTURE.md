@@ -15,7 +15,7 @@ MCP-capable LLM
   reason / plan / orchestrate
         |
         v
-grist-chatgpt
+Gia
   MCP v2 semantic tools
   compact Grist context
   bounded generic mutations
@@ -39,7 +39,7 @@ Owns:
 - deciding what result satisfies the user's request;
 - adapting after tool results.
 
-### `grist-chatgpt`
+### Gia
 
 Owns:
 

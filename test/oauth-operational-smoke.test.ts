@@ -23,7 +23,7 @@ test("operational smoke validates only non-secret public OAuth surfaces", async 
     const url = input instanceof Request ? input.url : input.toString();
     seen.push(url);
     if (url === "https://bridge.example.org/healthz") {
-      return response({ status: "ok", service: "grist-chatgpt", version: "0.5.0" });
+      return response({ status: "ok", service: "gia", version: "0.5.0" });
     }
     if (url === metadataUrl) {
       return response({

@@ -1,6 +1,6 @@
 # Roadmap
 
-This roadmap is the authoritative dependency map for `grist-chatgpt` after the 2026-09-27 Pareto recomposition decision.
+This roadmap is the authoritative dependency map for **Gia** after the 2026-09-27 Pareto recomposition decision.
 
 The project no longer develops around stage tracking or any other business application. It no longer treats a generalized internal Builder/lifecycle architecture as the next dependency. The product is rebuilt from the best existing Grist/MCP components and the useful parts of this repository, then validated only after a coherent candidate exists.
 

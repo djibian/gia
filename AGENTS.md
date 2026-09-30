@@ -1,12 +1,12 @@
 # Autonomous development contract
 
-This file is the operational contract for autonomous work on `djibian/grist-chatgpt`.
+This file is the operational contract for autonomous work on `djibian/gia`.
 
 ## Mission of autonomous development
 
 Build the **smallest coherent Grist Community MCP product** by reusing and adapting proven existing projects before inventing new abstractions.
 
-The LLM client is the reasoning, planning and orchestration layer. `grist-chatgpt` is the compact semantic adaptation and execution layer between that agent and Grist.
+The LLM client is the reasoning, planning and orchestration layer. **Gia** is the compact semantic adaptation and execution layer between that agent and Grist.
 
 Product development is deliberately independent of any business application. Stage tracking, CCF, pedagogy, CRM, inventory and every other domain scenario are validation cases, never architecture dependencies.
 

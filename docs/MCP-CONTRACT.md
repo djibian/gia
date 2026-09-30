@@ -1,6 +1,6 @@
 # MCP contract
 
-Current contract: **`grist-chatgpt` MCP v2**
+Current contract: **Gia MCP v2**
 
 The contract version describes the model-facing MCP tool surface. It is intentionally independent from the package/server implementation version.
 

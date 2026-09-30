@@ -6,7 +6,7 @@ Gia by L’Œil du Maître is an independent remote MCP plugin for bounded work 
 
 Public support requests and bug reports:
 
-https://github.com/djibian/grist-chatgpt/issues
+https://github.com/djibian/gia/issues
 
 When opening an issue, include:
 
@@ -43,8 +43,8 @@ Grist is a trademark of Grist Labs, Inc. This project is independent and is not 
 
 ## Policies
 
-Privacy policy: https://github.com/djibian/grist-chatgpt/blob/main/PRIVACY.md
+Privacy policy: https://github.com/djibian/gia/blob/main/PRIVACY.md
 
-Terms of use: https://github.com/djibian/grist-chatgpt/blob/main/TERMS.md
+Terms of use: https://github.com/djibian/gia/blob/main/TERMS.md
 
-Project source: https://github.com/djibian/grist-chatgpt
+Project source: https://github.com/djibian/gia

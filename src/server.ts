@@ -103,7 +103,7 @@ const oauthMcpVerifier =
 
 function buildServer(grist: AuthorizedGristService): McpServer {
   const server = new McpServer({
-    name: "grist-chatgpt",
+    name: "gia",
     version: VERSION
   });
 
@@ -188,7 +188,7 @@ registerOpenAiAppsChallenge(
 app.get("/healthz", (_req, res) => {
   res.json({
     status: "ok",
-    service: "grist-chatgpt",
+    service: "gia",
     version: VERSION
   });
 });
@@ -297,7 +297,7 @@ app.all("/mcp", async (req, res) => {
 
 const httpServer = app.listen(config.port, config.host, () => {
   console.log(
-    `grist-chatgpt listening on http://${config.host}:${config.port} (MCP /mcp; auth ${config.mcpAuth.mode})`
+    `gia listening on http://${config.host}:${config.port} (MCP /mcp; auth ${config.mcpAuth.mode})`
   );
 });
 
