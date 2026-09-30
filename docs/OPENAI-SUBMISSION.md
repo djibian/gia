@@ -6,7 +6,7 @@ If publication is reactivated, revalidate every platform requirement, listing fi
 
 ## Product submitted
 
-The repository/runtime project remains `grist-chatgpt`: an independent **remote MCP-only** adaptation layer for one configured self-hosted Grist Community deployment. The prepared public directory name is **Gia by L’Œil du Maître**.
+The repository/runtime project is now **Gia** (`djibian/gia`), an independent **remote MCP-only** adaptation layer for one configured self-hosted Grist Community deployment. The prepared public directory name is **Gia by L’Œil du Maître**. Historical qualification evidence may still refer to the former `grist-chatgpt` repository/runtime name and should remain interpreted in that historical context.
 
 The prepared package exposes exactly the ten tools documented in `docs/MCP-CONTRACT.md`; it does not ship a GPT Actions/OpenAPI compatibility surface, a custom ChatGPT UI, generic HTTP forwarding, raw SQL, arbitrary Grist `/apply`, account/ACL administration or a user-key onboarding flow.
 
@@ -87,10 +87,10 @@ Prepared prompts:
 
 If publication is explicitly reactivated, revalidate the repository identity and then update these URLs as needed:
 
-- website: `https://github.com/djibian/grist-chatgpt`;
-- support: `https://github.com/djibian/grist-chatgpt/issues`;
-- privacy: `https://github.com/djibian/grist-chatgpt/blob/main/PRIVACY.md`;
-- terms: `https://github.com/djibian/grist-chatgpt/blob/main/TERMS.md`.
+- website: `https://github.com/djibian/gia`;
+- support: `https://github.com/djibian/gia/issues`;
+- privacy: `https://github.com/djibian/gia/blob/main/PRIVACY.md`;
+- terms: `https://github.com/djibian/gia/blob/main/TERMS.md`.
 
 ## Prepared public MCP endpoint
 
