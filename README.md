@@ -1,6 +1,6 @@
-# grist-chatgpt
+# Gia
 
-`grist-chatgpt` is a compact open-source **MCP adaptation layer for Grist Community**. It gives an MCP-capable agent stable semantic tools to discover, inspect and modify Grist applications while keeping credentials, low-level Grist references and safety policy server-side.
+**Gia** is a compact open-source **MCP adaptation layer for Grist Community**. It gives an MCP-capable agent stable semantic tools to discover, inspect and modify Grist applications while keeping credentials, low-level Grist references and safety policy server-side.
 
 > [!IMPORTANT]
 > This repository is an independent prototype. It is not an official Grist Labs, DINUM / La Suite numérique, or OpenAI integration.
@@ -15,7 +15,7 @@ MCP-capable LLM client
   reason / plan / orchestrate
   |
   v
-grist-chatgpt
+Gia
   compact MCP v2 contract
   bounded semantic Grist operations
   authorization + stable-ID normalization
