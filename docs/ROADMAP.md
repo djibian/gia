@@ -31,8 +31,12 @@ R3  AUTONOMOUS PRODUCT CANDIDATE          DONE
 R4  FINAL VALIDATION CAMPAIGN             DONE
  |
  v
-R5  HARDENING / PRODUCTION / DISTRIBUTION ACTIVE
+R5  HARDENING / PRODUCTION                DONE
+ |
+ `-- R5-F OPTIONAL PUBLIC DISTRIBUTION     DEFERRED
 ```
+
+There is no active publication tranche. R5-F may be resumed only by an explicit future product decision; it is not latent committed work.
 
 There are no parallel business-application axes during R1-R3.
 
@@ -355,13 +359,13 @@ All R4 exit criteria are satisfied. No further R4 validation class is committed.
 
 ---
 
-# R5 — Hardening, production and distribution
+# R5 — Hardening and production
 
-**Status: ACTIVE**
+**Status: DONE**
 
 ## Goal
 
-Productionize the compact MCP v2 product R4 actually validated, then prepare the smallest truthful distribution package. Do not restore the old v1/GPT-Actions or Builder architecture.
+Productionize the compact MCP v2 product R4 actually validated while keeping public distribution optional. Do not restore the old v1/GPT-Actions or Builder architecture.
 
 Authoritative R5-A audit: `docs/R5-PRODUCTION-DISTRIBUTION-AUDIT.md`.
 
@@ -469,29 +473,33 @@ The 2026-09-29 final authorized qualification deployed and restarted the exact r
 
 No portal token, production credential, verified publisher identity or review outcome is invented in repository code.
 
-### R5-F — external publication gate
+### R5-F — optional public distribution
 
-**Status: BLOCKED by external actions.**
+**Status: DEFERRED — not a product dependency.**
 
-This is not autonomous implementation work. It consists of real-world authority and publication actions:
+The repository retains the substantial OpenAI publication-readiness work already completed as historical preparation, including current requirement audits, Gia hostname/OIDC evidence, reviewer material and portal checklists. None of that material makes publication mandatory or freezes the product around the current submission shape.
 
-- own/select the production hostname and supply production secrets;
-- enable/provision final Grist Community service accounts and grants;
-- complete any required institutional ProConnect registration/authorization;
-- use an OpenAI publishing project with the currently required data-residency eligibility;
-- complete verified publisher/business identity and Apps Management permissions;
-- publish public website/support/privacy/terms material and demo recording;
-- establish the factual API/instance/branding authorization basis without implying an official relationship;
-- apply the portal-issued domain challenge, run final Tool Scan and provide reviewer credentials;
-- submit for OpenAI review, respond to findings and make the explicit publish decision after approval.
+R5-F must not become active automatically. It may be resumed only after an explicit product decision to pursue public distribution again.
 
-OpenAI's current unofficial-connector rule remains a real review-time risk. It must be resolved by truthful evidence/review, never by misleading naming or by turning the bridge into a generic proxy.
+If resumed, revalidate all then-current requirements and rebuild whatever has drifted. Possible actions include:
+
+- choose the then-current deployment/reviewer environment and any required service-account grants;
+- complete any required institutional authorization relevant at that time;
+- revalidate publisher/project eligibility and current directory rules;
+- refresh public website/support/privacy/terms material and demo recording as needed;
+- re-establish the factual API/instance/branding authorization basis without implying an official relationship;
+- apply any then-current domain-verification mechanism, run the current Tool Scan and provide reviewer credentials;
+- submit for review, respond to findings and make an explicit publish decision only if publication remains desirable.
+
+Future product work is free to change tool count, schemas, authentication/deployment assumptions, hosting, naming, reviewer fixtures or any other publication-specific detail. Earlier R5-F material may therefore become stale by design.
 
 ## R5 exit criteria
 
-Technical readiness requires R5-B through R5-E to be integrated with green exact-head evidence and without broadening the lean product boundary.
+R5 technical/product completion requires R5-B through R5-E to be integrated with green exact-head evidence and without broadening the lean product boundary. Those criteria are satisfied, so **R5 is DONE**.
 
-Public-directory completion additionally requires the R5-F external review/publication actions. If external publication is rejected, preserve the production/private deployment rather than weakening security or inventing affiliation; record the concrete review finding before any new roadmap work is promoted.
+Public-directory completion is explicitly outside R5 completion. R5-F is optional future work, and its deferral does not block new product evolution, refactoring, deployment changes or future roadmap decisions.
+
+No active R tranche follows automatically from R5. New work must be promoted by an explicit product decision or concrete evidence of a useful product need; deferred publication must not be selected as the default next tranche.
 
 ---
 

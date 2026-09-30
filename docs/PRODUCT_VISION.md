@@ -225,9 +225,13 @@ This is where stage tracking, CCF/pedagogy, a fresh application, an existing app
 
 A validation case may reveal a missing generic capability. The response is the smallest generic repair, not adoption of the case's business model into the core.
 
-### R5 — hardening and distribution
+### R5 — production hardening; distribution is optional
 
-Only after successful product validation do production identity, secure credential custody, operational hardening, reviewer environments, institutional deployment and public directory submission return to the critical path.
+After successful product validation, production identity, secure credential custody and operational hardening may be completed when they improve real deployments.
+
+Public distribution through OpenAI or another MCP ecosystem is a **possible future product outcome, not a product-completion criterion and not a permanent critical-path dependency**. Reviewer environments, publisher-specific metadata, directory submission and institutional hosting become active only after an explicit product decision to pursue them.
+
+Gia may evolve through any number of functional, architectural or operational iterations before a public submission is reconsidered. Those evolutions do not need to preserve compatibility with an earlier submission package. If publication is resumed later, its requirements, reviewer material, deployment assumptions and metadata must be revalidated against the then-current product and platform rules.
 
 ## Evolution rule
 
