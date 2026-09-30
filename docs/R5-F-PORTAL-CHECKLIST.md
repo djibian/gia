@@ -13,9 +13,13 @@ This checklist records the current publication state for the public remote-MCP s
 
 ## Public listing identity
 
-Public plugin name candidate:
+Validated public plugin name:
 
-`Structured Workspace Builder`
+`Gia by L’Œil du Maître`
+
+Short name:
+
+`Gia`
 
 Repository/internal runtime name remains `grist-chatgpt`.
 
@@ -23,12 +27,12 @@ Rationale:
 
 - avoids `GPT` / `ChatGPT` in the public product name;
 - avoids using the Grist trademark as the product's own brand;
-- describes the workflow rather than claiming to be an official connector;
+- ties the public identity to the publisher's existing `loeildumaitre.fr` domain;
 - Grist Community is referenced only descriptively as the compatible target platform.
 
 Default short description:
 
-`Build and evolve structured workspaces`
+`Build and evolve Grist Community applications`
 
 Default long description:
 
@@ -47,7 +51,7 @@ After the public-material PR is integrated, use:
 - Privacy: `https://github.com/djibian/grist-chatgpt/blob/main/PRIVACY.md`
 - Terms: `https://github.com/djibian/grist-chatgpt/blob/main/TERMS.md`
 
-All are public HTTPS URLs. The historical repository name is an open-source project identifier; the public directory listing and hosted service use the separate `Structured Workspace Builder` brand.
+All are public HTTPS URLs. The historical repository name is an open-source project identifier; the public directory listing and hosted service use the separate `Gia by L’Œil du Maître` identity.
 
 ## Starter prompts
 
@@ -77,22 +81,22 @@ R5-E final evidence already records exact-candidate execution of the five positi
 
 Do **not** submit or re-verify the historical qualification hostname `grist-chatgpt.loeildumaitre.fr` as the final public plugin endpoint.
 
-Current target neutral alias:
+Validated target alias:
 
-`https://workspace-builder.loeildumaitre.fr/mcp`
+`https://gia.loeildumaitre.fr/mcp`
 
-Reason: the July 2026 Grist trademark policy specifically restricts use of `grist` in public service domain names/identifiers, and the historical hostname also contains OpenAI's `ChatGPT` mark. The neutral alias changes only deployment/publication identity; the repository/internal runtime name may remain unchanged.
+Reason: the public endpoint is short, consistent with the validated Gia identity and free of OpenAI/Grist marks in the hostname. The alias changes only deployment/publication identity; the repository/internal runtime name may remain unchanged.
 
-Before portal verification, the neutral alias must be wired to the same reviewed service and the OAuth resource/audience/public-host configuration must be updated coherently, followed by production preflight, OAuth smoke and a bounded authenticated reviewer read. No portal domain challenge should be applied until that validation passes.
+Before portal verification, the Gia alias must be wired to the same reviewed service and the OAuth resource/audience/public-host configuration must be updated coherently, followed by production preflight, OAuth smoke and a bounded authenticated reviewer read. No portal domain challenge should be applied until that validation passes.
 
 ## Portal sequence still required
 
-1. Establish and validate `workspace-builder.loeildumaitre.fr` as the final HTTPS MCP hostname.
+1. Establish and validate `gia.loeildumaitre.fr` as the final HTTPS MCP hostname.
 2. Confirm deployment operational/audit-log retention matches the published privacy-policy commitment (no more than 30 days).
 3. Create or update the public draft in the verified individual publisher organization/project.
-4. Select **With MCP** and enter the final production HTTPS MCP URL.
+4. Select **With MCP** and enter `https://gia.loeildumaitre.fr/mcp`.
 5. Configure OAuth using the current OIDC provider.
-6. Complete the portal-issued domain-verification challenge on the neutral MCP host (or accepted parent host).
+6. Complete the portal-issued domain-verification challenge on the Gia MCP host (or accepted parent host).
 7. Run a fresh **Scan Tools** against the final production endpoint.
 8. Require exactly the expected ten v2 tools with current schemas, annotations and OAuth security metadata.
 9. Enter the public listing name/descriptions/category and URLs above.
@@ -108,7 +112,7 @@ Before portal verification, the neutral alias must be wired to the same reviewed
 
 ## Remaining blockers before submission
 
-- neutral final MCP hostname deployed and smoke-tested;
+- `gia.loeildumaitre.fr` deployed and smoke-tested;
 - final public logo;
 - final demo recording URL;
 - final domain challenge from the current portal draft;
