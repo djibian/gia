@@ -10,6 +10,7 @@ This checklist records the current publication state for the public remote-MCP s
 - Submitter role: **Organization Owner** (operator-confirmed; includes Apps Management authority).
 - OpenAI project: **Global data residency available** (operator-confirmed).
 - OAuth/OIDC workspace-domain support: **PASS**, recorded in `docs/R5-F-OIDC-EVIDENCE.md`.
+- Public deployment journal retention: **PASS** — `systemd-journald` is explicitly configured with `MaxRetentionSec=30day`, matching the published privacy commitment.
 
 ## Public listing identity
 
@@ -92,7 +93,7 @@ Before portal verification, the Gia alias must be wired to the same reviewed ser
 ## Portal sequence still required
 
 1. Establish and validate `gia.loeildumaitre.fr` as the final HTTPS MCP hostname.
-2. Confirm deployment operational/audit-log retention matches the published privacy-policy commitment (no more than 30 days).
+2. Preserve the verified `MaxRetentionSec=30day` deployment retention setting.
 3. Create or update the public draft in the verified individual publisher organization/project.
 4. Select **With MCP** and enter `https://gia.loeildumaitre.fr/mcp`.
 5. Configure OAuth using the current OIDC provider.
@@ -118,7 +119,6 @@ Before portal verification, the Gia alias must be wired to the same reviewed ser
 - final domain challenge from the current portal draft;
 - fresh final Tool Scan;
 - reviewer credential handoff in the portal;
-- confirmation that the public deployment operational/audit-log retention matches the published privacy-policy commitment (no more than 30 days);
 - actual OpenAI review and explicit publish decision.
 
 The continuing third-party/unofficial-connector eligibility question remains a review-time risk. Submission wording must remain truthful: this is an independent bounded semantic workflow for one configured self-hosted Grist Community deployment, not an official Grist Labs integration and not a generic relay/proxy.
