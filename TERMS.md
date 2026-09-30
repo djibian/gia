@@ -65,7 +65,7 @@ Nothing in these Terms excludes rights or liabilities that cannot lawfully be ex
 
 Use of the plugin is also governed by the public Privacy Policy:
 
-https://github.com/djibian/grist-chatgpt/blob/main/PRIVACY.md
+https://github.com/djibian/gia/blob/main/PRIVACY.md
 
 ## 10. Changes to these Terms
 
@@ -73,6 +73,6 @@ These Terms may be updated when the service, deployment or applicable platform r
 
 ## 11. Support
 
-Support requests: https://github.com/djibian/grist-chatgpt/issues
+Support requests: https://github.com/djibian/gia/issues
 
-Project source and documentation: https://github.com/djibian/grist-chatgpt
+Project source and documentation: https://github.com/djibian/gia
