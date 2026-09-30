@@ -1,8 +1,8 @@
-# Privacy Policy — Structured Workspace Builder
+# Privacy Policy — Gia by L’Œil du Maître
 
 Effective date: 2026-09-30
 
-Structured Workspace Builder is an independent remote MCP plugin published by Emmanuel Blanchard. It is designed to let an authenticated user inspect and make bounded changes to documents on one configured self-hosted Grist Community deployment.
+Gia by L’Œil du Maître is an independent remote MCP plugin published by Emmanuel Blanchard. It is designed to let an authenticated user inspect and make bounded changes to documents on one configured self-hosted Grist Community deployment.
 
 This plugin is independent and is not affiliated with, endorsed by, or sponsored by Grist Labs, DINUM, or OpenAI. Grist is a trademark of Grist Labs, Inc.
 
