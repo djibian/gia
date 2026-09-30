@@ -47,7 +47,7 @@ After the public-material PR is integrated, use:
 - Privacy: `https://github.com/djibian/grist-chatgpt/blob/main/PRIVACY.md`
 - Terms: `https://github.com/djibian/grist-chatgpt/blob/main/TERMS.md`
 
-All are public HTTPS URLs.
+All are public HTTPS URLs. The historical repository name is an open-source project identifier; the public directory listing and hosted service use the separate `Structured Workspace Builder` brand.
 
 ## Starter prompts
 
@@ -73,35 +73,42 @@ Canonical reviewer cases remain:
 
 R5-E final evidence already records exact-candidate execution of the five positive cases, the three negative routing cases, an unrelated-resource deny, fixture reset and secret-safe logging.
 
-## Current production endpoint
+## Final public MCP hostname
 
-Candidate MCP URL:
+Do **not** submit or re-verify the historical qualification hostname `grist-chatgpt.loeildumaitre.fr` as the final public plugin endpoint.
 
-`https://grist-chatgpt.loeildumaitre.fr/mcp`
+Current target neutral alias:
 
-The hostname is an internal/deployment identifier, not the public plugin brand. It may remain technically unchanged unless the portal or trademark review requires otherwise.
+`https://workspace-builder.loeildumaitre.fr/mcp`
+
+Reason: the July 2026 Grist trademark policy specifically restricts use of `grist` in public service domain names/identifiers, and the historical hostname also contains OpenAI's `ChatGPT` mark. The neutral alias changes only deployment/publication identity; the repository/internal runtime name may remain unchanged.
+
+Before portal verification, the neutral alias must be wired to the same reviewed service and the OAuth resource/audience/public-host configuration must be updated coherently, followed by production preflight, OAuth smoke and a bounded authenticated reviewer read. No portal domain challenge should be applied until that validation passes.
 
 ## Portal sequence still required
 
-1. Create or update the public draft in the verified individual publisher organization/project.
-2. Select **With MCP** and enter the production HTTPS MCP URL.
-3. Configure OAuth using the current OIDC provider.
-4. Complete the portal-issued domain-verification challenge on the MCP host (or accepted parent host).
-5. Run a fresh **Scan Tools** against the final production endpoint.
-6. Require exactly the expected ten v2 tools with current schemas, annotations and OAuth security metadata.
-7. Enter the public listing name/descriptions/category and URLs above.
-8. Provide a non-infringing original logo that does not use OpenAI or Grist marks.
-9. Provide availability countries/regions.
-10. Enter the canonical five positive and three negative reviewer cases.
-11. Provide ready-to-use reviewer credentials/instructions without inaccessible MFA, SMS, email confirmation or private-network dependencies.
-12. Provide the demo-recording URL showing the principal workflows and tools.
-13. Enter release notes and required policy attestations.
-14. Submit for review.
-15. Record the actual review result before changing product scope.
-16. Publish only after approval and an explicit release decision.
+1. Establish and validate `workspace-builder.loeildumaitre.fr` as the final HTTPS MCP hostname.
+2. Confirm deployment operational/audit-log retention matches the published privacy-policy commitment (no more than 30 days).
+3. Create or update the public draft in the verified individual publisher organization/project.
+4. Select **With MCP** and enter the final production HTTPS MCP URL.
+5. Configure OAuth using the current OIDC provider.
+6. Complete the portal-issued domain-verification challenge on the neutral MCP host (or accepted parent host).
+7. Run a fresh **Scan Tools** against the final production endpoint.
+8. Require exactly the expected ten v2 tools with current schemas, annotations and OAuth security metadata.
+9. Enter the public listing name/descriptions/category and URLs above.
+10. Provide a non-infringing original logo that does not use OpenAI or Grist marks.
+11. Provide availability countries/regions.
+12. Enter the canonical five positive and three negative reviewer cases.
+13. Provide ready-to-use reviewer credentials/instructions without inaccessible MFA, SMS, email confirmation or private-network dependencies.
+14. Provide the demo-recording URL showing the principal workflows and tools.
+15. Enter release notes and required policy attestations.
+16. Submit for review.
+17. Record the actual review result before changing product scope.
+18. Publish only after approval and an explicit release decision.
 
 ## Remaining blockers before submission
 
+- neutral final MCP hostname deployed and smoke-tested;
 - final public logo;
 - final demo recording URL;
 - final domain challenge from the current portal draft;
