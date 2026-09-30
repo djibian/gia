@@ -2,11 +2,11 @@
 
 ## Mission
 
-`grist-chatgpt` is a **compact open-source MCP adaptation layer for Grist Community**.
+**Gia** is a **compact open-source MCP adaptation layer for Grist Community**.
 
 It gives an MCP-capable agent enough stable semantic access to understand and modify a Grist application without recreating the agent's reasoning inside the server.
 
-The LLM client understands the user's intent, plans and orchestrates. Grist remains the application platform and source of truth. `grist-chatgpt` supplies the missing bridge between them: compact discovery/context, bounded semantic mutations, normalization where Grist exposes unstable/private identifiers, and safe failure semantics.
+The LLM client understands the user's intent, plans and orchestrates. Grist remains the application platform and source of truth. Gia supplies the missing bridge between them: compact discovery/context, bounded semantic mutations, normalization where Grist exposes unstable/private identifiers, and safe failure semantics.
 
 The first product objective is not a universal autonomous application lifecycle system. It is a small coherent tool that an existing strong LLM can use to build and evolve Grist applications on Grist Community.
 
@@ -21,7 +21,7 @@ Before implementing anything new:
 - preserve valuable safety work already present in this repository;
 - remove or defer local abstractions that duplicate the reasoning, planning or workflow abilities of the MCP client.
 
-`grist-chatgpt` should be smaller than the ecosystem it composes, not another implementation of all of it.
+Gia should be smaller than the ecosystem it composes, not another implementation of all of it.
 
 ## Product boundary
 
@@ -36,7 +36,7 @@ MCP-capable LLM client
   orchestrate
   |
   v
-grist-chatgpt
+Gia
   discover / normalize context
   expose bounded semantic operations
   enforce local safety boundaries
