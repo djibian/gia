@@ -1,10 +1,10 @@
-# Terms of Use — Structured Workspace Builder
+# Terms of Use — Gia by L’Œil du Maître
 
 Effective date: 2026-09-30
 
-These terms govern use of the public Structured Workspace Builder plugin and its hosted remote MCP endpoint.
+These terms govern use of the public Gia by L’Œil du Maître plugin and its hosted remote MCP endpoint.
 
-Structured Workspace Builder is an independent project published by Emmanuel Blanchard. It is not affiliated with, endorsed by, sponsored by, or an official product of Grist Labs, DINUM, or OpenAI. Grist is a trademark of Grist Labs, Inc. References to Grist Community describe compatibility with that software and do not imply endorsement.
+Gia by L’Œil du Maître is an independent project published by Emmanuel Blanchard. It is not affiliated with, endorsed by, sponsored by, or an official product of Grist Labs, DINUM, or OpenAI. Grist is a trademark of Grist Labs, Inc. References to Grist Community describe compatibility with that software and do not imply endorsement.
 
 ## 1. Purpose
 
