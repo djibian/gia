@@ -4,13 +4,13 @@
 
 ## Product submitted
 
-The repository/runtime project remains `grist-chatgpt`: an independent **remote MCP-only** adaptation layer for one configured self-hosted Grist Community deployment. The public directory name is **Structured Workspace Builder**.
+The repository/runtime project remains `grist-chatgpt`: an independent **remote MCP-only** adaptation layer for one configured self-hosted Grist Community deployment. The public directory name is **Gia by L’Œil du Maître**.
 
 The product exposes exactly the ten tools documented in `docs/MCP-CONTRACT.md`; it does not ship a GPT Actions/OpenAPI compatibility surface, a custom ChatGPT UI, generic HTTP forwarding, raw SQL, arbitrary Grist `/apply`, account/ACL administration or a user-key onboarding flow.
 
 The bridge authenticates MCP clients through OAuth and maps each production principal server-side to an operator-provisioned Grist Community service-account credential. Users do not enter Grist API keys into prompts or tool inputs. Grist remains authoritative for native resource permissions.
 
-Structured Workspace Builder is independent and is not affiliated with, endorsed by, or sponsored by Grist Labs, DINUM or OpenAI. Grist is a trademark of Grist Labs, Inc.; references to Grist Community are descriptive compatibility references only.
+Gia by L’Œil du Maître is independent and is not affiliated with, endorsed by, or sponsored by Grist Labs, DINUM or OpenAI. Grist is a trademark of Grist Labs, Inc.; references to Grist Community are descriptive compatibility references only.
 
 ## Current ten-tool package
 
@@ -53,11 +53,11 @@ Final reviewer execution uses one dedicated reviewer OAuth identity, one synthet
 
 ### Display name
 
-`Structured Workspace Builder`
+`Gia by L’Œil du Maître`
 
 ### Short description
 
-`Build and evolve structured workspaces`
+`Build and evolve Grist Community applications`
 
 ### Long description
 
@@ -89,6 +89,14 @@ After the R5-F public-material change is integrated, use:
 - terms: `https://github.com/djibian/grist-chatgpt/blob/main/TERMS.md`.
 
 All are public HTTPS URLs.
+
+## Final public MCP endpoint
+
+The final public endpoint selected for R5-F is:
+
+`https://gia.loeildumaitre.fr/mcp`
+
+The historical qualification hostname `grist-chatgpt.loeildumaitre.fr` remains an internal/deployment identifier and must not be used for final portal domain verification. Before portal verification, the Gia alias must resolve to the same reviewed service and the OAuth resource/audience/public-host configuration must be updated coherently, followed by production preflight, OAuth smoke and a bounded authenticated reviewer read.
 
 ## Privacy and data inventory
 
@@ -162,13 +170,14 @@ OpenAI's current unofficial-connector rule remains a real review-time eligibilit
 
 ## Final portal sequence
 
-1. confirm public policy/support material and deployment log-retention commitment;
-2. create/update the verified-individual public draft using **With MCP**;
-3. enter the final production HTTPS MCP endpoint and OAuth configuration;
-4. apply the exact portal-issued domain challenge token and verify the host;
-5. run a fresh **Scan Tools** and resolve concrete blocking findings;
-6. enter the listing, starter prompts, release notes and exact 5+3 reviewer cases;
-7. upload an original non-infringing logo;
-8. provide reviewer credentials and demo recording;
-9. submit for review and record the actual outcome;
-10. publish only after approval and an explicit release decision.
+1. establish and validate `https://gia.loeildumaitre.fr/mcp` as the final production endpoint;
+2. confirm public policy/support material and deployment log-retention commitment;
+3. create/update the verified-individual public draft using **With MCP**;
+4. enter the final production HTTPS MCP endpoint and OAuth configuration;
+5. apply the exact portal-issued domain challenge token and verify the host;
+6. run a fresh **Scan Tools** and resolve concrete blocking findings;
+7. enter the listing, starter prompts, release notes and exact 5+3 reviewer cases;
+8. upload an original non-infringing logo;
+9. provide reviewer credentials and demo recording;
+10. submit for review and record the actual outcome;
+11. publish only after approval and an explicit release decision.
