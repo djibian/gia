@@ -109,7 +109,7 @@ export async function runOAuthOperationalSmoke(
       passed:
         health?.status === 200 &&
         healthBody?.status === "ok" &&
-        healthBody?.service === "grist-chatgpt" &&
+        healthBody?.service === "gia" &&
         typeof healthBody?.version === "string" &&
         healthBody.version.length > 0
     },
