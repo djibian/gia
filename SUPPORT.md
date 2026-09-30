@@ -1,6 +1,6 @@
-# Support — Structured Workspace Builder
+# Support — Gia by L’Œil du Maître
 
-Structured Workspace Builder is an independent remote MCP plugin for bounded work with one configured self-hosted Grist Community deployment.
+Gia by L’Œil du Maître is an independent remote MCP plugin for bounded work with one configured self-hosted Grist Community deployment.
 
 ## Get help
 
@@ -37,7 +37,7 @@ For a suspected security issue, first open a minimal GitHub issue that contains 
 
 ## Scope
 
-Support covers the Structured Workspace Builder MCP bridge and its public deployment. Questions about the Grist product itself should use Grist's official documentation and support channels.
+Support covers the Gia by L’Œil du Maître MCP bridge and its public deployment. Questions about the Grist product itself should use Grist's official documentation and support channels.
 
 Grist is a trademark of Grist Labs, Inc. This project is independent and is not affiliated with or endorsed by Grist Labs, DINUM or OpenAI.
 
