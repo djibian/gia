@@ -11,6 +11,7 @@ This checklist records the current publication state for the public remote-MCP s
 - OpenAI project: **Global data residency available** (operator-confirmed).
 - OAuth/OIDC workspace-domain support: **PASS**, recorded in `docs/R5-F-OIDC-EVIDENCE.md`.
 - Public deployment journal retention: **PASS** — `systemd-journald` is explicitly configured with `MaxRetentionSec=30day`, matching the published privacy commitment.
+- Final Gia public MCP hostname deployment and non-secret OAuth smoke: **PASS**, recorded in `docs/R5-F-GIA-LIVE-EVIDENCE.md`.
 
 ## Public listing identity
 
@@ -45,7 +46,7 @@ Category:
 
 ## Public URLs
 
-After the public-material PR is integrated, use:
+Use:
 
 - Website: `https://github.com/djibian/grist-chatgpt`
 - Support: `https://github.com/djibian/grist-chatgpt/issues`
@@ -82,18 +83,18 @@ R5-E final evidence already records exact-candidate execution of the five positi
 
 Do **not** submit or re-verify the historical qualification hostname `grist-chatgpt.loeildumaitre.fr` as the final public plugin endpoint.
 
-Validated target alias:
+Final public endpoint:
 
 `https://gia.loeildumaitre.fr/mcp`
 
-Reason: the public endpoint is short, consistent with the validated Gia identity and free of OpenAI/Grist marks in the hostname. The alias changes only deployment/publication identity; the repository/internal runtime name may remain unchanged.
+The Gia hostname is deployed on the reviewed service. The bridge configuration uses the Gia canonical resource URI and public host, Caddy is active with the Gia host, and the operator-observed production OAuth smoke passes all six non-secret checks. Protected-resource metadata binds exactly to Gia, advertises `https://auth-poc.loeildumaitre.fr/oidc`, and exposes exactly `doc:read`, `doc:write`, and `doc.schema:write`. Evidence is recorded in `docs/R5-F-GIA-LIVE-EVIDENCE.md`.
 
-Before portal verification, the Gia alias must be wired to the same reviewed service and the OAuth resource/audience/public-host configuration must be updated coherently, followed by production preflight, OAuth smoke and a bounded authenticated reviewer read. No portal domain challenge should be applied until that validation passes.
+The historical repository/internal runtime name may remain unchanged. Gia remains a single-configured-instance product for the initial public submission; multi-instance routing is not part of R5-F.
 
 ## Portal sequence still required
 
-1. Establish and validate `gia.loeildumaitre.fr` as the final HTTPS MCP hostname.
-2. Preserve the verified `MaxRetentionSec=30day` deployment retention setting.
+1. **DONE** — establish and validate `gia.loeildumaitre.fr` as the final HTTPS MCP hostname.
+2. **DONE** — preserve the verified `MaxRetentionSec=30day` deployment retention setting.
 3. Create or update the public draft in the verified individual publisher organization/project.
 4. Select **With MCP** and enter `https://gia.loeildumaitre.fr/mcp`.
 5. Configure OAuth using the current OIDC provider.
@@ -113,12 +114,12 @@ Before portal verification, the Gia alias must be wired to the same reviewed ser
 
 ## Remaining blockers before submission
 
-- `gia.loeildumaitre.fr` deployed and smoke-tested;
 - final public logo;
 - final demo recording URL;
 - final domain challenge from the current portal draft;
 - fresh final Tool Scan;
 - reviewer credential handoff in the portal;
+- country/region availability selection;
 - actual OpenAI review and explicit publish decision.
 
 The continuing third-party/unofficial-connector eligibility question remains a review-time risk. Submission wording must remain truthful: this is an independent bounded semantic workflow for one configured self-hosted Grist Community deployment, not an official Grist Labs integration and not a generic relay/proxy.
