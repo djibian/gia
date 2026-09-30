@@ -119,7 +119,7 @@ When several choices are possible, apply this policy autonomously:
 5. defer speculative or irreversible capability rather than blocking the core;
 6. record the decision and continue.
 
-If a capability would require a new public scope, irreversible external publication, production credential custody, institutional commitment or another genuinely external authorization decision, **defer that capability to R5** and continue R0-R3 without it. Do not turn it into a development stop condition.
+If a capability would require a new public scope, irreversible external publication, production credential custody, institutional commitment or another genuinely external authorization decision, defer the optional external action and continue useful product work. Do not turn it into a development stop condition.
 
 Human/external actions may be required later for production secrets, institutional ownership or public submission, but they are outside the product-construction critical path.
 
@@ -147,6 +147,15 @@ Preserve these boundaries unless an explicit later reviewed product decision cha
 - principal-derived clients, discovery results and caches never cross principal boundaries.
 
 Existing J0/J1 safety code is a component bank, not an architectural mandate. Retain the parts that directly enforce these boundaries; remove or bypass orchestration machinery that is unnecessary for the lean product.
+
+### G11 — Deferred distribution is not latent committed work
+
+A public-directory submission, reviewer package, publisher-specific requirement or institutional publication action marked **DEFERRED** is not work merely because preparation material exists.
+
+- Controllers must not reactivate public distribution autonomously.
+- Only an explicit human product decision may make public distribution an active roadmap objective again.
+- Product evolution may freely invalidate or supersede earlier submission assumptions, metadata, reviewer fixtures or platform-specific preparation.
+- When publication is explicitly resumed, revalidate the then-current product and platform requirements rather than preserving stale submission compatibility.
 
 ## Startup recovery and coherence
 
@@ -184,7 +193,7 @@ Selection order:
 5. implement only gaps required by the current tranche;
 6. stop when the committed set is exhausted; do not invent another tranche.
 
-A high-priority future production or distribution item does not block useful product construction.
+A high-priority future production or distribution item does not block useful product construction. A **DEFERRED** distribution item is not a hidden next tranche and must not be selected without explicit human promotion.
 
 ## Reference review protocol
 
@@ -245,9 +254,9 @@ Optimize for a coherent, small, reusable implementation. Keep only engineering f
 
 Only after the product contract is frozen enough to be worth testing, run the comprehensive campaign: domain scenarios, real Grist documents, creation and modification, security cases, failure/recovery, browser-dependent behavior when relevant, reruns, compatibility and regression characterization.
 
-### R5 — harden and distribute
+### R5 — harden production; distribution remains optional
 
-Production identity, credential custody, operational hardening, reviewer accounts and public directory submission are reconsidered only after R4 has established that the product itself is worth productionizing.
+Production identity, credential custody and operational hardening may be completed after R4 when they serve real deployments. Public directory submission is optional future work and does not become active merely because R5 publication material exists.
 
 ## Controller protocol
 
@@ -259,5 +268,5 @@ Production identity, credential custody, operational hardening, reviewer account
 6. Run baseline CI; add only focused construction-time tests when needed.
 7. Open/update the PR with provenance, scope, what was deliberately not built, and review-gate classification.
 8. Leave authored review-required heads for independent review, then continue any genuinely non-overlapping eligible work.
-9. Never request a human development decision while R0-R3 can progress by simplification or deferral.
-10. Stop only when no committed useful work remains or the remaining action is explicitly an R5 external/production action.
+9. Never request a human development decision while useful committed work can progress by simplification or deferral.
+10. Stop when no committed useful work remains. Deferred public-distribution actions are not committed work and must not be revived autonomously.

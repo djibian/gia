@@ -2,7 +2,7 @@
 
 ## Status
 
-This document describes the **MCP v2 product** after R4 validation and during R5 production hardening.
+This document describes the **MCP v2 product** after R4 validation and completion of R5 production hardening. Public-directory distribution is optional and currently deferred; retained R5-F material is historical preparation unless explicitly reactivated by a future human product decision.
 
 `docs/ROADMAP.md` remains authoritative for tranche eligibility. Historical architecture and milestone documents remain evidence only.
 
@@ -223,6 +223,6 @@ See `docs/RECOMPOSITION-REVIEW.md`, `docs/R3-DEPENDENCY-PROVENANCE.md`, `docs/R5
 
 ## Construction versus validation
 
-R0-R3 kept only baseline CI and focused unit/contract regressions needed to maintain the candidate. R4 performed broad product validation. R5 adds production-specific identity, credential, operations and distribution evidence.
+R0-R3 kept only baseline CI and focused unit/contract regressions needed to maintain the candidate. R4 performed broad product validation. R5 added production-specific identity, credential, operational-hardening and reviewer-package evidence without broadening the lean MCP v2 runtime.
 
-R5-C production evidence is complete: `docs/R5-C-LIVE-EVIDENCE.md` records the 2026-09-29 two-service-account/two-OAuth-principal qualification, native grant separation, explicit cross-resource denial and unmapped-principal fail-closed behavior. R5-D is the next operational-hardening tranche.
+R5-C production evidence is recorded in `docs/R5-C-LIVE-EVIDENCE.md`; R5-D operational-hardening evidence is recorded in `docs/R5-D-LIVE-EVIDENCE.md`; R5-E reviewer/package qualification is recorded in `docs/R5-E-LIVE-EVIDENCE.md`. Those technical hardening tranches are complete. R5-F public-directory publication is deferred optional future work and is not an active architectural dependency.

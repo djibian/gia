@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the security boundary for the MCP v2 product during R5 production hardening.
+This document defines the security boundary for the MCP v2 product after completion of R5 production hardening. Public-directory distribution is optional and currently deferred; retained R5-F submission material is historical preparation, not active security work.
 
 The objective is a small set of enforceable invariants. Historical J0/J1/J2 mechanisms remain relevant only where their direct safety semantics survive in the active runtime.
 
@@ -135,7 +135,7 @@ doc.schema:write
 
 The effective ceiling is the intersection of selected upstream Grist authority, deployment document/workspace policy, principal resource grants and the operation capability.
 
-Adding a new production/public OAuth scope is an R5 decision. Do not weaken current authorization to avoid that future decision.
+Any future production/public OAuth-scope expansion requires a new explicit product decision. Deferred publication work does not authorize weakening or broadening current authorization.
 
 ## Domain access policies
 
@@ -145,7 +145,7 @@ The core must preserve Grist's native permission effects and must not bypass the
 
 ## Browser security
 
-No generic browser control is part of the candidate. If R4 requires browser-only evidence, use bounded validation infrastructure; do not promote it to a model-facing capability without a later product decision.
+No generic browser control is part of the candidate. If later evidence requires browser-only validation, use bounded validation infrastructure; do not promote it to a model-facing capability without a new product decision.
 
 ## Testing policy
 
@@ -172,6 +172,6 @@ Critical defects are repaired generically and affected validation rerun.
 
 ## Production security
 
-R5-C replaces shared upstream authority for multi-principal production with Grist Community service-account credential selection from a protected read-only operator mapping. Its live completion evidence is now recorded in `docs/R5-C-LIVE-EVIDENCE.md`: two real service accounts and two OAuth principals demonstrated distinct authority, native grant separation and unmapped-principal fail-closed behavior without a shared `GRIST_API_KEY` fallback.
+R5-C replaced shared upstream authority for multi-principal production with Grist Community service-account credential selection from a protected read-only operator mapping. Its live completion evidence is recorded in `docs/R5-C-LIVE-EVIDENCE.md`: two real service accounts and two OAuth principals demonstrated distinct authority, native grant separation and unmapped-principal fail-closed behavior without a shared `GRIST_API_KEY` fallback.
 
-R5-D owns rate limiting, operational alert inputs, outage/recovery and exercised service-account credential rotation/revocation. Secret-manager implementation, alert transport and log backend remain deployment infrastructure unless a concrete need proves otherwise.
+R5-D completed rate limiting, secret-safe operational alert inputs, OAuth/JWKS outage and recovery, and exercised service-account credential rotation/revocation; its evidence is recorded in `docs/R5-D-LIVE-EVIDENCE.md`. R5-E completed the isolated reviewer/package qualification without adding model-facing credential, account or ACL administration. Secret-manager implementation, alert transport and log backend remain deployment infrastructure. R5-F public-directory publication is deferred and creates no active security requirement unless explicitly reactivated by a future product decision.
