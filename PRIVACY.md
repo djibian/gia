@@ -88,6 +88,6 @@ This policy may be updated when the public plugin, deployment or applicable requ
 
 ## Contact and support
 
-Support and privacy requests: https://github.com/djibian/grist-chatgpt/issues
+Support and privacy requests: https://github.com/djibian/gia/issues
 
-Project source and public documentation: https://github.com/djibian/grist-chatgpt
+Project source and public documentation: https://github.com/djibian/gia
