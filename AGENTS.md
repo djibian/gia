@@ -31,6 +31,8 @@ Default preference order:
 4. **REIMPLEMENT** only the proven behavior or design pattern when direct reuse is unsuitable;
 5. **REJECT** functionality that does not improve the lean product.
 
+Presence in the official Grist MCP or in a community project does not by itself make a capability eligible. Ecosystem differences become work only when the current roadmap explicitly selects them after a bounded product-value review.
+
 Do not build a local abstraction merely because it is architecturally attractive. A new abstraction needs a concrete current product need that existing code cannot satisfy simply.
 
 Every reuse/adaptation decision records provenance and licensing. Absence or ambiguity of a license means ideas/behavior may be studied but code is not copied.
@@ -125,9 +127,9 @@ Human/external actions may be required later for production secrets, institution
 
 ### G9 — Business applications never drive the core roadmap
 
-No business-specific document, table name, ACL policy, LinkKey flow, pedagogical scenario or application behavior may become an R0-R3 prerequisite.
+No business-specific document, table name, ACL policy, LinkKey flow, pedagogical scenario or application behavior may become a core architecture dependency.
 
-Business scenarios may reveal a missing generic capability only during R4. If so, create the smallest generic repair, validate it, and return to the campaign. Do not move the business model into the product architecture.
+R4 validation could reveal a missing generic capability. After R6, real product use may likewise provide evidence for a future R7 proposal. In either case, the response is the smallest generic repair justified by the evidence; do not move the business model into the product architecture or treat one application request as an automatic roadmap commitment.
 
 ### G10 — Security boundaries survive simplification
 
@@ -183,6 +185,8 @@ Selection/security-critical drift is repaired before overlapping feature work. P
 `docs/ROADMAP.md` is the authoritative dependency map.
 
 For each active tranche it defines a finite committed set. Candidate ideas are not work merely because they are visible.
+
+For **R6 — Pareto Convergence**, observation and implementation are deliberately separated: R6.1 inventories meaningful ecosystem deltas, R6.2 classifies/selects them, and only `ADOPT` items selected by R6.2 may enter R6.3 implementation. `ALREADY COVERED`, `DEFER` and `REJECT` items are not implementation work. **R7 — Usage-Driven Evolution** remains inactive until concrete real-use evidence is explicitly promoted into a finite roadmap tranche.
 
 Selection order:
 
@@ -257,6 +261,14 @@ Only after the product contract is frozen enough to be worth testing, run the co
 ### R5 — harden production; distribution remains optional
 
 Production identity, credential custody and operational hardening may be completed after R4 when they serve real deployments. Public directory submission is optional future work and does not become active merely because R5 publication material exists.
+
+### R6 — Pareto convergence
+
+Compare the stable product against current official Grist MCP semantics and relevant ecosystem references, classify only meaningful deltas, and adopt the minimum useful subset. Do not pursue parity, and do not implement before the roadmap's selection step has classified a gap `ADOPT`.
+
+### R7 — usage-driven evolution
+
+No predeclared feature backlog follows R6. Real usage may justify a future finite tranche, but until such evidence is explicitly promoted, Controllers stop rather than inventing work.
 
 ## Controller protocol
 
