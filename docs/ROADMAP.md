@@ -39,8 +39,8 @@ R5  HARDENING / PRODUCTION                DONE
 R6  PARETO CONVERGENCE                    ACTIVE
  |-- R6.1a ECOSYSTEM DELTA REVIEW          DONE
  |-- R6.1b PRODUCT CAPABILITY REVIEW       DONE
- |-- R6.2 PARETO GAP SELECTION             ELIGIBLE
- `-- R6.3 TARGETED ADOPTION               BLOCKED
+ |-- R6.2 PARETO GAP SELECTION             DONE
+ `-- R6.3 TARGETED ADOPTION               ELIGIBLE
  |
  v
 R7  USAGE-DRIVEN EVOLUTION                DEFERRED
@@ -603,7 +603,7 @@ After the report is integrated, **stop at the product-direction checkpoint** and
 
 ## R6.2 — Pareto gap selection
 
-**Status: ELIGIBLE — R6.1b is integrated and the product-direction checkpoint is recorded in `docs/R6-PRODUCT-CAPABILITY-REVIEW.md`.**
+**Status: DONE — finite selection recorded in `docs/R6-PARETO-GAP-SELECTION.md`.**
 
 Classify every meaningful candidate from R6.1a/R6.1b as exactly one of:
 
@@ -629,9 +629,17 @@ Official availability alone is never sufficient for **ADOPT**.
 
 R6.2 may select **zero** ADOPT items only if no explicitly indispensable capability remains unresolved without a documented blocking reason/alternative.
 
+Integrated finite selection:
+
+- **ADOPT:** C1 bounded application-level ACL rules; C2 widget fields/order/width; C3 native summaries; C4 persistent widget filters; C5 card layout; C8 document creation/copy-as-template; C10 page navigation ordering;
+- **DEFER:** C6 conditional/presentation styling; C7 custom-widget catalog/options; C9 document settings; C11 keyed upsert/synchronization; C13 attachments; C14 snapshot/history inspection;
+- **REJECT:** C12 bounded cross-table aggregation/query for R6 because its cost/complexity is disproportionate while the MCP client can compose bounded reads.
+
+No other observed capability becomes implementation work. See `docs/R6-PARETO-GAP-SELECTION.md` for the value/risk reasoning and hard boundaries, especially the distinction between C1 application policy and generic identity administration, and the no-new-scope constraint on C8.
+
 ## R6.3 — Targeted adoption
 
-**Status: BLOCKED — runs only for R6.2 items classified ADOPT.**
+**Status: ELIGIBLE — finite ADOPT set selected by R6.2.**
 
 Implement only the minimum set selected by R6.2.
 
@@ -644,7 +652,9 @@ Rules:
 - add only focused tests needed by the selected capability plus the normal baseline CI;
 - document provenance and any deliberate semantic difference from the official MCP.
 
-If R6.2 selects zero ADOPT items, R6.3 has no implementation work and R6 may close after the reviewed selection result.
+Finite implementation order (risk/dependency order, not product-priority ranking): **C2 -> C4 -> C3 -> C5 -> C10 -> C1 -> C8**. Keep authority-sensitive C1 and C8 isolated from the lower-risk UI/native-semantics slices. Each slice rechecks the relevant current official Grist primitive and records provenance before implementation.
+
+R6.3 contains no work outside these seven ADOPT items.
 
 ## R6 exit criteria
 
@@ -676,7 +686,7 @@ After R6 is exhausted, real use may reveal a missing generic capability. Such ev
 
 A usage report does not automatically authorize implementation. Until concrete evidence is explicitly promoted into a finite roadmap tranche, Controllers stop instead of inventing speculative work.
 
-Document creation/copy, richer import/upsert, attachments, webhooks, SQL, generic ACL administration, generated widgets/code and other ecosystem capabilities remain candidates only; none is pre-committed by R7.
+Richer import/upsert, attachments, webhooks, SQL, generic identity/share administration, generated widgets/code and other ecosystem capabilities remain candidates only; none is pre-committed by R7. R6-selected C1 application-level ACL rules and C8 document creation/copy are distinct active R6.3 work, not R7 candidates.
 
 ---
 
