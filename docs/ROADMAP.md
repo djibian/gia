@@ -38,8 +38,8 @@ R5  HARDENING / PRODUCTION                DONE
  v
 R6  PARETO CONVERGENCE                    ACTIVE
  |-- R6.1a ECOSYSTEM DELTA REVIEW          DONE
- |-- R6.1b PRODUCT CAPABILITY REVIEW       ELIGIBLE
- |-- R6.2 PARETO GAP SELECTION             BLOCKED
+ |-- R6.1b PRODUCT CAPABILITY REVIEW       DONE
+ |-- R6.2 PARETO GAP SELECTION             ELIGIBLE
  `-- R6.3 TARGETED ADOPTION               BLOCKED
  |
  v
@@ -553,7 +553,7 @@ Integrated result: `docs/R6-ECOSYSTEM-DELTA-REVIEW.md` records the 2026-10-03 co
 
 ## R6.1b — Product capability review
 
-**Status: ELIGIBLE.**
+**Status: DONE — static review integrated in #199; product-owner priorities recorded 2026-10-03.**
 
 Run one **static, decision-support review** intended to expose important capabilities that the ecosystem delta review may have missed or that were hidden inside broad exclusions.
 
@@ -603,7 +603,7 @@ After the report is integrated, **stop at the product-direction checkpoint** and
 
 ## R6.2 — Pareto gap selection
 
-**Status: BLOCKED — depends on integrated R6.1b plus the product-direction checkpoint.**
+**Status: ELIGIBLE — R6.1b is integrated and the product-direction checkpoint is recorded in `docs/R6-PRODUCT-CAPABILITY-REVIEW.md`.**
 
 Classify every meaningful candidate from R6.1a/R6.1b as exactly one of:
 
