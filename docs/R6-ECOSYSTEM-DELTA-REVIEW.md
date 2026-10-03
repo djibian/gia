@@ -66,7 +66,7 @@ This step records **coverage and deltas only**. It does not perform the R6.2 val
 | Official/ecosystem semantic | Gia v0.6.0 coverage | R6.1 finding |
 | --- | --- | --- |
 | Document discovery plus organisation/workspace context | `grist_discover(action="documents")` returns the allowed document set with its resource context; separate org/workspace tools are not required to select a document | **Covered** |
-| Document information and schema inspection | `grist_inspect(action="document")`, `grist_discover(actions="tables"/"columns")` provide normalized tables, columns, formulas and relationships | **Covered** |
+| Document information and schema inspection | `grist_inspect(action="document")`, `grist_discover(action="tables"/"columns")` provide normalized tables, columns, formulas and relationships | **Covered** |
 | Bounded table record reads | `grist_query` provides one-table filtered/sorted/limited reads | **Covered**; cross-table query remains a separate delta below |
 | Add/update/delete records | `grist_add_records` and `grist_change_records`, with bounded batches and explicit partial/ambiguous-write semantics | **Covered** |
 | Create tables with columns | `grist_add_structure(action="create_tables")` accepts tables with bounded column specs | **Covered** |
