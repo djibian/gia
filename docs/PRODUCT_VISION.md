@@ -127,9 +127,9 @@ The product is intentionally built from lessons and, where appropriate, licensed
 
 ### Grist official MCP / Grist full edition
 
-Role: **functional oracle and convergence target**.
+Role: **functional oracle and semantic reference**.
 
-Use official Grist behavior and documentation to avoid inventing alternate semantics. Do not compete on raw API breadth. Where the official implementation lives outside clearly reusable open-source code, reproduce behavior independently rather than copying unavailable/proprietary implementation.
+Use official Grist behavior and documentation to avoid inventing alternate semantics. Converge selectively on useful Grist semantics, not on tool count or feature parity. Official availability is evidence to inspect, never a backlog by itself. Where the official implementation lives outside clearly reusable open-source code, reproduce selected behavior independently rather than copying unavailable/proprietary implementation.
 
 ### `gwhthompson/grist-mcp-server`
 
@@ -237,12 +237,16 @@ Gia may evolve through any number of functional, architectural or operational it
 
 Generalize only after evidence.
 
+After a stable production baseline, ecosystem convergence is also evidence-driven. A bounded delta review may compare Gia with the current official Grist MCP and relevant community references. Each meaningful difference is classified `ALREADY COVERED`, `ADOPT`, `DEFER` or `REJECT`; only `ADOPT` items become committed implementation work. The existence of a capability upstream is never sufficient reason to add it.
+
 A capability becomes part of the product because:
 
 1. the current lean surface cannot perform an important generic Grist task;
 2. an existing implementation cannot already supply it cleanly;
-3. the gap is demonstrated by product construction or R4 validation;
+3. the gap is demonstrated by product construction, validation, the bounded R6 convergence review or later real-use evidence;
 4. the smallest bounded implementation is clear.
+
+After a convergence tranche is exhausted, further evolution is usage-driven: real use may reveal a generic gap, but no future feature set is pre-committed merely because it is plausible.
 
 Do not implement a lifecycle agent, generated-code platform, integration framework or broad permission system merely because those are plausible future features.
 
