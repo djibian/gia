@@ -125,11 +125,15 @@ If a capability would require a new public scope, irreversible external publicat
 
 Human/external actions may be required later for production secrets, institutional ownership or public submission, but they are outside the product-construction critical path.
 
+R6 has one explicit **product-direction checkpoint**: after the static capability review and before Pareto selection, present the decision-support report to the product owner and record their stated priorities. This is not a request for implementation architecture or test strategy. The product owner supplies value/necessity judgments; the agent supplies technical coverage, feasibility, risk and cost analysis. Do not infer product priority from ecosystem breadth alone.
+
 ### G9 — Business applications never drive the core roadmap
 
 No business-specific document, table name, ACL policy, LinkKey flow, pedagogical scenario or application behavior may become a core architecture dependency.
 
-R4 validation could reveal a missing generic capability. After R6, real product use may likewise provide evidence for a future R7 proposal. In either case, the response is the smallest generic repair justified by the evidence; do not move the business model into the product architecture or treat one application request as an automatic roadmap commitment.
+Do not confuse a domain policy with the generic Grist capability used to express it. In particular, **bounded application-level access-rule semantics** must be assessed separately from generic user/group/org/share/service-account administration. A generic ACL capability candidate is not business coupling merely because different applications would use it to express different policies.
+
+R4 validation could reveal a missing generic capability. During R6, explicit product-owner reports of prior limitations are valid product evidence and must be represented in the static capability review without recreating those applications or running new domain tests. After R6, real product use may likewise provide evidence for a future R7 proposal. In every case, the response is the smallest generic repair justified by the evidence; do not move the business model into the product architecture or treat one application request as an automatic roadmap commitment.
 
 ### G10 — Security boundaries survive simplification
 
@@ -186,7 +190,15 @@ Selection/security-critical drift is repaired before overlapping feature work. P
 
 For each active tranche it defines a finite committed set. Candidate ideas are not work merely because they are visible.
 
-For **R6 — Pareto Convergence**, observation and implementation are deliberately separated: R6.1 inventories meaningful ecosystem deltas, R6.2 classifies/selects them, and only `ADOPT` items selected by R6.2 may enter R6.3 implementation. `ALREADY COVERED`, `DEFER` and `REJECT` items are not implementation work. **R7 — Usage-Driven Evolution** remains inactive until concrete real-use evidence is explicitly promoted into a finite roadmap tranche.
+For **R6 — Pareto Convergence**, observation, product prioritization and implementation are deliberately separated:
+
+1. **R6.1a** inventories meaningful ecosystem deltas;
+2. **R6.1b** performs a static product-capability review across Grist capability families, current Gia coverage, prior exclusions and explicit product-owner limitations, without running real-application tests;
+3. the resulting report is presented at the product-direction checkpoint and the product owner's priorities are recorded;
+4. **R6.2** classifies/selects the resulting candidates;
+5. only `ADOPT` items selected by R6.2 may enter **R6.3** implementation.
+
+`ALREADY COVERED`, `DEFER` and `REJECT` items are not implementation work. R6.1b must decompose broad exclusions before discarding them; for example, application-level ACL rules are evaluated separately from generic identity/share administration, and bounded cross-table semantics separately from unrestricted SQL. **R7 — Usage-Driven Evolution** remains inactive until concrete real-use evidence is explicitly promoted into a finite roadmap tranche.
 
 Selection order:
 
@@ -264,7 +276,7 @@ Production identity, credential custody and operational hardening may be complet
 
 ### R6 — Pareto convergence
 
-Compare the stable product against current official Grist MCP semantics and relevant ecosystem references, classify only meaningful deltas, and adopt the minimum useful subset. Do not pursue parity, and do not implement before the roadmap's selection step has classified a gap `ADOPT`.
+First compare the stable product against current official Grist MCP semantics and relevant ecosystem references. Then perform a **static product-capability review** designed to expose blind spots and over-broad exclusions before any selection. Do not use new real-application tests or domain fixtures to discover needs in this tranche. Present the capability report to the product owner, record their priorities, then classify/select the minimum useful subset. Do not pursue parity, and do not implement before the roadmap's selection step has classified a gap `ADOPT`.
 
 ### R7 — usage-driven evolution
 
@@ -280,5 +292,5 @@ No predeclared feature backlog follows R6. Real usage may justify a future finit
 6. Run baseline CI; add only focused construction-time tests when needed.
 7. Open/update the PR with provenance, scope, what was deliberately not built, and review-gate classification.
 8. Leave authored review-required heads for independent review, then continue any genuinely non-overlapping eligible work.
-9. Never request a human development decision while useful committed work can progress by simplification or deferral.
+9. Never request a human implementation decision while useful committed work can progress by simplification or deferral. At an explicit roadmap product-direction checkpoint, however, present the requested decision-support report and stop rather than substituting an autonomous product-priority judgment.
 10. Stop when no committed useful work remains. Deferred public-distribution actions are not committed work and must not be revived autonomously.
