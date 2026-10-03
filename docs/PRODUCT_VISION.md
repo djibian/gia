@@ -243,7 +243,7 @@ A capability becomes part of the product because:
 
 1. the current lean surface cannot perform an important generic Grist task;
 2. an existing implementation cannot already supply it cleanly;
-3. the gap is demonstrated by product construction or R4 validation;
+3. the gap is demonstrated by product construction, validation, the bounded R6 convergence review or later real-use evidence;
 4. the smallest bounded implementation is clear.
 
 After a convergence tranche is exhausted, further evolution is usage-driven: real use may reveal a generic gap, but no future feature set is pre-committed merely because it is plausible.
