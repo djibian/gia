@@ -37,8 +37,8 @@ R5  HARDENING / PRODUCTION                DONE
  |
  v
 R6  PARETO CONVERGENCE                    ACTIVE
- |-- R6.1 ECOSYSTEM DELTA REVIEW           ELIGIBLE
- |-- R6.2 PARETO GAP SELECTION             BLOCKED
+ |-- R6.1 ECOSYSTEM DELTA REVIEW           DONE
+ |-- R6.2 PARETO GAP SELECTION             ELIGIBLE
  `-- R6.3 TARGETED ADOPTION               BLOCKED
  |
  v
@@ -528,7 +528,7 @@ The released **Gia v0.6.0** runtime is the functional baseline for the initial c
 
 ## R6.1 — Ecosystem delta review
 
-**Status: ELIGIBLE**
+**Status: DONE — bounded current review integrated in #197.**
 
 Perform one bounded comparison between Gia v0.6.0 and the current official Grist MCP behavior/documentation. Consult the existing community references named in `docs/PRODUCT_VISION.md` only where they materially help understand a relevant capability or implementation pattern.
 
@@ -544,9 +544,11 @@ Deliverable: `docs/R6-ECOSYSTEM-DELTA-REVIEW.md`.
 
 R6.1 does **not** authorize runtime implementation.
 
+Integrated result: `docs/R6-ECOSYSTEM-DELTA-REVIEW.md` records the 2026-10-03 comparison and its finite nine-delta set without selecting runtime work.
+
 ## R6.2 — Pareto gap selection
 
-**Status: BLOCKED — depends on R6.1.**
+**Status: ELIGIBLE — R6.1 is integrated.**
 
 Classify every meaningful R6.1 delta as exactly one of:
 
