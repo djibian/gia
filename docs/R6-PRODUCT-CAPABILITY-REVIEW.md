@@ -179,25 +179,25 @@ This is **not** an R6.2 selection. In particular, C8 document creation, C11 sync
 
 ## Product-direction checkpoint
 
-The report is ready for product-owner prioritization.
+**Completed: 2026-10-03.**
 
-Known input:
+The product owner supplied explicit priority input after reviewing this report. Unspecified items remain deliberately **NON DÉTERMINÉ**; no priority is inferred from technical feasibility, ecosystem breadth or the AI orientation above.
 
 | Candidate | Product-owner priority |
 | --- | --- |
 | C1 — bounded application-level ACL rules | **INDISPENSABLE** |
-| C2 — widget field visibility/order/width | not yet supplied |
-| C3 — native summary construction | not yet supplied |
-| C4 — persistent widget filters | not yet supplied |
-| C5 — card layout | not yet supplied |
-| C6 — conditional styles / bounded presentation | not yet supplied |
-| C7 — custom-widget catalog / bounded options | not yet supplied |
-| C8 — document creation / copy-as-template | not yet supplied |
-| C9 — timezone / locale / currency | not yet supplied |
-| C10 — page navigation ordering | not yet supplied |
-| C11 — keyed upsert / synchronization | not yet supplied |
-| C12 — bounded cross-table aggregation/query | not yet supplied |
-| C13 — attachment discovery/retrieval | not yet supplied |
-| C14 — snapshot/history inspection | not yet supplied |
+| C2 — widget field visibility/order/width | **INDISPENSABLE** |
+| C3 — native summary construction | **INDISPENSABLE** |
+| C4 — persistent widget filters | **INDISPENSABLE** |
+| C5 — card layout | **INDISPENSABLE** |
+| C6 — conditional styles / bounded presentation | **IMPORTANT** |
+| C7 — custom-widget catalog / bounded options | **NON DÉTERMINÉ** |
+| C8 — document creation / copy-as-template | **INDISPENSABLE** |
+| C9 — timezone / locale / currency | **NON DÉTERMINÉ** |
+| C10 — page navigation ordering | **INDISPENSABLE** |
+| C11 — keyed upsert / synchronization | **NON DÉTERMINÉ** |
+| C12 — bounded cross-table aggregation/query | **NON DÉTERMINÉ** |
+| C13 — attachment discovery/retrieval | **UTILE** |
+| C14 — snapshot/history inspection | **UTILE** |
 
-Per the Roadmap, stop after this report is integrated and present this checkpoint to the product owner. R6.2 must remain blocked until explicit product-priority input has been recorded.
+This completes the R6 product-direction checkpoint. R6.2 may now evaluate every candidate against the Roadmap criteria. Product priority is a first-class input, not an automatic implementation verdict: any **INDISPENSABLE** item that is not selected `ADOPT` must have a concrete blocking reason and the smallest viable alternative or prerequisite documented.
