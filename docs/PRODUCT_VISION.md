@@ -69,7 +69,7 @@ The core product is not:
 - a business-rule inference engine;
 - an interactive wizard requiring human checkpoints;
 - a generic browser automation framework;
-- a generic ACL administration framework;
+- a generic identity/share administration framework for users, groups, organisations, workspaces, documents or service accounts;
 - a durable lifecycle scheduler;
 - a generic HTTP proxy;
 - an arbitrary Grist `/apply` or UserAction endpoint;
@@ -237,7 +237,9 @@ Gia may evolve through any number of functional, architectural or operational it
 
 Generalize only after evidence.
 
-After a stable production baseline, ecosystem convergence is also evidence-driven. A bounded delta review may compare Gia with the current official Grist MCP and relevant community references. Each meaningful difference is classified `ALREADY COVERED`, `ADOPT`, `DEFER` or `REJECT`; only `ADOPT` items become committed implementation work. The existence of a capability upstream is never sufficient reason to add it.
+After a stable production baseline, convergence remains evidence-driven but ecosystem comparison is only one input. A bounded delta review may compare Gia with the current official Grist MCP and relevant community references. Before selection, a **static product-capability review** also checks Grist-native capability families, current Gia coverage, previously excluded/deferred areas and explicit product-owner reports of limitations. Broad exclusions are decomposed before they are discarded; for example, bounded application-level access rules are considered separately from user/group/org/share administration.
+
+The capability review is decision support, not a new validation campaign: it does not require recreating or testing real applications. Product value/necessity comes from explicit product-owner priorities; the agent contributes coverage, feasibility, safety, complexity and maintenance analysis. Each candidate is then classified `ALREADY COVERED`, `ADOPT`, `DEFER` or `REJECT`; only `ADOPT` items become committed implementation work. The existence of a capability upstream is never sufficient reason to add it.
 
 A capability becomes part of the product because:
 
