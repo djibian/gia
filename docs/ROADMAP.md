@@ -32,15 +32,26 @@ R4  FINAL VALIDATION CAMPAIGN             DONE
  |
  v
 R5  HARDENING / PRODUCTION                DONE
+ |\
+ | `-- R5-F OPTIONAL PUBLIC DISTRIBUTION  DEFERRED
  |
- `-- R5-F OPTIONAL PUBLIC DISTRIBUTION     DEFERRED
+ v
+R6  PARETO CONVERGENCE                    ACTIVE
+ |-- R6.1 ECOSYSTEM DELTA REVIEW           ELIGIBLE
+ |-- R6.2 PARETO GAP SELECTION             BLOCKED
+ `-- R6.3 TARGETED ADOPTION               BLOCKED
+ |
+ v
+R7  USAGE-DRIVEN EVOLUTION                DEFERRED
 ```
 
-There is no active publication tranche. R5-F may be resumed only by an explicit future product decision; it is not latent committed work.
+R5-F remains optional and may be resumed only by an explicit future product decision; it is not latent committed work.
 
-There are no parallel business-application axes during R1-R3.
+R6 is the only active product-evolution tranche. It deliberately separates observation, selection and implementation so that ecosystem capability breadth does not become a backlog by default.
 
-Stage tracking, CCF, pedagogy and all other concrete applications are **R4 validation cases only**.
+R7 has no predeclared feature set. It remains inactive until concrete real-use evidence is explicitly promoted into a finite roadmap tranche.
+
+Business applications remain consumers and evidence sources; they do not become core architecture dependencies.
 
 ## Historical baseline retained as component bank
 
@@ -499,7 +510,111 @@ R5 technical/product completion requires R5-B through R5-E to be integrated with
 
 Public-directory completion is explicitly outside R5 completion. R5-F is optional future work, and its deferral does not block new product evolution, refactoring, deployment changes or future roadmap decisions.
 
-No active R tranche follows automatically from R5. New work must be promoted by an explicit product decision or concrete evidence of a useful product need; deferred publication must not be selected as the default next tranche.
+The validated post-v0.6.0 product decision promotes **R6 — Pareto Convergence** as the next active tranche. Deferred publication must not be selected as the default next tranche.
+
+---
+
+# R6 — Pareto Convergence
+
+**Status: ACTIVE**
+
+## Goal
+
+Use the current official Grist MCP and relevant ecosystem implementations as evidence to identify only the smallest generic capabilities that materially improve Gia.
+
+R6 is not a parity project. The official MCP is a functional oracle and semantic reference, not a feature backlog. Gia should retain its compact ten-tool MCP v2 shape unless a reviewed product need proves that a contract change is necessary.
+
+The released **Gia v0.6.0** runtime is the functional baseline for the initial comparison.
+
+## R6.1 — Ecosystem delta review
+
+**Status: ELIGIBLE**
+
+Perform one bounded comparison between Gia v0.6.0 and the current official Grist MCP behavior/documentation. Consult the existing community references named in `docs/PRODUCT_VISION.md` only where they materially help understand a relevant capability or implementation pattern.
+
+The review must:
+
+- record the observed official Grist MCP/version/date when practical;
+- inventory only meaningful semantic differences relevant to constructing or evolving generic Grist applications;
+- distinguish capabilities Gia already provides under a different compact tool shape;
+- avoid treating tool-name or tool-count differences as product gaps;
+- record enough evidence to support later selection without implementing anything in this step.
+
+Deliverable: `docs/R6-ECOSYSTEM-DELTA-REVIEW.md`.
+
+R6.1 does **not** authorize runtime implementation.
+
+## R6.2 — Pareto gap selection
+
+**Status: BLOCKED — depends on R6.1.**
+
+Classify every meaningful R6.1 delta as exactly one of:
+
+- **ALREADY COVERED** — Gia already supplies the useful semantic capability;
+- **ADOPT** — the gap is sufficiently valuable and bounded to become implementation work;
+- **DEFER** — potentially useful, but current evidence does not justify implementation;
+- **REJECT** — conflicts with Gia's product boundary or has disproportionate complexity/risk.
+
+A gap may be classified **ADOPT** only when the evidence supports the relevant questions below:
+
+1. Does it materially help construct or evolve a **generic** Grist application?
+2. Is it useful across multiple plausible applications rather than one domain-specific case?
+3. Does its absence create a meaningful blocker or recurring manual completion step?
+4. Is it based on a stable enough Grist primitive that Gia can expose semantically?
+5. Can it fit the existing compact safety boundary without a generic escape hatch, internal planner or broad new authority?
+6. Can untargeted state be preserved and material postconditions verified at reasonable cost?
+7. Is the implementation and maintenance cost proportionate to the expected product gain?
+
+Official availability alone is never sufficient for **ADOPT**.
+
+R6.2 may select **zero** ADOPT items. That is a valid successful outcome.
+
+## R6.3 — Targeted adoption
+
+**Status: BLOCKED — runs only for R6.2 items classified ADOPT.**
+
+Implement only the minimum set selected by R6.2.
+
+Rules:
+
+- prefer extending the existing ten MCP v2 tools and closed action variants rather than adding tools;
+- add no planner, workflow engine, wizard, sub-agent framework or generic raw Grist control surface;
+- preserve the current authorization, principal isolation, stable-ID, bounded-write and partial/ambiguous-write guarantees;
+- preserve unrelated Grist state on read-modify-write operations;
+- add only focused tests needed by the selected capability plus the normal baseline CI;
+- document provenance and any deliberate semantic difference from the official MCP.
+
+If R6.2 selects zero ADOPT items, R6.3 has no implementation work and R6 may close after the reviewed selection result.
+
+## R6 exit criteria
+
+- the bounded official/ecosystem delta review is current and finite;
+- every meaningful reviewed gap is classified `ALREADY COVERED`, `ADOPT`, `DEFER` or `REJECT`;
+- every selected `ADOPT` item is integrated, or R6.2 explicitly selected none;
+- the compact product boundary remains intact;
+- normative/current-state documentation matches the resulting runtime;
+- exact-head CI and required independent reviews are green for any implementation or governance change.
+
+No additional capability becomes committed merely because it was observed during R6.
+
+---
+
+# R7 — Usage-Driven Evolution
+
+**Status: DEFERRED — no committed feature set.**
+
+R7 exists only as the policy for what may follow R6.
+
+After R6 is exhausted, real use may reveal a missing generic capability. Such evidence may justify a new finite roadmap proposal when:
+
+- an actual application task cannot be completed cleanly with the current product;
+- the problem is generic rather than application-specific;
+- the smallest safe Grist-native capability is identifiable;
+- the gain justifies the added product surface and maintenance cost.
+
+A usage report does not automatically authorize implementation. Until concrete evidence is explicitly promoted into a finite roadmap tranche, Controllers stop instead of inventing speculative work.
+
+Document creation/copy, richer import/upsert, attachments, webhooks, SQL, generic ACL administration, generated widgets/code and other ecosystem capabilities remain candidates only; none is pre-committed by R7.
 
 ---
 
@@ -521,7 +636,7 @@ The following are not active roadmap items merely because existing projects impl
 - arbitrary generated code/network destinations;
 - multi-instance routing.
 
-Promotion requires a post-R4 product decision or a demonstrated generic R2 gap.
+Promotion requires an explicit R6 selection or later concrete usage evidence promoted through R7.
 
 # Superseded domain documents
 
