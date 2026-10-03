@@ -37,8 +37,9 @@ R5  HARDENING / PRODUCTION                DONE
  |
  v
 R6  PARETO CONVERGENCE                    ACTIVE
- |-- R6.1 ECOSYSTEM DELTA REVIEW           DONE
- |-- R6.2 PARETO GAP SELECTION             ELIGIBLE
+ |-- R6.1a ECOSYSTEM DELTA REVIEW          DONE
+ |-- R6.1b PRODUCT CAPABILITY REVIEW       ELIGIBLE
+ |-- R6.2 PARETO GAP SELECTION             BLOCKED
  `-- R6.3 TARGETED ADOPTION               BLOCKED
  |
  v
@@ -47,7 +48,7 @@ R7  USAGE-DRIVEN EVOLUTION                DEFERRED
 
 R5-F remains optional and may be resumed only by an explicit future product decision; it is not latent committed work.
 
-R6 is the only active product-evolution tranche. It deliberately separates observation, selection and implementation so that ecosystem capability breadth does not become a backlog by default.
+R6 is the only active product-evolution tranche. It deliberately separates ecosystem observation, static product-capability review, product-owner prioritization, selection and implementation so that neither ecosystem breadth nor autonomous inference becomes the product backlog by default.
 
 R7 has no predeclared feature set. It remains inactive until concrete real-use evidence is explicitly promoted into a finite roadmap tranche.
 
@@ -520,13 +521,17 @@ The validated post-v0.6.0 product decision promotes **R6 — Pareto Convergence*
 
 ## Goal
 
-Use the current official Grist MCP and relevant ecosystem implementations as evidence to identify only the smallest generic capabilities that materially improve Gia.
+Identify the smallest generic capabilities that materially improve Gia by combining three distinct inputs:
 
-R6 is not a parity project. The official MCP is a functional oracle and semantic reference, not a feature backlog. Gia should retain its compact ten-tool MCP v2 shape unless a reviewed product need proves that a contract change is necessary.
+1. ecosystem evidence from the official Grist MCP and relevant community references;
+2. a static capability review of Grist/Gia, including previously excluded or deferred areas;
+3. explicit product-owner priorities based on limitations already experienced.
 
-The released **Gia v0.6.0** runtime is the functional baseline for the initial comparison.
+R6 is not a parity project and it is not a new application-test campaign. The official MCP is a functional oracle and semantic reference, not a feature backlog. Gia should retain its compact ten-tool MCP v2 shape unless a reviewed product need proves that a contract change is necessary.
 
-## R6.1 — Ecosystem delta review
+The released **Gia v0.6.0** runtime is the functional baseline.
+
+## R6.1a — Ecosystem delta review
 
 **Status: DONE — bounded current review integrated in #197.**
 
@@ -538,38 +543,91 @@ The review must:
 - inventory only meaningful semantic differences relevant to constructing or evolving generic Grist applications;
 - distinguish capabilities Gia already provides under a different compact tool shape;
 - avoid treating tool-name or tool-count differences as product gaps;
-- record enough evidence to support later selection without implementing anything in this step.
+- record enough evidence to support later review without implementing anything in this step.
 
 Deliverable: `docs/R6-ECOSYSTEM-DELTA-REVIEW.md`.
 
-R6.1 does **not** authorize runtime implementation.
+R6.1a does **not** authorize runtime implementation.
 
-Integrated result: `docs/R6-ECOSYSTEM-DELTA-REVIEW.md` records the 2026-10-03 comparison and its finite nine-delta set without selecting runtime work.
+Integrated result: `docs/R6-ECOSYSTEM-DELTA-REVIEW.md` records the 2026-10-03 comparison and its finite nine-delta ecosystem set without selecting runtime work.
+
+## R6.1b — Product capability review
+
+**Status: ELIGIBLE.**
+
+Run one **static, decision-support review** intended to expose important capabilities that the ecosystem delta review may have missed or that were hidden inside broad exclusions.
+
+This review must not create or mutate real Grist applications, run new domain fixtures, recreate prior user applications, or launch a new validation campaign. It may inspect:
+
+- current Gia runtime/public contract and normative documentation;
+- official Grist documentation and stable/native capability surfaces;
+- the integrated R6.1a ecosystem review and named community references;
+- previously deferred/rejected/excluded categories;
+- existing historical repository evidence such as R4, without rerunning it;
+- explicit product-owner reports of limitations and priorities.
+
+Review the capability space by at least these families:
+
+- document lifecycle;
+- data/query/import/synchronization;
+- schema/relations/formulas/native summaries;
+- pages/views/widgets/layout/presentation;
+- **application-level access rules and visibility**;
+- files/attachments;
+- other Grist-native application semantics that materially affect whether an agent can finish a generic application.
+
+Broad exclusions must be decomposed before a sub-capability is discarded. Examples:
+
+- generic user/group/org/share/service-account administration remains distinct from bounded **application-level ACL rule semantics**;
+- unrestricted raw SQL remains distinct from bounded cross-table query/aggregation semantics;
+- arbitrary private widget JSON remains distinct from typed/bounded widget options.
+
+The review deliverable, `docs/R6-PRODUCT-CAPABILITY-REVIEW.md`, must present each candidate in a compact decision table including:
+
+- capability and source/origin;
+- Gia v0.6.0 coverage;
+- concrete product contribution;
+- current manual limitation or missing completion step, when known;
+- smallest bounded scope worth considering;
+- Grist primitive/stability evidence;
+- feasibility, security/authority risk and maintenance/complexity assessment;
+- provisional AI orientation;
+- **product-owner priority**, when explicitly supplied.
+
+Known product input that must appear in the review:
+
+- **bounded application-level ACL rules: INDISPENSABLE**;
+- this must not be conflated with generic identity/share administration.
+
+After the report is integrated, **stop at the product-direction checkpoint** and present it to the product owner. Do not make R6.2 eligible until explicit product-priority input has been recorded. No runtime implementation is authorized by R6.1b.
 
 ## R6.2 — Pareto gap selection
 
-**Status: ELIGIBLE — R6.1 is integrated.**
+**Status: BLOCKED — depends on integrated R6.1b plus the product-direction checkpoint.**
 
-Classify every meaningful R6.1 delta as exactly one of:
+Classify every meaningful candidate from R6.1a/R6.1b as exactly one of:
 
 - **ALREADY COVERED** — Gia already supplies the useful semantic capability;
 - **ADOPT** — the gap is sufficiently valuable and bounded to become implementation work;
 - **DEFER** — potentially useful, but current evidence does not justify implementation;
 - **REJECT** — conflicts with Gia's product boundary or has disproportionate complexity/risk.
 
+Selection must keep **product value** distinct from **technical feasibility/risk**. Explicit product-owner priority is a first-class input, not an automatic verdict. If a capability marked **INDISPENSABLE** is not selected `ADOPT`, R6.2 must state the concrete blocking reason and the smallest viable alternative or prerequisite.
+
 A gap may be classified **ADOPT** only when the evidence supports the relevant questions below:
 
 1. Does it materially help construct or evolve a **generic** Grist application?
 2. Is it useful across multiple plausible applications rather than one domain-specific case?
 3. Does its absence create a meaningful blocker or recurring manual completion step?
-4. Is it based on a stable enough Grist primitive that Gia can expose semantically?
-5. Can it fit the existing compact safety boundary without a generic escape hatch, internal planner or broad new authority?
-6. Can untargeted state be preserved and material postconditions verified at reasonable cost?
-7. Is the implementation and maintenance cost proportionate to the expected product gain?
+4. What explicit product-owner priority has been recorded?
+5. Is it based on a stable enough Grist primitive that Gia can expose semantically?
+6. Can it fit the existing compact safety boundary without a generic escape hatch, internal planner or broad new authority?
+7. Can untargeted state be preserved and material postconditions verified at reasonable cost?
+8. Is the implementation and maintenance cost proportionate to the expected product gain?
 
 Official availability alone is never sufficient for **ADOPT**.
 
-R6.2 may select **zero** ADOPT items. That is a valid successful outcome.
+R6.2 may select **zero** ADOPT items only if no explicitly indispensable capability remains unresolved without a documented blocking reason/alternative.
 
 ## R6.3 — Targeted adoption
 
@@ -591,8 +649,10 @@ If R6.2 selects zero ADOPT items, R6.3 has no implementation work and R6 may clo
 ## R6 exit criteria
 
 - the bounded official/ecosystem delta review is current and finite;
-- every meaningful reviewed gap is classified `ALREADY COVERED`, `ADOPT`, `DEFER` or `REJECT`;
-- every selected `ADOPT` item is integrated, or R6.2 explicitly selected none;
+- the static product-capability review is integrated without a new real-application test campaign;
+- product-owner priorities from the R6 product-direction checkpoint are recorded;
+- every meaningful reviewed candidate is classified `ALREADY COVERED`, `ADOPT`, `DEFER` or `REJECT`;
+- every selected `ADOPT` item is integrated, or R6.2 documents why no implementation remains justified;
 - the compact product boundary remains intact;
 - normative/current-state documentation matches the resulting runtime;
 - exact-head CI and required independent reviews are green for any implementation or governance change.
@@ -632,7 +692,7 @@ The following are not active roadmap items merely because existing projects impl
 - dependency/version monitoring;
 - general webhook/integration framework;
 - attachments;
-- generic ACL/user/org administration;
+- generic user/group/org/share/service-account administration (distinct from bounded application-level ACL rules);
 - raw SQL model surface;
 - arbitrary browser control;
 - arbitrary generated code/network destinations;
