@@ -40,6 +40,7 @@ test("normalizes only bounded secret-safe ordinary ACL groups", () => {
   const state = snapshot(
     [
       { id: 1, fields: { tableId: "*", colIds: "*" } },
+      { id: 4, fields: { tableId: "*SPECIAL", colIds: "AccessRules" } },
       { id: 2, fields: { tableId: "Projects", colIds: "*" } },
       { id: 3, fields: { tableId: "Projects", colIds: "OwnerEmail" } }
     ],
@@ -53,6 +54,16 @@ test("normalizes only bounded secret-safe ordinary ACL groups", () => {
           permissionsText: "-R",
           rulePos: 1,
           memo: "private memo"
+        }
+      },
+      {
+        id: 11,
+        fields: {
+          resource: 4,
+          aclFormula: "True",
+          aclFormulaParsed: '["Const", true]',
+          permissionsText: "+R",
+          rulePos: 1
         }
       },
       {
@@ -89,7 +100,7 @@ test("normalizes only bounded secret-safe ordinary ACL groups", () => {
   );
 
   const projected = projectAccessRules(state) as any;
-  assert.equal(projected.protectedPersistedGroupCount, 1);
+  assert.equal(projected.protectedPersistedGroupCount, 2);
   assert.equal(projected.effectiveEnforcementVerified, false);
   assert.deepEqual(projected.groups, [
     {
