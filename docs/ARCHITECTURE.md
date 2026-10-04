@@ -157,7 +157,7 @@ One semantic mutation may internally perform the small read/translate/write/re-r
 
 ### Stable identifiers
 
-Public inputs prefer document IDs, table IDs, column IDs and stable current page/widget IDs. Private numeric metadata refs stay server-side.
+Public inputs prefer explicit workspace/document IDs, table IDs, column IDs and stable current page/widget IDs. Workspace IDs are public only where a bounded operation such as C8 document bootstrap genuinely targets a workspace; private numeric document-metadata refs stay server-side.
 
 The R5-C credential mapping likewise uses the bridge's non-reversible stable `oauth:<sha256>` principal ID rather than a raw provider subject.
 
@@ -191,7 +191,7 @@ Effective bridge authority is bounded by the selected upstream Grist credential,
 Two R6-selected directions refine this boundary without adding a new public OAuth scope:
 
 - **application-level access rules (C1)** may change the document's own native policy only through a bounded semantic adapter, with local `doc.schema:write` plus the upstream Grist authority required by Grist itself. This is distinct from user/group/org/share/service-account administration and must never substitute for native Owner enforcement;
-- **document creation/copy-as-template (C8)** must authorize the destination workspace explicitly through both the deployment workspace ceiling and the same principal's workspace grant. Access to an existing document does not imply authority to create in its parent workspace, and a newly returned document ID does not widen the bridge allowlist.
+- **document creation/copy-as-template (C8)** authorizes the destination workspace explicitly through both the deployment workspace ceiling and one matching principal workspace grant with `doc.schema:write`; template copy additionally requires separate source `doc:read` while Grist's native copy authorization remains authoritative. Access to an existing document does not imply authority to create in its parent workspace, and a newly returned document ID does not widen the bridge allowlist. Creation is non-idempotent: known created IDs are retained for postcondition failures, uncertain outcomes are not replayed by name, and principal-local discovery is invalidated after every attempt.
 
 Static bearer mode plus static Grist credential mode is the minimum controlled deployment. Provider-neutral OAuth/JWKS plus `principal-map` credentials is the production multi-principal path. Service-account creation/grants/expiry/rotation/revocation and generic sharing administration remain operator-side Grist administration, not model-facing product operations.
 
