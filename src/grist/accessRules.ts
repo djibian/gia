@@ -208,7 +208,7 @@ function canonicalColumnIds(columnIds: readonly string[]): string[] {
 function normalizeResourceTarget(resource: PersistedResource): ResolvedAccessRuleTarget | null {
   const tableId = resource.tableId.trim();
   const colIds = resource.colIds.trim();
-  if (!tableId || tableId === "*" || tableId.startsWith("_grist_")) return null;
+  if (!tableId || tableId.startsWith("*") || tableId.startsWith("_grist_")) return null;
   if (colIds === "*") return { tableId, columnIds: [] };
   if (!colIds) return null;
   return {
