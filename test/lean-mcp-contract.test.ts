@@ -251,9 +251,13 @@ test("UI add manager carries only stable summary source-column IDs across the MC
   assert.equal(registrations.length, 10);
 });
 
-test("UI manager routes page and widget deletion without exposing a new tool", async () => {
+test("UI manager routes page order and deletion without exposing a new tool", async () => {
   const observed: unknown[] = [];
   const registrations = capture({
+    reorderPages: async (documentId: string, pageIds: number[]) => {
+      observed.push({ action: "reorder_pages", documentId, pageIds });
+      return { ok: true };
+    },
     deletePage: async (documentId: string, pageId: number) => {
       observed.push({ action: "delete_page", documentId, pageId });
       return { ok: true };
@@ -271,6 +275,11 @@ test("UI manager routes page and widget deletion without exposing a new tool", a
   assert.ok(ui);
 
   await ui.callback({
+    action: "reorder_pages",
+    documentId: "doc-1",
+    pageIds: [4, 1, 2, 3]
+  });
+  await ui.callback({
     action: "delete_widget",
     documentId: "doc-1",
     pageId: 3,
@@ -284,6 +293,11 @@ test("UI manager routes page and widget deletion without exposing a new tool", a
 
   assert.equal(registrations.length, 10);
   assert.deepEqual(observed, [
+    {
+      action: "reorder_pages",
+      documentId: "doc-1",
+      pageIds: [4, 1, 2, 3]
+    },
     { action: "delete_widget", documentId: "doc-1", pageId: 3, widgetId: 9 },
     { action: "delete_page", documentId: "doc-1", pageId: 3 }
   ]);
