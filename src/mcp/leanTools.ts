@@ -9,6 +9,7 @@ import {
   MAX_CARD_LAYOUT_NODES,
   type NormalizedCardLayoutNode
 } from "../grist/cardLayout.js";
+import { MAX_PAGE_ORDER_PAGES } from "../grist/pageOrder.js";
 import { GRIST_CHART_TYPES } from "../grist/chartTypes.js";
 import {
   MAX_CUSTOM_WIDGET_MAPPED_COLUMNS,
@@ -833,6 +834,20 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("reorder_pages"),
+            documentId: documentIdSchema,
+            pageIds: z
+              .array(positiveIdSchema)
+              .min(1)
+              .max(MAX_PAGE_ORDER_PAGES)
+              .refine(
+                (ids) => new Set(ids).size === ids.length,
+                "Page IDs must be unique."
+              )
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("delete_widget"),
             documentId: documentIdSchema,
             pageId: positiveIdSchema,
@@ -872,6 +887,10 @@ export function registerLeanTools(
           case "delete_page":
             return textResult(
               await grist.deletePage(input.documentId, input.pageId)
+            );
+          case "reorder_pages":
+            return textResult(
+              await grist.reorderPages(input.documentId, input.pageIds)
             );
           case "delete_widget":
             return textResult(
