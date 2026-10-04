@@ -186,6 +186,57 @@ test("does not turn a source resource denial into a scope challenge when doc:rea
   assert.deepEqual(await response.json(), originalBody);
 });
 
+
+test("adds an action-specific doc:read challenge for template copy without changing empty creation", async () => {
+  const principal = createPrincipal({
+    id: "oauth:test",
+    transport: "mcp",
+    documentIds: ["source-doc"],
+    workspaceIds: [7],
+    capabilities: ["doc.schema:write"]
+  });
+  const errorBody = {
+    jsonrpc: "2.0",
+    id: 1,
+    result: {
+      isError: true,
+      content: [{ type: "text", text: "copy denied" }]
+    }
+  };
+
+  const copyHandler = installOAuthToolAuthChallenges(fakeHandler(errorBody), {
+    principal,
+    resourceMetadataUrl: METADATA_URL
+  });
+  const copyResponse = await copyHandler.fetch(new Request("https://example.test/mcp"), {
+    parsedBody: toolCall("grist_add_structure", {
+      action: "copy_document_as_template",
+      sourceDocumentId: "source-doc",
+      workspaceId: 7,
+      name: "Copy"
+    })
+  });
+  const copyBody = (await copyResponse.json()) as {
+    result: { _meta: Record<string, unknown> };
+  };
+  assert.deepEqual(copyBody.result._meta["mcp/www_authenticate"], [
+    `Bearer resource_metadata="${METADATA_URL}", error="insufficient_scope", error_description="Additional authorization is required for scope doc:read.", scope="doc:read"`
+  ]);
+
+  const createHandler = installOAuthToolAuthChallenges(fakeHandler(errorBody), {
+    principal,
+    resourceMetadataUrl: METADATA_URL
+  });
+  const createResponse = await createHandler.fetch(new Request("https://example.test/mcp"), {
+    parsedBody: toolCall("grist_add_structure", {
+      action: "create_document",
+      workspaceId: 7,
+      name: "Empty"
+    })
+  });
+  assert.deepEqual(await createResponse.json(), errorBody);
+});
+
 test("does not request OAuth step-up when the principal already has the capability", async () => {
   const principal = createPrincipal({
     id: "oauth:test",
