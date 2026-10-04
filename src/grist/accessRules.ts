@@ -1,6 +1,7 @@
 type JsonRecord = Record<string, unknown>;
 
 export const MAX_ACCESS_RULES_PER_GROUP = 20;
+export const MAX_ACCESS_RULE_COLUMNS = 50;
 
 export const ACCESS_RULE_USER_PROPERTIES = [
   "Email",
@@ -178,6 +179,9 @@ function requiredString(fields: JsonRecord, key: string, label: string): string 
 
 function canonicalColumnIds(columnIds: readonly string[]): string[] {
   if (columnIds.length === 0) throw new Error("Access-rule columnIds must not be empty.");
+  if (columnIds.length > MAX_ACCESS_RULE_COLUMNS) {
+    throw new Error(`Access-rule groups support at most ${MAX_ACCESS_RULE_COLUMNS} target columns.`);
+  }
   const normalized = columnIds.map((value) => value.trim());
   if (normalized.some((value) => !value)) {
     throw new Error("Access-rule column IDs must not be empty.");
