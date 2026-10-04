@@ -32,6 +32,12 @@ import {
   type PageLayoutUpdateInput
 } from "./pageLayout.js";
 import {
+  normalizePageOrderSnapshot,
+  resolvePageOrderUpdate,
+  samePageOrderSnapshot,
+  type PageOrderSnapshot
+} from "./pageOrder.js";
+import {
   resolveSummaryCreationPlan,
   verifySummaryCreation
 } from "./summaryTables.js";
@@ -422,6 +428,35 @@ export class AuthorizedGristService {
         throw new UiWriteVerificationError(
           "delete_page",
           error instanceof Error ? error.message : "Deleted page could not be verified."
+        );
+      }
+    });
+  }
+
+  async reorderPages(
+    documentIdOrUrl: string,
+    pageIds: readonly number[]
+  ): Promise<unknown> {
+    return this.execute("reorder_pages", documentIdOrUrl, pageIds.length, async (id) => {
+      const before = await this.loadPageOrderSnapshot(id);
+      const resolved = resolvePageOrderUpdate(before, pageIds);
+      await this.uiActions.reorderPages(id, resolved.updates);
+
+      try {
+        const after = await this.loadPageOrderSnapshot(id);
+        if (!samePageOrderSnapshot(after, resolved.expected)) {
+          throw new Error(
+            "Updated Grist navigation did not match the requested page order and preserved hierarchy on re-read."
+          );
+        }
+        return {
+          documentId: id,
+          pageIds: [...after.visiblePageIds]
+        };
+      } catch (error) {
+        throw new UiWriteVerificationError(
+          "reorder_pages",
+          error instanceof Error ? error.message : "Updated page order could not be verified."
         );
       }
     });
@@ -1001,6 +1036,30 @@ export class AuthorizedGristService {
       throw new Error(`Grist table "${tableId}" has no usable table reference.`);
     }
     throw new Error(`Grist table "${tableId}" does not exist in document "${documentId}".`);
+  }
+
+  private async loadPageOrderSnapshot(
+    documentId: string
+  ): Promise<PageOrderSnapshot> {
+    const metadataLimit = this.inner.maxReadRecords > 0
+      ? this.inner.maxReadRecords
+      : 5000;
+    const options = { limit: metadataLimit, hidden: true } as const;
+    const [pages, views, tables] = await Promise.all([
+      this.inner.queryRecords(documentId, "_grist_Pages", options),
+      this.inner.queryRecords(documentId, "_grist_Views", options),
+      this.inner.queryRecords(documentId, "_grist_Tables", options)
+    ]);
+    if (
+      metadataResponseReachedLimit(pages, metadataLimit) ||
+      metadataResponseReachedLimit(views, metadataLimit) ||
+      metadataResponseReachedLimit(tables, metadataLimit)
+    ) {
+      throw new Error(
+        "Grist page-order metadata reached the configured read limit and may be incomplete; refusing to reorder navigation."
+      );
+    }
+    return normalizePageOrderSnapshot(pages, views, tables);
   }
 
   private async loadDocumentUi(
