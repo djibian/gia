@@ -10,6 +10,7 @@ export interface CryptographicallyVerifiedAccessTokenClaims {
   subject: string;
   audience: string | readonly string[];
   expiresAt: number;
+  notBefore?: number;
   scope?: string;
 }
 
@@ -25,6 +26,8 @@ export class OAuthAccessTokenError extends Error {
       | "wrong_audience"
       | "expired_token"
       | "invalid_expiry"
+      | "not_yet_valid"
+      | "invalid_not_before"
   ) {
     super(`Rejected OAuth access token claims: ${code}`);
     this.name = "OAuthAccessTokenError";
@@ -63,6 +66,12 @@ export function validateVerifiedAccessTokenClaims(
   }
   if (claims.expiresAt <= nowSeconds) {
     throw new OAuthAccessTokenError("expired_token");
+  }
+  if (claims.notBefore !== undefined && !Number.isFinite(claims.notBefore)) {
+    throw new OAuthAccessTokenError("invalid_not_before");
+  }
+  if (claims.notBefore !== undefined && claims.notBefore > nowSeconds) {
+    throw new OAuthAccessTokenError("not_yet_valid");
   }
 
   return {
