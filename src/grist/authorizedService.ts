@@ -15,6 +15,10 @@ import type {
 } from "./client.js";
 import type { GristChartType } from "./chartTypes.js";
 import {
+  resolveCardLayoutUpdate,
+  type CardLayoutUpdateInput
+} from "./cardLayout.js";
+import {
   resolveCustomWidgetSettingsUpdate,
   sameJsonValue,
   type CustomWidgetSettingsUpdateInput
@@ -71,6 +75,7 @@ export interface PageWidgetUpdateInput {
   customWidgetSettings?: CustomWidgetSettingsUpdateInput;
   gridOptions?: GridOptionsUpdateInput;
   visibleFields?: readonly WidgetFieldUpdateInput[];
+  cardLayout?: CardLayoutUpdateInput;
   filters?: readonly WidgetFilterUpdateInput[];
 }
 
@@ -553,9 +558,15 @@ export class AuthorizedGristService {
       update.customWidgetSettings === undefined &&
       update.gridOptions === undefined &&
       update.visibleFields === undefined &&
+      update.cardLayout === undefined &&
       update.filters === undefined
     ) {
       throw new Error("At least one widget UI field must be updated.");
+    }
+    if (update.visibleFields !== undefined && update.cardLayout !== undefined) {
+      throw new Error(
+        "visibleFields and cardLayout are separate bounded intentions; update visible fields first, then set the card layout."
+      );
     }
 
     return this.execute("update_page_widget", documentIdOrUrl, 1, async (id) => {
@@ -570,12 +581,13 @@ export class AuthorizedGristService {
           update.sort !== undefined ||
           update.customWidgetSettings !== undefined ||
           update.visibleFields !== undefined ||
+          update.cardLayout !== undefined ||
           update.filters !== undefined
       });
       const before = await this.loadDocumentUi(
         id,
         tableResponse,
-        update.visibleFields !== undefined,
+        update.visibleFields !== undefined || update.cardLayout !== undefined,
         update.filters !== undefined
       );
       assertCompleteUiSnapshot(before);
@@ -589,6 +601,23 @@ export class AuthorizedGristService {
       }
       if (update.chartType !== undefined && target.type !== "chart") {
         throw new Error(`Grist widget ${widgetId} is not a chart widget.`);
+      }
+      if (
+        update.cardLayout !== undefined &&
+        target.type !== "single" &&
+        target.type !== "detail"
+      ) {
+        throw new Error(
+          `Grist widget ${widgetId} is not a Card or Card List widget.`
+        );
+      }
+      if (
+        update.cardLayout !== undefined &&
+        target.cardLayoutNormalizationIncomplete
+      ) {
+        throw new Error(
+          `Grist widget ${widgetId} has incomplete or unsupported current card-layout metadata; refusing to overwrite it.`
+        );
       }
 
       const adapterUpdate: Parameters<GristUiActionsAdapter["updatePageWidget"]>[2] = {};
@@ -644,6 +673,18 @@ export class AuthorizedGristService {
           : undefined;
       if (expectedVisibleFields !== undefined) {
         adapterUpdate.visibleFields = expectedVisibleFields;
+      }
+      const expectedCardLayout =
+        update.cardLayout !== undefined
+          ? resolveCardLayoutUpdate(
+              target,
+              tableResponse,
+              before[SECTION_FIELDS_METADATA],
+              update.cardLayout
+            )
+          : undefined;
+      if (expectedCardLayout !== undefined) {
+        adapterUpdate.cardLayoutJson = expectedCardLayout.layoutSpecJson;
       }
       const expectedFilters =
         update.filters !== undefined
@@ -702,13 +743,14 @@ export class AuthorizedGristService {
         const afterTableResponse =
           update.customWidgetSettings !== undefined ||
           update.visibleFields !== undefined ||
+          update.cardLayout !== undefined ||
           update.filters !== undefined
             ? await this.inner.listTables(id, { expandColumns: true })
             : undefined;
         const after = await this.loadDocumentUi(
           id,
           afterTableResponse,
-          update.visibleFields !== undefined,
+          update.visibleFields !== undefined || update.cardLayout !== undefined,
           update.filters !== undefined
         );
         assertCompleteUiSnapshot(after);
@@ -755,6 +797,15 @@ export class AuthorizedGristService {
         ) {
           throw new Error(
             `Updated widget ${widgetId} did not match the requested visible fields on re-read.`
+          );
+        }
+        if (
+          expectedCardLayout !== undefined &&
+          (widget.cardLayoutNormalizationIncomplete ||
+            !sameJsonValue(widget.cardLayout, expectedCardLayout.expectedLayout))
+        ) {
+          throw new Error(
+            `Updated widget ${widgetId} did not match the requested card layout on re-read.`
           );
         }
         if (
