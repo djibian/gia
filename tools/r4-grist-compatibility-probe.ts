@@ -230,7 +230,7 @@ function requestMeta(): Record<string, unknown> {
   return {
     "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
     "io.modelcontextprotocol/clientInfo": {
-      name: "grist-chatgpt-r4-compatibility",
+      name: "gia-r4-compatibility",
       version: "1.0.0"
     },
     "io.modelcontextprotocol/clientCapabilities": {}
