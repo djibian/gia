@@ -119,7 +119,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: true,
     title: "Change existing Grist UI",
     description:
-      "Rename or delete one page, delete one page widget, update one page layout, or reconfigure one widget. Private references remain server-side; explicit targets and material postconditions are verified by re-reading Grist."
+      "Rename, delete or hierarchy-safely reorder pages, delete one page widget, update one page layout, or reconfigure one widget. Private references remain server-side; explicit targets and material postconditions are verified by re-reading Grist."
   },
   {
     name: "grist_help",
