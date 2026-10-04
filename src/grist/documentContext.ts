@@ -99,6 +99,12 @@ function compactWidget(widget: GristPageWidget) {
     ...(widget.gridOptions !== undefined ? { gridOptions: widget.gridOptions } : {}),
     ...(widget.gridOptionsNormalizationIncomplete
       ? { gridOptionsNormalizationIncomplete: true as const }
+      : {}),
+    ...(widget.visibleFields !== undefined
+      ? { visibleFields: widget.visibleFields }
+      : {}),
+    ...(widget.visibleFieldsNormalizationIncomplete
+      ? { visibleFieldsNormalizationIncomplete: true as const }
       : {})
   };
 }
@@ -130,7 +136,8 @@ function hasIncompleteUiNormalization(ui: CompletenessAwareDocumentUiContext): b
           widget.sortNormalizationIncomplete ||
           widget.selectByNormalizationIncomplete ||
           widget.customWidgetSettingsNormalizationIncomplete ||
-          widget.gridOptionsNormalizationIncomplete
+          widget.gridOptionsNormalizationIncomplete ||
+          widget.visibleFieldsNormalizationIncomplete
       )
   );
 }

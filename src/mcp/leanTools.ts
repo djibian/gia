@@ -22,6 +22,10 @@ import {
   WIDGET_SORT_DIRECTIONS
 } from "../grist/widgetSort.js";
 import {
+  MAX_WIDGET_FIELD_WIDTH,
+  MAX_WIDGET_VISIBLE_FIELDS
+} from "../grist/widgetFields.js";
+import {
   columnMutationFieldsSchema,
   tableMutationFieldsSchema
 } from "../operations/schemaMutationContract.js";
@@ -87,6 +91,21 @@ const customWidgetSettingsUpdateSchema = z
   .refine(
     (value) => value.access !== undefined || value.columnsMapping !== undefined,
     "At least one of access or columnsMapping must be supplied."
+  );
+
+const widgetVisibleFieldsSchema = z
+  .array(
+    z
+      .object({
+        columnId: columnIdSchema,
+        width: z.number().int().min(1).max(MAX_WIDGET_FIELD_WIDTH).optional()
+      })
+      .strict()
+  )
+  .max(MAX_WIDGET_VISIBLE_FIELDS)
+  .refine(
+    (fields) => new Set(fields.map((field) => field.columnId)).size === fields.length,
+    "Widget visible field column IDs must be unique."
   );
 
 const gridOptionsUpdateSchema = z
@@ -155,7 +174,8 @@ function widgetUpdateSchema() {
         .nullable()
         .optional(),
       customWidgetSettings: customWidgetSettingsUpdateSchema.optional(),
-      gridOptions: gridOptionsUpdateSchema.optional()
+      gridOptions: gridOptionsUpdateSchema.optional(),
+      visibleFields: widgetVisibleFieldsSchema.optional()
     })
     .strict()
     .refine(
@@ -166,7 +186,8 @@ function widgetUpdateSchema() {
         value.sort !== undefined ||
         value.selectBy !== undefined ||
         value.customWidgetSettings !== undefined ||
-        value.gridOptions !== undefined,
+        value.gridOptions !== undefined ||
+        value.visibleFields !== undefined,
       "At least one widget field must be supplied."
     );
 }
@@ -213,6 +234,14 @@ function normalizeWidgetUpdate(
               ? { rowNumbers: update.gridOptions.rowNumbers }
               : {})
           }
+        }
+      : {}),
+    ...(update.visibleFields !== undefined
+      ? {
+          visibleFields: update.visibleFields.map((field) => ({
+            columnId: field.columnId,
+            ...(field.width !== undefined ? { width: field.width } : {})
+          }))
         }
       : {})
   };

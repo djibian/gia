@@ -198,6 +198,61 @@ test("updatePageWidget combines title, description and direct select-by in one b
   ]);
 });
 
+test("updatePageWidget sends section and visible-field changes in one bounded apply", async () => {
+  const { adapter, observed } = harness();
+
+  await adapter.updatePageWidget("doc-1", 11, {
+    title: "People",
+    visibleFields: {
+      expected: [
+        { columnId: "City", width: 180 },
+        { columnId: "Name", width: 120 }
+      ],
+      removeFieldIds: [102],
+      reposition: [{ fieldId: 101, parentPos: 2 }],
+      resize: [{ fieldId: 101, width: 120 }],
+      add: [{ columnRef: 13, parentPos: 1, width: 180 }]
+    }
+  });
+
+  assert.equal(observed.length, 1);
+  assert.deepEqual(observed[0], [
+    ["UpdateRecord", "_grist_Views_section", 11, { title: "People" }],
+    ["BulkRemoveRecord", "_grist_Views_section_field", [102]],
+    ["BulkUpdateRecord", "_grist_Views_section_field", [101], {
+      parentPos: [2]
+    }],
+    ["BulkUpdateRecord", "_grist_Views_section_field", [101], {
+      width: [120]
+    }],
+    ["BulkAddRecord", "_grist_Views_section_field", [null], {
+      parentId: [11],
+      colRef: [13],
+      parentPos: [1],
+      width: [180]
+    }]
+  ]);
+});
+
+test("updatePageWidget accepts an already-satisfied visible-field plan as a no-op", async () => {
+  const { adapter, observed } = harness();
+
+  await adapter.updatePageWidget("doc-1", 11, {
+    visibleFields: {
+      expected: [
+        { columnId: "Email" },
+        { columnId: "Name", width: 120 }
+      ],
+      removeFieldIds: [],
+      reposition: [],
+      resize: [],
+      add: []
+    }
+  });
+
+  assert.deepEqual(observed, []);
+});
+
 test("updatePageWidget clears a description with an empty string", async () => {
   const { adapter, observed } = harness();
 

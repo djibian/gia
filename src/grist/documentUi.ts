@@ -21,6 +21,10 @@ import {
   normalizeWidgetSort,
   type WidgetSortInput
 } from "./widgetSort.js";
+import {
+  normalizeWidgetFields,
+  type NormalizedWidgetField
+} from "./widgetFields.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -54,6 +58,8 @@ export interface GristPageWidget {
   customWidgetSettingsNormalizationIncomplete?: true;
   gridOptions?: NormalizedGridOptions;
   gridOptionsNormalizationIncomplete?: true;
+  visibleFields?: NormalizedWidgetField[];
+  visibleFieldsNormalizationIncomplete?: true;
 }
 
 export interface GristPage {
@@ -146,7 +152,8 @@ export class DocumentUiService {
     tableResponse: unknown,
     pagesResponse: unknown,
     viewsResponse: unknown,
-    sectionsResponse: unknown
+    sectionsResponse: unknown,
+    sectionFieldsResponse?: unknown
   ): DocumentUiContext {
     const tableIds = tableRefMap(tableResponse);
     const views = new Map(records(viewsResponse).map((view) => [view.id, view]));
@@ -201,6 +208,12 @@ export class DocumentUiService {
       }
       const normalizedGridOptions = normalizeGridOptions(widget);
       if (normalizedGridOptions) Object.assign(widget, normalizedGridOptions);
+      if (sectionFieldsResponse !== undefined && hasExpandedColumns(tableResponse)) {
+        Object.assign(
+          widget,
+          normalizeWidgetFields(widget, tableResponse, sectionFieldsResponse)
+        );
+      }
 
       const widgets = widgetsByPage.get(pageId) ?? [];
       widgets.push(widget);

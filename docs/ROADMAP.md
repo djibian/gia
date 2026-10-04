@@ -654,6 +654,11 @@ Rules:
 
 Finite implementation order (risk/dependency order, not product-priority ranking): **C2 -> C4 -> C3 -> C5 -> C10 -> C1 -> C8**. Keep authority-sensitive C1 and C8 isolated from the lower-risk UI/native-semantics slices. Each slice rechecks the relevant current official Grist primitive and records provenance before implementation.
 
+Integrated progress:
+
+- **C2 — DONE:** bounded widget visible-field list, stable field order and bounded widths; provenance and semantic boundary are recorded in `docs/R6-C2-WIDGET-FIELDS.md`.
+- **Next eligible slice after C2 integration: C4 — persistent widget filters.**
+
 R6.3 contains no work outside these seven ADOPT items.
 
 ## R6 exit criteria
