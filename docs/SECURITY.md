@@ -137,9 +137,9 @@ doc.schema:write
 
 The effective ceiling is the intersection of selected upstream Grist authority, deployment document/workspace policy, principal resource grants and the operation capability.
 
-For the R6-selected document-bootstrap capability, creation/copy into a workspace requires an explicit deployment workspace ceiling and a matching workspace grant on the same principal with the required capability. A document-only grant never authorizes creation in its parent workspace, and capabilities from unrelated grants must not be combined to manufacture destination authority.
+For the R6 document-bootstrap capability, creation/copy into a workspace requires an explicit deployment workspace ceiling and one matching workspace grant on the same principal with `doc.schema:write`. Template copy additionally requires separately authorized source `doc:read`, while Grist's native source-copy and destination `ADD` checks remain authoritative. A document-only grant never authorizes creation in its parent workspace, and capabilities from unrelated grants must not be combined to manufacture destination authority. Creation/copy is non-idempotent: uncertain effects are never blindly replayed by name, and a known created ID is retained when postcondition verification fails.
 
-For the R6-selected application-policy capability, `doc.schema:write` is the local bridge requirement; upstream Grist Owner enforcement remains mandatory. `doc:write` alone must not authorize policy changes.
+For the integrated R6 application-policy capability, `doc.schema:write` is the local bridge requirement; upstream Grist Owner enforcement remains mandatory. `doc:write` alone does not authorize policy changes.
 
 Any future production/public OAuth-scope expansion requires a new explicit product decision. Deferred publication work does not authorize weakening or broadening current authorization.
 
@@ -147,7 +147,7 @@ Any future production/public OAuth-scope expansion requires a new explicit produ
 
 Stage-tracking ACLs, LinkKeys and other application-specific **policy choices** are not product security architecture. Gia must not infer domain rules or embed one application's access model.
 
-A bounded generic capability for **application-level Grist access rules** is nevertheless distinct from identity/share administration and is selected in R6. Its security boundary is:
+A bounded generic capability for **application-level Grist access rules** is nevertheless distinct from identity/share administration and is integrated through R6 C1. Its security boundary is:
 
 - inspect/modify only the supported document-policy semantics through stable table/column identities and a private bounded adapter;
 - preserve untargeted persisted rules and refuse incomplete, censored, ambiguous or unsupported policy state;
@@ -155,7 +155,7 @@ A bounded generic capability for **application-level Grist access rules** is nev
 - keep Grist authoritative for native Owner checks and effective enforcement;
 - never claim that persisted-rule re-read alone proves effective confidentiality when native structure/formula permissions can alter what collaborators can derive.
 
-R4 proved preservation of existing ACL effects. R6 C1 is a separately reviewed authoring capability and must satisfy these stronger boundaries before integration.
+R4 proved preservation of existing ACL effects. R6 C1 subsequently integrated the separately reviewed authoring capability under these stronger boundaries.
 
 ## Browser security
 
