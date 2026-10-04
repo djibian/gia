@@ -1,6 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 
+import {
+  ACCESS_RULE_USER_PROPERTIES,
+  MAX_ACCESS_RULE_COLUMNS,
+  MAX_ACCESS_RULES_PER_GROUP
+} from "../grist/accessRules.js";
 import type {
   AuthorizedGristService,
   PageWidgetUpdateInput
@@ -64,6 +69,52 @@ const documentIdSchema = z.string().trim().min(1);
 const tableIdSchema = z.string().trim().min(1);
 const columnIdSchema = z.string().trim().min(1);
 const positiveIdSchema = z.number().int().positive();
+const accessPermissionValueSchema = z.enum(["allow", "deny", "unspecified"]);
+const accessRuleTargetSchema = z
+  .object({
+    tableId: tableIdSchema,
+    columnIds: z
+      .array(columnIdSchema)
+      .min(1)
+      .max(MAX_ACCESS_RULE_COLUMNS)
+      .refine(
+        (ids) => new Set(ids).size === ids.length,
+        "Access-rule target column IDs must be unique."
+      )
+      .optional()
+  })
+  .strict();
+const accessRuleConditionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("everyone") }).strict(),
+  z
+    .object({
+      kind: z.literal("user_access"),
+      operator: z.enum(["equals", "not_equals"]),
+      role: z.enum(["owner", "editor", "viewer"])
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("match_user"),
+      operator: z.enum(["equals", "not_equals"]),
+      columnId: columnIdSchema,
+      userProperty: z.enum(ACCESS_RULE_USER_PROPERTIES)
+    })
+    .strict()
+]);
+const accessRuleSchema = z
+  .object({
+    condition: accessRuleConditionSchema,
+    permissions: z
+      .object({
+        read: accessPermissionValueSchema,
+        update: accessPermissionValueSchema,
+        create: accessPermissionValueSchema.optional(),
+        delete: accessPermissionValueSchema.optional()
+      })
+      .strict()
+  })
+  .strict();
 
 const widgetSortSchema = z
   .array(
@@ -478,6 +529,12 @@ export function registerLeanTools(
             documentId: documentIdSchema,
             pageId: positiveIdSchema
           })
+          .strict(),
+        z
+          .object({
+            action: z.literal("access_rules"),
+            documentId: documentIdSchema
+          })
           .strict()
       ])
     },
@@ -492,6 +549,8 @@ export function registerLeanTools(
             return textResult(
               await grist.getPageWidgets(input.documentId, input.pageId)
             );
+          case "access_rules":
+            return textResult(await grist.inspectAccessRules(input.documentId));
         }
       } catch (error) {
         return errorResult(error);
@@ -706,6 +765,15 @@ export function registerLeanTools(
               "Column IDs must be unique."
             )
           })
+          .strict(),
+        z
+          .object({
+            action: z.literal("access_rule_group"),
+            documentId: documentIdSchema,
+            mode: z.enum(["create", "replace", "delete"]),
+            target: accessRuleTargetSchema,
+            rules: z.array(accessRuleSchema).min(1).max(MAX_ACCESS_RULES_PER_GROUP).optional()
+          })
           .strict()
       ])
     },
@@ -743,6 +811,15 @@ export function registerLeanTools(
                 input.documentId,
                 input.tableId,
                 input.columnIds
+              )
+            );
+          case "access_rule_group":
+            return textResult(
+              await grist.changeAccessRuleGroup(
+                input.documentId,
+                input.target,
+                input.mode,
+                input.rules
               )
             );
         }

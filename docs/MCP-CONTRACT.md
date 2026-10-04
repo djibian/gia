@@ -11,12 +11,12 @@ A v2 server exposes exactly these ten tools:
 | Tool | Intent |
 | --- | --- |
 | `grist_discover` | discover documents, tables or columns |
-| `grist_inspect` | inspect compact semantic document/page/widget context |
+| `grist_inspect` | inspect compact semantic document/page/widget/access-rule context |
 | `grist_query` | query a bounded set of records |
 | `grist_add_records` | create a bounded record batch |
 | `grist_change_records` | update or delete explicitly targeted records |
 | `grist_add_structure` | create bounded tables or columns |
-| `grist_change_structure` | update, rename or delete targeted tables/columns |
+| `grist_change_structure` | update, rename or delete targeted tables/columns, or mutate one bounded ACL group |
 | `grist_add_ui` | create one page or add one widget |
 | `grist_change_ui` | mutate/delete explicitly targeted supported UI |
 | `grist_help` | progressive disclosure of the current contract |
@@ -62,6 +62,16 @@ R6 C5 keeps the ten-tool MCP v2 surface unchanged. `grist_inspect.page_widgets` 
 R6 C10 keeps the ten-tool MCP v2 surface unchanged. `grist_change_ui(action="reorder_pages")` accepts one complete ordered list of the stable page IDs currently eligible for normal navigation.
 
 The bridge resolves private `_grist_Pages` row IDs and native `pagePos` values internally. It reuses the current visible-page position slots, preserves untargeted/special page rows, does not expose or mutate `indentation`, and rejects any requested permutation that would change the existing page-parent relation or visible page set. The exact normalized navigation state is verified after write. C10 adds no folder/navigation framework and no raw metadata/UserAction input.
+
+## Compatible R6 access-rule detail
+
+R6 C1 keeps the ten-tool MCP v2 surface unchanged. `grist_inspect(action="access_rules")` returns a normalized view of persisted ordinary table/column access-rule groups, while `grist_change_structure(action="access_rule_group")` accepts exactly one `create`, `replace` or `delete` intention.
+
+Targets use stable table/column IDs; private ACL resource/rule row IDs remain bridge-internal. Writable conditions are a deliberately small typed subset with no arbitrary literal or formula text: everyone, one native Grist role comparison, or one same-table record-column comparison with a bounded built-in user property. Permissions are explicit `allow|deny|unspecified`; native `S`, `all` and `none` forms are outside the writable subset.
+
+Opaque formulas, memos, user-attribute definitions, default/special/schema-edit policy and other unsupported persisted semantics are preserved but not copied into editable model content. Before reading ACL metadata, the bridge performs a fresh native document metadata read and requires `access === "owners"`; this prevents censored non-owner metadata from being mistaken for an empty policy. The bridge also refuses incomplete/censored/truncated ACL metadata, duplicate or overlapping stable targets, and any selected group it cannot normalize without loss.
+
+Mutations require local `doc.schema:write` and remain subject to Grist's native Owner enforcement. The bridge verifies the requested persisted definition and an internal fingerprint of all untargeted persisted ACL state after re-read. A successful result explicitly does **not** claim effective enforcement verification; persisted rule rows alone are not treated as a confidentiality proof.
 
 ## Safety invariants
 

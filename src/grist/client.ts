@@ -109,6 +109,13 @@ export class GristClient {
     )) as GristWorkspaceSummary[];
   }
 
+  async getDocument(documentIdOrUrl: string): Promise<GristDocumentSummary> {
+    const documentId = this.normalizeDocumentId(documentIdOrUrl);
+    return (await this.request(
+      `/api/docs/${encodeURIComponent(documentId)}`
+    )) as GristDocumentSummary;
+  }
+
   async listTables(
     documentIdOrUrl: string,
     options: { expandColumns?: boolean } = {}

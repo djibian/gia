@@ -173,6 +173,16 @@ export class GristService {
     };
   }
 
+  async assertDocumentOwner(documentIdOrUrl: string): Promise<void> {
+    const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    const document = await this.client.getDocument(documentId);
+    if (document.access !== "owners") {
+      throw new Error(
+        "Grist document owner access is required for application-level access-rule inspection and mutation."
+      );
+    }
+  }
+
   async listTables(
     documentIdOrUrl: string,
     options: { expandColumns?: boolean } = {}
