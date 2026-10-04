@@ -194,6 +194,18 @@ export const OPERATION_REGISTRY: readonly OperationDefinition[] = [
       "Rename exactly one Grist column identifier in an explicitly identified table."
   },
   {
+    name: "change_access_rule_group",
+    category: "schema",
+    capability: "doc.schema:write",
+    readOnly: false,
+    destructive: true,
+    openWorld: false,
+    title: "Change one application access-rule group",
+    summary: "Create, replace or delete one bounded persisted table/column ACL group.",
+    description:
+      "Create, replace or delete one explicitly targeted ordinary Grist table/column access-rule group using stable identifiers and a bounded secret-safe condition vocabulary. Untargeted persisted policy is verified unchanged; Grist Owner enforcement remains authoritative."
+  },
+  {
     name: "delete_columns",
     category: "schema",
     capability: "doc.schema:write",
@@ -204,6 +216,19 @@ export const OPERATION_REGISTRY: readonly OperationDefinition[] = [
     summary: "Delete explicitly identified columns.",
     description:
       "Delete explicitly identified Grist columns. Inspect and present the exact targets first. Multiple columns may be removed non-atomically; a partial-write error reports completed work and must not be blindly replayed."
+  },
+  {
+    name: "inspect_access_rules",
+    category: "context",
+    capability: "doc:read",
+    readOnly: false,
+    auditOnly: true,
+    destructive: false,
+    openWorld: false,
+    title: "Inspect document access rules",
+    summary: "Inspect bounded persisted application-level access-rule groups.",
+    description:
+      "Inspect ordinary persisted table/column access-rule groups through stable table and column IDs. Opaque, sensitive, special, schema-edit, memo and user-attribute policy is preserved but not exposed as editable content; effective enforcement is not inferred from persisted definitions."
   },
   {
     name: "inspect_document",
