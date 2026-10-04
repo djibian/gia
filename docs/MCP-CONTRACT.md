@@ -10,12 +10,12 @@ A v2 server exposes exactly these ten tools:
 
 | Tool | Intent |
 | --- | --- |
-| `grist_discover` | discover documents, tables or columns |
+| `grist_discover` | discover explicitly allowed workspaces, documents, tables or columns |
 | `grist_inspect` | inspect compact semantic document/page/widget/access-rule context |
 | `grist_query` | query a bounded set of records |
 | `grist_add_records` | create a bounded record batch |
 | `grist_change_records` | update or delete explicitly targeted records |
-| `grist_add_structure` | create bounded tables or columns |
+| `grist_add_structure` | create an empty document, copy a source as a template, or create bounded tables/columns |
 | `grist_change_structure` | update, rename or delete targeted tables/columns, or mutate one bounded ACL group |
 | `grist_add_ui` | create one page or add one widget |
 | `grist_change_ui` | mutate/delete explicitly targeted supported UI |
@@ -72,6 +72,18 @@ Targets use stable table/column IDs; private ACL resource/rule row IDs remain br
 Opaque formulas, memos, user-attribute definitions, default/special/schema-edit policy and other unsupported persisted semantics are preserved but not copied into editable model content. Before reading ACL metadata, the bridge performs a fresh native document metadata read and requires `access === "owners"`; this prevents censored non-owner metadata from being mistaken for an empty policy. The bridge also refuses incomplete/censored/truncated ACL metadata, duplicate or overlapping stable targets, and any selected group it cannot normalize without loss.
 
 Mutations require local `doc.schema:write` and remain subject to Grist's native Owner enforcement. The bridge verifies the requested persisted definition and an internal fingerprint of all untargeted persisted ACL state after re-read. A successful result explicitly does **not** claim effective enforcement verification; persisted rule rows alone are not treated as a confidentiality proof.
+
+## Compatible R6 document-bootstrap detail
+
+R6 C8 keeps the ten-tool MCP v2 surface unchanged. `grist_discover(action="workspaces")` returns only deployment-allowed workspaces for which the current principal has an explicit workspace grant with `doc:read`; unlike document discovery it includes allowed workspaces that currently contain no documents. This discovery result is selection context only and never implies creation authority.
+
+`grist_add_structure(action="create_document")` creates exactly one empty document in an explicit positive `workspaceId`. The destination must be inside the deployment workspace ceiling and one principal grant must name that same workspace with `doc.schema:write`. A document-only allowlist or an unrelated schema grant never authorizes its parent workspace. Native Grist workspace `ADD` authorization remains authoritative, and native Grist creator ownership plus destination inheritance are disclosed effects rather than bridge-managed grants.
+
+`grist_add_structure(action="copy_document_as_template")` additionally requires a separately authorized source `documentId` with local `doc:read`. The bridge always invokes Grist's native same-installation copy with `asTemplate: true`; local source readability is only a bridge precondition and is **not** presented as proof of native full-copy authority. Grist's own template-copy/download authorization and destination `ADD` checks remain authoritative. Gia exposes no full-data copy flag, arbitrary upload/import, fork, destination auto-selection or sharing/grant mutation in this slice.
+
+Both creation paths are non-idempotent. After a known created ID is returned, Gia invalidates principal-local discovery and verifies that the created document currently resolves inside the requested destination under the same principal and required destination capability. If verification fails, the known ID is retained in an explicit verification error and the operation must not be retried by name or “cleaned up” by guessing. Response loss or an acknowledged mutation whose created ID cannot be normalized remains `UNCERTAIN`; the discovery cache is still invalidated, but Gia does not replay the request automatically.
+
+Template mode removes user-table data, attachment rows/blobs and history according to native Grist behavior, while retaining substantial document metadata. It is therefore a bootstrap primitive, not a privacy scrub or a guarantee that copied application access rules remain operational after referenced data is removed.
 
 ## Safety invariants
 

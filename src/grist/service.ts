@@ -173,6 +173,42 @@ export class GristService {
     };
   }
 
+  async createDocument(
+    workspaceId: number,
+    name: string
+  ): Promise<string> {
+    this.assertWorkspaceId(workspaceId);
+    await this.accessPolicy.assertWorkspaceAllowed(workspaceId);
+    const documentName = this.normalizeDocumentName(name);
+    try {
+      return await this.client.createDocument(workspaceId, documentName);
+    } finally {
+      this.accessPolicy.invalidate();
+    }
+  }
+
+  async copyDocumentAsTemplate(
+    sourceDocumentIdOrUrl: string,
+    workspaceId: number,
+    name: string
+  ): Promise<string> {
+    this.assertWorkspaceId(workspaceId);
+    const sourceDocumentId = await this.accessPolicy.assertDocumentAllowed(
+      sourceDocumentIdOrUrl
+    );
+    await this.accessPolicy.assertWorkspaceAllowed(workspaceId);
+    const documentName = this.normalizeDocumentName(name);
+    try {
+      return await this.client.copyDocumentAsTemplate(
+        sourceDocumentId,
+        workspaceId,
+        documentName
+      );
+    } finally {
+      this.accessPolicy.invalidate();
+    }
+  }
+
   async assertDocumentOwner(documentIdOrUrl: string): Promise<void> {
     const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
     const document = await this.client.getDocument(documentId);
@@ -524,6 +560,21 @@ export class GristService {
         `Schema item count ${count} exceeds configured maximum ${this.options.maxSchemaItems}.`
       );
     }
+  }
+
+  private assertWorkspaceId(workspaceId: number): void {
+    if (!Number.isInteger(workspaceId) || workspaceId < 1) {
+      throw new Error("Workspace ID must be a positive integer.");
+    }
+  }
+
+  private normalizeDocumentName(value: string): string {
+    const name = value.trim();
+    if (!name) throw new Error("Document name must not be empty.");
+    if (name.length > 200) {
+      throw new Error("Document name must not exceed 200 characters.");
+    }
+    return name;
   }
 
   private assertIdentifier(value: string, label: string): void {

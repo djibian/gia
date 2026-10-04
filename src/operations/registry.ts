@@ -47,6 +47,19 @@ export const OPERATION_REGISTRY: readonly OperationDefinition[] = [
       "Find the Grist documents this connection is allowed to use. Reuse the returned document IDs in later tools."
   },
   {
+    name: "list_workspaces",
+    category: "discovery",
+    capability: "doc:read",
+    readOnly: false,
+    auditOnly: true,
+    destructive: false,
+    openWorld: false,
+    title: "List available Grist workspaces",
+    summary: "List explicitly allowed workspaces visible to the current principal.",
+    description:
+      "List deployment-allowed workspaces for which the current principal has an explicit workspace grant with doc:read. Empty workspaces remain visible; discovery alone does not authorize document creation."
+  },
+  {
     name: "list_tables",
     category: "discovery",
     capability: "doc:read",
@@ -120,6 +133,30 @@ export const OPERATION_REGISTRY: readonly OperationDefinition[] = [
     summary: "Delete records by explicit ID.",
     description:
       "Delete only explicitly identified Grist records by numeric record ID. Identify the exact target rows first. Partial-write errors report completed work and must not be blindly replayed."
+  },
+  {
+    name: "create_document",
+    category: "schema",
+    capability: "doc.schema:write",
+    readOnly: false,
+    destructive: false,
+    openWorld: false,
+    title: "Create an empty Grist document",
+    summary: "Create one empty document in one explicitly authorized workspace.",
+    description:
+      "Create one empty Grist document in an explicitly allowed destination workspace. The same principal grant must name that workspace and include doc.schema:write; Grist native workspace authority remains authoritative. Creation is non-idempotent and uncertain failures must not be replayed by name."
+  },
+  {
+    name: "copy_document_as_template",
+    category: "schema",
+    capability: "doc.schema:write",
+    readOnly: false,
+    destructive: false,
+    openWorld: false,
+    title: "Copy a Grist document as a template",
+    summary: "Create one template copy in one explicitly authorized workspace.",
+    description:
+      "Copy one separately authorized source document into an explicitly authorized destination workspace with native asTemplate=true. Local source doc:read and destination workspace doc.schema:write are both required; Grist native copy and destination permissions remain authoritative. No arbitrary upload or full-data copy is exposed."
   },
   {
     name: "create_tables",

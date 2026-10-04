@@ -95,7 +95,7 @@ These names describe product responsibilities. The final MCP schema may expose a
 
 ### discover
 
-Find the Grist resources available to the current principal and return only identifiers, names and permission information needed for later work.
+Find the Grist resources available to the current principal, including explicitly allowed workspaces needed for bounded document bootstrap, and return only identifiers, names and permission information needed for later work.
 
 ### inspect
 
@@ -111,7 +111,7 @@ Perform bounded record creation/update/deletion/upsert-like intentions where sem
 
 ### change_structure
 
-Create or alter tables/columns/formulas through stable semantic inputs. Prefer Grist-native identifiers and types; keep private engine references server-side.
+Create or alter supported document structure through stable semantic inputs. This includes bounded empty-document creation or same-installation copy-as-template into an explicitly authorized workspace, table/column/formula changes and the supported application-level access-rule subset. Prefer Grist-native identifiers and types; keep private engine references server-side.
 
 ### change_ui
 

@@ -108,3 +108,68 @@ test("combines deployment scope with per-principal resource capabilities", async
     /not allowed by this bridge/
   );
 });
+
+
+test("workspace authority requires the capability and workspace ID in the same grant", async () => {
+  const deployment = new AccessPolicy(fakeClient(), {
+    allowedDocumentIds: [],
+    allowedWorkspaceIds: ["10", "20"],
+    cacheTtlMs: 0
+  });
+  const authorization = new AuthorizationService(deployment);
+  const principal: Principal = {
+    id: "bootstrap-agent",
+    transport: "mcp",
+    grants: [
+      {
+        documentIds: ["doc-b"],
+        workspaceIds: [],
+        capabilities: ["doc.schema:write"]
+      },
+      {
+        documentIds: [],
+        workspaceIds: ["20"],
+        capabilities: ["doc:read"]
+      },
+      {
+        documentIds: [],
+        workspaceIds: ["10"],
+        capabilities: ["doc.schema:write"]
+      }
+    ]
+  };
+
+  const readable = await authorization.listWorkspaces(principal, "doc:read");
+  assert.deepEqual(
+    readable.map(({ workspace }) => workspace.id),
+    [20]
+  );
+  assert.doesNotMatch(JSON.stringify(readable), /secret-/);
+
+  const writable = await authorization.listWorkspaces(
+    principal,
+    "doc.schema:write"
+  );
+  assert.deepEqual(
+    writable.map(({ workspace }) => workspace.id),
+    [10]
+  );
+
+  assert.equal(
+    (await authorization.assertWorkspaceAllowed(
+      principal,
+      10,
+      "doc.schema:write"
+    )).workspace.id,
+    10
+  );
+  await assert.rejects(
+    () =>
+      authorization.assertWorkspaceAllowed(
+        principal,
+        20,
+        "doc.schema:write"
+      ),
+    /workspace "20" is not allowed by this bridge/
+  );
+});

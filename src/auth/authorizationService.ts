@@ -1,6 +1,7 @@
 import {
   AccessPolicy,
-  type AllowedDocument
+  type AllowedDocument,
+  type AllowedWorkspace
 } from "../grist/accessPolicy.js";
 import type {
   GristCapability,
@@ -21,7 +22,7 @@ function documentCandidates(document: AllowedDocument["document"]): string[] {
   return values;
 }
 
-function grantMatches(
+function grantMatchesDocument(
   grant: ResourceGrant,
   allowed: AllowedDocument,
   capability: GristCapability
@@ -32,11 +33,21 @@ function grantMatches(
   return grant.documentIds.some((id) => candidates.includes(String(id)));
 }
 
-function minimizeAllowedDocument({
+function grantMatchesWorkspace(
+  grant: ResourceGrant,
+  workspaceId: string | number,
+  capability: GristCapability
+): boolean {
+  return (
+    grant.capabilities.includes(capability) &&
+    grant.workspaceIds.map(String).includes(String(workspaceId))
+  );
+}
+
+function minimizeAllowedWorkspace({
   org,
-  workspace,
-  document
-}: AllowedDocument): AllowedDocument {
+  workspace
+}: AllowedWorkspace): AllowedWorkspace {
   return {
     org: {
       id: org.id,
@@ -47,7 +58,17 @@ function minimizeAllowedDocument({
       id: workspace.id,
       ...(workspace.name !== undefined ? { name: workspace.name } : {}),
       ...(workspace.access !== undefined ? { access: workspace.access } : {})
-    },
+    }
+  };
+}
+
+function minimizeAllowedDocument({
+  org,
+  workspace,
+  document
+}: AllowedDocument): AllowedDocument {
+  return {
+    ...minimizeAllowedWorkspace({ org, workspace }),
     document: {
       id: document.id,
       ...(document.name !== undefined ? { name: document.name } : {}),
@@ -60,6 +81,38 @@ function minimizeAllowedDocument({
 export class AuthorizationService {
   constructor(private readonly deploymentPolicy: AccessPolicy) {}
 
+  async listWorkspaces(
+    principal: Principal,
+    capability: GristCapability = "doc:read"
+  ): Promise<AllowedWorkspace[]> {
+    const allowed = await this.deploymentPolicy.listAllowedWorkspaces();
+    return allowed
+      .filter(({ workspace }) =>
+        principal.grants.some((grant) =>
+          grantMatchesWorkspace(grant, workspace.id, capability)
+        )
+      )
+      .map(minimizeAllowedWorkspace);
+  }
+
+  async assertWorkspaceAllowed(
+    principal: Principal,
+    workspaceId: string | number,
+    capability: GristCapability
+  ): Promise<AllowedWorkspace> {
+    const allowed = await this.deploymentPolicy.assertWorkspaceAllowed(workspaceId);
+    if (
+      !principal.grants.some((grant) =>
+        grantMatchesWorkspace(grant, allowed.workspace.id, capability)
+      )
+    ) {
+      throw new AuthorizationError(
+        `Grist workspace "${String(workspaceId)}" is not allowed by this bridge for principal "${principal.id}" with capability ${capability}.`
+      );
+    }
+    return minimizeAllowedWorkspace(allowed);
+  }
+
   async listDocuments(
     principal: Principal,
     capability: GristCapability = "doc:read"
@@ -67,7 +120,9 @@ export class AuthorizationService {
     const allowed = await this.deploymentPolicy.listAllowedDocuments();
     return allowed
       .filter((document) =>
-        principal.grants.some((grant) => grantMatches(grant, document, capability))
+        principal.grants.some((grant) =>
+          grantMatchesDocument(grant, document, capability)
+        )
       )
       .map(minimizeAllowedDocument);
   }

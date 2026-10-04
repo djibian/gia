@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   GristClient,
+  GristTransportError,
   type NewGristRecord,
   type UpdateGristRecord
 } from "../src/grist/client.js";
@@ -236,6 +237,70 @@ test("applyUserActions posts only the action array supplied by the service", asy
     );
     assert.equal(mock.requests[0]?.init.method, "POST");
     assert.deepEqual(JSON.parse(String(mock.requests[0]?.init.body)), actions);
+  } finally {
+    mock.restore();
+  }
+});
+
+
+test("document bootstrap uses native empty-create and fixed template-copy contracts", async () => {
+  const original = globalThis.fetch;
+  const requests: CapturedRequest[] = [];
+  const responses: unknown[] = [{ data: "new-empty" }, "new-template"];
+
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    requests.push({
+      url: input instanceof Request ? input.url : String(input),
+      init: init ?? {}
+    });
+    return new Response(JSON.stringify(responses.shift()), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  }) as typeof fetch;
+
+  try {
+    const grist = client();
+    assert.equal(await grist.createDocument(42, "Fresh app"), "new-empty");
+    assert.equal(
+      await grist.copyDocumentAsTemplate("source-doc", 42, "Template app"),
+      "new-template"
+    );
+
+    assert.equal(
+      requests[0]?.url,
+      "https://grist.example.org/api/workspaces/42/docs"
+    );
+    assert.equal(requests[0]?.init.method, "POST");
+    assert.deepEqual(JSON.parse(String(requests[0]?.init.body)), {
+      name: "Fresh app"
+    });
+
+    assert.equal(requests[1]?.url, "https://grist.example.org/api/docs");
+    assert.equal(requests[1]?.init.method, "POST");
+    assert.deepEqual(JSON.parse(String(requests[1]?.init.body)), {
+      sourceDocumentId: "source-doc",
+      workspaceId: 42,
+      documentName: "Template app",
+      asTemplate: true
+    });
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("successful document creation without a usable ID is uncertain and not replay-safe", async () => {
+  const mock = mockFetch({ unexpected: true });
+  try {
+    await assert.rejects(
+      () => client().createDocument(42, "Fresh app"),
+      (error: unknown) => {
+        assert.ok(error instanceof GristTransportError);
+        assert.equal(error.effectKnowledge, "UNCERTAIN");
+        assert.match(error.message, /Do not retry the operation blindly/);
+        return true;
+      }
+    );
   } finally {
     mock.restore();
   }
