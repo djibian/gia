@@ -661,7 +661,8 @@ Integrated progress:
 - **C3 — DONE:** native summary-backed widget construction from one ordinary source table plus bounded stable `groupByColumnIds`, with generated source/group identity and widget/table postconditions verified after re-read; provenance and boundaries are recorded in `docs/R6-C3-NATIVE-SUMMARIES.md`.
 - **C5 — DONE:** bounded native Card/Card List field layout over currently visible stable column IDs, with private view-field refs kept bridge-internal, full-layout coverage, explicit unplaced read state and exact post-write verification; provenance and boundaries are recorded in `docs/R6-C5-CARD-LAYOUT.md`.
 - **C10 — DONE:** hierarchy-preserving page navigation ordering over the complete current visible page-ID set, with native page positions/private metadata kept bridge-internal, untargeted page slots preserved and exact post-write verification; provenance and boundaries are recorded in `docs/R6-C10-PAGE-ORDER.md`.
-- **Next eligible slice after C10 integration: C1 — bounded application-level ACL rules.**
+- **C1 — DONE:** bounded persisted ordinary table/column ACL groups with stable targets, secret-safe typed conditions, tri-state permissions, native Grist Owner enforcement, untargeted-policy preservation and persisted-definition post-write verification; provenance and explicit non-goals are recorded in `docs/R6-C1-ACCESS-RULES.md`.
+- **Next eligible slice after C1 integration: C8 — bounded document bootstrap/import path.**
 
 R6.3 contains no work outside these seven ADOPT items.
 
