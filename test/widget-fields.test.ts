@@ -137,7 +137,7 @@ test("allows clearing all visible fields as a complete replacement", () => {
     resolveWidgetFieldsUpdate(widget, tables, sectionFields, []),
     {
       expected: [],
-      removeFieldIds: [101, 102],
+      removeFieldIds: [102, 101],
       reposition: [],
       resize: [],
       add: []
