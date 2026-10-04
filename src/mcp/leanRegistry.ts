@@ -49,7 +49,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: false,
     title: "Inspect a Grist application",
     description:
-      "Inspect compact document, page, widget or bounded persisted access-rule structure without loading user-table rows. ACL inspection redacts unsupported/sensitive formulas and never presents persisted definitions as proof of effective enforcement; incomplete private metadata is reported rather than guessed."
+      "Inspect compact document, page, widget or bounded persisted access-rule structure without loading user-table rows. ACL inspection additionally requires a fresh native Grist document-owner proof, redacts unsupported/sensitive formulas and never presents persisted definitions as proof of effective enforcement; incomplete private metadata is reported rather than guessed."
   },
   {
     name: "grist_query",
