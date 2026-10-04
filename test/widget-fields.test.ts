@@ -132,6 +132,19 @@ test("fails closed for duplicate, unknown or incomplete field metadata", () => {
   );
 });
 
+test("allows clearing all visible fields as a complete replacement", () => {
+  assert.deepEqual(
+    resolveWidgetFieldsUpdate(widget, tables, sectionFields, []),
+    {
+      expected: [],
+      removeFieldIds: [101, 102],
+      reposition: [],
+      resize: [],
+      add: []
+    }
+  );
+});
+
 test("bounds widths and visible-field count", () => {
   assert.throws(
     () =>
@@ -141,7 +154,13 @@ test("bounds widths and visible-field count", () => {
     /between 1 and 2000/
   );
   assert.throws(
-    () => resolveWidgetFieldsUpdate(widget, tables, sectionFields, []),
-    /between 1 and 200/
+    () =>
+      resolveWidgetFieldsUpdate(
+        widget,
+        tables,
+        sectionFields,
+        Array.from({ length: 201 }, (_, index) => ({ columnId: `Column${index}` }))
+      ),
+    /at most 200/
   );
 });
