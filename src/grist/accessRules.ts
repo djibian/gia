@@ -468,7 +468,7 @@ function stableJson(value: unknown): string {
       .map((key) => `${JSON.stringify(key)}:${stableJson(source[key])}`)
       .join(",")}}`;
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value) ?? "undefined";
 }
 
 function untargetedFingerprint(
