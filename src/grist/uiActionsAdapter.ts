@@ -1,4 +1,5 @@
 import type { GristClient } from "./client.js";
+import type { AccessRuleMutationPlan } from "./accessRules.js";
 import { GRIST_CHART_TYPES, type GristChartType } from "./chartTypes.js";
 import {
   MAX_PAGE_ORDER_PAGES,
@@ -168,6 +169,67 @@ export class UiWriteVerificationError extends Error {
 
 export class GristUiActionsAdapter {
   constructor(private readonly client: UiActionsClient) {}
+
+  async mutateAccessRuleGroup(
+    documentId: string,
+    plan: AccessRuleMutationPlan
+  ): Promise<void> {
+    if (plan.mode === "noop") return;
+
+    const actions: unknown[] = [];
+    const nativeColIds =
+      plan.target.columnIds.length === 0 ? "*" : plan.target.columnIds.join(",");
+
+    if (plan.mode === "create") {
+      actions.push([
+        "AddRecord",
+        "_grist_ACLResources",
+        -1,
+        { tableId: plan.target.tableId, colIds: nativeColIds }
+      ]);
+      for (const rule of plan.rules) {
+        actions.push([
+          "AddRecord",
+          "_grist_ACLRules",
+          null,
+          {
+            resource: -1,
+            aclFormula: rule.aclFormula,
+            permissionsText: rule.permissionsText,
+            rulePos: rule.rulePos
+          }
+        ]);
+      }
+    } else {
+      const resourceRecordId = plan.resourceRecordId;
+      if (!resourceRecordId) {
+        throw new Error("Access-rule mutation is missing its resolved resource record ID.");
+      }
+      if (plan.ruleRecordIds.length > 0) {
+        actions.push(["BulkRemoveRecord", "_grist_ACLRules", [...plan.ruleRecordIds]]);
+      }
+
+      if (plan.mode === "replace") {
+        for (const rule of plan.rules) {
+          actions.push([
+            "AddRecord",
+            "_grist_ACLRules",
+            null,
+            {
+              resource: resourceRecordId,
+              aclFormula: rule.aclFormula,
+              permissionsText: rule.permissionsText,
+              rulePos: rule.rulePos
+            }
+          ]);
+        }
+      } else {
+        actions.push(["RemoveRecord", "_grist_ACLResources", resourceRecordId]);
+      }
+    }
+
+    await this.client.applyUserActions(documentId, actions);
+  }
 
   async createEmptyPage(
     documentId: string,
