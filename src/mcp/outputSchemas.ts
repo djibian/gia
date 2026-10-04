@@ -84,6 +84,11 @@ const gridOptionsSchema = z.object({
   rowNumbers: z.enum(["number", "rowId", "hidden"]).optional()
 });
 
+const widgetVisibleFieldSchema = z.object({
+  columnId: z.string().min(1),
+  width: z.number().int().positive().optional()
+});
+
 const pageWidgetSchema = z.object({
   id: z.number().int().positive(),
   pageId: z.number().int().positive(),
@@ -104,7 +109,9 @@ const pageWidgetSchema = z.object({
   customWidgetSettings: customWidgetSettingsSchema.optional(),
   customWidgetSettingsNormalizationIncomplete: z.literal(true).optional(),
   gridOptions: gridOptionsSchema.optional(),
-  gridOptionsNormalizationIncomplete: z.literal(true).optional()
+  gridOptionsNormalizationIncomplete: z.literal(true).optional(),
+  visibleFields: z.array(widgetVisibleFieldSchema).optional(),
+  visibleFieldsNormalizationIncomplete: z.literal(true).optional()
 });
 
 const columnSelectByOptionSchema = normalizedSelectBySchema.refine(
