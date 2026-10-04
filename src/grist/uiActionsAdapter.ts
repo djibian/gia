@@ -176,7 +176,7 @@ export class GristUiActionsAdapter {
   ): Promise<void> {
     if (plan.mode === "noop") return;
 
-    const actions: unknown[] = [];
+    const actions: unknown[][] = [];
     const nativeColIds =
       plan.target.columnIds.length === 0 ? "*" : plan.target.columnIds.join(",");
 
