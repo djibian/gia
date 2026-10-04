@@ -1,6 +1,6 @@
 # R6 C5 — Card/Card List field layout
 
-Status: implementation candidate for R6.3 C5.
+Status: **integrated in R6.3 C5**. Release stabilization additionally handles the native stale-leaf state produced when C2 hides or re-shows fields.
 
 ## Product boundary
 
@@ -44,7 +44,7 @@ A write must place every currently visible field exactly once. Unknown, duplicat
 - Private view-field IDs are resolved from current metadata immediately before the write.
 - The layout is bounded to 500 nodes and depth 50.
 - Sizes must be finite and strictly positive, matching the native BoxSpec constraint.
-- Existing malformed/unsupported persisted card-layout metadata is not overwritten.
+- Positive persisted field leaves that no longer resolve after a native hide/re-show are treated as stale native leaves and pruned from the normalized view; redundant size-less wrappers created only by that pruning are collapsed. Existing malformed, ambiguous or otherwise unsupported card-layout metadata is still not overwritten.
 - The bridge writes only the trusted resolved `layoutSpec` on the explicitly targeted section.
 - The exact stable normalized layout is re-read and compared after mutation.
 - Ambiguous post-write state retains the existing non-blind-retry `UiWriteVerificationError` behavior.
