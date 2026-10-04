@@ -287,3 +287,58 @@ test("adapter fails closed on inconsistent Grist return identifiers", async () =
     /inconsistent identifiers/
   );
 });
+
+
+test("updatePageWidget applies only targeted persistent-filter records in the same bounded apply", async () => {
+  const { adapter, observed } = harness();
+
+  await adapter.updatePageWidget("doc-1", 11, {
+    filters: {
+      expected: [
+        {
+          columnId: "City",
+          mode: "include",
+          values: ["Nantes"],
+          pinned: true
+        }
+      ],
+      removeFilterIds: [301],
+      update: [{ filterId: 302, pinned: false }],
+      add: [
+        {
+          columnRef: 13,
+          filterJson: "{\"included\":[\"Nantes\"]}",
+          pinned: true
+        }
+      ]
+    }
+  });
+
+  assert.deepEqual(observed, [
+    [
+      ["BulkRemoveRecord", "_grist_Filters", [301]],
+      ["UpdateRecord", "_grist_Filters", 302, { pinned: false }],
+      ["BulkAddRecord", "_grist_Filters", [null], {
+        viewSectionRef: [11],
+        colRef: [13],
+        filter: ["{\"included\":[\"Nantes\"]}"],
+        pinned: [true]
+      }]
+    ]
+  ]);
+});
+
+test("updatePageWidget accepts an already-satisfied filter plan as a no-op", async () => {
+  const { adapter, observed } = harness();
+
+  await adapter.updatePageWidget("doc-1", 11, {
+    filters: {
+      expected: [],
+      removeFilterIds: [],
+      update: [],
+      add: []
+    }
+  });
+
+  assert.deepEqual(observed, []);
+});

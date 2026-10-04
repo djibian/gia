@@ -2,6 +2,7 @@ import type { GristClient } from "./client.js";
 import { GRIST_CHART_TYPES, type GristChartType } from "./chartTypes.js";
 import type { ResolvedWidgetSortSpec } from "./widgetSort.js";
 import type { WidgetFieldMutationPlan } from "./widgetFields.js";
+import type { WidgetFilterMutationPlan } from "./widgetFilters.js";
 
 export const NATIVE_WIDGET_TYPES = [
   "record",
@@ -31,6 +32,8 @@ export interface WidgetUiUpdate {
   optionsJson?: string;
   /** Trusted bridge-generated field mutation plan; native field refs never become public inputs. */
   visibleFields?: WidgetFieldMutationPlan;
+  /** Trusted bridge-generated filter plan; native filter IDs/column refs never become public inputs. */
+  filters?: WidgetFilterMutationPlan;
 }
 
 type UiActionsClient = Pick<GristClient, "applyUserActions"> &
@@ -429,8 +432,79 @@ export class GristUiActionsAdapter {
       }
     }
 
+
+    if (update.filters !== undefined) {
+      const plan = update.filters;
+      const seenFilterIds = new Set<number>();
+      for (const filterId of plan.removeFilterIds) {
+        assertPositiveId(filterId, "Grist widget filter ID");
+        if (seenFilterIds.has(filterId)) {
+          throw new Error("A Grist widget filter cannot be removed more than once.");
+        }
+        seenFilterIds.add(filterId);
+      }
+      if (plan.removeFilterIds.length > 0) {
+        actions.push(["BulkRemoveRecord", "_grist_Filters", [...plan.removeFilterIds]]);
+      }
+
+      for (const value of plan.update) {
+        assertPositiveId(value.filterId, "Grist widget filter ID");
+        if (seenFilterIds.has(value.filterId)) {
+          throw new Error("A removed Grist widget filter cannot also be updated.");
+        }
+        seenFilterIds.add(value.filterId);
+        const fields: JsonRecord = {};
+        if (value.filterJson !== undefined) {
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(value.filterJson) as unknown;
+          } catch {
+            throw new Error("Trusted widget filter payload must be valid JSON.");
+          }
+          if (!record(parsed)) {
+            throw new Error("Trusted widget filter payload must encode a JSON object.");
+          }
+          fields.filter = value.filterJson;
+        }
+        if (value.pinned !== undefined) fields.pinned = value.pinned;
+        if (Object.keys(fields).length === 0) {
+          throw new Error("A Grist widget filter update must change filter state or pinning.");
+        }
+        actions.push(["UpdateRecord", "_grist_Filters", value.filterId, fields]);
+      }
+
+      if (plan.add.length > 0) {
+        for (const value of plan.add) {
+          assertPositiveId(value.columnRef, "Grist widget filter column reference");
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(value.filterJson) as unknown;
+          } catch {
+            throw new Error("Trusted widget filter payload must be valid JSON.");
+          }
+          if (!record(parsed)) {
+            throw new Error("Trusted widget filter payload must encode a JSON object.");
+          }
+          if (typeof value.pinned !== "boolean") {
+            throw new Error("Grist widget filter pinned state must be boolean.");
+          }
+        }
+        actions.push([
+          "BulkAddRecord",
+          "_grist_Filters",
+          plan.add.map(() => null),
+          {
+            viewSectionRef: plan.add.map(() => widgetId),
+            colRef: plan.add.map((value) => value.columnRef),
+            filter: plan.add.map((value) => value.filterJson),
+            pinned: plan.add.map((value) => value.pinned)
+          }
+        ]);
+      }
+    }
+
     if (actions.length === 0) {
-      if (update.visibleFields !== undefined) return;
+      if (update.visibleFields !== undefined || update.filters !== undefined) return;
       throw new Error("At least one widget UI field must be updated.");
     }
 

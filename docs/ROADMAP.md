@@ -657,7 +657,8 @@ Finite implementation order (risk/dependency order, not product-priority ranking
 Integrated progress:
 
 - **C2 — DONE:** bounded widget visible-field list, stable field order and bounded widths; provenance and semantic boundary are recorded in `docs/R6-C2-WIDGET-FIELDS.md`.
-- **Next eligible slice after C2 integration: C4 — persistent widget filters.**
+- **C4 — DONE:** targeted persistent widget filters keyed by stable column IDs, with bounded include/exclude/range semantics, exact preservation of untargeted filters/pinning, and post-write verification; provenance and semantic boundary are recorded in `docs/R6-C4-WIDGET-FILTERS.md`.
+- **Next eligible slice after C4 integration: C3 — native summary construction.**
 
 R6.3 contains no work outside these seven ADOPT items.
 

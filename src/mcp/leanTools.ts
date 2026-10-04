@@ -26,6 +26,10 @@ import {
   MAX_WIDGET_VISIBLE_FIELDS
 } from "../grist/widgetFields.js";
 import {
+  MAX_WIDGET_FILTERS,
+  MAX_WIDGET_FILTER_VALUES
+} from "../grist/widgetFilters.js";
+import {
   columnMutationFieldsSchema,
   tableMutationFieldsSchema
 } from "../operations/schemaMutationContract.js";
@@ -108,6 +112,64 @@ const widgetVisibleFieldsSchema = z
     "Widget visible field column IDs must be unique."
   );
 
+
+const widgetFilterValueSchema = z.union([
+  z.string().max(10000),
+  z.number().finite(),
+  z.boolean(),
+  z.null()
+]);
+
+const widgetFilterUpdateSchema = z
+  .array(
+    z.discriminatedUnion("mode", [
+      z
+        .object({
+          columnId: columnIdSchema,
+          mode: z.literal("include"),
+          values: z.array(widgetFilterValueSchema).max(MAX_WIDGET_FILTER_VALUES),
+          pinned: z.boolean().optional()
+        })
+        .strict(),
+      z
+        .object({
+          columnId: columnIdSchema,
+          mode: z.literal("exclude"),
+          values: z.array(widgetFilterValueSchema).max(MAX_WIDGET_FILTER_VALUES),
+          pinned: z.boolean().optional()
+        })
+        .strict(),
+      z
+        .object({
+          columnId: columnIdSchema,
+          mode: z.literal("range"),
+          min: z.number().finite().optional(),
+          max: z.number().finite().optional(),
+          pinned: z.boolean().optional()
+        })
+        .strict()
+        .refine(
+          (value) =>
+            (value.min !== undefined || value.max !== undefined) &&
+            (value.min === undefined || value.max === undefined || value.min <= value.max),
+          "Range filters require at least one bound and min must not exceed max."
+        ),
+      z
+        .object({
+          columnId: columnIdSchema,
+          mode: z.literal("remove")
+        })
+        .strict()
+    ])
+  )
+  .min(1)
+  .max(MAX_WIDGET_FILTERS)
+  .refine(
+    (filters) =>
+      new Set(filters.map((filter) => filter.columnId)).size === filters.length,
+    "Widget filter column IDs must be unique within one update."
+  );
+
 const gridOptionsUpdateSchema = z
   .object({
     verticalGridlines: z.boolean().optional(),
@@ -175,7 +237,8 @@ function widgetUpdateSchema() {
         .optional(),
       customWidgetSettings: customWidgetSettingsUpdateSchema.optional(),
       gridOptions: gridOptionsUpdateSchema.optional(),
-      visibleFields: widgetVisibleFieldsSchema.optional()
+      visibleFields: widgetVisibleFieldsSchema.optional(),
+      filters: widgetFilterUpdateSchema.optional()
     })
     .strict()
     .refine(
@@ -187,7 +250,8 @@ function widgetUpdateSchema() {
         value.selectBy !== undefined ||
         value.customWidgetSettings !== undefined ||
         value.gridOptions !== undefined ||
-        value.visibleFields !== undefined,
+        value.visibleFields !== undefined ||
+        value.filters !== undefined,
       "At least one widget field must be supplied."
     );
 }
@@ -242,6 +306,30 @@ function normalizeWidgetUpdate(
             columnId: field.columnId,
             ...(field.width !== undefined ? { width: field.width } : {})
           }))
+        }
+      : {}),
+    ...(update.filters !== undefined
+      ? {
+          filters: update.filters.map((filter) => {
+            if (filter.mode === "remove") {
+              return { columnId: filter.columnId, mode: "remove" as const };
+            }
+            if (filter.mode === "range") {
+              return {
+                columnId: filter.columnId,
+                mode: "range" as const,
+                ...(filter.min !== undefined ? { min: filter.min } : {}),
+                ...(filter.max !== undefined ? { max: filter.max } : {}),
+                ...(filter.pinned !== undefined ? { pinned: filter.pinned } : {})
+              };
+            }
+            return {
+              columnId: filter.columnId,
+              mode: filter.mode,
+              values: [...filter.values],
+              ...(filter.pinned !== undefined ? { pinned: filter.pinned } : {})
+            };
+          })
         }
       : {})
   };

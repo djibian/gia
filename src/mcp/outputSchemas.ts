@@ -89,6 +89,36 @@ const widgetVisibleFieldSchema = z.object({
   width: z.number().int().positive().optional()
 });
 
+
+const widgetFilterValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null()
+]);
+
+const widgetFilterSchema = z.discriminatedUnion("mode", [
+  z.object({
+    columnId: z.string().min(1),
+    mode: z.literal("include"),
+    values: z.array(widgetFilterValueSchema),
+    pinned: z.boolean()
+  }),
+  z.object({
+    columnId: z.string().min(1),
+    mode: z.literal("exclude"),
+    values: z.array(widgetFilterValueSchema),
+    pinned: z.boolean()
+  }),
+  z.object({
+    columnId: z.string().min(1),
+    mode: z.literal("range"),
+    min: z.number().optional(),
+    max: z.number().optional(),
+    pinned: z.boolean()
+  })
+]);
+
 const pageWidgetSchema = z.object({
   id: z.number().int().positive(),
   pageId: z.number().int().positive(),
@@ -111,7 +141,9 @@ const pageWidgetSchema = z.object({
   gridOptions: gridOptionsSchema.optional(),
   gridOptionsNormalizationIncomplete: z.literal(true).optional(),
   visibleFields: z.array(widgetVisibleFieldSchema).optional(),
-  visibleFieldsNormalizationIncomplete: z.literal(true).optional()
+  visibleFieldsNormalizationIncomplete: z.literal(true).optional(),
+  filters: z.array(widgetFilterSchema).optional(),
+  filtersNormalizationIncomplete: z.literal(true).optional()
 });
 
 const columnSelectByOptionSchema = normalizedSelectBySchema.refine(
