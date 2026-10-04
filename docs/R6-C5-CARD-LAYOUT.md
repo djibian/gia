@@ -8,7 +8,7 @@ C5 adds one bounded semantic capability to the existing MCP v2 UI surface:
 
 - inspect the persisted field layout of native Grist **Card** (`single`) and **Card List** (`detail`) widgets using stable column IDs;
 - replace that layout with one complete bounded tree over the widget's **currently visible** fields;
-- keep Grist view-field row IDs and raw BoxSpec JSON private to the bridge.
+- accept only stable column IDs in the C5 contract; C5 adds no raw BoxSpec or private field-ref mutation input. The pre-existing raw `layoutSpec` compatibility output remains unchanged and is not the C5 semantic interface.
 
 C5 does **not** show or hide fields. C2 remains the separate intention for the visible-field set/order/width. A single `update_widget` call cannot combine `visibleFields` and `cardLayout`; callers update the visible set first, then arrange it.
 
@@ -49,3 +49,4 @@ A write must place every currently visible field exactly once. Unknown, duplicat
 - The exact stable normalized layout is re-read and compared after mutation.
 - Ambiguous post-write state retains the existing non-blind-retry `UiWriteVerificationError` behavior.
 - No tool is added; MCP v2 remains ten tools.
+- C5 does not expand the historical raw `layoutSpec` compatibility surface; callers use normalized `cardLayout` for this capability.
