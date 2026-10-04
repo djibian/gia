@@ -16,6 +16,7 @@ import {
   MAX_NORMALIZED_LAYOUT_WIDGET_IDS,
   type NormalizedPageLayoutNode
 } from "../grist/pageLayout.js";
+import { MAX_SUMMARY_GROUP_BY_COLUMNS } from "../grist/summaryTables.js";
 import { NATIVE_WIDGET_TYPES } from "../grist/uiActionsAdapter.js";
 import {
   MAX_WIDGET_SORT_COLUMNS,
@@ -727,7 +728,15 @@ export function registerLeanTools(
             documentId: documentIdSchema,
             pageId: positiveIdSchema,
             tableId: tableIdSchema,
-            type: z.enum(NATIVE_WIDGET_TYPES)
+            type: z.enum(NATIVE_WIDGET_TYPES),
+            groupByColumnIds: z
+              .array(columnIdSchema)
+              .max(MAX_SUMMARY_GROUP_BY_COLUMNS)
+              .refine(
+                (ids) => new Set(ids).size === ids.length,
+                "Summary group-by column IDs must be unique."
+              )
+              .optional()
           })
           .strict()
       ])
@@ -749,7 +758,8 @@ export function registerLeanTools(
                 input.documentId,
                 input.pageId,
                 input.tableId,
-                input.type
+                input.type,
+                input.groupByColumnIds
               )
             );
         }
