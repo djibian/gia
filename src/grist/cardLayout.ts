@@ -14,12 +14,12 @@ export type NormalizedCardLayoutNode =
   | {
       kind: "field";
       columnId: string;
-      size?: number;
+      size?: number | undefined;
     }
   | {
       kind: "group";
       children: NormalizedCardLayoutNode[];
-      size?: number;
+      size?: number | undefined;
     };
 
 export interface NormalizedCardLayout {
@@ -289,7 +289,7 @@ export function resolveCardLayoutUpdate(
   const missing = fields.filter((field) => !placedColumnIds.has(field.columnId));
   if (missing.length > 0) {
     throw new Error(
-      `Card layout must place every currently visible field exactly once; missing column "${missing[0].columnId}".`
+      `Card layout must place every currently visible field exactly once; missing column "${missing[0]!.columnId}".`
     );
   }
 
