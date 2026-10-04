@@ -42,7 +42,7 @@ See:
 
 ## Current product
 
-Gia **0.7.0** is the post-R6 release candidate. R6 is complete: the seven finite Pareto-selected capabilities are integrated and the public MCP contract remains **v2 with exactly ten model-facing tools**.
+Gia **0.7.0** is the post-R6 version line prepared by this codebase. R6 is complete: the seven finite Pareto-selected capabilities are integrated and the public MCP contract remains **v2 with exactly ten model-facing tools**.
 
 | Tool | Purpose |
 | --- | --- |
