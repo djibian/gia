@@ -19,6 +19,11 @@ interface GristWorkspace {
   id: number;
 }
 
+interface CompatibilityTarget {
+  documentId: string;
+  workspaceId: number;
+}
+
 function required(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`missing_${name.toLowerCase()}`);
@@ -133,7 +138,7 @@ async function gristApi(
 async function createCompatibilityDocument(
   baseUrl: string,
   apiKey: string
-): Promise<string> {
+): Promise<CompatibilityTarget> {
   const orgs = await gristApi(baseUrl, apiKey, "/api/orgs");
   assert(Array.isArray(orgs) && orgs.length > 0, "no_test_org");
   const org = orgs[0] as GristOrg;
@@ -173,12 +178,14 @@ async function createCompatibilityDocument(
     }
   );
 
-  if (typeof createdDoc === "string" && createdDoc.length > 0) return createdDoc;
+  if (typeof createdDoc === "string" && createdDoc.length > 0) {
+    return { documentId: createdDoc, workspaceId: workspace.id };
+  }
   if (createdDoc && typeof createdDoc === "object") {
     const id = (createdDoc as { id?: unknown; urlId?: unknown }).id ??
       (createdDoc as { urlId?: unknown }).urlId;
     if ((typeof id === "string" || typeof id === "number") && String(id).length > 0) {
-      return String(id);
+      return { documentId: String(id), workspaceId: workspace.id };
     }
   }
   throw new Error("document_create_invalid");
@@ -188,6 +195,7 @@ function bridgeEnvironment(options: {
   gristBaseUrl: string;
   apiKey: string;
   documentId: string;
+  workspaceId: number;
   port: number;
 }): NodeJS.ProcessEnv {
   return {
@@ -195,7 +203,7 @@ function bridgeEnvironment(options: {
     GRIST_BASE_URL: options.gristBaseUrl,
     GRIST_API_KEY: options.apiKey,
     GRIST_ALLOWED_DOCUMENT_IDS: options.documentId,
-    GRIST_ALLOWED_WORKSPACE_IDS: "",
+    GRIST_ALLOWED_WORKSPACE_IDS: String(options.workspaceId),
     GRIST_MAX_READ_RECORDS: "100",
     GRIST_MAX_WRITE_RECORDS: "50",
     GRIST_WRITE_BATCH_RECORDS: "25",
@@ -305,6 +313,32 @@ function resultText(result: Record<string, unknown>): string {
     .join("\n");
 }
 
+function resultJson(result: Record<string, unknown>, label: string): Record<string, unknown> {
+  const text = resultText(result);
+  try {
+    const parsed: unknown = JSON.parse(text);
+    assert(parsed !== null && typeof parsed === "object" && !Array.isArray(parsed), `${label}_result_not_object`);
+    return parsed as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof Error && error.message.endsWith("_result_not_object")) throw error;
+    throw new Error(`${label}_result_not_json:${text.slice(0, 500)}`);
+  }
+}
+
+function positiveResultId(value: unknown, label: string): number {
+  assert(typeof value === "number" && Number.isInteger(value) && value > 0, `${label}_missing`);
+  return value;
+}
+
+function createdDocumentId(result: Record<string, unknown>, label: string): string {
+  const value = result.documentId ?? result.createdDocumentId;
+  assert(
+    (typeof value === "string" || typeof value === "number") && String(value).length > 0,
+    `${label}_document_id_missing`
+  );
+  return String(value);
+}
+
 async function callTool(
   bridgeBaseUrl: string,
   name: string,
@@ -327,12 +361,13 @@ async function run(): Promise<void> {
 
   await waitForUrl(`${gristBaseUrl}/`);
   const apiKey = await createEphemeralApiKey(gristBaseUrl);
-  const documentId = await createCompatibilityDocument(gristBaseUrl, apiKey);
+  const target = await createCompatibilityDocument(gristBaseUrl, apiKey);
+  const { documentId, workspaceId } = target;
 
   const port = await freePort();
   const bridgeBaseUrl = `http://127.0.0.1:${port}`;
   const bridge = startBridge(
-    bridgeEnvironment({ gristBaseUrl, apiKey, documentId, port })
+    bridgeEnvironment({ gristBaseUrl, apiKey, documentId, workspaceId, port })
   );
 
   try {
@@ -390,12 +425,226 @@ async function run(): Promise<void> {
       ]
     });
 
-    await callTool(bridgeBaseUrl, "grist_add_ui", {
-      action: "create_page",
+    const createdPage = resultJson(
+      await callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "create_page",
+        documentId,
+        tableId: TABLE_ID,
+        name: PAGE_NAME
+      }),
+      "create_page"
+    );
+    const createdPageInfo =
+      createdPage.page && typeof createdPage.page === "object" && !Array.isArray(createdPage.page)
+        ? (createdPage.page as Record<string, unknown>)
+        : undefined;
+    const pageId = positiveResultId(createdPageInfo?.id, "created_page_id");
+
+    const groupedSummary = resultJson(
+      await callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "add_widget",
+        documentId,
+        pageId,
+        tableId: TABLE_ID,
+        type: "record",
+        groupByColumnIds: ["Name"]
+      }),
+      "grouped_summary"
+    );
+    const groupedSummaryInfo =
+      groupedSummary.summary &&
+      typeof groupedSummary.summary === "object" &&
+      !Array.isArray(groupedSummary.summary)
+        ? (groupedSummary.summary as Record<string, unknown>)
+        : undefined;
+    assert(groupedSummaryInfo?.sourceTableId === TABLE_ID, "grouped_summary_source_mismatch");
+    assert(
+      Array.isArray(groupedSummaryInfo?.groupByColumnIds) &&
+        groupedSummaryInfo.groupByColumnIds.length === 1 &&
+        groupedSummaryInfo.groupByColumnIds[0] === "Name",
+      "grouped_summary_columns_mismatch"
+    );
+
+    const grandTotalSummary = resultJson(
+      await callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "add_widget",
+        documentId,
+        pageId,
+        tableId: TABLE_ID,
+        type: "record",
+        groupByColumnIds: []
+      }),
+      "grand_total_summary"
+    );
+    const grandTotalInfo =
+      grandTotalSummary.summary &&
+      typeof grandTotalSummary.summary === "object" &&
+      !Array.isArray(grandTotalSummary.summary)
+        ? (grandTotalSummary.summary as Record<string, unknown>)
+        : undefined;
+    assert(
+      Array.isArray(grandTotalInfo?.groupByColumnIds) &&
+        grandTotalInfo.groupByColumnIds.length === 0,
+      "grand_total_summary_columns_mismatch"
+    );
+
+    const firstCard = resultJson(
+      await callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "add_widget",
+        documentId,
+        pageId,
+        tableId: TABLE_ID,
+        type: "single"
+      }),
+      "first_card"
+    );
+    const firstCardWidget =
+      firstCard.widget && typeof firstCard.widget === "object" && !Array.isArray(firstCard.widget)
+        ? (firstCard.widget as Record<string, unknown>)
+        : undefined;
+    const firstCardId = positiveResultId(firstCardWidget?.id, "first_card_id");
+
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget",
       documentId,
-      tableId: TABLE_ID,
-      name: PAGE_NAME
+      pageId,
+      widgetId: firstCardId,
+      update: {
+        cardLayout: {
+          root: {
+            kind: "group",
+            children: [
+              { kind: "field", columnId: "Name" },
+              { kind: "field", columnId: "Qty" }
+            ]
+          }
+        }
+      }
     });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget",
+      documentId,
+      pageId,
+      widgetId: firstCardId,
+      update: { visibleFields: [{ columnId: "Name" }] }
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget",
+      documentId,
+      pageId,
+      widgetId: firstCardId,
+      update: { cardLayout: { root: { kind: "field", columnId: "Name" } } }
+    });
+
+    const secondCard = resultJson(
+      await callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "add_widget",
+        documentId,
+        pageId,
+        tableId: TABLE_ID,
+        type: "single"
+      }),
+      "second_card"
+    );
+    const secondCardWidget =
+      secondCard.widget && typeof secondCard.widget === "object" && !Array.isArray(secondCard.widget)
+        ? (secondCard.widget as Record<string, unknown>)
+        : undefined;
+    const secondCardId = positiveResultId(secondCardWidget?.id, "second_card_id");
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget",
+      documentId,
+      pageId,
+      widgetId: secondCardId,
+      update: {
+        cardLayout: {
+          root: {
+            kind: "group",
+            children: [
+              { kind: "field", columnId: "Name" },
+              { kind: "field", columnId: "Qty" }
+            ]
+          }
+        }
+      }
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget",
+      documentId,
+      pageId,
+      widgetId: secondCardId,
+      update: { visibleFields: [{ columnId: "Name" }] }
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget",
+      documentId,
+      pageId,
+      widgetId: secondCardId,
+      update: {
+        visibleFields: [{ columnId: "Name" }, { columnId: "Qty" }]
+      }
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget",
+      documentId,
+      pageId,
+      widgetId: secondCardId,
+      update: {
+        cardLayout: {
+          root: {
+            kind: "group",
+            children: [
+              { kind: "field", columnId: "Name" },
+              { kind: "field", columnId: "Qty" }
+            ]
+          }
+        }
+      }
+    });
+
+    const accessRules = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "access_rules",
+        documentId
+      }),
+      "access_rules"
+    );
+    assert(
+      accessRules.effectiveEnforcementVerified === false,
+      "access_rule_effective_enforcement_flag_missing"
+    );
+
+    const emptyCreated = resultJson(
+      await callTool(bridgeBaseUrl, "grist_add_structure", {
+        action: "create_document",
+        workspaceId,
+        name: "R4 Compatibility Empty"
+      }),
+      "create_document"
+    );
+    const emptyDocumentId = createdDocumentId(emptyCreated, "create_document");
+    assert(emptyDocumentId !== documentId, "empty_document_id_reused");
+
+    const copied = resultJson(
+      await callTool(bridgeBaseUrl, "grist_add_structure", {
+        action: "copy_document_as_template",
+        sourceDocumentId: documentId,
+        workspaceId,
+        name: "R4 Compatibility Template"
+      }),
+      "copy_document_as_template"
+    );
+    const copiedDocumentId = createdDocumentId(copied, "copy_document_as_template");
+    assert(copiedDocumentId !== documentId, "template_copy_id_reused");
+
+    const copiedRows = resultText(
+      await callTool(bridgeBaseUrl, "grist_query", {
+        documentId: copiedDocumentId,
+        tableId: TABLE_ID,
+        limit: 10
+      })
+    );
+    assert(!copiedRows.includes("Alpha") && !copiedRows.includes("Beta"), "template_copy_retained_user_rows");
 
     const queried = resultText(
       await callTool(bridgeBaseUrl, "grist_query", {
@@ -416,7 +665,9 @@ async function run(): Promise<void> {
     assert(inspected.includes(PAGE_NAME), "page_missing_from_inspection");
 
     console.log(`R4 Grist Community ${version}: PASS`);
-    console.log(`document=${documentId} table=${TABLE_ID} page=${PAGE_NAME}`);
+    console.log(
+      `document=${documentId} workspace=${workspaceId} table=${TABLE_ID} page=${PAGE_NAME} empty=${emptyDocumentId} template=${copiedDocumentId}`
+    );
   } finally {
     await stopBridge(bridge);
   }
