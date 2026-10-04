@@ -1,6 +1,6 @@
 # J1 current authority re-check slice
 
-Status: **review-required implementation sub-slice**.
+Status: **HISTORICAL ONLY — this retired J1 sub-slice is not the current authority contract.** Current authority is enforced by principal resource grants, deployment ceilings and native Grist permissions as described in `docs/SECURITY.md` and `docs/ARCHITECTURE.md`.
 
 This slice provides the bounded point-in-time authority boundary required by J1 §17 without choosing a production mandate store, Grist credential persistence design or new public authorization scope.
 
