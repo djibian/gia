@@ -89,24 +89,6 @@ export function errorResult(error: unknown) {
       postconditionVerified: false,
       retryWholeOperation: false
     };
-  } else if (error instanceof AccessRuleWriteVerificationError) {
-    body = {
-      code: "write_verification_failed",
-      error: "Grist access-rule write postcondition could not be verified",
-      operation: "access_rule_group",
-      effectState: "POSTCONDITION_UNVERIFIED",
-      writeMayHaveApplied: true,
-      retryWholeOperation: false
-    };
-  } else if (error instanceof DocumentBootstrapVerificationError) {
-    body = {
-      code: "write_verification_failed",
-      error: "Grist document creation postcondition could not be verified",
-      operation: "document_bootstrap",
-      effectState: "APPLIED_POSTCONDITION_UNVERIFIED",
-      createdDocumentId: error.createdDocumentId,
-      retryWholeOperation: false
-    };
   } else if (error instanceof UiWriteVerificationError) {
     body = {
       code: "write_verification_failed",
