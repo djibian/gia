@@ -200,7 +200,7 @@ export class AuthorizedGristService {
   async inspectDocument(documentIdOrUrl: string): Promise<unknown> {
     return this.execute("inspect_document", documentIdOrUrl, undefined, async (id) => {
       const tableResponse = await this.inner.listTables(id, { expandColumns: true });
-      const ui = await this.loadDocumentUi(id, tableResponse);
+      const ui = await this.loadDocumentUi(id, tableResponse, true);
       return this.documentContext.build(id, tableResponse, ui);
     });
   }
@@ -218,7 +218,7 @@ export class AuthorizedGristService {
     }
     return this.execute("get_page_widgets", documentIdOrUrl, undefined, async (id) => {
       const tableResponse = await this.inner.listTables(id, { expandColumns: true });
-      const ui = await this.loadDocumentUi(id, tableResponse);
+      const ui = await this.loadDocumentUi(id, tableResponse, true);
       return exposeUiSnapshotCompleteness(
         this.documentUi.getPageWidgets(ui, pageId, tableResponse),
         ui
@@ -526,7 +526,11 @@ export class AuthorizedGristService {
           update.customWidgetSettings !== undefined ||
           update.visibleFields !== undefined
       });
-      const before = await this.loadDocumentUi(id, tableResponse);
+      const before = await this.loadDocumentUi(
+        id,
+        tableResponse,
+        update.visibleFields !== undefined
+      );
       assertCompleteUiSnapshot(before);
       const page = before.pages.find((candidate) => candidate.id === pageId);
       if (!page) {
@@ -640,7 +644,11 @@ export class AuthorizedGristService {
           update.customWidgetSettings !== undefined || update.visibleFields !== undefined
             ? await this.inner.listTables(id, { expandColumns: true })
             : undefined;
-        const after = await this.loadDocumentUi(id, afterTableResponse);
+        const after = await this.loadDocumentUi(
+          id,
+          afterTableResponse,
+          update.visibleFields !== undefined
+        );
         assertCompleteUiSnapshot(after);
         const updatedPage = after.pages.find((candidate) => candidate.id === pageId);
         const widget = updatedPage?.widgets.find((candidate) => candidate.id === widgetId);
@@ -875,11 +883,18 @@ export class AuthorizedGristService {
 
   private async loadDocumentUi(
     documentId: string,
-    tableResponse?: unknown
+    tableResponse?: unknown,
+    includeWidgetFields = false
   ): Promise<CompletenessAwareDocumentUiContext> {
     const metadataLimit = this.inner.maxReadRecords > 0
       ? this.inner.maxReadRecords
       : 5000;
+    const sectionFieldsPromise = includeWidgetFields
+      ? this.inner.queryRecords(documentId, "_grist_Views_section_field", {
+          limit: metadataLimit,
+          hidden: true
+        })
+      : Promise.resolve(undefined);
     const [tables, pages, views, sections, sectionFields] = await Promise.all([
       tableResponse ?? this.inner.listTables(documentId),
       this.inner.queryRecords(documentId, "_grist_Pages", {
@@ -894,10 +909,7 @@ export class AuthorizedGristService {
         limit: metadataLimit,
         hidden: true
       }),
-      this.inner.queryRecords(documentId, "_grist_Views_section_field", {
-        limit: metadataLimit,
-        hidden: true
-      })
+      sectionFieldsPromise
     ]);
     const context: CompletenessAwareDocumentUiContext = this.documentUi.build(
       documentId,
@@ -907,12 +919,15 @@ export class AuthorizedGristService {
       sections,
       sectionFields
     );
-    context[SECTION_FIELDS_METADATA] = sectionFields;
+    if (sectionFields !== undefined) {
+      context[SECTION_FIELDS_METADATA] = sectionFields;
+    }
     if (
       metadataResponseReachedLimit(pages, metadataLimit) ||
       metadataResponseReachedLimit(views, metadataLimit) ||
       metadataResponseReachedLimit(sections, metadataLimit) ||
-      metadataResponseReachedLimit(sectionFields, metadataLimit)
+      (sectionFields !== undefined &&
+        metadataResponseReachedLimit(sectionFields, metadataLimit))
     ) {
       context.metadataSnapshotIncomplete = true;
     }
