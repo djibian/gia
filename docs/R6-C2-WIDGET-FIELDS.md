@@ -25,7 +25,7 @@ Inspection exposes only:
 - positive stored `width` when explicitly present;
 - an explicit incompleteness marker when the bridge cannot safely normalize the native metadata.
 
-Mutation accepts a complete ordered visible-field list of at most 200 entries. Each entry uses a stable current `columnId`; an optional width is an integer from 1 to 2000 pixels.
+Mutation accepts a complete ordered visible-field list of zero to 200 entries. An empty list hides all fields. Each entry uses a stable current `columnId`; an optional width is an integer from 1 to 2000 pixels.
 
 The bridge keeps native field record IDs and column references private. It preserves all untargeted widget metadata and all non-position/non-width metadata on fields that remain visible. Hiding a field uses Grist's native removal semantics for that view field; it never deletes the underlying table column.
 
