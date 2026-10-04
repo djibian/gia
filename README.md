@@ -46,13 +46,13 @@ The R3 candidate is MCP-first and exposes exactly ten model-facing tools:
 
 | Tool | Purpose |
 | --- | --- |
-| `grist_discover` | discover allowed documents, tables or columns |
-| `grist_inspect` | inspect semantic document/page/widget context |
+| `grist_discover` | discover explicitly allowed workspaces, documents, tables or columns |
+| `grist_inspect` | inspect semantic document/page/widget/access-rule context |
 | `grist_query` | read bounded records |
 | `grist_add_records` | create a bounded record batch |
 | `grist_change_records` | update or delete explicit records |
-| `grist_add_structure` | create tables or columns |
-| `grist_change_structure` | update, rename or delete targeted structure |
+| `grist_add_structure` | create an empty document, copy a source as a template, or create tables/columns |
+| `grist_change_structure` | update, rename or delete targeted structure, including one bounded ACL group |
 | `grist_add_ui` | create a page or add a supported widget |
 | `grist_change_ui` | change or delete supported page/widget state |
 | `grist_help` | progressively disclose the contract |
@@ -65,7 +65,7 @@ The historical 23-tool MCP v1 surface is retired. The historical GPT Actions/Ope
 
 ### Discover and inspect
 
-The agent can discover resources allowed by deployment policy and inspect compact application structure without indiscriminately loading business rows. Inspection includes supported table/column metadata, formulas and relationships plus normalized page/widget information where Grist state can be resolved exactly.
+The agent can discover resources allowed by deployment policy, including explicitly allowed workspaces even when empty, and inspect compact application structure without indiscriminately loading business rows. Inspection includes supported table/column metadata, formulas and relationships plus normalized page/widget/access-rule information where Grist state can be resolved exactly.
 
 Unresolvable or unsupported private metadata is reported as incomplete rather than guessed.
 
@@ -77,7 +77,7 @@ Large record mutations may be sent to Grist in sequential internal batches. Thos
 
 ### Change structure
 
-The bridge supports bounded table/column creation and targeted structural changes through stable semantic inputs. Arbitrary Grist UserActions and `/apply` payloads are not public inputs.
+The bridge supports bounded document bootstrap, table/column creation and targeted structural changes through stable semantic inputs. Document bootstrap is limited to empty creation or native same-installation copy-as-template into an explicitly authorized workspace; it does not expose arbitrary import/full-data clone. Application-level ACL editing is similarly bounded to supported stable table/column rule groups. Arbitrary Grist UserActions and `/apply` payloads are not public inputs.
 
 ### Change UI
 
