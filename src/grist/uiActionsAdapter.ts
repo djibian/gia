@@ -199,17 +199,36 @@ export class GristUiActionsAdapter {
   async addPageWidget(
     documentId: string,
     pageId: number,
-    tableRef: number,
-    type: NativeWidgetType
+    sourceTableRef: number,
+    type: NativeWidgetType,
+    groupByColumnRefs?: readonly number[]
   ): Promise<{ pageId: number; tableRef: number; widgetId: number }> {
     assertPositiveId(pageId, "Grist page ID");
-    assertPositiveId(tableRef, "Grist table reference");
+    assertPositiveId(sourceTableRef, "Grist table reference");
     if (!NATIVE_WIDGET_TYPES.includes(type)) {
       throw new Error(`Unsupported Grist widget type "${type}".`);
     }
 
+    if (groupByColumnRefs !== undefined) {
+      const seen = new Set<number>();
+      for (const columnRef of groupByColumnRefs) {
+        assertPositiveId(columnRef, "Grist summary group-by column reference");
+        if (seen.has(columnRef)) {
+          throw new Error("A Grist summary group-by column reference cannot be duplicated.");
+        }
+        seen.add(columnRef);
+      }
+    }
+
     const response = await this.client.applyUserActions(documentId, [
-      ["CreateViewSection", tableRef, pageId, type, null, null]
+      [
+        "CreateViewSection",
+        sourceTableRef,
+        pageId,
+        type,
+        groupByColumnRefs === undefined ? null : [...groupByColumnRefs],
+        null
+      ]
     ]);
 
     let result: JsonRecord;
@@ -227,9 +246,15 @@ export class GristUiActionsAdapter {
     const returnedTableRef = positiveInteger(result.tableRef);
     const returnedPageId = positiveInteger(result.viewRef);
     const widgetId = positiveInteger(result.sectionRef);
+    const expectedOrdinaryTable =
+      groupByColumnRefs === undefined && returnedTableRef === sourceTableRef;
+    const expectedSummaryTable =
+      groupByColumnRefs !== undefined &&
+      returnedTableRef !== undefined &&
+      returnedTableRef !== sourceTableRef;
 
     if (
-      returnedTableRef !== tableRef ||
+      (!expectedOrdinaryTable && !expectedSummaryTable) ||
       returnedPageId !== pageId ||
       widgetId === undefined
     ) {
@@ -240,7 +265,7 @@ export class GristUiActionsAdapter {
       );
     }
 
-    return { pageId: returnedPageId, tableRef: returnedTableRef, widgetId };
+    return { pageId: returnedPageId, tableRef: returnedTableRef!, widgetId };
   }
 
   async renamePage(documentId: string, pageId: number, name: string): Promise<void> {

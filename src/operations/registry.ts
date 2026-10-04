@@ -266,7 +266,7 @@ export const OPERATION_REGISTRY: readonly OperationDefinition[] = [
     title: "Add a page widget",
     summary: "Add one native widget to an existing page.",
     description:
-      "Add exactly one supported native Grist widget to an existing page. The returned widget ID is verified by re-reading the page."
+      "Add exactly one supported native Grist widget to an existing page. Optional groupByColumnIds creates a Grist-native summary-backed widget from one non-summary source table; stable column IDs are resolved privately, generated summary identity/grouping is verified after re-read, and generated summary internals are not exposed as a generic mutation surface."
   },
   {
     name: "rename_page",

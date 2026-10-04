@@ -28,6 +28,10 @@ import {
   type PageLayoutUpdateInput
 } from "./pageLayout.js";
 import {
+  resolveSummaryCreationPlan,
+  verifySummaryCreation
+} from "./summaryTables.js";
+import {
   assertDirectSelectByAllowed,
   resolveColumnSelectByAllowed,
   type ColumnSelectByInput
@@ -273,7 +277,8 @@ export class AuthorizedGristService {
     documentIdOrUrl: string,
     pageId: number,
     tableId: string,
-    type: NativeWidgetType
+    type: NativeWidgetType,
+    groupByColumnIds?: readonly string[]
   ): Promise<unknown> {
     if (!Number.isInteger(pageId) || pageId < 1) {
       throw new Error("Grist page ID must be a positive integer.");
@@ -284,24 +289,56 @@ export class AuthorizedGristService {
       if (!before.pages.some((page) => page.id === pageId)) {
         throw new Error(`Grist page ${pageId} does not exist in document "${id}".`);
       }
-      const tableRef = await this.resolveTableRef(id, tableId);
+
+      const summaryPlan =
+        groupByColumnIds !== undefined
+          ? resolveSummaryCreationPlan(
+              await this.inner.listTables(id, { expandColumns: true }),
+              tableId,
+              groupByColumnIds
+            )
+          : undefined;
+      const tableRef =
+        summaryPlan?.sourceTableRef ?? (await this.resolveTableRef(id, tableId));
       const created = await this.uiActions.addPageWidget(
         id,
         pageId,
         tableRef,
-        type
+        type,
+        summaryPlan?.groupByColumnRefs
       );
+
       try {
-        const after = await this.loadDocumentUi(id);
+        const afterTables = summaryPlan
+          ? await this.inner.listTables(id, { expandColumns: true })
+          : undefined;
+        const after = await this.loadDocumentUi(id, afterTables);
         assertCompleteUiSnapshot(after);
         const page = after.pages.find((candidate) => candidate.id === pageId);
         const widget = page?.widgets.find(
           (candidate) => candidate.id === created.widgetId
         );
-        if (!widget) {
-          throw new Error(`Created widget ${created.widgetId} was not found on re-read.`);
+        if (!widget || widget.tableRef !== created.tableRef) {
+          throw new Error(
+            `Created widget ${created.widgetId} was not found with the returned table on re-read.`
+          );
         }
-        return { documentId: id, pageId, widget };
+
+        if (!summaryPlan) {
+          return { documentId: id, pageId, widget };
+        }
+
+        const summary = verifySummaryCreation(
+          afterTables,
+          summaryPlan,
+          created.tableRef
+        );
+        if (widget.tableId !== summary.summaryTableId) {
+          throw new Error(
+            "Created summary widget does not target the verified generated table."
+          );
+        }
+        return { documentId: id, pageId, widget, summary };
       } catch (error) {
         throw new UiWriteVerificationError(
           "add_page_widget",

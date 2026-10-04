@@ -109,7 +109,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: false,
     title: "Add Grist pages or widgets",
     description:
-      "Create one page or add one supported widget using stable semantic inputs. Created identifiers are verified by re-reading Grist."
+      "Create one page or add one supported widget using stable semantic inputs. Widgets may use bounded native summary grouping by stable source-column IDs. Created identifiers and summary semantics are verified by re-reading Grist."
   },
   {
     name: "grist_change_ui",

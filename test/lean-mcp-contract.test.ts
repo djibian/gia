@@ -206,6 +206,51 @@ test("structure and UI managers preserve stable semantic identifiers at their bo
   ]);
 });
 
+test("UI add manager carries only stable summary source-column IDs across the MCP boundary", async () => {
+  const observed: unknown[] = [];
+  const registrations = capture({
+    addPageWidget: async (
+      documentId: string,
+      pageId: number,
+      tableId: string,
+      type: string,
+      groupByColumnIds?: readonly string[]
+    ) => {
+      observed.push({
+        action: "add_widget",
+        documentId,
+        pageId,
+        tableId,
+        type,
+        groupByColumnIds
+      });
+      return { ok: true };
+    }
+  });
+  const ui = registrations.find((entry) => entry.name === "grist_add_ui");
+  assert.ok(ui);
+
+  const result = await ui.callback({
+    action: "add_widget",
+    documentId: "doc-1",
+    pageId: 3,
+    tableId: "Orders",
+    type: "record",
+    groupByColumnIds: ["Region", "Status"]
+  });
+
+  assert.equal(result.isError, undefined);
+  assert.deepEqual(observed, [{
+    action: "add_widget",
+    documentId: "doc-1",
+    pageId: 3,
+    tableId: "Orders",
+    type: "record",
+    groupByColumnIds: ["Region", "Status"]
+  }]);
+  assert.equal(registrations.length, 10);
+});
+
 test("UI manager routes page and widget deletion without exposing a new tool", async () => {
   const observed: unknown[] = [];
   const registrations = capture({
