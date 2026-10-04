@@ -168,6 +168,36 @@ test("fails closed on unsupported native state, duplicates and unknown columns",
   );
 });
 
+test("rejects a targeted update that would exceed the bounded final filter count", () => {
+  const columns = Array.from({ length: 201 }, (_, index) => ({
+    id: `C${index + 1}`,
+    fields: { colRef: index + 1, type: "Text" }
+  }));
+  const largeTables = {
+    tables: [{ id: "Large", fields: { tableRef: 9 }, columns }]
+  };
+  const largeWidget = { id: 99, tableRef: 9 };
+  const filters = {
+    records: Array.from({ length: 200 }, (_, index) => ({
+      id: index + 1,
+      fields: {
+        viewSectionRef: 99,
+        colRef: index + 1,
+        filter: "{\"excluded\":[]}",
+        pinned: false
+      }
+    }))
+  };
+
+  assert.throws(
+    () =>
+      resolveWidgetFiltersUpdate(largeWidget, largeTables, filters, [
+        { columnId: "C201", mode: "include", values: ["x"] }
+      ]),
+    /at most 200 columns after the update/
+  );
+});
+
 test("supports idempotent removal and preserves existing pinning when omitted", () => {
   const plan = resolveWidgetFiltersUpdate(widget, tables, nativeFilters, [
     { columnId: "City", mode: "remove" },
