@@ -49,6 +49,10 @@ import {
   type ResolvedWidgetSortSpec,
   type WidgetSortInput
 } from "./widgetSort.js";
+import {
+  resolveWidgetFieldsUpdate,
+  type WidgetFieldUpdateInput
+} from "./widgetFields.js";
 
 export interface PageWidgetUpdateInput {
   title?: string;
@@ -58,10 +62,14 @@ export interface PageWidgetUpdateInput {
   selectBy?: ColumnSelectByInput | null;
   customWidgetSettings?: CustomWidgetSettingsUpdateInput;
   gridOptions?: GridOptionsUpdateInput;
+  visibleFields?: readonly WidgetFieldUpdateInput[];
 }
+
+const SECTION_FIELDS_METADATA = Symbol("sectionFieldsMetadata");
 
 type CompletenessAwareDocumentUiContext = DocumentUiContext & {
   metadataSnapshotIncomplete?: true;
+  [SECTION_FIELDS_METADATA]?: unknown;
 };
 
 function sameSortSpec(
@@ -499,7 +507,8 @@ export class AuthorizedGristService {
       update.sort === undefined &&
       update.selectBy === undefined &&
       update.customWidgetSettings === undefined &&
-      update.gridOptions === undefined
+      update.gridOptions === undefined &&
+      update.visibleFields === undefined
     ) {
       throw new Error("At least one widget UI field must be updated.");
     }
@@ -514,7 +523,8 @@ export class AuthorizedGristService {
         expandColumns:
           usesColumnSelectBy ||
           update.sort !== undefined ||
-          update.customWidgetSettings !== undefined
+          update.customWidgetSettings !== undefined ||
+          update.visibleFields !== undefined
       });
       const before = await this.loadDocumentUi(id, tableResponse);
       assertCompleteUiSnapshot(before);
@@ -572,6 +582,19 @@ export class AuthorizedGristService {
         adapterUpdate.optionsJson = expectedOptions.optionsJson;
       }
 
+      const expectedVisibleFields =
+        update.visibleFields !== undefined
+          ? resolveWidgetFieldsUpdate(
+              target,
+              tableResponse,
+              before[SECTION_FIELDS_METADATA],
+              update.visibleFields
+            )
+          : undefined;
+      if (expectedVisibleFields !== undefined) {
+        adapterUpdate.visibleFields = expectedVisibleFields;
+      }
+
       let expectedSourceWidgetId: number | null | undefined;
       let expectedSourceColumnRef: number | undefined;
       let expectedTargetColumnRef: number | undefined;
@@ -614,7 +637,7 @@ export class AuthorizedGristService {
       await this.uiActions.updatePageWidget(id, widgetId, adapterUpdate);
       try {
         const afterTableResponse =
-          update.customWidgetSettings !== undefined
+          update.customWidgetSettings !== undefined || update.visibleFields !== undefined
             ? await this.inner.listTables(id, { expandColumns: true })
             : undefined;
         const after = await this.loadDocumentUi(id, afterTableResponse);
@@ -653,6 +676,15 @@ export class AuthorizedGristService {
         ) {
           throw new Error(
             `Updated widget ${widgetId} did not preserve the exact expected options on re-read.`
+          );
+        }
+        if (
+          expectedVisibleFields !== undefined &&
+          (widget.visibleFieldsNormalizationIncomplete ||
+            !sameJsonValue(widget.visibleFields, expectedVisibleFields.expected))
+        ) {
+          throw new Error(
+            `Updated widget ${widgetId} did not match the requested visible fields on re-read.`
           );
         }
         if (expectedSourceWidgetId === null && widget.selectBy !== undefined) {
@@ -848,7 +880,7 @@ export class AuthorizedGristService {
     const metadataLimit = this.inner.maxReadRecords > 0
       ? this.inner.maxReadRecords
       : 5000;
-    const [tables, pages, views, sections] = await Promise.all([
+    const [tables, pages, views, sections, sectionFields] = await Promise.all([
       tableResponse ?? this.inner.listTables(documentId),
       this.inner.queryRecords(documentId, "_grist_Pages", {
         limit: metadataLimit,
@@ -861,6 +893,10 @@ export class AuthorizedGristService {
       this.inner.queryRecords(documentId, "_grist_Views_section", {
         limit: metadataLimit,
         hidden: true
+      }),
+      this.inner.queryRecords(documentId, "_grist_Views_section_field", {
+        limit: metadataLimit,
+        hidden: true
       })
     ]);
     const context: CompletenessAwareDocumentUiContext = this.documentUi.build(
@@ -868,12 +904,15 @@ export class AuthorizedGristService {
       tables,
       pages,
       views,
-      sections
+      sections,
+      sectionFields
     );
+    context[SECTION_FIELDS_METADATA] = sectionFields;
     if (
       metadataResponseReachedLimit(pages, metadataLimit) ||
       metadataResponseReachedLimit(views, metadataLimit) ||
-      metadataResponseReachedLimit(sections, metadataLimit)
+      metadataResponseReachedLimit(sections, metadataLimit) ||
+      metadataResponseReachedLimit(sectionFields, metadataLimit)
     ) {
       context.metadataSnapshotIncomplete = true;
     }
