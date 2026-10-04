@@ -2,7 +2,7 @@
 
 ## Status
 
-This document describes the **MCP v2 product** after R4 validation, R5 production hardening and completion of the seven finite R6 targeted-adoption capabilities. Gia 0.7.0 is the corresponding post-R6 release candidate. Public-directory distribution is optional and currently deferred; retained R5-F material is historical preparation unless explicitly reactivated by a future human product decision.
+This document describes the **MCP v2 product** after R4 validation, R5 production hardening and completion of the seven finite R6 targeted-adoption capabilities. Gia 0.7.0 is the corresponding post-R6 version line. Public-directory distribution is optional and currently deferred; retained R5-F material is historical preparation unless explicitly reactivated by a future human product decision.
 
 `docs/ROADMAP.md` remains authoritative for tranche eligibility. Historical architecture and milestone documents remain evidence only.
 
