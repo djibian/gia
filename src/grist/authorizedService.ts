@@ -401,20 +401,25 @@ export class AuthorizedGristService {
         const widget = page?.widgets.find(
           (candidate) => candidate.id === created.widgetId
         );
-        if (!widget || widget.tableRef !== created.tableRef) {
+        if (!widget) {
           throw new Error(
-            `Created widget ${created.widgetId} was not found with the returned table on re-read.`
+            `Created widget ${created.widgetId} was not found on re-read.`
           );
         }
 
         if (!summaryPlan) {
+          if (widget.tableRef !== created.tableRef) {
+            throw new Error(
+              `Created widget ${created.widgetId} did not target the returned source table on re-read.`
+            );
+          }
           return { documentId: id, pageId, widget };
         }
 
         const summary = verifySummaryCreation(
           afterTables,
           summaryPlan,
-          created.tableRef
+          widget.tableRef
         );
         if (widget.tableId !== summary.summaryTableId) {
           throw new Error(
