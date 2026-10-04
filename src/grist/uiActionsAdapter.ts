@@ -30,6 +30,8 @@ export interface WidgetUiUpdate {
   selectBy?: WidgetSelectByRefs | null;
   /** Trusted bridge-generated full section options JSON; never a public model input. */
   optionsJson?: string;
+  /** Trusted bridge-generated Card/Card List BoxSpec JSON; private field refs never become public inputs. */
+  cardLayoutJson?: string;
   /** Trusted bridge-generated field mutation plan; native field refs never become public inputs. */
   visibleFields?: WidgetFieldMutationPlan;
   /** Trusted bridge-generated filter plan; native filter IDs/column refs never become public inputs. */
@@ -389,6 +391,18 @@ export class GristUiActionsAdapter {
         throw new Error("Trusted widget options payload must encode a JSON object.");
       }
       fields.options = update.optionsJson;
+    }
+    if (update.cardLayoutJson !== undefined) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(update.cardLayoutJson) as unknown;
+      } catch {
+        throw new Error("Trusted card layout payload must be valid JSON.");
+      }
+      if (!record(parsed)) {
+        throw new Error("Trusted card layout payload must encode a JSON object.");
+      }
+      fields.layoutSpec = update.cardLayoutJson;
     }
 
     const actions: unknown[][] = [];
