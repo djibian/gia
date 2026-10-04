@@ -36,11 +36,11 @@ R5  HARDENING / PRODUCTION                DONE
  +-- R5-F OPTIONAL PUBLIC DISTRIBUTION     DEFERRED
  |
  v
-R6  PARETO CONVERGENCE                    ACTIVE
+R6  PARETO CONVERGENCE                    DONE
  |-- R6.1a ECOSYSTEM DELTA REVIEW          DONE
  |-- R6.1b PRODUCT CAPABILITY REVIEW       DONE
  |-- R6.2 PARETO GAP SELECTION             DONE
- `-- R6.3 TARGETED ADOPTION               ELIGIBLE
+ `-- R6.3 TARGETED ADOPTION               DONE
  |
  v
 R7  USAGE-DRIVEN EVOLUTION                DEFERRED
@@ -48,7 +48,7 @@ R7  USAGE-DRIVEN EVOLUTION                DEFERRED
 
 R5-F remains optional and may be resumed only by an explicit future product decision; it is not latent committed work.
 
-R6 is the only active product-evolution tranche. It deliberately separates ecosystem observation, static product-capability review, product-owner prioritization, selection and implementation so that neither ecosystem breadth nor autonomous inference becomes the product backlog by default.
+R6 is complete: its finite Pareto selection and all seven R6.3 ADOPT slices are integrated. No product-evolution tranche is currently active. R7 remains deferred until concrete real-use evidence is explicitly promoted into a finite roadmap tranche.
 
 R7 has no predeclared feature set. It remains inactive until concrete real-use evidence is explicitly promoted into a finite roadmap tranche.
 
