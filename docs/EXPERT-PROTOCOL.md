@@ -157,14 +157,34 @@ If `main` moved materially while the report was being prepared, re-evaluate affe
 
 Expert reports do not authorize work and do not override current normative files.
 
-A Controller working in the same high-risk semantic area should:
+Consultation is explicit and auditable. Every Controller execution must inventory `docs/expert/*.md` during startup and compare each report's declared scope and staleness triggers with the selected work.
 
-- read relevant current reports;
-- revalidate mutable facts;
-- adopt useful constraints/recommendations where they still fit;
-- record why it materially departs from a still-current Expert recommendation.
+For any report that materially overlaps the implementation or review subject, the Controller must:
 
-Absence of an Expert report never blocks otherwise eligible Controller work.
+1. read the report before finalizing design/review conclusions;
+2. revalidate the mutable repository/upstream facts that matter;
+3. classify applicability:
+   - `CURRENT` — the relevant findings still apply;
+   - `PARTIALLY STALE` — some findings remain usable and the stale parts are identified;
+   - `STALE` — a staleness trigger or semantic change invalidates the report for the current decision;
+4. adopt useful constraints/recommendations where they still fit;
+5. record any material departure from current advice with concrete evidence.
+
+Every `Review gate: REQUIRED` PR must contain:
+
+```text
+Expert advisory:
+- consulted: <docs/expert/... paths, or none>
+- applicability: CURRENT | PARTIALLY STALE | STALE | NONE RELEVANT
+- applied constraints: <compact list, or none>
+- departures: <none, or concise evidence-backed reason>
+```
+
+When no report is materially relevant, use `consulted: none` and `applicability: NONE RELEVANT`. Do not manufacture relevance.
+
+The independent G7 reviewer repeats the inventory/relevance check rather than trusting the author declaration. A reviewer must return `CHANGES REQUIRED` if a materially relevant current report was omitted, not actually consulted, materially misclassified, or departed from without evidence. A `PASS` without this check is invalid under `AGENTS.md`.
+
+A report is not stale merely because its base SHA is older than current `main`; use the report's own staleness triggers and the semantics of intervening changes. Absence of a relevant current Expert report never blocks otherwise eligible Controller work.
 
 A report may later become historical evidence. Its filename/base SHA and staleness section make that explicit.
 
