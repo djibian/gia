@@ -119,6 +119,12 @@ const widgetFilterSchema = z.discriminatedUnion("mode", [
   })
 ]);
 
+const nativeSummaryCreationSchema = z.object({
+  sourceTableId: z.string().min(1),
+  summaryTableId: z.string().min(1),
+  groupByColumnIds: z.array(z.string().min(1))
+});
+
 const pageWidgetSchema = z.object({
   id: z.number().int().positive(),
   pageId: z.number().int().positive(),
@@ -183,5 +189,6 @@ export const pageMutationOutputSchema = z.object({
 export const widgetMutationOutputSchema = z.object({
   documentId: z.string().min(1),
   pageId: z.number().int().positive(),
-  widget: pageWidgetSchema
+  widget: pageWidgetSchema,
+  summary: nativeSummaryCreationSchema.optional()
 });
