@@ -106,6 +106,10 @@ function compactWidget(widget: GristPageWidget) {
     ...(widget.visibleFieldsNormalizationIncomplete
       ? { visibleFieldsNormalizationIncomplete: true as const }
       : {}),
+    ...(widget.cardLayout !== undefined ? { cardLayout: widget.cardLayout } : {}),
+    ...(widget.cardLayoutNormalizationIncomplete
+      ? { cardLayoutNormalizationIncomplete: true as const }
+      : {}),
     ...(widget.filters !== undefined ? { filters: widget.filters } : {}),
     ...(widget.filtersNormalizationIncomplete
       ? { filtersNormalizationIncomplete: true as const }
@@ -142,6 +146,7 @@ function hasIncompleteUiNormalization(ui: CompletenessAwareDocumentUiContext): b
           widget.customWidgetSettingsNormalizationIncomplete ||
           widget.gridOptionsNormalizationIncomplete ||
           widget.visibleFieldsNormalizationIncomplete ||
+          widget.cardLayoutNormalizationIncomplete ||
           widget.filtersNormalizationIncomplete
       )
   );
