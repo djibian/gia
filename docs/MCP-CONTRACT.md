@@ -57,6 +57,12 @@ R6 C5 keeps the ten-tool MCP v2 surface unchanged. `grist_inspect.page_widgets` 
 
 `cardLayout` and `visibleFields` are deliberately separate intentions. The visible field set is changed first; card layout then arranges exactly those current fields.
 
+## Compatible R6 page-order detail
+
+R6 C10 keeps the ten-tool MCP v2 surface unchanged. `grist_change_ui(action="reorder_pages")` accepts one complete ordered list of the stable page IDs currently eligible for normal navigation.
+
+The bridge resolves private `_grist_Pages` row IDs and native `pagePos` values internally. It reuses the current visible-page position slots, preserves untargeted/special page rows, does not expose or mutate `indentation`, and rejects any requested permutation that would change the existing page-parent relation or visible page set. The exact normalized navigation state is verified after write. C10 adds no folder/navigation framework and no raw metadata/UserAction input.
+
 ## Safety invariants
 
 MCP v2 does not expose generic HTTP forwarding, raw SQL, arbitrary Grist `/apply`, arbitrary UserActions or heterogeneous multi-action transactions. Grist remains authoritative for upstream permissions; the bridge may only reduce authority. Partial/ambiguous writes are not blindly replayed, private Grist references remain server-side where practical, and principal-derived state must not cross principal boundaries.
