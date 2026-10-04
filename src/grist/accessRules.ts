@@ -45,7 +45,7 @@ export interface AccessRuleInput {
 
 export interface AccessRuleTarget {
   tableId: string;
-  columnIds?: readonly string[];
+  columnIds?: readonly string[] | undefined;
 }
 
 interface MetadataRecord {
