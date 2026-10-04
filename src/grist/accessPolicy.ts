@@ -5,9 +5,12 @@ import {
   type GristWorkspaceSummary
 } from "./client.js";
 
-export interface AllowedDocument {
+export interface AllowedWorkspace {
   org: GristOrgSummary;
   workspace: GristWorkspaceSummary;
+}
+
+export interface AllowedDocument extends AllowedWorkspace {
   document: GristDocumentSummary;
 }
 
@@ -51,11 +54,15 @@ export class DeploymentResourcePolicy {
     return this.allowedDocumentIds.has(String(documentId));
   }
 
+  allowsWorkspaceId(workspaceId: string | number): boolean {
+    return this.allowedWorkspaceIds.has(String(workspaceId));
+  }
+
   allowsDiscoveredDocument(
     workspace: GristWorkspaceSummary,
     document: GristDocumentSummary
   ): boolean {
-    if (this.allowedWorkspaceIds.has(String(workspace.id))) return true;
+    if (this.allowsWorkspaceId(workspace.id)) return true;
     return documentCandidates(document).some((id) => this.allowedDocumentIds.has(id));
   }
 }
@@ -66,7 +73,7 @@ export class DeploymentResourcePolicy {
  */
 export class GristResourceDiscovery {
   private readonly cacheTtlMs: number;
-  private cachedDocuments: AllowedDocument[] | null = null;
+  private cachedWorkspaces: AllowedWorkspace[] | null = null;
   private cacheExpiresAt = 0;
 
   constructor(
@@ -76,30 +83,39 @@ export class GristResourceDiscovery {
     this.cacheTtlMs = options.cacheTtlMs ?? 60_000;
   }
 
-  async listDocuments(): Promise<AllowedDocument[]> {
+  async listWorkspaces(): Promise<AllowedWorkspace[]> {
     const now = Date.now();
-    if (this.cachedDocuments && now < this.cacheExpiresAt) {
-      return this.cachedDocuments;
+    if (this.cachedWorkspaces && now < this.cacheExpiresAt) {
+      return this.cachedWorkspaces;
     }
 
     const orgs = await this.client.listOrgs();
-    const discovered: AllowedDocument[] = [];
+    const discovered: AllowedWorkspace[] = [];
     for (const org of orgs) {
       const workspaces = await this.client.listWorkspaces(org.id);
       for (const workspace of workspaces) {
-        for (const document of workspace.docs ?? []) {
-          discovered.push({ org, workspace, document });
-        }
+        discovered.push({ org, workspace });
       }
     }
 
-    this.cachedDocuments = discovered;
+    this.cachedWorkspaces = discovered;
     this.cacheExpiresAt = now + this.cacheTtlMs;
     return discovered;
   }
 
+  async listDocuments(): Promise<AllowedDocument[]> {
+    const workspaces = await this.listWorkspaces();
+    const discovered: AllowedDocument[] = [];
+    for (const { org, workspace } of workspaces) {
+      for (const document of workspace.docs ?? []) {
+        discovered.push({ org, workspace, document });
+      }
+    }
+    return discovered;
+  }
+
   invalidate(): void {
-    this.cachedDocuments = null;
+    this.cachedWorkspaces = null;
     this.cacheExpiresAt = 0;
   }
 }
@@ -133,6 +149,35 @@ export class AccessPolicy {
           ? { cacheTtlMs: optionsOrPolicy.cacheTtlMs }
           : {})
       });
+  }
+
+  async listAllowedWorkspaces(): Promise<AllowedWorkspace[]> {
+    const all = await this.discovery.listWorkspaces();
+    return all.filter(({ workspace }) =>
+      this.deploymentPolicy.allowsWorkspaceId(workspace.id)
+    );
+  }
+
+  async assertWorkspaceAllowed(
+    workspaceId: string | number
+  ): Promise<AllowedWorkspace> {
+    const normalized = String(workspaceId);
+    if (!this.deploymentPolicy.allowsWorkspaceId(normalized)) {
+      throw new Error(
+        `Grist workspace "${normalized}" is not allowed by this bridge.`
+      );
+    }
+
+    const allowed = await this.listAllowedWorkspaces();
+    const match = allowed.find(
+      ({ workspace }) => String(workspace.id) === normalized
+    );
+    if (!match) {
+      throw new Error(
+        `Grist workspace "${normalized}" is not available to the selected upstream credential.`
+      );
+    }
+    return match;
   }
 
   async listAllowedDocuments(): Promise<AllowedDocument[]> {
