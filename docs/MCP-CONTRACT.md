@@ -51,6 +51,12 @@ Increment the MCP contract major version when a model-facing change is incompati
 
 Compatible clarifications, descriptions, implementation fixes and additional result detail that existing clients may safely ignore do not require a major contract increment. New capabilities should first be justified by the roadmap; versioning is not permission to grow the surface speculatively.
 
+## Compatible R6 widget detail
+
+R6 C5 keeps the ten-tool MCP v2 surface unchanged. `grist_inspect.page_widgets` may additionally return a normalized `cardLayout` for native Card/Card List widgets, and `grist_change_ui.update_widget` may accept the corresponding complete stable-column layout tree. This is additive result/input detail inside the existing closed semantic action; private Grist field refs and raw UserActions remain unavailable.
+
+`cardLayout` and `visibleFields` are deliberately separate intentions. The visible field set is changed first; card layout then arranges exactly those current fields.
+
 ## Safety invariants
 
 MCP v2 does not expose generic HTTP forwarding, raw SQL, arbitrary Grist `/apply`, arbitrary UserActions or heterogeneous multi-action transactions. Grist remains authoritative for upstream permissions; the bridge may only reduce authority. Partial/ambiguous writes are not blindly replayed, private Grist references remain server-side where practical, and principal-derived state must not cross principal boundaries.
