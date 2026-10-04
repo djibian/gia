@@ -228,7 +228,7 @@ export const OPERATION_REGISTRY: readonly OperationDefinition[] = [
     title: "Inspect document access rules",
     summary: "Inspect bounded persisted application-level access-rule groups.",
     description:
-      "Inspect ordinary persisted table/column access-rule groups through stable table and column IDs. Opaque, sensitive, special, schema-edit, memo and user-attribute policy is preserved but not exposed as editable content; effective enforcement is not inferred from persisted definitions."
+      "Inspect ordinary persisted table/column access-rule groups through stable table and column IDs. A fresh native Grist document-owner proof is required before ACL metadata is read. Opaque, sensitive, special, schema-edit, memo and user-attribute policy is preserved but not exposed as editable content; effective enforcement is not inferred from persisted definitions."
   },
   {
     name: "inspect_document",
