@@ -156,9 +156,9 @@ export function resolveWidgetFieldsUpdate(
   sectionFieldsResponse: unknown,
   requested: readonly WidgetFieldUpdateInput[]
 ): WidgetFieldMutationPlan {
-  if (requested.length < 1 || requested.length > MAX_WIDGET_VISIBLE_FIELDS) {
+  if (requested.length > MAX_WIDGET_VISIBLE_FIELDS) {
     throw new Error(
-      `Widget visible fields must contain between 1 and ${MAX_WIDGET_VISIBLE_FIELDS} columns.`
+      `Widget visible fields must contain at most ${MAX_WIDGET_VISIBLE_FIELDS} columns.`
     );
   }
 
