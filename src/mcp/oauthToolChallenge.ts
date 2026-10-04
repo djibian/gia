@@ -73,7 +73,14 @@ function addChallengeToErrorResult(
         ...value.result,
         _meta: {
           ...meta,
-          "mcp/www_authenticate": [challenge]
+          "mcp/www_authenticate": [
+            ...(Array.isArray(meta["mcp/www_authenticate"])
+              ? meta["mcp/www_authenticate"].filter(
+                  (value): value is string => typeof value === "string"
+                )
+              : []),
+            challenge
+          ]
         }
       }
     }
