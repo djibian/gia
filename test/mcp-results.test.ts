@@ -4,7 +4,10 @@ import test from "node:test";
 import { AccessRuleWriteVerificationError } from "../src/grist/accessRules.js";
 import { DocumentBootstrapVerificationError } from "../src/grist/authorizedService.js";
 import { GristApiError } from "../src/grist/client.js";
-import { PartialBatchError } from "../src/grist/service.js";
+import {
+  PartialBatchError,
+  SchemaWriteVerificationError
+} from "../src/grist/service.js";
 import { UiWriteVerificationError } from "../src/grist/uiActionsAdapter.js";
 import { errorResult } from "../src/mcp/results.js";
 
@@ -44,6 +47,20 @@ test("ambiguous UI writes preserve retryWholeOperation false and a created ID wh
   assert.equal(parsed.createdId, 17);
   assert.equal(parsed.retryWholeOperation, false);
   assertNoStructuredErrorContent(result);
+});
+
+test("projects schema result-normalization failure as an applied no-retry verification error", () => {
+  const result = errorResult(
+    new SchemaWriteVerificationError("rename_column", "Native result missing")
+  );
+  const parsed = body(result);
+
+  assert.equal(parsed.code, "write_verification_failed");
+  assert.equal(parsed.operation, "rename_column");
+  assert.equal(parsed.effectState, "APPLIED");
+  assert.equal(parsed.postconditionVerified, false);
+  assert.equal(parsed.retryWholeOperation, false);
+  assert.equal(JSON.stringify(parsed).includes("Native result missing"), false);
 });
 
 test("projects C1 verification uncertainty without exposing policy internals", () => {
