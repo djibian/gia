@@ -104,6 +104,25 @@ test("addPageWidget emits exactly one bounded CreateViewSection action", async (
   ]);
 });
 
+test("addPageWidget creates a native summary with only resolved private group-by refs", async () => {
+  const { adapter, observed } = harness([
+    { tableRef: 4, viewRef: 7, sectionRef: 12 }
+  ]);
+
+  const result = await adapter.addPageWidget(
+    "doc-1",
+    7,
+    2,
+    "record",
+    [11, 12]
+  );
+
+  assert.deepEqual(result, { pageId: 7, tableRef: 4, widgetId: 12 });
+  assert.deepEqual(observed, [
+    [["CreateViewSection", 2, 7, "record", [11, 12], null]]
+  ]);
+});
+
 test("renamePage emits only the bounded _grist_Views name update", async () => {
   const { adapter, observed } = harness();
 
