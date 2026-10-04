@@ -284,7 +284,12 @@ export class AuthorizedGristService {
     return this.execute("inspect_document", documentIdOrUrl, undefined, async (id) => {
       const tableResponse = await this.inner.listTables(id, { expandColumns: true });
       const ui = await this.loadDocumentUi(id, tableResponse, true, true);
-      return this.documentContext.build(id, tableResponse, ui);
+      const navigation = await this.loadPageOrderSnapshot(id);
+      const context = this.documentContext.build(id, tableResponse, ui);
+      return {
+        ...(context as Record<string, unknown>),
+        navigationPageIds: [...navigation.visiblePageIds]
+      };
     });
   }
 
@@ -302,7 +307,15 @@ export class AuthorizedGristService {
   async getPages(documentIdOrUrl: string): Promise<unknown> {
     return this.execute("get_pages", documentIdOrUrl, undefined, async (id) => {
       const ui = await this.loadDocumentUi(id);
-      return exposeUiSnapshotCompleteness(this.documentUi.listPages(ui), ui);
+      const navigation = await this.loadPageOrderSnapshot(id);
+      const projected = exposeUiSnapshotCompleteness(
+        this.documentUi.listPages(ui),
+        ui
+      );
+      return {
+        ...(projected as Record<string, unknown>),
+        navigationPageIds: [...navigation.visiblePageIds]
+      };
     });
   }
 
