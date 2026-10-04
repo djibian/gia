@@ -1,6 +1,7 @@
 import type { GristClient } from "./client.js";
 import { GRIST_CHART_TYPES, type GristChartType } from "./chartTypes.js";
 import type { ResolvedWidgetSortSpec } from "./widgetSort.js";
+import type { WidgetFieldMutationPlan } from "./widgetFields.js";
 
 export const NATIVE_WIDGET_TYPES = [
   "record",
@@ -28,6 +29,8 @@ export interface WidgetUiUpdate {
   selectBy?: WidgetSelectByRefs | null;
   /** Trusted bridge-generated full section options JSON; never a public model input. */
   optionsJson?: string;
+  /** Trusted bridge-generated field mutation plan; native field refs never become public inputs. */
+  visibleFields?: WidgetFieldMutationPlan;
 }
 
 type UiActionsClient = Pick<GristClient, "applyUserActions"> &
@@ -360,12 +363,76 @@ export class GristUiActionsAdapter {
       fields.options = update.optionsJson;
     }
 
-    if (Object.keys(fields).length === 0) {
+    const actions: unknown[][] = [];
+    if (Object.keys(fields).length > 0) {
+      actions.push(["UpdateRecord", "_grist_Views_section", widgetId, fields]);
+    }
+
+    if (update.visibleFields !== undefined) {
+      const plan = update.visibleFields;
+      const fieldIds = new Set<number>();
+      for (const item of [
+        ...plan.reposition.map((value) => value.fieldId),
+        ...plan.resize.map((value) => value.fieldId),
+        ...plan.removeFieldIds
+      ]) {
+        assertPositiveId(item, "Grist widget field ID");
+        if (fieldIds.has(item) && plan.removeFieldIds.includes(item)) {
+          throw new Error("A removed Grist widget field cannot also be updated.");
+        }
+        fieldIds.add(item);
+      }
+      if (plan.removeFieldIds.length > 0) {
+        actions.push([
+          "BulkRemoveRecord",
+          "_grist_Views_section_field",
+          [...plan.removeFieldIds]
+        ]);
+      }
+      if (plan.reposition.length > 0) {
+        actions.push([
+          "BulkUpdateRecord",
+          "_grist_Views_section_field",
+          plan.reposition.map((value) => value.fieldId),
+          { parentPos: plan.reposition.map((value) => value.parentPos) }
+        ]);
+      }
+      if (plan.resize.length > 0) {
+        actions.push([
+          "BulkUpdateRecord",
+          "_grist_Views_section_field",
+          plan.resize.map((value) => value.fieldId),
+          { width: plan.resize.map((value) => value.width) }
+        ]);
+      }
+      if (plan.add.length > 0) {
+        for (const value of plan.add) {
+          assertPositiveId(value.columnRef, "Grist widget column reference");
+          if (!Number.isInteger(value.parentPos) || value.parentPos < 1) {
+            throw new Error("Grist widget field position must be a positive integer.");
+          }
+          if (!Number.isInteger(value.width) || value.width < 0) {
+            throw new Error("Grist widget field width must be a non-negative integer.");
+          }
+        }
+        actions.push([
+          "BulkAddRecord",
+          "_grist_Views_section_field",
+          plan.add.map(() => null),
+          {
+            parentId: plan.add.map(() => widgetId),
+            colRef: plan.add.map((value) => value.columnRef),
+            parentPos: plan.add.map((value) => value.parentPos),
+            width: plan.add.map((value) => value.width)
+          }
+        ]);
+      }
+    }
+
+    if (actions.length === 0) {
       throw new Error("At least one widget UI field must be updated.");
     }
 
-    await this.client.applyUserActions(documentId, [
-      ["UpdateRecord", "_grist_Views_section", widgetId, fields]
-    ]);
+    await this.client.applyUserActions(documentId, actions);
   }
 }
