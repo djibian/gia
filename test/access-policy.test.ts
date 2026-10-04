@@ -26,6 +26,11 @@ function fakeClient(): GristClient {
         { id: 200, urlId: "doc-explicit", name: "Explicit document" },
         { id: 201, urlId: "doc-denied", name: "Denied document" }
       ]
+    },
+    {
+      id: 30,
+      name: "Empty workspace",
+      docs: []
     }
   ];
 
@@ -75,4 +80,25 @@ test("explicit document ID is accepted without discovery", async () => {
 
   assert.equal(await policy.assertDocumentAllowed("direct-doc"), "direct-doc");
   assert.equal(discoveryCalls, 0);
+});
+
+
+test("discovers explicitly allowed empty workspaces without deriving parent authority from a document", async () => {
+  const policy = new AccessPolicy(fakeClient(), {
+    allowedDocumentIds: ["doc-explicit"],
+    allowedWorkspaceIds: ["30"],
+    cacheTtlMs: 0
+  });
+
+  const workspaces = await policy.listAllowedWorkspaces();
+  assert.deepEqual(
+    workspaces.map(({ workspace }) => workspace.id),
+    [30]
+  );
+  assert.equal((await policy.assertWorkspaceAllowed(30)).workspace.name, "Empty workspace");
+
+  await assert.rejects(
+    () => policy.assertWorkspaceAllowed(20),
+    /workspace "20" is not allowed by this bridge/
+  );
 });
