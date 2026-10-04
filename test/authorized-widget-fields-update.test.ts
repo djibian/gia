@@ -239,7 +239,7 @@ test("authorized widget-field update can clear all visible fields and verifies t
     update: { visibleFields: WidgetFieldMutationPlan };
   }).update.visibleFields;
   assert.deepEqual(plan.expected, []);
-  assert.deepEqual(plan.removeFieldIds, [101, 102]);
+  assert.deepEqual(plan.removeFieldIds, [102, 101]);
   assert.deepEqual(plan.add, []);
   assert.deepEqual(
     currentSectionFields().filter((field) => field.fields.parentId === 21),
