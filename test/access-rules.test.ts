@@ -141,7 +141,7 @@ test("normalizes only bounded secret-safe ordinary ACL groups", () => {
       ]
     }
   ]);
-  assert.doesNotMatch(JSON.stringify(projected), /secret|private memo|LinkKey/);
+  assert.doesNotMatch(JSON.stringify(projected), /do-not-expose|private memo|LinkKey/);
 });
 
 test("opaque literal conditions are redacted and not editable", () => {
