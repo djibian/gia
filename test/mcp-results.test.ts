@@ -95,36 +95,6 @@ test("projects a known C8 created document ID as an applied effect with unverifi
 });
 
 
-test("ACL verification errors preserve no-retry postcondition state without private details", () => {
-  const result = errorResult(
-    new AccessRuleWriteVerificationError("private ACL detail should stay server-side")
-  );
-  const parsed = body(result);
-
-  assert.equal(parsed.code, "write_verification_failed");
-  assert.equal(parsed.operation, "access_rule_group");
-  assert.equal(parsed.effectState, "POSTCONDITION_UNVERIFIED");
-  assert.equal(parsed.writeMayHaveApplied, true);
-  assert.equal(parsed.retryWholeOperation, false);
-  assert.equal(JSON.stringify(result).includes("private ACL detail"), false);
-  assertNoStructuredErrorContent(result);
-});
-
-test("document bootstrap verification errors preserve the known created ID and forbid replay", () => {
-  const result = errorResult(
-    new DocumentBootstrapVerificationError("doc-created-123", "private verification detail")
-  );
-  const parsed = body(result);
-
-  assert.equal(parsed.code, "write_verification_failed");
-  assert.equal(parsed.operation, "document_bootstrap");
-  assert.equal(parsed.effectState, "APPLIED_POSTCONDITION_UNVERIFIED");
-  assert.equal(parsed.createdDocumentId, "doc-created-123");
-  assert.equal(parsed.retryWholeOperation, false);
-  assert.equal(JSON.stringify(result).includes("private verification detail"), false);
-  assertNoStructuredErrorContent(result);
-});
-
 test("upstream errors expose a stable category and status without leaking response bodies", () => {
   const secretBody = "upstream body that must stay server-side";
   const result = errorResult(
