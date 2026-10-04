@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the security boundary for the MCP v2 product after completion of R5 production hardening. Public-directory distribution is optional and currently deferred; retained R5-F submission material is historical preparation, not active security work.
+This document defines the security boundary for the MCP v2 product after completion of R5 production hardening and during the bounded R6 targeted-adoption work. Public-directory distribution is optional and currently deferred; retained R5-F submission material is historical preparation, not active security work.
 
 The objective is a small set of enforceable invariants. Historical J0/J1/J2 mechanisms remain relevant only where their direct safety semantics survive in the active runtime.
 
@@ -68,7 +68,9 @@ Static mode is explicitly a single controlled deployment principal and must not 
 
 ### S3 — upstream authority is authoritative
 
-The bridge never turns a read-only upstream Grist credential into a writer and never broadens native Grist access rules. A local capability check is an additional restriction, not a grant of upstream permission.
+The bridge never turns a read-only upstream Grist credential into a writer, never changes the acting principal's Grist role/grants, and never bypasses native Grist enforcement. A local capability check is an additional restriction, not a grant of upstream permission.
+
+A supported **application-level policy** operation may deliberately change a document's native access-rule state when the Roadmap explicitly selects that capability, the principal has the required local capability, and Grist itself authorizes the upstream credential to make that policy change. Such a mutation changes application state; it does not elevate Gia's principal, create users/groups/shares, substitute a stronger credential, or bypass Grist's Owner checks.
 
 In multi-principal production mode, each mapped service account keeps its own Grist-native grants, expiry and revocation boundary.
 
@@ -135,13 +137,25 @@ doc.schema:write
 
 The effective ceiling is the intersection of selected upstream Grist authority, deployment document/workspace policy, principal resource grants and the operation capability.
 
+For the R6-selected document-bootstrap capability, creation/copy into a workspace requires an explicit deployment workspace ceiling and a matching workspace grant on the same principal with the required capability. A document-only grant never authorizes creation in its parent workspace, and capabilities from unrelated grants must not be combined to manufacture destination authority.
+
+For the R6-selected application-policy capability, `doc.schema:write` is the local bridge requirement; upstream Grist Owner enforcement remains mandatory. `doc:write` alone must not authorize policy changes.
+
 Any future production/public OAuth-scope expansion requires a new explicit product decision. Deferred publication work does not authorize weakening or broadening current authorization.
 
-## Domain access policies
+## Application policy versus identity administration
 
-Stage-tracking ACLs, LinkKeys and other application-specific policies are not product security architecture.
+Stage-tracking ACLs, LinkKeys and other application-specific **policy choices** are not product security architecture. Gia must not infer domain rules or embed one application's access model.
 
-The core must preserve Grist's native permission effects and must not bypass them. Specific application-policy behavior is exercised during R4 validation rather than by embedding a generic ACL reader/writer/browser platform into the bridge.
+A bounded generic capability for **application-level Grist access rules** is nevertheless distinct from identity/share administration and is selected in R6. Its security boundary is:
+
+- inspect/modify only the supported document-policy semantics through stable table/column identities and a private bounded adapter;
+- preserve untargeted persisted rules and refuse incomplete, censored, ambiguous or unsupported policy state;
+- never expose arbitrary `_grist_` metadata, arbitrary `/apply`, raw UserActions, generic permission evaluation, LinkKey provisioning, or user/group/org/share/service-account administration;
+- keep Grist authoritative for native Owner checks and effective enforcement;
+- never claim that persisted-rule re-read alone proves effective confidentiality when native structure/formula permissions can alter what collaborators can derive.
+
+R4 proved preservation of existing ACL effects. R6 C1 is a separately reviewed authoring capability and must satisfy these stronger boundaries before integration.
 
 ## Browser security
 
