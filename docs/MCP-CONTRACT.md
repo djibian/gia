@@ -53,7 +53,7 @@ Compatible clarifications, descriptions, implementation fixes and additional res
 
 ## Compatible R6 widget detail
 
-R6 C5 keeps the ten-tool MCP v2 surface unchanged. `grist_inspect.page_widgets` may additionally return a normalized `cardLayout` for native Card/Card List widgets, and `grist_change_ui.update_widget` may accept the corresponding complete stable-column layout tree. This is additive result/input detail inside the existing closed semantic action; private Grist field refs and raw UserActions remain unavailable.
+R6 C5 keeps the ten-tool MCP v2 surface unchanged. `grist_inspect.page_widgets` may additionally return a normalized `cardLayout` for native Card/Card List widgets, and `grist_change_ui.update_widget` may accept the corresponding complete stable-column layout tree. This is additive result/input detail inside the existing closed semantic action. C5 inputs never accept private Grist field refs, raw BoxSpec JSON or raw UserActions; the pre-existing raw `layoutSpec` compatibility output is unchanged and is not used as the C5 mutation contract.
 
 `cardLayout` and `visibleFields` are deliberately separate intentions. The visible field set is changed first; card layout then arranges exactly those current fields.
 
