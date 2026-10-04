@@ -88,6 +88,20 @@ export function isUncertainGristEffect(error: unknown): boolean {
   );
 }
 
+function createdDocumentId(response: unknown): string {
+  if (typeof response === "string" && response.trim()) return response;
+
+  if (response !== null && typeof response === "object" && !Array.isArray(response)) {
+    const data = (response as Record<string, unknown>).data;
+    if (typeof data === "string" && data.trim()) return data;
+  }
+
+  throw new GristTransportError(
+    "Grist acknowledged document creation but the created document ID could not be normalized. Do not retry the operation blindly.",
+    "UNCERTAIN"
+  );
+}
+
 export class GristClient {
   private readonly baseUrl: string;
   private readonly baseOrigin: string;
@@ -114,6 +128,34 @@ export class GristClient {
     return (await this.request(
       `/api/docs/${encodeURIComponent(documentId)}`
     )) as GristDocumentSummary;
+  }
+
+  async createDocument(workspaceId: number, name: string): Promise<string> {
+    const response = await this.request(
+      `/api/workspaces/${encodeURIComponent(String(workspaceId))}/docs`,
+      {
+        method: "POST",
+        body: JSON.stringify({ name })
+      }
+    );
+    return createdDocumentId(response);
+  }
+
+  async copyDocumentAsTemplate(
+    sourceDocumentId: string,
+    workspaceId: number,
+    documentName: string
+  ): Promise<string> {
+    const response = await this.request("/api/docs", {
+      method: "POST",
+      body: JSON.stringify({
+        sourceDocumentId,
+        workspaceId,
+        documentName,
+        asTemplate: true
+      })
+    });
+    return createdDocumentId(response);
   }
 
   async listTables(
