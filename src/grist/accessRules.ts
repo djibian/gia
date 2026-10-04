@@ -34,8 +34,8 @@ export type AccessRuleCondition =
 export interface AccessRulePermissions {
   read: AccessPermissionValue;
   update: AccessPermissionValue;
-  create?: AccessPermissionValue;
-  delete?: AccessPermissionValue;
+  create?: AccessPermissionValue | undefined;
+  delete?: AccessPermissionValue | undefined;
 }
 
 export interface AccessRuleInput {
@@ -46,6 +46,11 @@ export interface AccessRuleInput {
 export interface AccessRuleTarget {
   tableId: string;
   columnIds?: readonly string[] | undefined;
+}
+
+export interface ResolvedAccessRuleTarget {
+  tableId: string;
+  columnIds: readonly string[];
 }
 
 interface MetadataRecord {
@@ -83,7 +88,7 @@ export interface NormalizedAccessRule {
 }
 
 interface AccessRuleGroupState {
-  target: Required<AccessRuleTarget>;
+  target: ResolvedAccessRuleTarget;
   resourceRecordId: number;
   ruleRecordIds: number[];
   normalizedRules?: NormalizedAccessRule[];
@@ -118,7 +123,7 @@ export class AccessRuleWriteVerificationError extends Error {
 export interface AccessRuleMutationPlan {
   mode: AccessRuleMutationMode;
   requestedMode: Exclude<AccessRuleMutationMode, "noop">;
-  target: Required<AccessRuleTarget>;
+  target: ResolvedAccessRuleTarget;
   resourceRecordId?: number;
   ruleRecordIds: number[];
   rules: AccessRulePersistedWrite[];
@@ -193,7 +198,7 @@ function canonicalColumnIds(columnIds: readonly string[]): string[] {
   return [...unique].sort();
 }
 
-function normalizeResourceTarget(resource: PersistedResource): Required<AccessRuleTarget> | null {
+function normalizeResourceTarget(resource: PersistedResource): ResolvedAccessRuleTarget | null {
   const tableId = resource.tableId.trim();
   const colIds = resource.colIds.trim();
   if (!tableId || tableId === "*" || tableId.startsWith("_grist_")) return null;
@@ -205,11 +210,11 @@ function normalizeResourceTarget(resource: PersistedResource): Required<AccessRu
   };
 }
 
-function targetKey(target: Required<AccessRuleTarget>): string {
+function targetKey(target: ResolvedAccessRuleTarget): string {
   return `${target.tableId}\u0000${target.columnIds.length === 0 ? "*" : target.columnIds.join(",")}`;
 }
 
-function sameTarget(a: Required<AccessRuleTarget>, b: Required<AccessRuleTarget>): boolean {
+function sameTarget(a: ResolvedAccessRuleTarget, b: ResolvedAccessRuleTarget): boolean {
   return targetKey(a) === targetKey(b);
 }
 
@@ -473,7 +478,7 @@ function stableJson(value: unknown): string {
 
 function untargetedFingerprint(
   snapshot: AccessRulesSnapshot,
-  target: Required<AccessRuleTarget>
+  target: ResolvedAccessRuleTarget
 ): string {
   const excludedResourceIds = new Set(
     snapshot.resources
@@ -498,7 +503,7 @@ function untargetedFingerprint(
 function normalizeRequestedTarget(
   snapshot: AccessRulesSnapshot,
   target: AccessRuleTarget
-): Required<AccessRuleTarget> {
+): ResolvedAccessRuleTarget {
   const tableId = target.tableId.trim();
   if (!tableId || tableId === "*" || tableId.startsWith("_grist_")) {
     throw new Error("Access-rule targets must name one ordinary Grist table.");
@@ -522,7 +527,7 @@ function normalizeRequestedTarget(
 
 function assertNoColumnOverlap(
   snapshot: AccessRulesSnapshot,
-  target: Required<AccessRuleTarget>,
+  target: ResolvedAccessRuleTarget,
   ignoreResourceId?: number
 ): void {
   if (target.columnIds.length === 0) return;
@@ -545,7 +550,7 @@ function assertNoColumnOverlap(
 
 function normalizeRequestedRules(
   rules: readonly AccessRuleInput[],
-  target: Required<AccessRuleTarget>,
+  target: ResolvedAccessRuleTarget,
   table: TableInfo
 ): { writes: AccessRulePersistedWrite[]; normalized: NormalizedAccessRule[] } {
   if (rules.length < 1 || rules.length > MAX_ACCESS_RULES_PER_GROUP) {
