@@ -430,6 +430,7 @@ export class GristUiActionsAdapter {
     }
 
     if (actions.length === 0) {
+      if (update.visibleFields !== undefined) return;
       throw new Error("At least one widget UI field must be updated.");
     }
 

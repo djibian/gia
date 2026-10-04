@@ -234,6 +234,25 @@ test("updatePageWidget sends section and visible-field changes in one bounded ap
   ]);
 });
 
+test("updatePageWidget accepts an already-satisfied visible-field plan as a no-op", async () => {
+  const { adapter, observed } = harness();
+
+  await adapter.updatePageWidget("doc-1", 11, {
+    visibleFields: {
+      expected: [
+        { columnId: "Email" },
+        { columnId: "Name", width: 120 }
+      ],
+      removeFieldIds: [],
+      reposition: [],
+      resize: [],
+      add: []
+    }
+  });
+
+  assert.deepEqual(observed, []);
+});
+
 test("updatePageWidget clears a description with an empty string", async () => {
   const { adapter, observed } = harness();
 
