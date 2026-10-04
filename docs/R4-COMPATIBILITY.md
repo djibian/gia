@@ -1,6 +1,6 @@
 # R4 — Grist Community compatibility
 
-This document records the bounded compatibility protocol and result for R4 validation class 9. The same run also supplies real end-to-end evidence for R4 class 1 (new generic application).
+This document preserves the bounded compatibility protocol and initial result for R4 validation class 9. The initial run also supplied real end-to-end evidence for R4 class 1 (new generic application). A separate post-R6 release-stabilization rerun is recorded at the end without rewriting the historical R4 result.
 
 ## Reference review
 
@@ -91,3 +91,47 @@ R4-5 rerun/idempotence is not claimed by this probe: the semantic intentions are
 ## Exact-head note
 
 The PASS above records the exact runtime/probe head that produced the first successful matrix. Documentation-only commits after that result do not broaden the compatibility claim. The pull-request workflows are nevertheless expected to rerun on the final head before integration so the integrated validation artifact remains green.
+
+
+## Post-R6 release-stabilization compatibility evidence
+
+**Date:** 2026-10-05  
+**Exact Gia head exercised:** `3ba9267258d7df74e10d3efb729bec69fd905612`  
+**GitHub Actions:** `R4 Grist Community compatibility` run **37242250026 — PASS**
+
+For the Gia 0.7.0 release stabilization, the existing isolated compatibility
+facility was extended rather than replaced. The matrix now exercises exact
+Community releases **1.7.16, 1.7.17, 1.7.18, 1.7.19 and 1.7.20**. All five jobs
+passed on the exact head above.
+
+In addition to the original schema/data/page round trip, the release probe now
+exercises the R6 seams that the post-R6 Expert reports identified as needing
+native evidence:
+
+- grouped and grand-total native summary widget creation, with generated summary
+  identity/grouping resolved from the re-read section rather than the native
+  source-`tableRef` echo;
+- Card layout, field hiding and a subsequent complete Card layout replacement,
+  covering native stale field leaves;
+- Owner access-rule inspection plus one bounded ordinary table-rule
+  create/inspect/delete round trip, with the protected/unsupported persisted
+  group count preserved across the targeted mutation;
+- empty-document creation in the explicitly allowed workspace;
+- native copy-as-template from the allowed source, with original user rows
+  absent from the copied template;
+- destination-workspace denial outside the deployment/principal ceiling;
+- source-document denial for template copy when the source lies outside the
+  allowed resource set.
+
+This is a **bounded compatibility claim**, not full Grist feature parity. The
+matrix does not turn the development test login into deployment guidance and
+does not claim a native multi-principal/non-Owner ACL confidentiality campaign.
+The bridge's non-Owner pre-ACL Owner proof, OAuth/resource-grant isolation and
+typed failure boundaries remain covered by focused contract/security tests and
+the earlier R5/R4 authority evidence. Public-directory distribution is not
+reactivated by this rerun.
+
+The current release support statement is therefore: **the release probe above
+passes on Grist Community 1.7.16 through 1.7.20 inclusive** for the exact
+bounded semantics it exercises. It does not extrapolate to earlier or later
+versions.
