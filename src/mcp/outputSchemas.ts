@@ -26,6 +26,26 @@ const normalizedPageLayoutSchema = z.object({
   unplacedWidgetIds: z.array(z.number().int().positive())
 });
 
+const normalizedCardLayoutNodeSchema: z.ZodType<any> = z.lazy(() =>
+  z.union([
+    z.object({
+      kind: z.literal("field"),
+      columnId: z.string().min(1),
+      size: z.number().positive().optional()
+    }),
+    z.object({
+      kind: z.literal("group"),
+      children: z.array(normalizedCardLayoutNodeSchema),
+      size: z.number().positive().optional()
+    })
+  ])
+);
+
+const normalizedCardLayoutSchema = z.object({
+  root: normalizedCardLayoutNodeSchema.optional(),
+  unplacedColumnIds: z.array(z.string().min(1))
+});
+
 const pageInfoSchema = z.object({
   id: z.number().int().positive(),
   pageRecordId: z.number().int().positive(),
@@ -148,6 +168,8 @@ const pageWidgetSchema = z.object({
   gridOptionsNormalizationIncomplete: z.literal(true).optional(),
   visibleFields: z.array(widgetVisibleFieldSchema).optional(),
   visibleFieldsNormalizationIncomplete: z.literal(true).optional(),
+  cardLayout: normalizedCardLayoutSchema.optional(),
+  cardLayoutNormalizationIncomplete: z.literal(true).optional(),
   filters: z.array(widgetFilterSchema).optional(),
   filtersNormalizationIncomplete: z.literal(true).optional()
 });

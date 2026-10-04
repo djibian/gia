@@ -1,4 +1,8 @@
 import {
+  normalizeCardLayout,
+  type NormalizedCardLayout
+} from "./cardLayout.js";
+import {
   normalizeCustomWidgetSettings,
   type NormalizedCustomWidgetSettings
 } from "./customWidgetSettings.js";
@@ -64,6 +68,8 @@ export interface GristPageWidget {
   gridOptionsNormalizationIncomplete?: true;
   visibleFields?: NormalizedWidgetField[];
   visibleFieldsNormalizationIncomplete?: true;
+  cardLayout?: NormalizedCardLayout;
+  cardLayoutNormalizationIncomplete?: true;
   filters?: NormalizedWidgetFilter[];
   filtersNormalizationIncomplete?: true;
 }
@@ -220,6 +226,17 @@ export class DocumentUiService {
           widget,
           normalizeWidgetFields(widget, tableResponse, sectionFieldsResponse)
         );
+        if (widget.type === "single" || widget.type === "detail") {
+          Object.assign(
+            widget,
+            normalizeCardLayout(
+              widget,
+              widget.layoutSpec,
+              tableResponse,
+              sectionFieldsResponse
+            )
+          );
+        }
       }
       if (filtersResponse !== undefined && hasExpandedColumns(tableResponse)) {
         Object.assign(

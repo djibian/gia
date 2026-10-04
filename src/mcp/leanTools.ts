@@ -5,6 +5,10 @@ import type {
   AuthorizedGristService,
   PageWidgetUpdateInput
 } from "../grist/authorizedService.js";
+import {
+  MAX_CARD_LAYOUT_NODES,
+  type NormalizedCardLayoutNode
+} from "../grist/cardLayout.js";
 import { GRIST_CHART_TYPES } from "../grist/chartTypes.js";
 import {
   MAX_CUSTOM_WIDGET_MAPPED_COLUMNS,
@@ -210,6 +214,34 @@ const pageLayoutNodeSchema: z.ZodType<NormalizedPageLayoutNode> = z.lazy(() =>
   ])
 );
 
+const cardLayoutNodeSchema: z.ZodType<NormalizedCardLayoutNode> = z.lazy(() =>
+  z.union([
+    z
+      .object({
+        kind: z.literal("field"),
+        columnId: columnIdSchema,
+        size: z.number().positive().optional()
+      })
+      .strict(),
+    z
+      .object({
+        kind: z.literal("group"),
+        children: z
+          .array(cardLayoutNodeSchema)
+          .min(1)
+          .max(MAX_CARD_LAYOUT_NODES),
+        size: z.number().positive().optional()
+      })
+      .strict()
+  ])
+);
+
+const cardLayoutUpdateSchema = z
+  .object({
+    root: cardLayoutNodeSchema
+  })
+  .strict();
+
 const pageLayoutUpdateSchema = z
   .object({
     root: pageLayoutNodeSchema,
@@ -239,6 +271,7 @@ function widgetUpdateSchema() {
       customWidgetSettings: customWidgetSettingsUpdateSchema.optional(),
       gridOptions: gridOptionsUpdateSchema.optional(),
       visibleFields: widgetVisibleFieldsSchema.optional(),
+      cardLayout: cardLayoutUpdateSchema.optional(),
       filters: widgetFilterUpdateSchema.optional()
     })
     .strict()
@@ -252,8 +285,14 @@ function widgetUpdateSchema() {
         value.customWidgetSettings !== undefined ||
         value.gridOptions !== undefined ||
         value.visibleFields !== undefined ||
+        value.cardLayout !== undefined ||
         value.filters !== undefined,
       "At least one widget field must be supplied."
+    )
+    .refine(
+      (value) =>
+        !(value.visibleFields !== undefined && value.cardLayout !== undefined),
+      "visibleFields and cardLayout must be updated in separate calls."
     );
 }
 
@@ -308,6 +347,9 @@ function normalizeWidgetUpdate(
             ...(field.width !== undefined ? { width: field.width } : {})
           }))
         }
+      : {}),
+    ...(update.cardLayout !== undefined
+      ? { cardLayout: update.cardLayout }
       : {}),
     ...(update.filters !== undefined
       ? {

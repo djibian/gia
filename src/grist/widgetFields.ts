@@ -26,7 +26,7 @@ interface WidgetIdentity {
   tableRef: number;
 }
 
-interface ExistingWidgetField {
+export interface ExistingWidgetField {
   fieldId: number;
   columnId: string;
   columnRef: number;
@@ -84,7 +84,7 @@ function tableColumnMaps(
   return { byRef, byId };
 }
 
-function existingWidgetFields(
+export function existingWidgetFields(
   widget: WidgetIdentity,
   tableResponse: unknown,
   sectionFieldsResponse: unknown
