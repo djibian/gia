@@ -517,7 +517,7 @@ The validated post-v0.6.0 product decision promotes **R6 — Pareto Convergence*
 
 # R6 — Pareto Convergence
 
-**Status: ACTIVE**
+**Status: DONE — finite Pareto selection exhausted after the seven R6.3 ADOPT slices.**
 
 ## Goal
 
@@ -639,7 +639,7 @@ No other observed capability becomes implementation work. See `docs/R6-PARETO-GA
 
 ## R6.3 — Targeted adoption
 
-**Status: ELIGIBLE — finite ADOPT set selected by R6.2.**
+**Status: DONE — all seven finite ADOPT items are integrated by this tranche.**
 
 Implement only the minimum set selected by R6.2.
 
@@ -662,9 +662,9 @@ Integrated progress:
 - **C5 — DONE:** bounded native Card/Card List field layout over currently visible stable column IDs, with private view-field refs kept bridge-internal, full-layout coverage, explicit unplaced read state and exact post-write verification; provenance and boundaries are recorded in `docs/R6-C5-CARD-LAYOUT.md`.
 - **C10 — DONE:** hierarchy-preserving page navigation ordering over the complete current visible page-ID set, with native page positions/private metadata kept bridge-internal, untargeted page slots preserved and exact post-write verification; provenance and boundaries are recorded in `docs/R6-C10-PAGE-ORDER.md`.
 - **C1 — DONE:** bounded persisted ordinary table/column ACL groups with stable targets, secret-safe typed conditions, tri-state permissions, native Grist Owner enforcement, untargeted-policy preservation and persisted-definition post-write verification; provenance and explicit non-goals are recorded in `docs/R6-C1-ACCESS-RULES.md`.
-- **Next eligible slice after C1 integration: C8 — bounded document bootstrap/import path.**
+- **C8 — DONE:** explicit allowed-workspace discovery plus bounded empty-document creation and same-installation copy-as-template. Destination authority requires the configured workspace ceiling and one matching principal workspace grant with `doc.schema:write`; template copy additionally requires separate source `doc:read` and remains subject to native Grist copy authorization. Non-idempotent outcomes retain known created IDs, invalidate discovery after every attempt and never use name-based replay or guessed cleanup. Provenance and boundaries are recorded in `docs/R6-C8-DOCUMENT-BOOTSTRAP.md`.
 
-R6.3 contains no work outside these seven ADOPT items.
+R6.3 contains no work outside these seven ADOPT items. All seven are exhausted; no further R6 implementation is eligible.
 
 ## R6 exit criteria
 
@@ -677,7 +677,7 @@ R6.3 contains no work outside these seven ADOPT items.
 - normative/current-state documentation matches the resulting runtime;
 - exact-head CI and required independent reviews are green for any implementation or governance change.
 
-No additional capability becomes committed merely because it was observed during R6.
+With C8 integrated through the required exact-head CI and independent review gate, the finite R6 exit criteria are satisfied. No additional capability becomes committed merely because it was observed during R6. R7 remains deferred until concrete real-use evidence is explicitly promoted into a new finite roadmap tranche.
 
 ---
 
@@ -696,7 +696,7 @@ After R6 is exhausted, real use may reveal a missing generic capability. Such ev
 
 A usage report does not automatically authorize implementation. Until concrete evidence is explicitly promoted into a finite roadmap tranche, Controllers stop instead of inventing speculative work.
 
-Richer import/upsert, attachments, webhooks, SQL, generic identity/share administration, generated widgets/code and other ecosystem capabilities remain candidates only; none is pre-committed by R7. R6-selected C1 application-level ACL rules and C8 document creation/copy are distinct active R6.3 work, not R7 candidates.
+Richer import/upsert, attachments, webhooks, SQL, generic identity/share administration, generated widgets/code and other ecosystem capabilities remain candidates only; none is pre-committed by R7. R6-selected C1 application-level ACL rules and C8 document creation/copy are completed R6.3 work, not R7 candidates.
 
 ---
 
