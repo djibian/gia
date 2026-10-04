@@ -239,6 +239,7 @@ export class AuthorizedGristService {
 
   async inspectAccessRules(documentIdOrUrl: string): Promise<unknown> {
     return this.execute("inspect_access_rules", documentIdOrUrl, undefined, async (id) => {
+      await this.inner.assertDocumentOwner(id);
       const snapshot = await this.loadAccessRulesSnapshot(id);
       return {
         documentId: id,
@@ -980,6 +981,7 @@ export class AuthorizedGristService {
     rules?: readonly AccessRuleInput[]
   ): Promise<unknown> {
     return this.execute("change_access_rule_group", documentIdOrUrl, 1, async (id) => {
+      await this.inner.assertDocumentOwner(id);
       const before = await this.loadAccessRulesSnapshot(id);
       const plan = resolveAccessRuleMutation(before, target, mode, rules);
 
