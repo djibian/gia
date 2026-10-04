@@ -11,10 +11,10 @@ import type {
   WidgetUiUpdate
 } from "../src/grist/uiActionsAdapter.js";
 
-function harness(options: { applyWrite?: boolean; widgetType?: string } = {}) {
+function harness(options: { applyWrite?: boolean; widgetType?: string; initialLayoutSpec?: string } = {}) {
   const applyWrite = options.applyWrite ?? true;
   const widgetType = options.widgetType ?? "single";
-  let layoutSpec = "";
+  let layoutSpec = options.initialLayoutSpec ?? "";
   const writes: unknown[] = [];
   const listTableOptions: unknown[] = [];
 
@@ -175,6 +175,30 @@ test("authorized Card layout resolves stable columns and verifies exact re-read 
       ]
     })
   );
+});
+
+test("authorized Card layout can replace a native layout containing stale removed field refs", async () => {
+  const { service, writes } = harness({
+    initialLayoutSpec: JSON.stringify({
+      children: [{ leaf: 101 }, { leaf: 999 }, { leaf: 102 }]
+    })
+  });
+
+  const result = await service.updatePageWidget("doc-1", 7, 21, {
+    cardLayout: requestedLayout
+  }) as { widget: { cardLayout?: unknown } };
+
+  assert.equal(writes.length, 1);
+  assert.deepEqual(result.widget.cardLayout, {
+    root: {
+      kind: "group",
+      children: [
+        { kind: "field", columnId: "Email", size: 30 },
+        { kind: "field", columnId: "Name" }
+      ]
+    },
+    unplacedColumnIds: []
+  });
 });
 
 test("authorized Card layout fails closed when the write cannot be verified", async () => {
