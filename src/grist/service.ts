@@ -44,6 +44,18 @@ export class PartialBatchError extends Error {
   }
 }
 
+export class SchemaWriteVerificationError extends Error {
+  constructor(
+    public readonly operation: string,
+    message: string
+  ) {
+    super(
+      `${message} The schema write may already have succeeded; do not retry the whole operation blindly.`
+    );
+    this.name = "SchemaWriteVerificationError";
+  }
+}
+
 export class UncertainWriteError extends Error {
   constructor(
     public readonly operation: string,
@@ -328,10 +340,29 @@ export class GristService {
     if (oldColumnId === newColumnId) {
       throw new Error("New column ID must differ from the current column ID.");
     }
-    await this.client.applyUserActions(documentId, [
+    const response = await this.client.applyUserActions(documentId, [
       ["RenameColumn", tableId, oldColumnId, newColumnId]
     ]);
-    return { tableId, oldColumnId, newColumnId, renamed: true };
+    const root = jsonRecord(response);
+    const retValues = root && Array.isArray(root.retValues) ? root.retValues : undefined;
+    const actualColumnId =
+      retValues?.length === 1 &&
+      typeof retValues[0] === "string" &&
+      retValues[0].length > 0
+        ? retValues[0]
+        : undefined;
+    if (!actualColumnId) {
+      throw new SchemaWriteVerificationError(
+        "rename_column",
+        "Grist RenameColumn did not return the resulting stable column ID."
+      );
+    }
+    return {
+      tableId,
+      oldColumnId,
+      newColumnId: actualColumnId,
+      renamed: true
+    };
   }
 
   async deleteColumns(
