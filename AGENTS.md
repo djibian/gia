@@ -64,6 +64,17 @@ These are product concepts, not a requirement that exactly seven public tools ex
 - Finish or explicitly supersede existing overlapping work before opening replacement work.
 - Keep dependencies explicit in the PR body.
 - A PR body states `Review gate: REQUIRED` or `Review gate: NOT REQUIRED` with a reason.
+- Every `Review gate: REQUIRED` PR must include an **Expert advisory** evidence block. Use the exact shape below so the independent reviewer can verify consultation rather than infer it:
+
+```text
+Expert advisory:
+- consulted: <docs/expert/... paths, or none>
+- applicability: CURRENT | PARTIALLY STALE | STALE | NONE RELEVANT
+- applied constraints: <compact list, or none>
+- departures: <none, or concise evidence-backed reason>
+```
+
+If no report is relevant, say `consulted: none` and `applicability: NONE RELEVANT`. Do not invent a report dependency merely to satisfy the template.
 
 ### G5 — Optimistic concurrency for repository transitions
 
@@ -180,9 +191,19 @@ The Expert:
 - does not satisfy the independent exact-head review required by G7 unless it is launched separately under the independent-review protocol for that exact head;
 - never blocks Controllers solely because an Expert report is absent or stale.
 
-Controllers must consult any **relevant, still-applicable** Expert report before implementing or independently reviewing the same high-risk semantic area. They must revalidate mutable facts and may disagree with the recommendation when current repository/upstream evidence justifies it. If a Controller departs materially from a current Expert recommendation, record the reason in the implementation/review PR.
+Controllers must consult any **relevant, still-applicable** Expert report before implementing or independently reviewing the same high-risk semantic area. Consultation is a durable, reviewable obligation rather than an implicit expectation:
 
-Expert reports are evidence, not authority. `main`, the normative files and the active Roadmap remain authoritative.
+- at startup, inventory `docs/expert/*.md` and identify reports whose declared scope or staleness triggers overlap the selected work;
+- read the relevant report before design/review conclusions are finalized;
+- classify its applicability as `CURRENT`, `PARTIALLY STALE` or `STALE` against current `main`, Roadmap and upstream facts;
+- for every review-required PR, record the required **Expert advisory** block from G4;
+- if the Controller departs materially from a `CURRENT` or still-applicable part of a `PARTIALLY STALE` report, record the concrete repository/upstream evidence that justifies the departure.
+
+A report is not made stale merely because `main` advanced. Use the report's own staleness triggers and the semantics of intervening changes. A report marked `STALE` remains historical evidence but must not be used as current authority.
+
+The independent reviewer must independently check the report inventory and the PR's Expert advisory declaration. A G7 `PASS` is invalid if a materially relevant current report was omitted, not read, or misclassified. If that evidence is missing or wrong, return `CHANGES REQUIRED` before evaluating merge.
+
+Expert reports are evidence, not authority. `main`, the normative files and the active Roadmap remain authoritative. Absence of a relevant current report never blocks otherwise eligible work.
 
 ## Startup recovery and coherence
 
@@ -190,9 +211,10 @@ Every Controller execution begins with one bounded coherence pass:
 
 1. resolve exact `main`;
 2. read the three normative files;
-3. inventory open PRs and unique unintegrated branches relevant to current work;
-4. close/supersede work that the current roadmap explicitly retired;
-5. check material consistency in this direction:
+3. inventory `docs/expert/*.md`, compare report scopes/staleness triggers with the intended work, and read every materially relevant still-applicable report;
+4. inventory open PRs and unique unintegrated branches relevant to current work;
+5. close/supersede work that the current roadmap explicitly retired;
+6. check material consistency in this direction:
 
 ```text
 runtime + public contract
@@ -248,7 +270,11 @@ The initial recomposition references are recorded in `docs/RECOMPOSITION-REVIEW.
 
 ## Independent review protocol
 
-A reviewer challenges only the submitted exact head and current tranche goal. Look for:
+A reviewer challenges only the submitted exact head and current tranche goal. Before reaching a verdict, the reviewer must independently inventory `docs/expert/*.md`, determine whether the PR overlaps any still-applicable report, read each relevant report, and verify the PR's **Expert advisory** block.
+
+If a relevant current report is omitted, unread, materially misclassified, or departed from without evidence, the review result is `CHANGES REQUIRED`. This check applies even if the implementation is otherwise correct.
+
+Then look for:
 
 - correctness defects;
 - accidental scope growth;
@@ -259,7 +285,8 @@ A reviewer challenges only the submitted exact head and current tranche goal. Lo
 - unstable Grist identifiers or guessed normalization;
 - contract/documentation drift;
 - licensing/provenance errors;
-- test-platform growth disguised as product work.
+- test-platform growth disguised as product work;
+- unaddressed constraints or risks identified by an applicable Expert report.
 
 Durable result:
 
@@ -306,12 +333,13 @@ No predeclared feature backlog follows R6. Real usage may justify a future finit
 ## Controller protocol
 
 1. Resolve exact `main` and read `AGENTS.md`, `docs/PRODUCT_VISION.md`, `docs/ROADMAP.md`.
-2. Reconstruct current PR/branch state and retire superseded work.
-3. Select the highest-value committed item in the active R tranche.
-4. Perform the bounded external-reference review first.
-5. Implement the smallest coherent change on a short branch.
-6. Run baseline CI; add only focused construction-time tests when needed.
-7. Open/update the PR with provenance, scope, what was deliberately not built, and review-gate classification.
-8. Leave authored review-required heads for independent review, then continue any genuinely non-overlapping eligible work.
-9. Never request a human implementation decision while useful committed work can progress by simplification or deferral. At an explicit roadmap product-direction checkpoint, however, present the requested decision-support report and stop rather than substituting an autonomous product-priority judgment.
-10. Stop when no committed useful work remains. Deferred public-distribution actions are not committed work and must not be revived autonomously.
+2. Inventory `docs/expert/*.md`; read every materially relevant still-applicable report and classify applicability from its scope/staleness triggers.
+3. Reconstruct current PR/branch state and retire superseded work.
+4. Select the highest-value committed item in the active R tranche.
+5. Perform the bounded external-reference review first.
+6. Implement the smallest coherent change on a short branch.
+7. Run baseline CI; add only focused construction-time tests when needed.
+8. Open/update the PR with provenance, scope, what was deliberately not built, review-gate classification, and the G4 **Expert advisory** block when review is required.
+9. Leave authored review-required heads for independent review. An independent reviewer must repeat the Expert-report relevance check before PASS. Then continue any genuinely non-overlapping eligible work.
+10. Never request a human implementation decision while useful committed work can progress by simplification or deferral. At an explicit roadmap product-direction checkpoint, however, present the requested decision-support report and stop rather than substituting an autonomous product-priority judgment.
+11. Stop when no committed useful work remains. Deferred public-distribution actions are not committed work and must not be revived autonomously.
