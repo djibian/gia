@@ -2,7 +2,7 @@
 
 ## Status
 
-This document describes the **MCP v2 product** after R4 validation, R5 production hardening and the currently integrated R6 targeted-adoption work. Public-directory distribution is optional and currently deferred; retained R5-F material is historical preparation unless explicitly reactivated by a future human product decision.
+This document describes the **MCP v2 product** after R4 validation, R5 production hardening and completion of the seven finite R6 targeted-adoption capabilities. Gia 0.7.0 is the corresponding post-R6 release candidate. Public-directory distribution is optional and currently deferred; retained R5-F material is historical preparation unless explicitly reactivated by a future human product decision.
 
 `docs/ROADMAP.md` remains authoritative for tranche eligibility. Historical architecture and milestone documents remain evidence only.
 
@@ -140,6 +140,8 @@ Compact inspection preferentially includes:
 
 Business rows are read only through bounded query operations. Unresolvable private Grist metadata is reported as incomplete rather than guessed.
 
+For MCP v2 compatibility, a small inherited set of raw UI read projections (for example existing `layoutSpec`/option fields) is retained alongside normalized semantics. Those compatibility fields are not accepted as the R6 mutation contract and may contain private Grist metadata refs. New capabilities must not expand this raw surface; removing it requires an explicitly reviewed incompatible MCP contract major change.
+
 ## Mutation architecture
 
 Mutations are ordinary bounded semantic operations, not persisted Builder plans.
@@ -172,7 +174,7 @@ The retained J0/J1 semantic rules are direct operation invariants:
 - preserve confirmed completed targets/results;
 - distinguish proven no-effect from uncertain effect;
 - never blindly replay an uncertain non-idempotent write;
-- expose compact information for the agent's next safe decision.
+- expose compact information for the agent's next safe decision, including known created IDs and explicit `APPLIED`/ `UNCERTAIN` effect knowledge when postcondition verification fails.
 
 The retired generalized J1 journal/coordinator is not part of the active candidate.
 
@@ -191,7 +193,7 @@ Effective bridge authority is bounded by the selected upstream Grist credential,
 Two R6-selected directions refine this boundary without adding a new public OAuth scope:
 
 - **application-level access rules (C1)** may change the document's own native policy only through a bounded semantic adapter, with local `doc.schema:write` plus the upstream Grist authority required by Grist itself. This is distinct from user/group/org/share/service-account administration and must never substitute for native Owner enforcement;
-- **document creation/copy-as-template (C8)** authorizes the destination workspace explicitly through both the deployment workspace ceiling and one matching principal workspace grant with `doc.schema:write`; template copy additionally requires separate source `doc:read` while Grist's native copy authorization remains authoritative. Access to an existing document does not imply authority to create in its parent workspace, and a newly returned document ID does not widen the bridge allowlist. Creation is non-idempotent: known created IDs are retained for postcondition failures, uncertain outcomes are not replayed by name, and principal-local discovery is invalidated after every attempt.
+- **document creation/copy-as-template (C8)** authorizes the destination workspace explicitly through both the deployment workspace ceiling and one matching principal workspace grant with `doc.schema:write`; template copy additionally requires separate source `doc:read` while Grist's native copy authorization remains authoritative. Access to an existing document does not imply authority to create in its parent workspace, and a newly returned document ID does not widen the bridge allowlist. The tool's baseline OAuth scheme remains `doc.schema:write`, while Gia publishes and challenges the additional `doc:read` requirement specifically for `copy_document_as_template`. Creation is non-idempotent: known created IDs are retained for postcondition failures, uncertain outcomes are not replayed by name, and principal-local discovery is invalidated after every attempt.
 
 Static bearer mode plus static Grist credential mode is the minimum controlled deployment. Provider-neutral OAuth/JWKS plus `principal-map` credentials is the production multi-principal path. Service-account creation/grants/expiry/rotation/revocation and generic sharing administration remain operator-side Grist administration, not model-facing product operations.
 
