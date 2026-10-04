@@ -132,8 +132,19 @@ export function normalizeCardLayout(
 
     if (hasLeaf) {
       const fieldId = positiveInteger(node.leaf);
-      const columnId = fieldId ? byFieldId.get(fieldId) : undefined;
-      if (!columnId || placedColumnIds.has(columnId)) {
+      if (!fieldId) {
+        incomplete = true;
+        return undefined;
+      }
+      const columnId = byFieldId.get(fieldId);
+      if (!columnId) {
+        // Grist does not rewrite persisted Card layoutSpec when a view field
+        // is removed. A positive leaf that no longer resolves is therefore a
+        // supported stale native leaf: omit it from the normalized view
+        // without treating the whole layout as malformed.
+        return undefined;
+      }
+      if (placedColumnIds.has(columnId)) {
         incomplete = true;
         return undefined;
       }
@@ -152,12 +163,11 @@ export function normalizeCardLayout(
     const children: NormalizedCardLayoutNode[] = [];
     for (const child of node.children) {
       const normalized = walk(child, depth + 1);
-      if (!normalized) {
-        incomplete = true;
-        return undefined;
-      }
-      children.push(normalized);
+      if (normalized) children.push(normalized);
+      if (incomplete) return undefined;
     }
+    // A group may become empty after pruning only stale native leaves.
+    if (children.length === 0) return undefined;
     return {
       kind: "group",
       children,
@@ -166,13 +176,13 @@ export function normalizeCardLayout(
   };
 
   const root = walk(layoutSpec, 0);
-  if (incomplete || !root) {
+  if (incomplete) {
     return { cardLayoutNormalizationIncomplete: true };
   }
 
   return {
     cardLayout: {
-      root,
+      ...(root ? { root } : {}),
       unplacedColumnIds: fields
         .filter((field) => !placedColumnIds.has(field.columnId))
         .map((field) => field.columnId)
