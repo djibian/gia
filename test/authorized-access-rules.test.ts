@@ -44,6 +44,7 @@ function harness(options: { applyWrite?: boolean } = {}) {
   let nextResourceId = 2;
   let nextRuleId = 20;
   const capabilities: Array<GristCapability | null> = [];
+  const ownerChecks: string[] = [];
   const writes: AccessRuleMutationPlan[] = [];
 
   const inner = {
@@ -51,6 +52,9 @@ function harness(options: { applyWrite?: boolean } = {}) {
     maxWriteRecords: 500,
     writeBatchRecords: 200,
     maxSchemaItems: 100,
+    assertDocumentOwner: async (documentId: string) => {
+      ownerChecks.push(documentId);
+    },
     queryRecords: async (_documentId: string, tableId: string) => {
       if (tableId === "_grist_ACLResources") return { records: resources };
       if (tableId === "_grist_ACLRules") return { records: rules };
@@ -133,15 +137,17 @@ function harness(options: { applyWrite?: boolean } = {}) {
       uiActions
     ),
     capabilities,
+    ownerChecks,
     writes
   };
 }
 
 test("ACL inspection uses doc:read and redacts protected persisted content", async () => {
-  const { service, capabilities } = harness();
+  const { service, capabilities, ownerChecks } = harness();
   const result = await service.inspectAccessRules("doc-1") as any;
 
   assert.equal(capabilities.at(-1), "doc:read");
+  assert.deepEqual(ownerChecks, ["doc-1"]);
   assert.equal(result.documentId, "doc-1");
   assert.equal(result.protectedPersistedGroupCount, 1);
   assert.deepEqual(result.groups, []);
@@ -150,7 +156,7 @@ test("ACL inspection uses doc:read and redacts protected persisted content", asy
 });
 
 test("ACL mutation requires doc.schema:write and verifies exact persisted target state", async () => {
-  const { service, capabilities, writes } = harness();
+  const { service, capabilities, ownerChecks, writes } = harness();
   const result = await service.changeAccessRuleGroup(
     "doc-1",
     { tableId: "Projects", columnIds: ["OwnerEmail"] },
@@ -173,6 +179,7 @@ test("ACL mutation requires doc.schema:write and verifies exact persisted target
   ) as any;
 
   assert.equal(capabilities.at(-1), "doc.schema:write");
+  assert.deepEqual(ownerChecks, ["doc-1"]);
   assert.equal(writes.length, 1);
   assert.deepEqual(result, {
     documentId: "doc-1",
@@ -214,4 +221,42 @@ test("ACL post-write divergence becomes explicit non-blind-retry uncertainty", a
     }
   );
   assert.equal(writes.length, 1);
+});
+
+
+test("ACL inspection fails before metadata reads when native owner proof is absent", async () => {
+  let metadataReads = 0;
+  const inner = {
+    maxReadRecords: 5000,
+    maxWriteRecords: 500,
+    writeBatchRecords: 200,
+    maxSchemaItems: 100,
+    assertDocumentOwner: async () => {
+      throw new Error("Grist document owner access is required");
+    },
+    queryRecords: async () => {
+      metadataReads += 1;
+      return { records: [] };
+    }
+  } as unknown as GristService;
+  const authorization = {
+    assertDocumentAllowed: async (_principal: Principal, documentId: string) => documentId
+  } as unknown as AuthorizationService;
+  const audit = {
+    nextRequestId: () => "request-acl-owner-denied",
+    record: () => undefined
+  } as unknown as AuditLogger;
+  const service = new AuthorizedGristService(
+    inner,
+    authorization,
+    audit,
+    principal,
+    {} as GristUiActionsAdapter
+  );
+
+  await assert.rejects(
+    () => service.inspectAccessRules("doc-1"),
+    /owner access is required/i
+  );
+  assert.equal(metadataReads, 0);
 });
