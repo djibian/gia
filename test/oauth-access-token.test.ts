@@ -79,6 +79,32 @@ test("rejects expired or invalid expiry claims", () => {
   );
 });
 
+
+test("enforces an optional not-before claim when present", () => {
+  assert.equal(
+    validateVerifiedAccessTokenClaims(
+      { ...VALID, notBefore: 900 },
+      POLICY,
+      1_000
+    ).subject,
+    "logto-user-123"
+  );
+  rejectsWith("not_yet_valid", () =>
+    validateVerifiedAccessTokenClaims(
+      { ...VALID, notBefore: 1_001 },
+      POLICY,
+      1_000
+    )
+  );
+  rejectsWith("invalid_not_before", () =>
+    validateVerifiedAccessTokenClaims(
+      { ...VALID, notBefore: Number.NaN },
+      POLICY,
+      1_000
+    )
+  );
+});
+
 test("creates a scoped dynamic principal only after resource-server claims pass", () => {
   const principal = createPrincipalFromVerifiedAccessToken(
     VALID,
