@@ -107,12 +107,14 @@ function existingWidgetFields(
     const fieldId = positiveInteger(item?.id);
     const columnRef = positiveInteger(itemFields?.colRef);
     const parentPos = finiteNumber(itemFields?.parentPos);
-    const width = nonNegativeInteger(itemFields?.width) ?? 0;
+    const rawWidth = itemFields?.width;
+    const width = rawWidth === undefined ? 0 : nonNegativeInteger(rawWidth);
     const columnId = columnRef ? maps.byRef.get(columnRef) : undefined;
     if (
       !fieldId ||
       !columnRef ||
       parentPos === undefined ||
+      width === undefined ||
       !columnId ||
       seenColumnIds.has(columnId) ||
       seenFieldIds.has(fieldId)
