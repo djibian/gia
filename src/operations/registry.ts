@@ -281,6 +281,18 @@ export const OPERATION_REGISTRY: readonly OperationDefinition[] = [
       "Rename exactly one existing Grist page and verify the requested name by re-reading the document UI."
   },
   {
+    name: "reorder_pages",
+    category: "ui",
+    capability: "doc.schema:write",
+    readOnly: false,
+    destructive: true,
+    openWorld: false,
+    title: "Reorder document pages",
+    summary: "Reorder the current visible Grist pages without changing their hierarchy.",
+    description:
+      "Replace the current visible navigation order with one complete list of stable page IDs. Every visible page must appear exactly once. Gia preserves untargeted page-position slots, refuses any permutation that would reparent a page or change visibility, writes only resolved native page positions, and verifies the complete normalized navigation state after re-read."
+  },
+  {
     name: "update_page_layout",
     category: "ui",
     capability: "doc.schema:write",
