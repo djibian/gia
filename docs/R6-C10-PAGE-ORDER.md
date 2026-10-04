@@ -1,6 +1,6 @@
 # R6 C10 — Page navigation ordering
 
-Status: implementation candidate for R6.3 C10.
+Status: **integrated in R6.3 C10**. The current inspection contract also exposes the exact eligible navigation set as `navigationPageIds`.
 
 ## Product boundary
 
@@ -32,7 +32,7 @@ The public C10 input is a complete ordered array of positive stable page IDs:
 pageIds: [pageId, ...]
 ```
 
-The list must contain every currently navigable page exactly once. Private `_grist_Pages` record IDs and raw `pagePos` values remain bridge-internal.
+The list must contain every currently navigable page exactly once. `grist_inspect(action="document")` and `grist_inspect(action="pages")` return `navigationPageIds`, the exact stable page-ID set accepted by this complete-list intention. Private `_grist_Pages` record IDs and raw `pagePos` values are never C10 mutation inputs; legacy MCP v2 detailed read projections may still contain raw compatibility metadata outside this normalized C10 contract.
 
 Gia conservatively treats censored/empty-name pages, `GristDocTour`, `GristDocTutorial` and pages backed by `GristHidden_*` primary tables as non-targetable. This deliberately avoids importing client-only flags that can temporarily expose Grist's special pages.
 
@@ -70,8 +70,8 @@ A divergent or unreadable post-state becomes the existing non-blind-retry `UiWri
 
 C10 does not expose:
 
-- raw `_grist_Pages` record IDs;
-- raw `pagePos` values;
+- raw `_grist_Pages` record IDs as mutation inputs;
+- raw `pagePos` values as mutation inputs;
 - `indentation` mutation;
 - arbitrary tree moves/reparenting;
 - page visibility/collapse settings;
