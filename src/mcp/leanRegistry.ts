@@ -39,7 +39,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: false,
     title: "Discover Grist resources",
     description:
-      "Discover available documents, tables or columns using stable semantic identifiers. One invocation performs one read-only discovery action."
+      "Discover explicitly allowed workspaces, documents, tables or columns using stable semantic identifiers. Workspace discovery includes empty deployment-allowed workspaces for which the principal has a workspace doc:read grant; creation authority is checked separately. One invocation performs one read-only discovery action."
   },
   {
     name: "grist_inspect",
@@ -89,7 +89,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: false,
     title: "Add Grist structure",
     description:
-      "Create bounded tables or columns using stable semantic identifiers and Grist-native schema fields. Exactly one creation action is performed per invocation."
+      "Create one empty document in an explicitly authorized workspace, copy one separately authorized source as a native data-free template, or create bounded tables/columns. Document bootstrap requires destination workspace doc.schema:write; template copy additionally requires source doc:read and always uses asTemplate=true. Exactly one creation action is performed per invocation."
   },
   {
     name: "grist_change_structure",
