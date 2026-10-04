@@ -1,6 +1,6 @@
 # C5 credential lifecycle: human decision package
 
-Status: awaiting human decision; no storage or encryption design is selected.
+Status: **HISTORICAL ONLY — superseded by the completed R5 principal-map/service-account credential model. No human gate in this document remains active.** See `docs/CREDENTIALS.md` and `docs/SECURITY.md` for the current boundary.
 
 This package records the minimum decisions required by `AGENTS.md` and C5 in
 `ROADMAP.md`. C4 productionization can continue independently. The existing
