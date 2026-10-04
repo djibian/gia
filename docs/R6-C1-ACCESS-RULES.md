@@ -11,7 +11,7 @@ The model-facing surface remains Gia MCP v2 with ten tools:
 - `grist_inspect(action="access_rules")` inspects a normalized, data-minimized view;
 - `grist_change_structure(action="access_rule_group")` creates, replaces or deletes exactly one ordinary table/column rule group.
 
-The write operation requires Gia's local `doc.schema:write` capability. Grist's own upstream Owner check remains authoritative; Gia never upgrades its principal or swaps credentials after a denial.
+Inspection uses Gia's local `doc:read` capability and mutation uses local `doc.schema:write`, but **both** require a fresh native Grist document metadata read proving `access === "owners"` before ACL metadata is read. Grist's own upstream Owner check remains authoritative; Gia never upgrades its principal or swaps credentials after a denial.
 
 ## Upstream provenance checked before implementation
 
@@ -26,7 +26,7 @@ Checked 2026-10-04 against exact current `gristlabs/grist-core` main:
 - `app/server/lib/GranularAccess.ts`: native authority/enforcement path for deliberate ACL changes;
 - `sandbox/grist/schema.py` / `app/common/schema.ts`: persisted `_grist_ACLResources` and `_grist_ACLRules` shape.
 
-The Expert advisory `docs/expert/2026-10-04-r6-acl-document-boundaries-f0da0c8.md` was also consulted and remains CURRENT for C1. C1 follows its central constraints: local `doc.schema:write` is necessary but not sufficient, native Grist Owner enforcement remains mandatory, private row refs never become public identifiers, untargeted policy is preserved, opaque/sensitive policy is not normalized into writable model content, and post-write verification is explicitly limited to persisted definitions.
+The Expert advisory `docs/expert/2026-10-04-r6-acl-document-boundaries-f0da0c8.md` was also consulted and remains CURRENT for C1. C1 follows its central constraints: local capabilities are necessary but not sufficient, a fresh native Grist Owner proof is mandatory before ACL metadata access, private row refs never become public identifiers, untargeted policy is preserved, opaque/sensitive policy is not normalized into writable model content, and post-write verification is explicitly limited to persisted definitions.
 
 ## Supported normalized subset
 
