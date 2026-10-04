@@ -217,3 +217,32 @@ test("authorized widget-field update fails closed when the write does not reach 
 
   assert.equal(writes.length, 1);
 });
+
+
+test("authorized widget-field update can clear all visible fields and verifies the empty state", async () => {
+  const { service, writes, currentSectionFields } = harness();
+
+  const result = await service.updatePageWidget("doc-1", 7, 21, {
+    visibleFields: []
+  }) as {
+    widget: {
+      visibleFields?: Array<{ columnId: string; width?: number }>;
+      visibleFieldsNormalizationIncomplete?: boolean;
+    };
+  };
+
+  assert.deepEqual(result.widget.visibleFields, []);
+  assert.equal(result.widget.visibleFieldsNormalizationIncomplete, undefined);
+  assert.equal(writes.length, 1);
+
+  const plan = (writes[0] as {
+    update: { visibleFields: WidgetFieldMutationPlan };
+  }).update.visibleFields;
+  assert.deepEqual(plan.expected, []);
+  assert.deepEqual(plan.removeFieldIds, [101, 102]);
+  assert.deepEqual(plan.add, []);
+  assert.deepEqual(
+    currentSectionFields().filter((field) => field.fields.parentId === 21),
+    []
+  );
+});
