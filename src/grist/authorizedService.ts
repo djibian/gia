@@ -161,6 +161,18 @@ function exposeUiSnapshotCompleteness(
   };
 }
 
+export class DocumentBootstrapVerificationError extends Error {
+  constructor(
+    public readonly createdDocumentId: string,
+    message: string
+  ) {
+    super(
+      `Grist created document "${createdDocumentId}", but Gia could not verify that it is currently authorized in the requested destination workspace: ${message} Do not retry the creation by name and do not delete a guessed document automatically.`
+    );
+    this.name = "DocumentBootstrapVerificationError";
+  }
+}
+
 export class AuthorizedGristService {
   private readonly documentContext = new DocumentContextService();
   private readonly documentUi = new DocumentUiService();
@@ -187,6 +199,45 @@ export class AuthorizedGristService {
 
   get maxSchemaItems(): number {
     return this.inner.maxSchemaItems;
+  }
+
+  async listWorkspaces(): Promise<unknown> {
+    const definition = getOperation("list_workspaces");
+    const capability = getRequiredCapability(definition.name);
+    const requestId = this.audit.nextRequestId();
+    const started = Date.now();
+    try {
+      const workspaces = (
+        await this.authorization.listWorkspaces(this.principal, capability)
+      ).map(({ org, workspace }) => ({
+        org: { id: org.id, name: org.name, domain: org.domain },
+        workspace: {
+          id: workspace.id,
+          name: workspace.name,
+          access: workspace.access
+        }
+      }));
+      this.audit.record({
+        requestId,
+        principal: this.principal.id,
+        transport: this.principal.transport,
+        operation: definition.name,
+        capability,
+        status: "success",
+        durationMs: Date.now() - started
+      });
+      return { workspaces };
+    } catch (error) {
+      this.auditFailure(
+        requestId,
+        started,
+        definition.name,
+        capability,
+        undefined,
+        error
+      );
+      throw error;
+    }
   }
 
   async listDocuments(): Promise<unknown> {
@@ -958,6 +1009,128 @@ export class AuthorizedGristService {
     });
   }
 
+  async createDocument(
+    workspaceId: number,
+    name: string
+  ): Promise<unknown> {
+    const definition = getOperation("create_document");
+    const capability = getRequiredCapability(definition.name);
+    const requestId = this.audit.nextRequestId();
+    const started = Date.now();
+    let createdDocumentId: string | undefined;
+    try {
+      await this.authorization.assertWorkspaceAllowed(
+        this.principal,
+        workspaceId,
+        capability
+      );
+      createdDocumentId = await this.inner.createDocument(workspaceId, name);
+      await this.verifyCreatedDocumentWorkspace(
+        createdDocumentId,
+        workspaceId,
+        capability
+      );
+      this.audit.record({
+        requestId,
+        principal: this.principal.id,
+        transport: this.principal.transport,
+        operation: definition.name,
+        capability,
+        documentId: createdDocumentId,
+        itemCount: 1,
+        status: "success",
+        durationMs: Date.now() - started
+      });
+      return {
+        documentId: createdDocumentId,
+        workspaceId,
+        created: true,
+        bootstrap: "empty",
+        destinationMembershipVerified: true,
+        creatorOwnershipIsNativeGristBehavior: true
+      };
+    } catch (error) {
+      this.auditFailure(
+        requestId,
+        started,
+        definition.name,
+        capability,
+        createdDocumentId,
+        error,
+        1
+      );
+      throw error;
+    }
+  }
+
+  async copyDocumentAsTemplate(
+    sourceDocumentIdOrUrl: string,
+    workspaceId: number,
+    name: string
+  ): Promise<unknown> {
+    const definition = getOperation("copy_document_as_template");
+    const capability = getRequiredCapability(definition.name);
+    const requestId = this.audit.nextRequestId();
+    const started = Date.now();
+    let sourceDocumentId = sourceDocumentIdOrUrl;
+    let createdDocumentId: string | undefined;
+    try {
+      await this.authorization.assertWorkspaceAllowed(
+        this.principal,
+        workspaceId,
+        capability
+      );
+      sourceDocumentId = await this.authorization.assertDocumentAllowed(
+        this.principal,
+        sourceDocumentIdOrUrl,
+        "doc:read"
+      );
+      createdDocumentId = await this.inner.copyDocumentAsTemplate(
+        sourceDocumentId,
+        workspaceId,
+        name
+      );
+      await this.verifyCreatedDocumentWorkspace(
+        createdDocumentId,
+        workspaceId,
+        capability
+      );
+      this.audit.record({
+        requestId,
+        principal: this.principal.id,
+        transport: this.principal.transport,
+        operation: definition.name,
+        capability,
+        documentId: createdDocumentId,
+        itemCount: 1,
+        status: "success",
+        durationMs: Date.now() - started
+      });
+      return {
+        documentId: createdDocumentId,
+        sourceDocumentId,
+        workspaceId,
+        created: true,
+        bootstrap: "template_copy",
+        asTemplate: true,
+        destinationMembershipVerified: true,
+        creatorOwnershipIsNativeGristBehavior: true,
+        nativeCopyAuthorizationVerifiedByGrist: true
+      };
+    } catch (error) {
+      this.auditFailure(
+        requestId,
+        started,
+        definition.name,
+        capability,
+        createdDocumentId,
+        error,
+        1
+      );
+      throw error;
+    }
+  }
+
   async createTables(
     documentIdOrUrl: string,
     tables: GristTableSpec[]
@@ -1222,6 +1395,40 @@ export class AuthorizedGristService {
       context.metadataSnapshotIncomplete = true;
     }
     return context;
+  }
+
+  private async verifyCreatedDocumentWorkspace(
+    documentId: string,
+    workspaceId: number,
+    capability: GristCapability
+  ): Promise<void> {
+    try {
+      const documents = await this.authorization.listDocuments(
+        this.principal,
+        capability
+      );
+      const match = documents.find(({ document }) => {
+        const candidates = [String(document.id)];
+        if (document.urlId) candidates.push(document.urlId);
+        return candidates.includes(documentId);
+      });
+      if (!match) {
+        throw new Error("the created document is not present in current authorized discovery");
+      }
+      if (String(match.workspace.id) !== String(workspaceId)) {
+        throw new Error(
+          `the created document resolved to workspace "${String(match.workspace.id)}" instead of "${String(workspaceId)}"`
+        );
+      }
+    } catch (error) {
+      if (error instanceof DocumentBootstrapVerificationError) throw error;
+      throw new DocumentBootstrapVerificationError(
+        documentId,
+        error instanceof Error
+          ? error.message
+          : "post-create destination membership could not be re-read"
+      );
+    }
   }
 
   private async execute(
