@@ -2,7 +2,7 @@
 
 ## Status
 
-This document describes the **MCP v2 product** after R4 validation and completion of R5 production hardening. Public-directory distribution is optional and currently deferred; retained R5-F material is historical preparation unless explicitly reactivated by a future human product decision.
+This document describes the **MCP v2 product** after R4 validation, R5 production hardening and the currently integrated R6 targeted-adoption work. Public-directory distribution is optional and currently deferred; retained R5-F material is historical preparation unless explicitly reactivated by a future human product decision.
 
 `docs/ROADMAP.md` remains authoritative for tranche eligibility. Historical architecture and milestone documents remain evidence only.
 
@@ -46,7 +46,7 @@ Owns:
 - discovery of allowed Grist resources;
 - compact semantic context;
 - stable semantic inputs/outputs;
-- bounded data/schema/UI intentions;
+- bounded data/schema/UI intentions and, when explicitly selected by the Roadmap, bounded application-policy intentions;
 - translation between public identifiers and private Grist references;
 - input/output bounds;
 - principal/resource/capability enforcement;
@@ -188,7 +188,12 @@ doc.schema:write
 
 Effective bridge authority is bounded by the selected upstream Grist credential, deployment document/workspace ceiling, principal grants and required capability. The bridge may reduce upstream authority but cannot elevate it.
 
-Static bearer mode plus static Grist credential mode is the minimum controlled deployment. Provider-neutral OAuth/JWKS plus `principal-map` credentials is the production multi-principal path. Service-account creation/grants/expiry/rotation/revocation remain operator-side Grist administration, not model-facing product operations.
+Two R6-selected directions refine this boundary without adding a new public OAuth scope:
+
+- **application-level access rules (C1)** may change the document's own native policy only through a bounded semantic adapter, with local `doc.schema:write` plus the upstream Grist authority required by Grist itself. This is distinct from user/group/org/share/service-account administration and must never substitute for native Owner enforcement;
+- **document creation/copy-as-template (C8)** must authorize the destination workspace explicitly through both the deployment workspace ceiling and the same principal's workspace grant. Access to an existing document does not imply authority to create in its parent workspace, and a newly returned document ID does not widen the bridge allowlist.
+
+Static bearer mode plus static Grist credential mode is the minimum controlled deployment. Provider-neutral OAuth/JWKS plus `principal-map` credentials is the production multi-principal path. Service-account creation/grants/expiry/rotation/revocation and generic sharing administration remain operator-side Grist administration, not model-facing product operations.
 
 ## Deliberate exclusions
 
@@ -202,7 +207,7 @@ The R3 candidate excludes:
 - generated custom-widget platform;
 - lifecycle scheduler/monitor;
 - generic webhooks/integrations;
-- generic ACL/user/org/service-account administration;
+- generic user/group/org/share/service-account administration;
 - raw SQL model surface;
 - arbitrary `/apply`, UserAction or HTTP escape hatches;
 - GPT Actions/OpenAPI duplicate public transport;
