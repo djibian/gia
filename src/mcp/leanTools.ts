@@ -458,12 +458,14 @@ export function registerLeanTools(
     id: tableIdSchema,
     fields: tableMutationFieldsSchema
   });
+  const documentNameSchema = z.string().trim().min(1).max(200);
 
   server.registerTool(
     "grist_discover",
     {
       ...getLeanToolMetadata("grist_discover"),
       inputSchema: z.discriminatedUnion("action", [
+        z.object({ action: z.literal("workspaces") }).strict(),
         z.object({ action: z.literal("documents") }).strict(),
         z
           .object({
@@ -485,6 +487,8 @@ export function registerLeanTools(
     async (input) => {
       try {
         switch (input.action) {
+          case "workspaces":
+            return textResult(await grist.listWorkspaces());
           case "documents":
             return textResult(await grist.listDocuments());
           case "tables":
@@ -679,6 +683,21 @@ export function registerLeanTools(
       inputSchema: z.discriminatedUnion("action", [
         z
           .object({
+            action: z.literal("create_document"),
+            workspaceId: positiveIdSchema,
+            name: documentNameSchema
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal("copy_document_as_template"),
+            sourceDocumentId: documentIdSchema,
+            workspaceId: positiveIdSchema,
+            name: documentNameSchema
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("create_tables"),
             documentId: documentIdSchema,
             tables: boundedArray(tableSpecSchema, limits.maxSchemaItems)
@@ -697,6 +716,18 @@ export function registerLeanTools(
     async (input) => {
       try {
         switch (input.action) {
+          case "create_document":
+            return textResult(
+              await grist.createDocument(input.workspaceId, input.name)
+            );
+          case "copy_document_as_template":
+            return textResult(
+              await grist.copyDocumentAsTemplate(
+                input.sourceDocumentId,
+                input.workspaceId,
+                input.name
+              )
+            );
           case "create_tables":
             return textResult(
               await grist.createTables(input.documentId, input.tables)
