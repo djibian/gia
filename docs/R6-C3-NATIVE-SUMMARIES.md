@@ -70,16 +70,13 @@ summary construction.
 
 ## Verification and authority
 
-After `CreateViewSection`, Gia re-reads expanded table metadata and the page.
-It verifies all of the following before returning success:
+Native `CreateViewSection` returns the **source** `tableRef` even when it creates or reuses a distinct summary table. Gia therefore treats `sectionRef` as the created widget identity, verifies that the returned `tableRef` still matches the requested source, then re-reads the section and expanded table metadata. It verifies all of the following before returning success:
 
-1. the returned widget exists on the requested page and targets the returned
-   table ref;
-2. the returned table is distinct from the source and identifies that source
-   through native `summarySourceTable`;
-3. its native group-by columns point through `summarySourceCol` to exactly the
-   requested source-column set;
-4. the widget resolves to the same verified generated summary table ID.
+1. the returned widget exists on the requested page;
+2. the re-read widget resolves to a generated/reused table distinct from the source;
+3. that generated table identifies the requested source through native `summarySourceTable`;
+4. its native group-by columns point through `summarySourceCol` to exactly the requested source-column set;
+5. the public `summary.summaryTableId` is the stable ID of that verified re-read generated table.
 
 If the action response or post-write read is incomplete or inconsistent, the
 existing UI ambiguous-write rule applies: the native write may already have
