@@ -209,13 +209,18 @@ test("semantic page inspection still reads raw internal table references", async
 
   const result = (await service.getPages("doc-1")) as {
     pages: Array<{ id: number; name: string; widgetIds: number[] }>;
+    navigationPageIds: number[];
   };
 
   assert.deepEqual(queriedTables, [
     "_grist_Pages",
     "_grist_Views",
-    "_grist_Views_section"
+    "_grist_Views_section",
+    "_grist_Pages",
+    "_grist_Views",
+    "_grist_Tables"
   ]);
+  assert.deepEqual(result.navigationPageIds, [1]);
   assert.deepEqual(result.pages[0], {
     id: 1,
     pageRecordId: 10,
