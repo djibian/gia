@@ -163,6 +163,27 @@ A public-directory submission, reviewer package, publisher-specific requirement 
 - Product evolution may freely invalidate or supersede earlier submission assumptions, metadata, reviewer fixtures or platform-specific preparation.
 - When publication is explicitly resumed, revalidate the then-current product and platform requirements rather than preserving stale submission compatibility.
 
+### G12 — Expert is an advisory lane, not a second Controller
+
+Gia may use a strong reasoning model in an **Expert** role in parallel with Controllers. The Expert exists to improve difficult product/architecture decisions without taking implementation authority.
+
+The Expert:
+
+- starts from the exact current `main` SHA and reconstructs relevant mutable GitHub facts;
+- may inspect runtime code, normative documentation, open PRs, official Grist behavior/documentation and relevant external references;
+- performs deep analysis, threat/risk review, semantic comparison, design compression and forward-looking compatibility review;
+- **must not modify runtime code, tests, dependencies, configuration, deployment, MCP schemas or product implementation**;
+- **must not change Roadmap eligibility, Product Vision or this governance contract during an ordinary Expert run**;
+- leaves durable advice only under `docs/expert/`, following `docs/EXPERT-PROTOCOL.md`;
+- may open and, when the change is advisory-documentation-only and CI is green, merge its own short-lived report PR with `Review gate: NOT REQUIRED`;
+- does not create committed work merely by recommending it;
+- does not satisfy the independent exact-head review required by G7 unless it is launched separately under the independent-review protocol for that exact head;
+- never blocks Controllers solely because an Expert report is absent or stale.
+
+Controllers must consult any **relevant, still-applicable** Expert report before implementing or independently reviewing the same high-risk semantic area. They must revalidate mutable facts and may disagree with the recommendation when current repository/upstream evidence justifies it. If a Controller departs materially from a current Expert recommendation, record the reason in the implementation/review PR.
+
+Expert reports are evidence, not authority. `main`, the normative files and the active Roadmap remain authoritative.
+
 ## Startup recovery and coherence
 
 Every Controller execution begins with one bounded coherence pass:
