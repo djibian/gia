@@ -38,6 +38,13 @@ export interface AccessRulePermissions {
   delete?: AccessPermissionValue | undefined;
 }
 
+export interface ResolvedAccessRulePermissions {
+  read: AccessPermissionValue;
+  update: AccessPermissionValue;
+  create: AccessPermissionValue;
+  delete: AccessPermissionValue;
+}
+
 export interface AccessRuleInput {
   condition: AccessRuleCondition;
   permissions: AccessRulePermissions;
@@ -84,7 +91,7 @@ interface TableInfo {
 
 export interface NormalizedAccessRule {
   condition: AccessRuleCondition;
-  permissions: Required<AccessRulePermissions>;
+  permissions: ResolvedAccessRulePermissions;
 }
 
 interface AccessRuleGroupState {
@@ -281,7 +288,7 @@ function serializeCondition(condition: AccessRuleCondition, table: TableInfo): s
   return `rec.${condition.columnId} ${OP_NATIVE[condition.operator]} user.${condition.userProperty}`;
 }
 
-function emptyPermissions(): Required<AccessRulePermissions> {
+function emptyPermissions(): ResolvedAccessRulePermissions {
   return {
     read: "unspecified",
     update: "unspecified",
@@ -293,7 +300,7 @@ function emptyPermissions(): Required<AccessRulePermissions> {
 function parsePermissions(
   permissionsText: string,
   columnScope: boolean
-): Required<AccessRulePermissions> | undefined {
+): ResolvedAccessRulePermissions | undefined {
   if (!permissionsText || permissionsText === "all" || permissionsText === "none") {
     return undefined;
   }
@@ -326,8 +333,8 @@ function parsePermissions(
 function serializePermissions(
   input: AccessRulePermissions,
   columnScope: boolean
-): { normalized: Required<AccessRulePermissions>; text: string } {
-  const normalized: Required<AccessRulePermissions> = {
+): { normalized: ResolvedAccessRulePermissions; text: string } {
+  const normalized: ResolvedAccessRulePermissions = {
     read: input.read,
     update: input.update,
     create: input.create ?? "unspecified",
