@@ -25,6 +25,10 @@ import {
   normalizeWidgetFields,
   type NormalizedWidgetField
 } from "./widgetFields.js";
+import {
+  normalizeWidgetFilters,
+  type NormalizedWidgetFilter
+} from "./widgetFilters.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -60,6 +64,8 @@ export interface GristPageWidget {
   gridOptionsNormalizationIncomplete?: true;
   visibleFields?: NormalizedWidgetField[];
   visibleFieldsNormalizationIncomplete?: true;
+  filters?: NormalizedWidgetFilter[];
+  filtersNormalizationIncomplete?: true;
 }
 
 export interface GristPage {
@@ -153,7 +159,8 @@ export class DocumentUiService {
     pagesResponse: unknown,
     viewsResponse: unknown,
     sectionsResponse: unknown,
-    sectionFieldsResponse?: unknown
+    sectionFieldsResponse?: unknown,
+    filtersResponse?: unknown
   ): DocumentUiContext {
     const tableIds = tableRefMap(tableResponse);
     const views = new Map(records(viewsResponse).map((view) => [view.id, view]));
@@ -212,6 +219,12 @@ export class DocumentUiService {
         Object.assign(
           widget,
           normalizeWidgetFields(widget, tableResponse, sectionFieldsResponse)
+        );
+      }
+      if (filtersResponse !== undefined && hasExpandedColumns(tableResponse)) {
+        Object.assign(
+          widget,
+          normalizeWidgetFilters(widget, tableResponse, filtersResponse)
         );
       }
 

@@ -165,7 +165,17 @@ test("structure and UI managers preserve stable semantic identifiers at their bo
     documentId: "doc-1",
     pageId: 3,
     widgetId: 9,
-    update: { title: "Open tasks" }
+    update: {
+      title: "Open tasks",
+      filters: [
+        {
+          columnId: "Status",
+          mode: "include",
+          values: ["Open"],
+          pinned: true
+        }
+      ]
+    }
   });
 
   assert.deepEqual(observed, [
@@ -181,7 +191,17 @@ test("structure and UI managers preserve stable semantic identifiers at their bo
       documentId: "doc-1",
       pageId: 3,
       widgetId: 9,
-      update: { title: "Open tasks" }
+      update: {
+        title: "Open tasks",
+        filters: [
+          {
+            columnId: "Status",
+            mode: "include",
+            values: ["Open"],
+            pinned: true
+          }
+        ]
+      }
     }
   ]);
 });
