@@ -171,7 +171,7 @@ export async function callTool(baseUrl: string, name: string, args: Record<strin
         arguments: args,
         _meta: {
           "io.modelcontextprotocol/protocolVersion": R4_PROTOCOL_VERSION,
-          "io.modelcontextprotocol/clientInfo": { name: "grist-chatgpt-r4-apps", version: "1.0.0" },
+          "io.modelcontextprotocol/clientInfo": { name: "gia-r4-apps", version: "1.0.0" },
           "io.modelcontextprotocol/clientCapabilities": {}
         }
       }
