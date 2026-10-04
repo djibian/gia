@@ -81,6 +81,27 @@ test("unknown, duplicate and malformed leaves are never exposed", () => {
   assert.equal(serialized.includes('"202"'), false);
 });
 
+test("unknown native BoxSpec keys mark normalization incomplete instead of being silently accepted", () => {
+  const rootUnknown = normalizePageLayout(
+    { children: [{ leaf: 1 }], mystery: true },
+    [1]
+  );
+  assert.equal(rootUnknown.layoutNormalizationIncomplete, true);
+  assert.equal(rootUnknown.layoutNormalized?.root?.kind, "group");
+
+  const nestedUnknown = normalizePageLayout(
+    { children: [{ leaf: 1, mystery: true }] },
+    [1]
+  );
+  assert.equal(nestedUnknown.layoutNormalizationIncomplete, true);
+
+  const collapsedUnknown = normalizePageLayout(
+    { leaf: 1, collapsed: [{ leaf: 2, mystery: true }] },
+    [1, 2]
+  );
+  assert.equal(collapsedUnknown.layoutNormalizationIncomplete, true);
+});
+
 test("invalid layout shape is explicit and still reports known unplaced widgets", () => {
   assert.deepEqual(normalizePageLayout("not-json", [3, 1, 2]), {
     layoutNormalized: {
