@@ -280,6 +280,14 @@ export function normalizePageLayout(
     const hasLeaf = node.leaf !== undefined;
     const hasChildrenProperty = node.children !== undefined;
     const children = Array.isArray(node.children) ? node.children : undefined;
+    const allowedKeys = new Set([
+      ...(hasLeaf ? ["leaf"] : ["children"]),
+      "size",
+      ...(isRoot ? ["collapsed"] : [])
+    ]);
+    if (Object.keys(node).some((key) => !allowedKeys.has(key))) {
+      incomplete = true;
+    }
 
     if (hasLeaf === hasChildrenProperty) {
       incomplete = true;
@@ -346,10 +354,14 @@ export function normalizePageLayout(
         }
         const entry = record(collapsed[index]);
         const widgetId = positiveInteger(entry?.leaf);
+        const hasUnknownCollapsedKey =
+          entry !== null &&
+          Object.keys(entry).some((key) => !["leaf", "size"].includes(key));
         if (
           !entry ||
           widgetId === undefined ||
           !knownWidgetIds.has(widgetId) ||
+          hasUnknownCollapsedKey ||
           entry.children !== undefined ||
           entry.collapsed !== undefined ||
           placedWidgetIds.has(widgetId) ||
