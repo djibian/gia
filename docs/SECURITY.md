@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the security boundary for the MCP v2 product after completion of R5 production hardening and all seven bounded R6 targeted-adoption capabilities. Gia 0.7.0 is the corresponding post-R6 release candidate. Public-directory distribution is optional and currently deferred; retained R5-F submission material is historical preparation, not active security work.
+This document defines the security boundary for the MCP v2 product after completion of R5 production hardening and all seven bounded R6 targeted-adoption capabilities. Gia 0.7.0 is the corresponding post-R6 version line. Public-directory distribution is optional and currently deferred; retained R5-F submission material is historical preparation, not active security work.
 
 The objective is a small set of enforceable invariants. Historical J0/J1/J2 mechanisms remain relevant only where their direct safety semantics survive in the active runtime.
 
