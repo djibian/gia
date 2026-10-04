@@ -135,6 +135,49 @@ async function gristApi(
   return readJson(response);
 }
 
+async function createIsolatedDeniedTarget(
+  baseUrl: string,
+  apiKey: string
+): Promise<CompatibilityTarget> {
+  const orgs = await gristApi(baseUrl, apiKey, "/api/orgs");
+  assert(Array.isArray(orgs) && orgs.length > 0, "no_test_org_for_denied_target");
+  const org = orgs[0] as GristOrg;
+  assert(org.id !== undefined, "denied_target_org_missing_id");
+
+  const createdWorkspace = await gristApi(
+    baseUrl,
+    apiKey,
+    `/api/orgs/${encodeURIComponent(String(org.id))}/workspaces`,
+    {
+      method: "POST",
+      body: JSON.stringify({ name: "R6 Denied Compatibility" })
+    }
+  );
+  assert(typeof createdWorkspace === "number", "denied_workspace_create_invalid");
+
+  const createdDoc = await gristApi(
+    baseUrl,
+    apiKey,
+    `/api/workspaces/${createdWorkspace}/docs`,
+    {
+      method: "POST",
+      body: JSON.stringify({ name: "R6 Denied Source" })
+    }
+  );
+  const id =
+    typeof createdDoc === "string" || typeof createdDoc === "number"
+      ? createdDoc
+      : createdDoc && typeof createdDoc === "object"
+        ? (createdDoc as { id?: unknown; urlId?: unknown }).id ??
+          (createdDoc as { urlId?: unknown }).urlId
+        : undefined;
+  assert(
+    (typeof id === "string" || typeof id === "number") && String(id).length > 0,
+    "denied_document_create_invalid"
+  );
+  return { documentId: String(id), workspaceId: createdWorkspace };
+}
+
 async function createCompatibilityDocument(
   baseUrl: string,
   apiKey: string
@@ -355,6 +398,24 @@ async function callTool(
   );
 }
 
+async function callToolExpectError(
+  bridgeBaseUrl: string,
+  name: string,
+  args: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  const result = jsonRpcResult(
+    await postMcp({
+      baseUrl: bridgeBaseUrl,
+      method: "tools/call",
+      name,
+      params: { name, arguments: args }
+    })
+  );
+  assert(result.isError === true, `${name}_expected_tool_error`);
+  return result;
+}
+
+
 async function run(): Promise<void> {
   const gristBaseUrl = required("GRIST_COMPAT_BASE_URL").replace(/\/$/, "");
   const version = required("GRIST_COMPAT_VERSION");
@@ -362,6 +423,7 @@ async function run(): Promise<void> {
   await waitForUrl(`${gristBaseUrl}/`);
   const apiKey = await createEphemeralApiKey(gristBaseUrl);
   const target = await createCompatibilityDocument(gristBaseUrl, apiKey);
+  const deniedTarget = await createIsolatedDeniedTarget(gristBaseUrl, apiKey);
   const { documentId, workspaceId } = target;
 
   const port = await freePort();
@@ -613,6 +675,105 @@ async function run(): Promise<void> {
       accessRules.effectiveEnforcementVerified === false,
       "access_rule_effective_enforcement_flag_missing"
     );
+    const protectedAclGroupCount = accessRules.protectedPersistedGroupCount;
+
+    const aclCreated = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group",
+        documentId,
+        mode: "create",
+        target: { tableId: TABLE_ID },
+        rules: [
+          {
+            condition: { kind: "everyone" },
+            permissions: {
+              read: "allow",
+              update: "allow",
+              create: "allow",
+              delete: "allow"
+            }
+          }
+        ]
+      }),
+      "access_rule_create"
+    );
+    assert(aclCreated.persistedDefinitionVerified === true, "access_rule_create_not_verified");
+    assert(aclCreated.effectiveEnforcementVerified === false, "access_rule_create_overclaimed_enforcement");
+
+    const accessRulesAfterCreate = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "access_rules",
+        documentId
+      }),
+      "access_rules_after_create"
+    );
+    assert(
+      accessRulesAfterCreate.protectedPersistedGroupCount === protectedAclGroupCount,
+      "access_rule_create_changed_protected_group_count"
+    );
+    assert(
+      Array.isArray(accessRulesAfterCreate.groups) &&
+        accessRulesAfterCreate.groups.some((group) => {
+          if (!group || typeof group !== "object" || Array.isArray(group)) return false;
+          const target = (group as { target?: unknown }).target;
+          return (
+            target !== null &&
+            typeof target === "object" &&
+            !Array.isArray(target) &&
+            (target as { tableId?: unknown }).tableId === TABLE_ID
+          );
+        }),
+      "access_rule_created_group_missing"
+    );
+
+    const aclDeleted = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group",
+        documentId,
+        mode: "delete",
+        target: { tableId: TABLE_ID }
+      }),
+      "access_rule_delete"
+    );
+    assert(aclDeleted.persistedDefinitionVerified === true, "access_rule_delete_not_verified");
+
+    const accessRulesAfterDelete = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "access_rules",
+        documentId
+      }),
+      "access_rules_after_delete"
+    );
+    assert(
+      accessRulesAfterDelete.protectedPersistedGroupCount === protectedAclGroupCount,
+      "access_rule_delete_changed_protected_group_count"
+    );
+    assert(
+      Array.isArray(accessRulesAfterDelete.groups) &&
+        !accessRulesAfterDelete.groups.some((group) => {
+          if (!group || typeof group !== "object" || Array.isArray(group)) return false;
+          const target = (group as { target?: unknown }).target;
+          return (
+            target !== null &&
+            typeof target === "object" &&
+            !Array.isArray(target) &&
+            (target as { tableId?: unknown }).tableId === TABLE_ID
+          );
+        }),
+      "access_rule_deleted_group_still_present"
+    );
+
+    await callToolExpectError(bridgeBaseUrl, "grist_add_structure", {
+      action: "create_document",
+      workspaceId: deniedTarget.workspaceId,
+      name: "Must Not Be Created"
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_add_structure", {
+      action: "copy_document_as_template",
+      sourceDocumentId: deniedTarget.documentId,
+      workspaceId,
+      name: "Must Not Copy Denied Source"
+    });
 
     const emptyCreated = resultJson(
       await callTool(bridgeBaseUrl, "grist_add_structure", {
