@@ -1,6 +1,6 @@
 import type { GristClient } from "./client.js";
 import { GRIST_CHART_TYPES, type GristChartType } from "./chartTypes.js";
-import {\n  MAX_PAGE_ORDER_PAGES,\n  type PageOrderWrite\n} from "./pageOrder.js";\nimport type { ResolvedWidgetSortSpec } from "./widgetSort.js";
+import {\n  MAX_PAGE_ORDER_PAGES,\n  type PageOrderWrite\n} from "./pageOrder.js";\nimport {\n  MAX_PAGE_ORDER_PAGES,\n  type PageOrderWrite\n} from "./pageOrder.js";\nimport type { ResolvedWidgetSortSpec } from "./widgetSort.js";
 import type { WidgetFieldMutationPlan } from "./widgetFields.js";
 import type { WidgetFilterMutationPlan } from "./widgetFilters.js";
 
@@ -306,6 +306,43 @@ export class GristUiActionsAdapter {
 
     await this.client.applyUserActions(documentId, [
       ["RemoveRecord", "_grist_Views", pageId]
+    ]);
+  }
+
+  async reorderPages(
+    documentId: string,
+    updates: readonly PageOrderWrite[]
+  ): Promise<void> {
+    if (updates.length > MAX_PAGE_ORDER_PAGES) {
+      throw new Error(
+        `Grist page order update exceeds the maximum of ${MAX_PAGE_ORDER_PAGES} pages.`
+      );
+    }
+    const seenPageRecordIds = new Set<number>();
+    const seenPositions = new Set<number>();
+    for (const update of updates) {
+      assertPositiveId(update.pageRecordId, "Grist page record ID");
+      if (seenPageRecordIds.has(update.pageRecordId)) {
+        throw new Error("A Grist page record cannot be reordered more than once.");
+      }
+      if (!Number.isFinite(update.pagePos)) {
+        throw new Error("Grist page position must be finite.");
+      }
+      if (seenPositions.has(update.pagePos)) {
+        throw new Error("Grist page positions in one reorder must be unique.");
+      }
+      seenPageRecordIds.add(update.pageRecordId);
+      seenPositions.add(update.pagePos);
+    }
+    if (updates.length === 0) return;
+
+    await this.client.applyUserActions(documentId, [
+      [
+        "BulkUpdateRecord",
+        "_grist_Pages",
+        updates.map((update) => update.pageRecordId),
+        { pagePos: updates.map((update) => update.pagePos) }
+      ]
     ]);
   }
 
