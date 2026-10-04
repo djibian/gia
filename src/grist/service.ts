@@ -180,9 +180,11 @@ export class GristService {
     this.assertWorkspaceId(workspaceId);
     await this.accessPolicy.assertWorkspaceAllowed(workspaceId);
     const documentName = this.normalizeDocumentName(name);
-    const documentId = await this.client.createDocument(workspaceId, documentName);
-    this.accessPolicy.invalidate();
-    return documentId;
+    try {
+      return await this.client.createDocument(workspaceId, documentName);
+    } finally {
+      this.accessPolicy.invalidate();
+    }
   }
 
   async copyDocumentAsTemplate(
@@ -196,13 +198,15 @@ export class GristService {
     );
     await this.accessPolicy.assertWorkspaceAllowed(workspaceId);
     const documentName = this.normalizeDocumentName(name);
-    const documentId = await this.client.copyDocumentAsTemplate(
-      sourceDocumentId,
-      workspaceId,
-      documentName
-    );
-    this.accessPolicy.invalidate();
-    return documentId;
+    try {
+      return await this.client.copyDocumentAsTemplate(
+        sourceDocumentId,
+        workspaceId,
+        documentName
+      );
+    } finally {
+      this.accessPolicy.invalidate();
+    }
   }
 
   async assertDocumentOwner(documentIdOrUrl: string): Promise<void> {
