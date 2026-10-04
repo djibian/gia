@@ -102,7 +102,6 @@ const widgetVisibleFieldsSchema = z
       })
       .strict()
   )
-  .min(1)
   .max(MAX_WIDGET_VISIBLE_FIELDS)
   .refine(
     (fields) => new Set(fields.map((field) => field.columnId)).size === fields.length,
