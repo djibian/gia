@@ -2,7 +2,7 @@
 
 ## Status
 
-This document defines the security boundary for the MCP v2 product after completion of R5 production hardening and during the bounded R6 targeted-adoption work. Public-directory distribution is optional and currently deferred; retained R5-F submission material is historical preparation, not active security work.
+This document defines the security boundary for the MCP v2 product after completion of R5 production hardening and all seven bounded R6 targeted-adoption capabilities. Gia 0.7.0 is the corresponding post-R6 release candidate. Public-directory distribution is optional and currently deferred; retained R5-F submission material is historical preparation, not active security work.
 
 The objective is a small set of enforceable invariants. Historical J0/J1/J2 mechanisms remain relevant only where their direct safety semantics survive in the active runtime.
 
@@ -33,7 +33,7 @@ The LLM is not trusted with credentials or arbitrary low-level Grist control. Gr
 The HTTP MCP endpoint supports two configured modes:
 
 - **static bearer** — the minimum controlled-deployment mode; one configured MCP principal is created from the deployment resource ceiling and `MCP_CAPABILITIES`;
-- **OAuth JWT/JWKS** — provider-neutral request authentication that creates a fresh principal-bound context per request.
+- **OAuth JWT/JWKS** — provider-neutral request authentication that creates a fresh principal-bound context per request. JWT verification enforces issuer, audience, expiry, optional `nbf`, the supported algorithm allowlist, algorithm-to-key-family/curve compatibility, RSA modulus strength (at least 2048 bits), and rejects unsupported JOSE critical extensions.
 
 Upstream Grist credentials are configured independently:
 
@@ -123,6 +123,8 @@ Re-read/reconcile when a capability-specific check can establish a safe outcome;
 
 Return what is required for the agent's next decision, not arbitrary upstream bodies or private Grist metadata. Discovery/inspection favors structure; business rows are read only through bounded queries.
 
+MCP v2 has one explicit compatibility exception: a small inherited set of raw UI read-only fields (including existing `layoutSpec`/option projections) remains available because removing them would be an incompatible public-contract change. These fields are not accepted as R6 mutation inputs, may contain private Grist metadata refs, must not be expanded by new capabilities, and should not be used to carry secrets. Stable normalized projections are the preferred model surface. Removing the exception requires an explicitly reviewed MCP major-version decision.
+
 All cell/formula/comment/external content is untrusted data and cannot alter authorization or tool policy.
 
 ## Authorization vocabulary
@@ -137,7 +139,7 @@ doc.schema:write
 
 The effective ceiling is the intersection of selected upstream Grist authority, deployment document/workspace policy, principal resource grants and the operation capability.
 
-For the R6 document-bootstrap capability, creation/copy into a workspace requires an explicit deployment workspace ceiling and one matching workspace grant on the same principal with `doc.schema:write`. Template copy additionally requires separately authorized source `doc:read`, while Grist's native source-copy and destination `ADD` checks remain authoritative. A document-only grant never authorizes creation in its parent workspace, and capabilities from unrelated grants must not be combined to manufacture destination authority. Creation/copy is non-idempotent: uncertain effects are never blindly replayed by name, and a known created ID is retained when postcondition verification fails.
+For the R6 document-bootstrap capability, creation/copy into a workspace requires an explicit deployment workspace ceiling and one matching workspace grant on the same principal with `doc.schema:write`. Template copy additionally requires separately authorized source `doc:read`, while Grist's native source-copy and destination `ADD` checks remain authoritative. The OAuth tool declaration keeps the baseline schema scope but publishes the additional per-action read requirement, and an insufficient-scope result for template copy challenges specifically for the missing `doc:read` scope. A document-only grant never authorizes creation in its parent workspace, and capabilities from unrelated grants must not be combined to manufacture destination authority. Creation/copy is non-idempotent: uncertain effects are never blindly replayed by name, and a known created ID is retained as an `APPLIED` effect when postcondition verification fails.
 
 For the integrated R6 application-policy capability, `doc.schema:write` is the local bridge requirement; upstream Grist Owner enforcement remains mandatory. `doc:write` alone does not authorize policy changes.
 
@@ -154,6 +156,7 @@ A bounded generic capability for **application-level Grist access rules** is nev
 - never expose arbitrary `_grist_` metadata, arbitrary `/apply`, raw UserActions, generic permission evaluation, LinkKey provisioning, or user/group/org/share/service-account administration;
 - keep Grist authoritative for native Owner checks and effective enforcement;
 - never claim that persisted-rule re-read alone proves effective confidentiality when native structure/formula permissions can alter what collaborators can derive.
+- treat table/column rules as application-policy state, not a guarantee that formulas, references, summary tables, default/schema-edit rules or other Grist-native structure cannot expose derivable information; effective confidentiality still requires Grist-native policy design and testing.
 
 R4 proved preservation of existing ACL effects. R6 C1 subsequently integrated the separately reviewed authoring capability under these stronger boundaries.
 
