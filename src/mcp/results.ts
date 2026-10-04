@@ -5,7 +5,11 @@ import {
 } from "../grist/client.js";
 import { AccessRuleWriteVerificationError } from "../grist/accessRules.js";
 import { DocumentBootstrapVerificationError } from "../grist/authorizedService.js";
-import { PartialBatchError, UncertainWriteError } from "../grist/service.js";
+import {
+  PartialBatchError,
+  SchemaWriteVerificationError,
+  UncertainWriteError
+} from "../grist/service.js";
 import { UiWriteVerificationError } from "../grist/uiActionsAdapter.js";
 
 export type McpErrorCode =
@@ -74,6 +78,15 @@ export function errorResult(error: unknown) {
       failedItems: error.failedItems,
       remainingBatches: error.remainingBatches,
       remainingItems: error.remainingItems,
+      retryWholeOperation: false
+    };
+  } else if (error instanceof SchemaWriteVerificationError) {
+    body = {
+      code: "write_verification_failed",
+      error: "Grist schema write verification failed",
+      operation: error.operation,
+      effectState: "APPLIED",
+      postconditionVerified: false,
       retryWholeOperation: false
     };
   } else if (error instanceof UiWriteVerificationError) {
