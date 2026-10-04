@@ -208,7 +208,7 @@ export class DocumentUiService {
       }
       const normalizedGridOptions = normalizeGridOptions(widget);
       if (normalizedGridOptions) Object.assign(widget, normalizedGridOptions);
-      if (sectionFieldsResponse !== undefined) {
+      if (sectionFieldsResponse !== undefined && hasExpandedColumns(tableResponse)) {
         Object.assign(
           widget,
           normalizeWidgetFields(widget, tableResponse, sectionFieldsResponse)
