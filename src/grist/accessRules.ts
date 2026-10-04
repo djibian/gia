@@ -105,6 +105,15 @@ export interface AccessRulePersistedWrite {
   rulePos: number;
 }
 
+export class AccessRuleWriteVerificationError extends Error {
+  constructor(message: string) {
+    super(
+      `${message} The access-rule write may already have succeeded; do not retry the whole operation blindly.`
+    );
+    this.name = "AccessRuleWriteVerificationError";
+  }
+}
+
 export interface AccessRuleMutationPlan {
   mode: AccessRuleMutationMode;
   requestedMode: Exclude<AccessRuleMutationMode, "noop">;
