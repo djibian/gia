@@ -659,7 +659,8 @@ Integrated progress:
 - **C2 — DONE:** bounded widget visible-field list, stable field order and bounded widths; provenance and semantic boundary are recorded in `docs/R6-C2-WIDGET-FIELDS.md`.
 - **C4 — DONE:** targeted persistent widget filters keyed by stable column IDs, with bounded include/exclude/range semantics, exact preservation of untargeted filters/pinning, and post-write verification; provenance and semantic boundary are recorded in `docs/R6-C4-WIDGET-FILTERS.md`.
 - **C3 — DONE:** native summary-backed widget construction from one ordinary source table plus bounded stable `groupByColumnIds`, with generated source/group identity and widget/table postconditions verified after re-read; provenance and boundaries are recorded in `docs/R6-C3-NATIVE-SUMMARIES.md`.
-- **Next eligible slice after C3 integration: C5 — card/card-list field layout.**
+- **C5 — DONE:** bounded native Card/Card List field layout over currently visible stable column IDs, with private view-field refs kept bridge-internal, full-layout coverage, explicit unplaced read state and exact post-write verification; provenance and boundaries are recorded in `docs/R6-C5-CARD-LAYOUT.md`.
+- **Next eligible slice after C5 integration: C10 — page navigation ordering.**
 
 R6.3 contains no work outside these seven ADOPT items.
 
