@@ -57,7 +57,10 @@ function service(
     },
     applyUserActions: async (documentId: string, actions: unknown) => {
       observed.push({ action: "apply", documentId, actions });
-      return { actionNum: 1 };
+      const first = Array.isArray(actions) && Array.isArray(actions[0]) ? actions[0] : undefined;
+      return first?.[0] === "RenameColumn"
+        ? { actionNum: 1, retValues: [first[3]] }
+        : { actionNum: 1 };
     },
     ...overrides
   } as unknown as GristClient;
