@@ -1,6 +1,6 @@
 # R6 C1 — Bounded application-level access rules
 
-Status: implementation candidate in R6.3.
+Status: **integrated in R6.3 C1**. The 0.7.0 release stabilization preserves this bounded subset and hardens its model-facing post-write effect reporting.
 
 ## Product boundary
 
@@ -26,7 +26,7 @@ Checked 2026-10-04 against exact current `gristlabs/grist-core` main:
 - `app/server/lib/GranularAccess.ts`: native authority/enforcement path for deliberate ACL changes;
 - `sandbox/grist/schema.py` / `app/common/schema.ts`: persisted `_grist_ACLResources` and `_grist_ACLRules` shape.
 
-The Expert advisory `docs/expert/2026-10-04-r6-acl-document-boundaries-f0da0c8.md` was also consulted and remains CURRENT for C1. C1 follows its central constraints: local capabilities are necessary but not sufficient, a fresh native Grist Owner proof is mandatory before ACL metadata access, private row refs never become public identifiers, untargeted policy is preserved, opaque/sensitive policy is not normalized into writable model content, and post-write verification is explicitly limited to persisted definitions.
+The Expert advisory `docs/expert/2026-10-04-r6-acl-document-boundaries-f0da0c8.md` was consulted before implementation. Post-R6 Expert reviews classify that earlier report as **PARTIALLY STALE** because C1/C8 are now integrated, while its authority, preservation and no-blind-retry constraints remain applicable. C1 follows those central constraints: local capabilities are necessary but not sufficient, a fresh native Grist Owner proof is mandatory before ACL metadata access, private row refs never become public identifiers, untargeted policy is preserved, opaque/sensitive policy is not normalized into writable model content, and post-write verification is explicitly limited to persisted definitions.
 
 ## Supported normalized subset
 
@@ -79,14 +79,14 @@ The semantic plan resolves the target resource/rule record IDs privately and emi
 
 Grist derives `aclFormulaParsed`; Gia never accepts or writes a model-supplied parsed predicate.
 
-Before write, Gia fingerprints **all untargeted persisted ACL rows**, including opaque fields, without exposing that content. After write it re-reads ACL resources, rules, tables and columns, refuses bounded-read truncation, verifies the requested normalized group exactly and verifies the untargeted fingerprint unchanged. Any post-write divergence is reported as an uncertainty that must not be blindly replayed or “restored” from the old snapshot.
+Before write, Gia fingerprints **all untargeted persisted ACL rows**, including opaque fields, without exposing that content. After write it re-reads ACL resources, rules, tables and columns, refuses bounded-read truncation, verifies the requested normalized group exactly and verifies the untargeted fingerprint unchanged. Any post-write divergence is projected at the MCP boundary as `effectState: "UNCERTAIN"`, `postconditionVerified: false` and `retryWholeOperation: false`; it must not be blindly replayed or “restored” from the old snapshot.
 
 A successful response intentionally states:
 
 - `persistedDefinitionVerified: true`;
 - `effectiveEnforcementVerified: false`.
 
-The latter is essential: persisted ACL rows alone do not prove confidentiality or effective policy, especially while schema-edit/default/special policy may permit broader behavior.
+The latter is essential: persisted ACL rows alone do not prove confidentiality or effective policy. Native default/special/schema-edit policy and the user's structure authority remain decisive; formulas may derive data the row/column rule was intended to hide when Grist permits that structure access. C2 hidden fields and C4 filters are presentation state, not security controls. Gia therefore does not claim confidentiality from C1 persistence alone.
 
 ## Explicit non-goals
 
