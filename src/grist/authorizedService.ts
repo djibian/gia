@@ -5,6 +5,16 @@ import {
   getOperation,
   getRequiredCapability
 } from "../operations/registry.js";
+import {
+  AccessRuleWriteVerificationError,
+  normalizeAccessRulesSnapshot,
+  projectAccessRules,
+  resolveAccessRuleMutation,
+  verifyAccessRuleMutation,
+  type AccessRuleInput,
+  type AccessRuleTarget,
+  type AccessRulesSnapshot
+} from "./accessRules.js";
 import type {
   GristColumnSpec,
   GristColumnUpdate,
@@ -224,6 +234,16 @@ export class AuthorizedGristService {
       const tableResponse = await this.inner.listTables(id, { expandColumns: true });
       const ui = await this.loadDocumentUi(id, tableResponse, true, true);
       return this.documentContext.build(id, tableResponse, ui);
+    });
+  }
+
+  async inspectAccessRules(documentIdOrUrl: string): Promise<unknown> {
+    return this.execute("inspect_access_rules", documentIdOrUrl, undefined, async (id) => {
+      const snapshot = await this.loadAccessRulesSnapshot(id);
+      return {
+        documentId: id,
+        ...(projectAccessRules(snapshot) as Record<string, unknown>)
+      };
     });
   }
 
@@ -953,6 +973,54 @@ export class AuthorizedGristService {
     });
   }
 
+  async changeAccessRuleGroup(
+    documentIdOrUrl: string,
+    target: AccessRuleTarget,
+    mode: "create" | "replace" | "delete",
+    rules?: readonly AccessRuleInput[]
+  ): Promise<unknown> {
+    return this.execute("change_access_rule_group", documentIdOrUrl, 1, async (id) => {
+      const before = await this.loadAccessRulesSnapshot(id);
+      const plan = resolveAccessRuleMutation(before, target, mode, rules);
+
+      if (plan.mode === "noop") {
+        return {
+          documentId: id,
+          target:
+            plan.target.columnIds.length === 0
+              ? { tableId: plan.target.tableId }
+              : { tableId: plan.target.tableId, columnIds: [...plan.target.columnIds] },
+          mode,
+          changed: false,
+          ruleCount: plan.normalizedRules.length,
+          persistedDefinitionVerified: true,
+          effectiveEnforcementVerified: false
+        };
+      }
+
+      await this.uiActions.mutateAccessRuleGroup(id, plan);
+      try {
+        const after = await this.loadAccessRulesSnapshot(id);
+        const verification = verifyAccessRuleMutation(before, after, plan);
+        return {
+          documentId: id,
+          target:
+            plan.target.columnIds.length === 0
+              ? { tableId: plan.target.tableId }
+              : { tableId: plan.target.tableId, columnIds: [...plan.target.columnIds] },
+          mode,
+          ...verification
+        };
+      } catch (error) {
+        throw new AccessRuleWriteVerificationError(
+          error instanceof Error
+            ? error.message
+            : "Updated access-rule state could not be verified."
+        );
+      }
+    });
+  }
+
   async updateTables(
     documentIdOrUrl: string,
     tables: GristTableUpdate[]
@@ -1036,6 +1104,32 @@ export class AuthorizedGristService {
       throw new Error(`Grist table "${tableId}" has no usable table reference.`);
     }
     throw new Error(`Grist table "${tableId}" does not exist in document "${documentId}".`);
+  }
+
+  private async loadAccessRulesSnapshot(
+    documentId: string
+  ): Promise<AccessRulesSnapshot> {
+    const metadataLimit = this.inner.maxReadRecords > 0
+      ? this.inner.maxReadRecords
+      : 5000;
+    const options = { limit: metadataLimit, hidden: true } as const;
+    const [resources, rules, tables, columns] = await Promise.all([
+      this.inner.queryRecords(documentId, "_grist_ACLResources", options),
+      this.inner.queryRecords(documentId, "_grist_ACLRules", options),
+      this.inner.queryRecords(documentId, "_grist_Tables", options),
+      this.inner.queryRecords(documentId, "_grist_Tables_column", options)
+    ]);
+    if (
+      metadataResponseReachedLimit(resources, metadataLimit) ||
+      metadataResponseReachedLimit(rules, metadataLimit) ||
+      metadataResponseReachedLimit(tables, metadataLimit) ||
+      metadataResponseReachedLimit(columns, metadataLimit)
+    ) {
+      throw new Error(
+        "Grist access-rule metadata reached the configured read limit and may be incomplete; refusing to inspect or mutate policy state."
+      );
+    }
+    return normalizeAccessRulesSnapshot(resources, rules, tables, columns);
   }
 
   private async loadPageOrderSnapshot(
