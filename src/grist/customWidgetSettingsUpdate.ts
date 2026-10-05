@@ -1,8 +1,8 @@
+import { tableColumnMaps } from "./tableColumnMaps.js";
 import {
   customViewOptions,
   MAX_CUSTOM_WIDGET_MAPPED_COLUMNS,
   MAX_CUSTOM_WIDGET_MAPPING_KEYS,
-  MAX_CUSTOM_WIDGET_SCHEMA_COLUMNS,
   type CustomWidgetAccessLevel,
   type CustomWidgetColumnMapping
 } from "./customWidgetSettings.js";
@@ -33,12 +33,6 @@ function record(value: unknown): JsonRecord | null {
     : null;
 }
 
-function positiveInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isInteger(value) && value > 0
-    ? value
-    : undefined;
-}
-
 function exactNonEmptyText(value: unknown, label: string): string {
   if (
     typeof value !== "string" ||
@@ -54,49 +48,11 @@ function targetColumnRefs(
   widget: WidgetSettingsUpdateTarget,
   tableResponse: unknown
 ): Map<string, number> {
-  const root = record(tableResponse);
-  const tables = Array.isArray(root?.tables) ? root.tables : [];
-  const table = tables
-    .map(record)
-    .find((candidate) => {
-      if (!candidate) return false;
-      const fields = record(candidate.fields);
-      return (
-        (widget.tableId !== undefined && candidate.id === widget.tableId) ||
-        (widget.tableId === undefined && positiveInteger(fields?.tableRef) === widget.tableRef)
-      );
-    });
-  if (!table) {
-    throw new Error(`Custom widget ${widget.id} table metadata is unavailable.`);
+  const maps = tableColumnMaps(widget, tableResponse);
+  if (!maps) {
+    throw new Error(`Custom widget ${widget.id} table/column metadata is unavailable, incomplete, ambiguous or has more than 5000 columns; refusing to guess a mapping.`);
   }
-
-  const columns = Array.isArray(table.columns) ? table.columns : null;
-  if (!columns) {
-    throw new Error(`Custom widget ${widget.id} requires expanded column metadata.`);
-  }
-  if (columns.length > MAX_CUSTOM_WIDGET_SCHEMA_COLUMNS) {
-    throw new Error(
-      `Custom widget ${widget.id} table has more than ${MAX_CUSTOM_WIDGET_SCHEMA_COLUMNS} columns; refusing an ambiguous mapping update.`
-    );
-  }
-
-  const byId = new Map<string, number>();
-  const seenRefs = new Set<number>();
-  for (const value of columns) {
-    const column = record(value);
-    const id = typeof column?.id === "string" ? column.id : undefined;
-    const fields = record(column?.fields);
-    const ref = positiveInteger(fields?.colRef);
-    if (!id || !ref) continue;
-    if (byId.has(id) || seenRefs.has(ref)) {
-      throw new Error(
-        `Custom widget ${widget.id} column metadata is ambiguous; refusing to guess a mapping.`
-      );
-    }
-    byId.set(id, ref);
-    seenRefs.add(ref);
-  }
-  return byId;
+  return maps.byId;
 }
 
 function resolveMappings(

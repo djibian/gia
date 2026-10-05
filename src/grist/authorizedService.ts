@@ -148,7 +148,7 @@ function metadataResponseReachedLimit(value: unknown, limit: number): boolean {
 function assertCompleteUiSnapshot(context: CompletenessAwareDocumentUiContext): void {
   if (!context.metadataSnapshotIncomplete) return;
   throw new Error(
-    "Grist UI metadata snapshot reached the configured read limit and may be incomplete; refusing a UI mutation that requires the complete page/widget graph."
+    "Grist UI metadata snapshot reached the configured read limit or is malformed, unavailable or ambiguous; refusing a UI mutation that requires the complete page/widget graph."
   );
 }
 

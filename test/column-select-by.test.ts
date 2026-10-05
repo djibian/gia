@@ -9,6 +9,8 @@ import type { GristClient } from "../src/grist/client.js";
 import { DocumentUiService } from "../src/grist/documentUi.js";
 import type { GristService } from "../src/grist/service.js";
 import { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
+import { discoverColumnSelectByOptions, resolveColumnSelectByAllowed } from "../src/grist/selectBy.js";
+import { normalizeExistingSelectBy } from "../src/grist/selectByContext.js";
 
 const tables = {
   tables: [
@@ -264,4 +266,27 @@ test("adapter emits only the three bounded Grist select-by references", async ()
       }
     ]]
   ]);
+});
+
+test("column select-by refuses incomplete/ambiguous schemas for reads, advertisement and writes", () => {
+  const context = new DocumentUiService().build("doc", tables, pages, views, { records: [section(101, 1), section(102, 2)] });
+  const source = context.pages[0]!.widgets[0]!;
+  const target = context.pages[0]!.widgets[1]!;
+  const order = tables.tables[0]!;
+  const cases = [
+    { tables: [...tables.tables, { ...order, id: "Other" }] },
+    { tables: [...tables.tables, { ...order, fields: { tableRef: 99 } }] },
+    { tables: [{ ...order, columns: [...order.columns, { id: "Customer", fields: { colRef: 99, type: "Ref:Customers" } }] }, ...tables.tables.slice(1)] },
+    { tables: [{ ...order, columns: [...order.columns, { id: "Other", fields: { colRef: 11, type: "Ref:Customers" } }] }, ...tables.tables.slice(1)] },
+    { tables: [{ ...order, columns: [...order.columns, null] }, ...tables.tables.slice(1)] },
+    { tables: [{ ...order, columns: undefined }, ...tables.tables.slice(1)] },
+    { tables: [{ ...order, columns: [...order.columns, ...Array.from({ length: 5000 }, (_, index) => ({ id: `C${index}`, fields: { colRef: index + 1000, type: "Text" } }))] }, ...tables.tables.slice(1)] }
+  ];
+  for (const metadata of cases) {
+    assert.throws(() => resolveColumnSelectByAllowed(context, metadata, source, target, { sourceWidgetId: 101, sourceColumnId: "Customer" }), /incomplete or ambiguous/);
+    assert.deepEqual(discoverColumnSelectByOptions(context, metadata, target), { options: [], truncated: true });
+    assert.deepEqual(normalizeExistingSelectBy(context, metadata, { ...target, selectBy: { sourceSectionId: 101, sourceColumnRef: 11 } }), { selectByNormalizationIncomplete: true });
+  }
+  assert.throws(() => resolveColumnSelectByAllowed(context, tables, { ...source, tableId: "Missing" }, target, { sourceWidgetId: 101, sourceColumnId: "Customer" }), /unavailable table/);
+  assert.throws(() => resolveColumnSelectByAllowed(context, tables, { ...source, tableRef: 99 }, target, { sourceWidgetId: 101, sourceColumnId: "Customer" }), /unavailable table/);
 });

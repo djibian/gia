@@ -93,13 +93,15 @@ function metadataRecords(response: unknown, label: string): MetadataRecord[] {
     );
   }
 
+  const seenIds = new Set<number>();
   return root.records.map((entry) => {
     const item = record(entry);
     const id = positiveInteger(item?.id);
     const fields = record(item?.fields);
-    if (!id || !fields) {
+    if (!id || !fields || seenIds.has(id)) {
       throw new Error(`Cannot verify visible Grist pages: malformed ${label} metadata.`);
     }
+    seenIds.add(id);
     return { id, fields };
   });
 }
@@ -128,7 +130,7 @@ function classifyPageVisibility(
   const visiblePageIds = new Set<number>();
   for (const page of pages) {
     const pageId = positiveInteger(page.fields.viewRef);
-    if (!pageId) continue;
+    if (!pageId || allPageIds.has(pageId)) throw new Error("Cannot verify visible Grist pages: malformed or ambiguous page identity metadata.");
     allPageIds.add(pageId);
 
     const view = viewsById.get(pageId);

@@ -36,6 +36,22 @@ function snapshot(
   );
 }
 
+test("ACL resolution refuses duplicate row identities and stable table/column targets", () => {
+  const meta = baseMetadata();
+  const table = meta.tables.records[0]!;
+  const column = meta.columns.records[0]!;
+  const resource = { id: 1, fields: { tableId: "*", colIds: "*" } };
+  const rule = { id: 1, fields: { resource: 1, aclFormula: "", aclFormulaParsed: "", permissionsText: "+R", rulePos: 1 } };
+  for (const [resources, rules, tables, columns] of [
+    [{ records: [resource, resource] }, { records: [] }, meta.tables, meta.columns],
+    [{ records: [resource] }, { records: [rule, rule] }, meta.tables, meta.columns],
+    [{ records: [] }, { records: [] }, { records: [table, table] }, meta.columns],
+    [{ records: [] }, { records: [] }, { records: [table, { ...table, id: 2 }] }, meta.columns],
+    [{ records: [] }, { records: [] }, meta.tables, { records: [column, column] }],
+    [{ records: [] }, { records: [] }, meta.tables, { records: [column, { ...column, id: 99 }] }]
+  ]) assert.throws(() => normalizeAccessRulesSnapshot(resources, rules, tables, columns), /malformed|ambiguous/);
+});
+
 test("normalizes only bounded secret-safe ordinary ACL groups", () => {
   const state = snapshot(
     [

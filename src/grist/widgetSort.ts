@@ -1,7 +1,8 @@
+import { tableColumnMaps } from "./tableColumnMaps.js";
+
 type JsonRecord = Record<string, unknown>;
 
 export const MAX_WIDGET_SORT_COLUMNS = 20;
-const MAX_WIDGET_SORT_SCHEMA_COLUMNS = 5000;
 
 export const WIDGET_SORT_DIRECTIONS = ["asc", "desc"] as const;
 export type WidgetSortDirection = (typeof WIDGET_SORT_DIRECTIONS)[number];
@@ -38,40 +39,6 @@ function text(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function positiveInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isInteger(value) && value > 0
-    ? value
-    : undefined;
-}
-
-function findTableForWidget(
-  widget: WidgetSortTarget,
-  tableResponse: unknown
-): JsonRecord | undefined {
-  const root = record(tableResponse);
-  const tables = Array.isArray(root?.tables) ? root.tables : [];
-  return tables
-    .map(record)
-    .find((candidate) => {
-      if (!candidate) return false;
-      const fields = record(candidate.fields);
-      return (
-        (widget.tableId !== undefined && candidate.id === widget.tableId) ||
-        positiveInteger(fields?.tableRef) === widget.tableRef
-      );
-    }) ?? undefined;
-}
-
-function tableForWidget(widget: WidgetSortTarget, tableResponse: unknown): JsonRecord {
-  const table = findTableForWidget(widget, tableResponse);
-  if (!table) {
-    throw new Error(
-      `Widget ${widget.id} table metadata is unavailable; refusing to configure saved sort.`
-    );
-  }
-  return table;
-}
-
 function encodeSortSpec(input: WidgetSortInput, colRef: number): ResolvedWidgetSortSpec {
   const signed = input.direction === "desc" ? -colRef : colRef;
   const flags: string[] = [];
@@ -93,27 +60,8 @@ export function resolveWidgetSort(
     );
   }
 
-  const table = tableForWidget(widget, tableResponse);
-  const columns = Array.isArray(table.columns) ? table.columns : [];
-  if (columns.length > MAX_WIDGET_SORT_SCHEMA_COLUMNS) {
-    throw new Error(
-      `Widget table exposes more than ${MAX_WIDGET_SORT_SCHEMA_COLUMNS} columns; refusing ambiguous saved-sort resolution.`
-    );
-  }
-
-  const byId = new Map<
-    string,
-    { ref: number; type: string | undefined }
-  >();
-  for (const value of columns) {
-    const column = record(value);
-    const id = text(column?.id);
-    const fields = record(column?.fields);
-    const ref = positiveInteger(fields?.colRef);
-    if (id && ref) {
-      byId.set(id, { ref, type: text(fields?.type) });
-    }
-  }
+  const maps = tableColumnMaps(widget, tableResponse);
+  if (!maps) throw new Error(`Widget ${widget.id} table/column metadata is unavailable, incomplete or ambiguous; refusing saved-sort resolution.`);
 
   const seen = new Set<string>();
   return sort.map((input) => {
@@ -127,27 +75,28 @@ export function resolveWidgetSort(
     }
     seen.add(columnId);
 
-    const column = byId.get(columnId);
-    if (!column) {
+    const ref = maps.byId.get(columnId);
+    const type = text(maps.fieldsById.get(columnId)?.type);
+    if (!ref) {
       throw new Error(
         `Column "${columnId}" does not exist on widget ${widget.id}'s table.`
       );
     }
-    if (input.naturalSort && column.type !== "Text") {
+    if (input.naturalSort && type !== "Text") {
       throw new Error(
-        `naturalSort is limited to Text columns; "${columnId}" has type "${column.type ?? "unknown"}".`
+        `naturalSort is limited to Text columns; "${columnId}" has type "${type ?? "unknown"}".`
       );
     }
     if (
       input.orderByChoice &&
-      column.type !== "Choice" &&
-      column.type !== "ChoiceList"
+      type !== "Choice" &&
+      type !== "ChoiceList"
     ) {
       throw new Error(
-        `orderByChoice is limited to Choice/ChoiceList columns; "${columnId}" has type "${column.type ?? "unknown"}".`
+        `orderByChoice is limited to Choice/ChoiceList columns; "${columnId}" has type "${type ?? "unknown"}".`
       );
     }
-    return encodeSortSpec({ ...input, columnId }, column.ref);
+    return encodeSortSpec({ ...input, columnId }, ref);
   });
 }
 
@@ -183,8 +132,10 @@ export function normalizeWidgetSort(
   widget: WidgetSortTarget,
   tableResponse: unknown
 ): NormalizedWidgetSort | undefined {
-  const table = findTableForWidget(widget, tableResponse);
-  if (!table || !Array.isArray(table.columns)) return undefined;
+  const root = record(tableResponse);
+  if (Array.isArray(root?.tables) && !root.tables.some((value) => Object.hasOwn(record(value) ?? {}, "columns"))) return undefined;
+  const maps = tableColumnMaps(widget, tableResponse);
+  if (!maps) return { sort: [], sortNormalizationIncomplete: true };
 
   const raw = widget.sortColRefs;
   if (raw === undefined) {
@@ -194,25 +145,11 @@ export function normalizeWidgetSort(
     return { sort: [], sortNormalizationIncomplete: true };
   }
 
-  const columns = table.columns;
-  if (columns.length > MAX_WIDGET_SORT_SCHEMA_COLUMNS) {
-    return { sort: [], sortNormalizationIncomplete: true };
-  }
-
-  const byRef = new Map<number, string>();
-  for (const value of columns) {
-    const column = record(value);
-    const id = text(column?.id);
-    const fields = record(column?.fields);
-    const ref = positiveInteger(fields?.colRef);
-    if (id && ref) byRef.set(ref, id);
-  }
-
   let incomplete = raw.length > MAX_WIDGET_SORT_COLUMNS;
   const sort: WidgetSortInput[] = [];
   for (const value of raw.slice(0, MAX_WIDGET_SORT_COLUMNS)) {
     const parsed = parseStoredSortSpec(value);
-    const columnId = parsed ? byRef.get(parsed.colRef) : undefined;
+    const columnId = parsed ? maps.byRef.get(parsed.colRef) : undefined;
     if (!parsed || !columnId) {
       incomplete = true;
       continue;

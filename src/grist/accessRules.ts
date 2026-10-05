@@ -170,13 +170,15 @@ function metadataRecords(response: unknown, label: string): MetadataRecord[] {
   if (!root || !Array.isArray(root.records)) {
     throw new Error(`Grist ${label} metadata is unavailable or censored.`);
   }
+  const seenIds = new Set<number>();
   return root.records.map((entry) => {
     const item = record(entry);
     const id = positiveInteger(item?.id);
     const fields = record(item?.fields);
-    if (!id || !fields) {
+    if (!id || !fields || seenIds.has(id)) {
       throw new Error(`Grist ${label} metadata is malformed or censored.`);
     }
+    seenIds.add(id);
     return { id, fields };
   });
 }
@@ -610,6 +612,7 @@ export function normalizeAccessRulesSnapshot(
   for (const entry of tableRecords) {
     const tableId = requiredString(entry.fields, "tableId", "table").trim();
     if (!tableId) throw new Error("Grist table metadata contains an empty table ID.");
+    if (tables.has(tableId)) throw new Error("Grist table metadata has ambiguous stable IDs.");
     const table: TableInfo = {
       id: tableId,
       recordId: entry.id,
@@ -628,6 +631,7 @@ export function normalizeAccessRulesSnapshot(
     }
     const table = tableByRecordId.get(parentId);
     if (!table) throw new Error("Grist column metadata refers to an unknown table.");
+    if (table.columns.has(columnId)) throw new Error("Grist column metadata has ambiguous stable IDs.");
     table.columns.set(columnId, { id: columnId, type });
   }
 

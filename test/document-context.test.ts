@@ -3,6 +3,26 @@ import test from "node:test";
 
 import { DocumentContextService } from "../src/grist/documentContext.js";
 
+test("document inspection never resolves reverse relations through duplicate private column refs", () => {
+  const context = new DocumentContextService().build("doc", { tables: [
+    { id: "Source", columns: [{ id: "Target", fields: { type: "Ref:Target", colRef: 11, reverseCol: 21 } }] },
+    { id: "Target", columns: [
+      { id: "Original", fields: { type: "RefList:Source", colRef: 21, reverseCol: 11 } },
+      { id: "Wrong", fields: { type: "RefList:Source", colRef: 21, reverseCol: 11 } }
+    ] }
+  ] }) as any;
+  assert.equal(context.resultNormalizationIncomplete, true);
+  assert.equal(context.relations[0].reverse, undefined);
+  assert.equal(context.relations[0].reverseResolutionIncomplete, true);
+  const partial = new DocumentContextService().build("doc", { tables: [null] }) as any;
+  assert.equal(partial.resultNormalizationIncomplete, true);
+});
+
+test("document inspection refuses duplicate stable schema IDs", () => {
+  assert.throws(() => new DocumentContextService().build("doc", { tables: [{ id: "Items", columns: [] }, { id: "Items", columns: [] }] }), /Ambiguous/);
+  assert.throws(() => new DocumentContextService().build("doc", { tables: [{ id: "Items", columns: [{ id: "Name", fields: { type: "Text" } }, { id: "Name", fields: { type: "Text" } }] }] }), /Ambiguous/);
+});
+
 test("summarizes tables, formulas and Ref relationships without records", () => {
   const tableResponse = {
     tables: [

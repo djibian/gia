@@ -21,6 +21,21 @@ const expandedTables = {
   ]
 };
 
+test("custom mapping inspection marks ambiguous or conflicting table/column identities incomplete", () => {
+  const table = expandedTables.tables[0]!;
+  for (const metadata of [
+    { tables: [{ ...table, columns: [...table.columns, { id: "Other", fields: { colRef: 11, type: "Text" } }] }] },
+    { tables: [{ ...table, columns: [...table.columns, { id: "Name", fields: { colRef: 99, type: "Text" } }] }] },
+    { tables: [{ ...table, columns: [...table.columns, null] }] },
+    { tables: [table, { ...table, id: "Other" }] },
+    { tables: [{ ...table, fields: { tableRef: 99 } }] }
+  ]) {
+    const result = normalizeCustomWidgetSettings({ type: "custom", tableId: "People", tableRef: 1, options: { customView: { columnsMapping: { title: 11 } } } }, metadata);
+    assert.equal(result?.customWidgetSettingsNormalizationIncomplete, true);
+    assert.equal(result?.customWidgetSettings?.columnsMapping, null);
+  }
+});
+
 test("normalizes custom widget access and column mappings to stable column IDs", () => {
   const result = normalizeCustomWidgetSettings(
     {

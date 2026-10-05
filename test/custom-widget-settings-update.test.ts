@@ -39,6 +39,19 @@ const widget = {
   }
 };
 
+test("custom mapping mutation refuses ambiguous and malformed metadata instead of guessing", () => {
+  const table = expandedTables.tables[0]!;
+  for (const metadata of [
+    { tables: [{ ...table, columns: [...table.columns, { id: "Other", fields: { colRef: 11, type: "Text" } }] }] },
+    { tables: [{ ...table, columns: [...table.columns, { id: "Name", fields: { colRef: 99, type: "Text" } }] }] },
+    { tables: [{ ...table, columns: [...table.columns, null] }] },
+    { tables: [table, { ...table, id: "Other" }] },
+    { tables: [{ ...table, fields: { tableRef: 99 } }] }
+  ]) {
+    assert.throws(() => resolveCustomWidgetSettingsUpdate(widget, metadata, { columnsMapping: { title: "Name" } }), /metadata.*ambiguous/);
+  }
+});
+
 test("resolves stable custom widget settings while preserving every untargeted option", () => {
   const result = resolveCustomWidgetSettingsUpdate(widget, expandedTables, {
     access: "read table",
