@@ -40,6 +40,19 @@ function record(value: unknown): JsonRecord | null {
     : null;
 }
 
+/** Native customView is JSON inside the section's outer options JSON. */
+export function customViewOptions(options: unknown): JsonRecord | null {
+  const outer = record(options);
+  if (!outer) return null;
+  const value = outer.customView;
+  if (value === undefined || value === "") return {};
+  if (typeof value === "string") {
+    try { return record(JSON.parse(value)); } catch { return null; }
+  }
+  // Read already persisted object settings, but write the native encoding.
+  return record(value);
+}
+
 function positiveInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0
     ? value
@@ -119,9 +132,8 @@ export function normalizeCustomWidgetSettings(
   // deliberately excluded from custom-widget semantics.
   if (widget.type !== "custom") return undefined;
 
-  const options = record(widget.options);
-  const customView = record(options?.customView);
-  if (!options || !customView) {
+  const customView = customViewOptions(widget.options);
+  if (!customView) {
     return { customWidgetSettingsNormalizationIncomplete: true };
   }
 

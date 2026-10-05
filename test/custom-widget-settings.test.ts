@@ -81,6 +81,30 @@ test("normalizes native blank access to none", () => {
   );
 });
 
+test("native encoded settings and proven blank options normalize without guessing missing state", () => {
+  const widget = { type: "custom", tableRef: 1 };
+  for (const options of [{}, { customView: "" }, { customView: "{}" }]) {
+    assert.deepEqual(normalizeCustomWidgetSettings({ ...widget, options }, expandedTables), {
+      customWidgetSettings: { access: "none", columnsMapping: null }
+    });
+  }
+  const encoded = { customView: JSON.stringify({ access: "read table", columnsMapping: { title: 11 }, url: "private-sentinel" }) };
+  assert.deepEqual(normalizeCustomWidgetSettings({ ...widget, options: encoded }, expandedTables), {
+    customWidgetSettings: { access: "read table", columnsMapping: { title: "Name" } }
+  });
+  for (const options of [undefined, null, "broken", { customView: "broken" }, { customView: "null" }, { customView: [] }]) {
+    assert.deepEqual(normalizeCustomWidgetSettings({ ...widget, options }, expandedTables), { customWidgetSettingsNormalizationIncomplete: true });
+  }
+  const build = (rawOptions: unknown) => new DocumentUiService().build("doc-1", expandedTables,
+    { records: [{ id: 1, fields: { viewRef: 101, indentation: 0, pagePos: 1 } }] },
+    { records: [{ id: 101, fields: { name: "Custom" } }] },
+    { records: [{ id: 201, fields: { parentId: 101, tableRef: 1, parentKey: "custom", options: rawOptions } }] });
+  assert.deepEqual(build("").pages[0]!.widgets[0]!.customWidgetSettings, { access: "none", columnsMapping: null });
+  for (const raw of [undefined, null, "broken", "null", "[]", 0]) {
+    assert.equal(build(raw).pages[0]!.widgets[0]!.customWidgetSettingsNormalizationIncomplete, true);
+  }
+});
+
 test("drops unresolved mapping entries and marks incomplete without leaking refs", () => {
   const result = normalizeCustomWidgetSettings(
     {

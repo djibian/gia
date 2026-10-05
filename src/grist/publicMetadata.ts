@@ -1,4 +1,5 @@
 import type { GristPage, GristPageWidget } from "./documentUi.js";
+import { customViewOptions } from "./customWidgetSettings.js";
 import {
   MAX_NORMALIZED_LAYOUT_DEPTH,
   MAX_NORMALIZED_LAYOUT_NODES
@@ -86,8 +87,8 @@ export function projectPublicWidget(widget: GristPageWidget) {
         const value = widget.gridOptions?.[key];
         if (value !== undefined && raw[key] === value) publicOptions[key] = value;
       }
-      const customView = record(raw.customView);
-      if (customView) {
+      const customView = customViewOptions(raw);
+      if (customView && raw.customView !== undefined) {
         const safeView: JsonRecord = {};
         for (const key of ["access", "widgetId"] as const) {
           const value = widget.customWidgetSettings?.[key];

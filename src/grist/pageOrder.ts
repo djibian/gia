@@ -339,6 +339,7 @@ export function samePageOrderSnapshot(
     return false;
   }
 
+  const targeted = new Set(expected.visiblePageIds);
   return actual.pages.every((page, index) => {
     const other = expected.pages[index];
     return (
@@ -346,7 +347,7 @@ export function samePageOrderSnapshot(
       page.pageId === other.pageId &&
       page.pageRecordId === other.pageRecordId &&
       page.indentation === other.indentation &&
-      page.pagePos === other.pagePos &&
+      (targeted.has(page.pageId) || page.pagePos === other.pagePos) &&
       page.parentPageId === other.parentPageId &&
       page.isCensored === other.isCensored &&
       page.isSpecial === other.isSpecial
