@@ -15,7 +15,8 @@ Unknown or unavailable verification state fails closed. Invalid authentication
 returns a sanitized challenge; JWKS availability failure returns HTTP 503.
 
 The exact validated OAuth issuer/subject produce an opaque non-reversible principal ID;
-identity strings are not trimmed or canonicalized. OAuth scopes
+identity strings are not trimmed or canonicalized; malformed Unicode is rejected
+before UTF-8 hashing. OAuth scopes
 restrict capabilities; they neither grant Grist access nor create resource authority.
 Each OAuth request gets a fresh principal-bound Grist client/context/cache.
 The transport access token is used only for verification and is never forwarded

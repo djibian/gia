@@ -55,6 +55,7 @@ test("Grist base URL preserves valid path prefixes and rejects unusable or secre
     "ftp://localhost", "ws://localhost", "file://127.0.0.1/a",
     "http://grist.example.org", "https://grist.example.org/base?x=1",
     "https://grist.example.org/base#fragment", "https://user:secret-sentinel@grist.example.org",
+    "https://grist.example.org/base?", "https://grist.example.org/base#", "https://grist.example.org/base?#",
     "invalid-secret-sentinel"
   ]) {
     withEnv({ ...BASE_ENV, GRIST_BASE_URL: input }, () => {

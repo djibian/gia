@@ -79,6 +79,14 @@ test("distinct exact OAuth subjects cannot inherit another subject's principal m
   assert.equal(ids[0], "oauth:Ge9vqe-kqPLXvv-LSkCHEbvPDmTtONFnQ6KzdDF2Tl0");
 });
 
+test("malformed Unicode identities are rejected before UTF-8 hashing can alias them", () => {
+  for (const subject of ["\ud800", "\ud801", "valid\udc00", "\ud800suffix"]) {
+    assert.throws(() => oauthPrincipalId("https://auth.example.test", subject),
+      (error: unknown) => error instanceof OAuthPrincipalError && error.code === "invalid_subject");
+  }
+  assert.notEqual(oauthPrincipalId("https://auth.example.test", "\ufffd"), oauthPrincipalId("https://auth.example.test", "😀"));
+});
+
 test("rejects empty validated issuer or subject", () => {
   assert.throws(
     () => oauthPrincipalId("", "user"),

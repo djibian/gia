@@ -64,7 +64,7 @@ function normalizeBaseUrl(value: string): string {
       (url.protocol === "http:" &&
         (url.hostname === "127.0.0.1" || url.hostname === "localhost"))) ||
     url.username !== "" || url.password !== "" ||
-    url.search !== "" || url.hash !== ""
+    url.href.includes("?") || url.href.includes("#")
   ) {
     throw new Error(
       "GRIST_BASE_URL must use HTTPS or localhost HTTP, without credentials, query or fragment."

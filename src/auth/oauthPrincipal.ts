@@ -34,7 +34,7 @@ function requiredClaim(
   value: string,
   code: "invalid_issuer" | "invalid_subject"
 ): string {
-  if (!value.trim()) throw new OAuthPrincipalError(code);
+  if (!value.trim() || !value.isWellFormed()) throw new OAuthPrincipalError(code);
   return value;
 }
 
