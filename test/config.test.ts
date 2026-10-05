@@ -41,6 +41,33 @@ const BASE_ENV = {
   PORT: "3000"
 };
 
+test("Grist base URL preserves valid path prefixes and rejects unusable or secret-bearing URLs", () => {
+  for (const [input, expected] of [
+    ["https://grist.example.org/base/", "https://grist.example.org/base"],
+    ["http://localhost:8484/", "http://localhost:8484"],
+    ["http://127.0.0.1:8484/base", "http://127.0.0.1:8484/base"]
+  ]) {
+    withEnv({ ...BASE_ENV, GRIST_BASE_URL: input }, () => {
+      assert.equal(loadConfig().gristBaseUrl, expected);
+    });
+  }
+  for (const input of [
+    "ftp://localhost", "ws://localhost", "file://127.0.0.1/a",
+    "http://grist.example.org", "https://grist.example.org/base?x=1",
+    "https://grist.example.org/base#fragment", "https://user:secret-sentinel@grist.example.org",
+    "invalid-secret-sentinel"
+  ]) {
+    withEnv({ ...BASE_ENV, GRIST_BASE_URL: input }, () => {
+      assert.throws(() => loadConfig(), (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /GRIST_BASE_URL/);
+        assert.doesNotMatch(error.message, /secret-sentinel/);
+        return true;
+      });
+    });
+  }
+});
+
 test("defaults Grist credentials to controlled static mode", () => {
   withEnv(BASE_ENV, () => {
     const config = loadConfig();

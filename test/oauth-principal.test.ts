@@ -70,6 +70,15 @@ test("creates an MCP principal whose authority is reduced by OAuth scopes", () =
   ]);
 });
 
+test("distinct exact OAuth subjects cannot inherit another subject's principal mapping", () => {
+  const issuer = "https://auth.example.test";
+  const subjects = ["user-123", " user-123", "user-123 ", "user-123\t"];
+  const ids = subjects.map((subject) => oauthPrincipalId(issuer, subject));
+  assert.equal(new Set(ids).size, subjects.length);
+  // Preserve existing mapping IDs for canonical subjects.
+  assert.equal(ids[0], "oauth:Ge9vqe-kqPLXvv-LSkCHEbvPDmTtONFnQ6KzdDF2Tl0");
+});
+
 test("rejects empty validated issuer or subject", () => {
   assert.throws(
     () => oauthPrincipalId("", "user"),

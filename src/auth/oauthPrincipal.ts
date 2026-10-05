@@ -34,9 +34,8 @@ function requiredClaim(
   value: string,
   code: "invalid_issuer" | "invalid_subject"
 ): string {
-  const normalized = value.trim();
-  if (!normalized) throw new OAuthPrincipalError(code);
-  return normalized;
+  if (!value.trim()) throw new OAuthPrincipalError(code);
+  return value;
 }
 
 export function capabilitiesFromOAuthScope(
@@ -60,12 +59,12 @@ export function capabilitiesFromOAuthScope(
  * not need to appear in normal bridge audit logs.
  */
 export function oauthPrincipalId(issuer: string, subject: string): string {
-  const normalizedIssuer = requiredClaim(issuer, "invalid_issuer");
-  const normalizedSubject = requiredClaim(subject, "invalid_subject");
+  const exactIssuer = requiredClaim(issuer, "invalid_issuer");
+  const exactSubject = requiredClaim(subject, "invalid_subject");
   const digest = createHash("sha256")
-    .update(normalizedIssuer, "utf8")
+    .update(exactIssuer, "utf8")
     .update("\0", "utf8")
-    .update(normalizedSubject, "utf8")
+    .update(exactSubject, "utf8")
     .digest("base64url");
   return `oauth:${digest}`;
 }

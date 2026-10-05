@@ -9,6 +9,7 @@ import { registerLeanTools } from "../src/mcp/leanTools.js";
 interface Registration {
   name: string;
   options: {
+    inputSchema?: { parse(input: unknown): any };
     title?: string;
     description?: string;
     annotations?: {
@@ -19,6 +20,33 @@ interface Registration {
   };
   callback: (...args: any[]) => any;
 }
+
+test("registered mutation schemas reject unsupported wrapper keys before dispatch", async () => {
+  const writes: unknown[] = [];
+  const grist = new Proxy({}, { get: () => async (...args: unknown[]) => {
+    writes.push(args);
+    return {};
+  } });
+  const registrations = capture(grist);
+  const cases = [
+    ["grist_add_records", { documentId: "doc-1", tableId: "Tasks", records: [{ id: 12345, fields: { Name: "test" } }] }],
+    ["grist_change_records", { action: "update", documentId: "doc-1", tableId: "Tasks", records: [{ id: 1, fields: {}, extra: true }] }],
+    ["grist_add_structure", { action: "create_tables", documentId: "doc-1", tables: [{ id: "Tasks", extra: true }] }],
+    ["grist_add_structure", { action: "create_tables", documentId: "doc-1", tables: [{ id: "Tasks", columns: [{ id: "Name", extra: true }] }] }],
+    ["grist_add_structure", { action: "create_columns", documentId: "doc-1", tableId: "Tasks", columns: [{ id: "Name", extra: true }] }],
+    ["grist_change_structure", { action: "update_columns", documentId: "doc-1", tableId: "Tasks", columns: [{ id: "Name", fields: { label: "Name" }, extra: true }] }],
+    ["grist_change_structure", { action: "update_tables", documentId: "doc-1", tables: [{ id: "Tasks", fields: { onDemand: false }, extra: true }] }]
+  ] as const;
+  for (const [name, input] of cases) {
+    const registration = registrations.find((entry) => entry.name === name)!;
+    await assert.rejects(async () => registration.callback(registration.options.inputSchema!.parse(input)), /Unrecognized key/);
+  }
+  assert.deepEqual(writes, []);
+  const add = registrations.find((entry) => entry.name === "grist_add_records")!;
+  const input = { documentId: "doc-1", tableId: "Tasks", records: [{ fields: { arbitraryCell: { nested: true } } }] };
+  await add.callback(add.options.inputSchema!.parse(input));
+  assert.equal(writes.length, 1);
+});
 
 function capture(grist: any = {}): Registration[] {
   const registrations: Registration[] = [];

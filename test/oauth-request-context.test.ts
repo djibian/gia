@@ -7,11 +7,35 @@ import {
   type OAuthAccessTokenVerifier
 } from "../src/auth/oauthRequestContext.js";
 import type { Principal } from "../src/auth/principal.js";
+import { oauthPrincipalId } from "../src/auth/oauthPrincipal.js";
 
 const POLICY = {
   issuer: "https://auth.example.test/oidc",
   audience: "https://grist-chatgpt.loeildumaitre.fr/mcp"
 } as const;
+
+test("exact verified subjects select distinct credential contexts without fallback", async () => {
+  const canonical = oauthPrincipalId(POLICY.issuer, "user-123");
+  const contexts: string[] = [];
+  const options = {
+    authorizationHeader: "Bearer opaque-test-token",
+    policy: POLICY,
+    grant: { documentIds: ["doc-a"], workspaceIds: [] },
+    contextFactory: { async create(principal: Principal) {
+      contexts.push(principal.id);
+      if (principal.id !== canonical) throw new Error("missing_principal");
+      return { credential: "synthetic-canonical-credential" };
+    } },
+    nowSeconds: 1_000
+  };
+  const verifier = (subject: string): OAuthAccessTokenVerifier => ({ async verify() {
+    return { issuer: POLICY.issuer, subject, audience: POLICY.audience, expiresAt: 2_000, scope: "doc:read" };
+  } });
+  await createOAuthMcpRequestContext({ ...options, verifier: verifier("user-123") });
+  await assert.rejects(createOAuthMcpRequestContext({ ...options, verifier: verifier(" user-123") }), /missing_principal/);
+  assert.equal(contexts.length, 2);
+  assert.notEqual(contexts[0], contexts[1]);
+});
 
 function validVerifier(observedTokens: string[]): OAuthAccessTokenVerifier {
   return {

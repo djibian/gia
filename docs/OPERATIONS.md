@@ -32,7 +32,7 @@ no MCP capability. Publication is outside current scope. Never commit a real tok
 
 | Setting | Meaning / default |
 | --- | --- |
-| `GRIST_BASE_URL` | HTTPS Grist base URL; HTTP only for localhost development |
+| `GRIST_BASE_URL` | HTTPS Grist base URL; HTTP only for localhost development; no credentials, query or fragment; path prefixes are supported |
 | `GRIST_ALLOWED_DOCUMENT_IDS`, `GRIST_ALLOWED_WORKSPACE_IDS` | comma-separated explicit ceilings; at least one required |
 | `GRIST_CREDENTIAL_MODE` | `static` or `principal-map`; default `static` |
 | `GRIST_API_KEY` | required in static credential mode; forbidden in principal-map mode |

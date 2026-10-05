@@ -53,14 +53,21 @@ function required(name: string): string {
 }
 
 function normalizeBaseUrl(value: string): string {
-  const url = new URL(value);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("GRIST_BASE_URL must be a valid Grist base URL.");
+  }
   if (
-    url.protocol !== "https:" &&
-    url.hostname !== "127.0.0.1" &&
-    url.hostname !== "localhost"
+    !(url.protocol === "https:" ||
+      (url.protocol === "http:" &&
+        (url.hostname === "127.0.0.1" || url.hostname === "localhost"))) ||
+    url.username !== "" || url.password !== "" ||
+    url.search !== "" || url.hash !== ""
   ) {
     throw new Error(
-      "GRIST_BASE_URL must use HTTPS except for localhost development."
+      "GRIST_BASE_URL must use HTTPS or localhost HTTP, without credentials, query or fragment."
     );
   }
   url.pathname = url.pathname.replace(/\/$/, "");
