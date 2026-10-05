@@ -437,27 +437,27 @@ export function registerLeanTools(
 ): void {
   const newRecordSchema = z.object({
     fields: z.record(z.string(), z.unknown())
-  });
+  }).strict();
   const updateRecordSchema = z.object({
     id: positiveIdSchema,
     fields: z.record(z.string(), z.unknown())
-  });
+  }).strict();
   const columnSpecSchema = z.object({
     id: columnIdSchema,
     fields: columnMutationFieldsSchema.optional()
-  });
+  }).strict();
   const columnUpdateSchema = z.object({
     id: columnIdSchema,
     fields: columnMutationFieldsSchema
-  });
+  }).strict();
   const tableSpecSchema = z.object({
     id: tableIdSchema,
     columns: boundedArray(columnSpecSchema, limits.maxSchemaItems).optional()
-  });
+  }).strict();
   const tableUpdateSchema = z.object({
     id: tableIdSchema,
     fields: tableMutationFieldsSchema
-  });
+  }).strict();
   const documentNameSchema = z.string().trim().min(1).max(200);
 
   server.registerTool(

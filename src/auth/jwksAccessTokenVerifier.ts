@@ -78,7 +78,7 @@ function parseJsonSegment(segment: string): Record<string, unknown> {
   }
   try {
     const parsed: unknown = JSON.parse(
-      Buffer.from(segment, "base64url").toString("utf8")
+      new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(segment, "base64url"))
     );
     if (!isRecord(parsed)) {
       throw new JwksAccessTokenVerifierError("malformed_token");

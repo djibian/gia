@@ -6,6 +6,8 @@ import {
   type KeyObject
 } from "node:crypto";
 import test from "node:test";
+import { createOAuthMcpRequestContext } from "../src/auth/oauthRequestContext.js";
+import { OAuthPrincipalError } from "../src/auth/oauthPrincipal.js";
 
 import {
   JwksAccessTokenVerifierError,
@@ -117,6 +119,36 @@ test("verifies an RS256 JWT against remote JWKS and returns bounded claims", asy
     expiresAt: 2_000_000_000,
     scope: "doc:read doc:write doc.schema:write"
   });
+});
+
+test("signed malformed Unicode subjects never select a credential context", async () => {
+  const fixture = rsaFixture();
+  const verifier = new JwksOAuthAccessTokenVerifier({ jwksUri: JWKS_URI, fetcher: jwksFetcher(fixture.jwk) });
+  let contexts = 0;
+  for (const sub of ["\ud800", "\ud801"]) {
+    await assert.rejects(createOAuthMcpRequestContext({
+      authorizationHeader: `Bearer ${jwt(fixture.privateKey, { ...validPayload(), sub })}`,
+      verifier,
+      policy: { issuer: ISSUER, audience: AUDIENCE },
+      grant: { documentIds: ["doc-1"], workspaceIds: [] },
+      contextFactory: { async create() { contexts++; return {}; } },
+      nowSeconds: 1_000
+    }), (error: unknown) => error instanceof OAuthPrincipalError && error.code === "invalid_subject");
+  }
+  assert.equal(contexts, 0);
+  const valid = await verifier.verify(jwt(fixture.privateKey, { ...validPayload(), sub: "\ufffd😀" }));
+  assert.equal(valid.subject, "\ufffd😀");
+});
+
+test("signed JSON segments with malformed UTF-8 are rejected instead of replacement-decoded", async () => {
+  const fixture = rsaFixture();
+  const verifier = new JwksOAuthAccessTokenVerifier({ jwksUri: JWKS_URI, fetcher: jwksFetcher(fixture.jwk) });
+  const header = base64Json({ alg: "RS256", kid: "poc-key" });
+  const bytes = Buffer.concat([Buffer.from('{"sub":"'), Buffer.from([0xff]), Buffer.from('","iss":"https://auth.example.test/oidc","aud":"test","exp":2000000000}')]);
+  const payload = bytes.toString("base64url");
+  const signingInput = `${header}.${payload}`;
+  const signature = signData("RSA-SHA256", Buffer.from(signingInput), fixture.privateKey).toString("base64url");
+  await assert.rejects(verifier.verify(`${signingInput}.${signature}`), (error: unknown) => error instanceof JwksAccessTokenVerifierError && error.code === "malformed_token");
 });
 
 test("rejects a payload changed after signing", async () => {
