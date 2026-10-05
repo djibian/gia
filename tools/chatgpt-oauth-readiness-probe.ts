@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { LEAN_TOOL_REGISTRY } from "../src/mcp/leanRegistry.js";
 import { oauthSecuritySchemesForTool } from "../src/mcp/oauthToolSecurity.js";
 
@@ -36,7 +37,8 @@ function stringArray(value: unknown): string[] | undefined {
 function isHttpsUrl(value: unknown): value is string {
   if (typeof value !== "string") return false;
   try {
-    return new URL(value).protocol === "https:";
+    const url = new URL(value);
+    return url.protocol === "https:" && url.username === "" && url.password === "" && !url.href.includes("#");
   } catch {
     return false;
   }
@@ -137,10 +139,6 @@ async function postMcp(options: {
   };
 }
 
-function sameJson(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
 function inspectToolSecurity(body: unknown): {
   toolsListAccepted: boolean;
   exactLeanToolSet: boolean;
@@ -173,19 +171,20 @@ function inspectToolSecurity(body: unknown): {
 
   const expectedNames = LEAN_TOOL_REGISTRY.map((tool) => tool.name).sort();
   const actualNames = [...byName.keys()].sort();
-  const exactLeanToolSet = sameJson(actualNames, expectedNames);
+  const exactLeanToolSet = tools.length === expectedNames.length &&
+    byName.size === tools.length && isDeepStrictEqual(actualNames, expectedNames);
   let rootSecuritySchemesMatch = exactLeanToolSet;
   let compatibilityMirrorMatches = exactLeanToolSet;
 
   for (const definition of LEAN_TOOL_REGISTRY) {
     const tool = byName.get(definition.name);
     const expected = oauthSecuritySchemesForTool(definition.name);
-    if (!tool || !expected || !sameJson(tool.securitySchemes, expected)) {
+    if (!tool || !expected || !isDeepStrictEqual(tool.securitySchemes, expected)) {
       rootSecuritySchemesMatch = false;
     }
 
     const meta = tool && isObject(tool._meta) ? tool._meta : undefined;
-    if (!meta || !expected || !sameJson(meta.securitySchemes, expected)) {
+    if (!meta || !expected || !isDeepStrictEqual(meta.securitySchemes, expected)) {
       compatibilityMirrorMatches = false;
     }
   }
@@ -203,6 +202,7 @@ async function run(): Promise<boolean> {
   const accessToken = optional("OAUTH_ACCESS_TOKEN");
   const resourceUrl = new URL(resourceUri);
   if (resourceUrl.protocol !== "https:") throw new Error("resource_uri_not_https");
+  if (!isHttpsUrl(resourceUri) || resourceUrl.pathname !== "/mcp" || resourceUrl.href.includes("?")) throw new Error("resource_uri_not_canonical");
 
   const metadataUrl = new URL(PROTECTED_RESOURCE_PATH, resourceUrl.origin).toString();
   const metadata = await fetchJson(metadataUrl, "protected_resource_metadata_fetch_failed");
@@ -210,8 +210,9 @@ async function run(): Promise<boolean> {
   const scopesSupported = stringArray(metadata.scopes_supported) ?? [];
 
   const resourceMatches = metadata.resource === resourceUri;
-  const authorizationServerPresent = authorizationServers.length > 0;
+  const authorizationServerPresent = authorizationServers.length === 1 && isHttpsUrl(authorizationServers[0]);
   const scopesMatch =
+    scopesSupported.length === REQUIRED_SCOPES.length &&
     REQUIRED_SCOPES.every((scope) => scopesSupported.includes(scope)) &&
     scopesSupported.every((scope) => REQUIRED_SCOPES.includes(scope as typeof REQUIRED_SCOPES[number]));
 

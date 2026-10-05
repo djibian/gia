@@ -87,7 +87,7 @@ function requiredHttpsUrl(name: string): string {
     url.protocol !== "https:" ||
     url.username !== "" ||
     url.password !== "" ||
-    url.hash !== ""
+    url.href.includes("#")
   ) {
     throw new Error(
       `${name} must use HTTPS without embedded credentials or a fragment.`

@@ -22,8 +22,8 @@ function parseCanonicalResource(value: string): URL | undefined {
     if (
       url.protocol !== "https:" ||
       url.pathname !== "/mcp" ||
-      url.search !== "" ||
-      url.hash !== "" ||
+      url.href.includes("?") ||
+      url.href.includes("#") ||
       url.username !== "" ||
       url.password !== ""
     ) {
@@ -50,7 +50,7 @@ function validAuthorizationServers(value: unknown): boolean {
   }
   try {
     const url = new URL(value[0]);
-    return url.protocol === "https:" && url.username === "" && url.password === "" && url.hash === "";
+    return url.protocol === "https:" && url.username === "" && url.password === "" && !url.href.includes("#");
   } catch {
     return false;
   }
