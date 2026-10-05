@@ -1,350 +1,73 @@
-# Autonomous development contract
-
-This file is the operational contract for autonomous work on `djibian/gia`.
-
-## Mission of autonomous development
-
-Build the **smallest coherent Grist Community MCP product** by reusing and adapting proven existing projects before inventing new abstractions.
-
-The LLM client is the reasoning, planning and orchestration layer. **Gia** is the compact semantic adaptation and execution layer between that agent and Grist.
-
-Product development is deliberately independent of any business application. Stage tracking, CCF, pedagogy, CRM, inventory and every other domain scenario are validation cases, never architecture dependencies.
-
-## Core invariants
-
-### G1 — GitHub/main is project state
-
-- `main` is the only durable source of truth for integrated project state.
-- At the start of every execution, resolve the exact SHA of `main` and read `AGENTS.md`, `docs/PRODUCT_VISION.md` and `docs/ROADMAP.md` from that exact SHA.
-- Reconstruct mutable GitHub facts instead of trusting chat history: open PRs, exact heads, Draft/Ready state, exact-head CI, reviews/comments, issues, dependencies, branches and current `main`.
-- Conversation memory is never project state.
-
-### G2 — Existing-project-first development
-
-Before implementing a capability, inspect the relevant current external references named by the roadmap.
-
-Default preference order:
-
-1. use Grist's official behavior and documentation as the functional oracle;
-2. **REUSE** compatible, clearly licensed implementation when it fits without importing unwanted architecture;
-3. **ADAPT** a compatible implementation when a small translation is sufficient;
-4. **REIMPLEMENT** only the proven behavior or design pattern when direct reuse is unsuitable;
-5. **REJECT** functionality that does not improve the lean product.
-
-Presence in the official Grist MCP or in a community project does not by itself make a capability eligible. Ecosystem differences become work only when the current roadmap explicitly selects them after a bounded product-value review.
-
-Do not build a local abstraction merely because it is architecturally attractive. A new abstraction needs a concrete current product need that existing code cannot satisfy simply.
-
-Every reuse/adaptation decision records provenance and licensing. Absence or ambiguity of a license means ideas/behavior may be studied but code is not copied.
-
-### G3 — The agent reasons; the bridge executes
-
-Do not recreate an LLM inside the bridge.
-
-The bridge must not grow a general internal planner, business workflow engine, interactive wizard, domain state machine, autonomous sub-agent framework, hidden orchestration database or lifecycle agent merely to perform work the MCP client can already reason about.
-
-The target conceptual surface is intentionally small:
-
-```text
-discover
-inspect
-query
-change_data
-change_structure
-change_ui
-help
-```
-
-These are product concepts, not a requirement that exactly seven public tools exist. One invocation must still correspond to one bounded semantic intention; do not create an opaque multi-action transaction or generic remote-control escape hatch.
-
-### G4 — PRs are the unit of integration
-
-- Never implement directly on `main`.
-- Use short-lived branches with one clear purpose.
-- Finish or explicitly supersede existing overlapping work before opening replacement work.
-- Keep dependencies explicit in the PR body.
-- A PR body states `Review gate: REQUIRED` or `Review gate: NOT REQUIRED` with a reason.
-- Every `Review gate: REQUIRED` PR must include an **Expert advisory** evidence block. Use the exact shape below so the independent reviewer can verify consultation rather than infer it:
-
-```text
-Expert advisory:
-- consulted: <docs/expert/... paths, or none>
-- applicability: CURRENT | PARTIALLY STALE | STALE | NONE RELEVANT
-- applied constraints: <compact list, or none>
-- departures: <none, or concise evidence-backed reason>
-```
-
-If no report is relevant, say `consulted: none` and `applicability: NONE RELEVANT`. Do not invent a report dependency merely to satisfy the template.
-
-### G5 — Optimistic concurrency for repository transitions
-
-Before any durable repository transition that depends on mutable state — push/update, review decision, Ready/Draft transition or merge — re-check the relevant exact SHAs.
-
-If `main` or a depended-on head moved, reconstruct the relevant state and adapt. Never blind-force repository state to hide a semantic race.
-
-### G6 — Baseline CI stays; product validation moves later
-
-During **R0-R3 construction**, CI is engineering feedback, not a product-proof program.
-
-Keep the cheapest checks needed to avoid building on broken code:
-
-- dependency installation;
-- production dependency audit already required by the repository;
-- TypeScript/check step;
-- the existing unit/contract regression suite;
-- build.
-
-Add a focused unit or contract regression test when needed to make newly written code maintainable or to lock a dangerous semantic boundary.
-
-Do **not** make R0-R3 depend on new domain fixtures, stage-tracking scenarios, browser matrices, synthetic ACL applications, large recovery campaigns, manual acceptance runs or broad end-to-end certification infrastructure. Those belong to **R4 — Final Validation Campaign**, after a coherent product candidate exists.
-
-A test harness is not a product feature. Do not implement test infrastructure larger than the capability it protects during construction.
-
-### G7 — Significant changes require independent exact-head review
-
-Independent review remains an autonomous quality boundary and does not imply human intervention.
-
-Review is **REQUIRED** for changes that materially affect:
-
-- runtime behavior or Grist read/write semantics;
-- public MCP contract or operation registry;
-- authorization, credentials, principal isolation, secrets or security boundaries;
-- stable-ID/normalization, partial/ambiguous-write or retry semantics;
-- non-trivial cross-module architecture;
-- this governance contract, Product Vision or Roadmap in a way that changes autonomous selection.
-
-Bounded typo/link/current-state documentation fixes normally do not require independent review.
-
-A Controller execution that materially authored or modified a review-required exact head must not independently PASS or merge that exact head. Independence may come from a later fresh Controller execution or a genuinely isolated reviewer that did not author the head.
-
-A PASS applies only to the exact reviewed SHA. Exact-head CI must also be green before merge.
-
-### G8 — No development human gates
-
-R0-R3 must progress without asking a human to choose implementation architecture, test strategy, library selection, product decomposition or other routine development decisions.
-
-When several choices are possible, apply this policy autonomously:
-
-1. prefer standards and Grist-native semantics;
-2. prefer reuse over new code;
-3. prefer the smaller dependency and smaller public contract;
-4. preserve current safe behavior rather than broadening authority;
-5. defer speculative or irreversible capability rather than blocking the core;
-6. record the decision and continue.
-
-If a capability would require a new public scope, irreversible external publication, production credential custody, institutional commitment or another genuinely external authorization decision, defer the optional external action and continue useful product work. Do not turn it into a development stop condition.
-
-Human/external actions may be required later for production secrets, institutional ownership or public submission, but they are outside the product-construction critical path.
-
-R6 has one explicit **product-direction checkpoint**: after the static capability review and before Pareto selection, present the decision-support report to the product owner and record their stated priorities. This is not a request for implementation architecture or test strategy. The product owner supplies value/necessity judgments; the agent supplies technical coverage, feasibility, risk and cost analysis. Do not infer product priority from ecosystem breadth alone.
-
-### G9 — Business applications never drive the core roadmap
-
-No business-specific document, table name, ACL policy, LinkKey flow, pedagogical scenario or application behavior may become a core architecture dependency.
-
-Do not confuse a domain policy with the generic Grist capability used to express it. In particular, **bounded application-level access-rule semantics** must be assessed separately from generic user/group/org/share/service-account administration. A generic ACL capability candidate is not business coupling merely because different applications would use it to express different policies.
-
-R4 validation could reveal a missing generic capability. During R6, explicit product-owner reports of prior limitations are valid product evidence and must be represented in the static capability review without recreating those applications or running new domain tests. After R6, real product use may likewise provide evidence for a future R7 proposal. In every case, the response is the smallest generic repair justified by the evidence; do not move the business model into the product architecture or treat one application request as an automatic roadmap commitment.
-
-### G10 — Security boundaries survive simplification
-
-Pareto simplification must not mean generic unsafe control.
-
-Preserve these boundaries unless an explicit later reviewed product decision changes them:
-
-- MCP is the primary product contract;
-- Grist remains authoritative for upstream permissions;
-- bridge policy may reduce but never elevate upstream authority;
-- credentials, bearer/OAuth tokens, API keys, encryption keys, LinkKeys and session secrets are never model-visible outputs, logs or committed files;
-- no generic HTTP forwarding;
-- no raw SQL model surface merely for convenience;
-- no arbitrary Grist `/apply` or arbitrary UserAction model surface;
-- mutations remain explicitly bounded and targeted;
-- partial/non-atomic writes and ambiguous post-write states are never blindly replayed;
-- principal-derived clients, discovery results and caches never cross principal boundaries.
-
-Existing J0/J1 safety code is a component bank, not an architectural mandate. Retain the parts that directly enforce these boundaries; remove or bypass orchestration machinery that is unnecessary for the lean product.
-
-### G11 — Deferred distribution is not latent committed work
-
-A public-directory submission, reviewer package, publisher-specific requirement or institutional publication action marked **DEFERRED** is not work merely because preparation material exists.
-
-- Controllers must not reactivate public distribution autonomously.
-- Only an explicit human product decision may make public distribution an active roadmap objective again.
-- Product evolution may freely invalidate or supersede earlier submission assumptions, metadata, reviewer fixtures or platform-specific preparation.
-- When publication is explicitly resumed, revalidate the then-current product and platform requirements rather than preserving stale submission compatibility.
-
-### G12 — Expert analysis and deep implementation are separate lanes
-
-Gia has two explicit, model-agnostic Expert modes alongside Controllers:
-
-- **Expert Analyst** performs deep analysis and recommendation without implementation;
-- **Expert Developer** deeply resolves an explicitly validated Analyst scope;
-- **Controllers** continue ordinary Roadmap execution.
-
-The Expert Analyst starts from exact current `main`, reconstructs relevant mutable GitHub facts, may inspect all product/runtime/normative material and relevant upstream evidence, and challenges architecture, semantics, security and product boundaries. **Before explicit human validation it must not modify the repository at all.** At the end of analysis it groups all genuine human decisions, presents a concise proposed treatment and proposed Expert Developer scope, then stops.
-
-After explicit human validation, the Analyst may publish one durable report under `docs/expert/` following `docs/EXPERT-PROTOCOL.md`. The report records the decisions actually made and a finite accepted `Expert Developer scope`. It remains **not Controller Roadmap authority** and does not itself start implementation.
-
-An Expert Developer may act only when explicitly launched on an integrated validated Analyst report with a non-empty accepted scope. The validated report scope plus that explicit launch is implementation authority for that Expert Developer execution, **even when the accepted findings are not ordinary active Roadmap tasks**. This exceptional authority is local to that scope: it does not amend the Roadmap, create hidden Controller eligibility or authorize unrelated feature work.
-
-The Expert Developer:
-
-- revalidates the report against exact current `main` and current upstream facts;
-- builds a resolution ledger covering every accepted in-scope finding;
-- investigates root causes rather than merely translating recommendations into mechanical tasks;
-- may modify runtime code, tests, dependencies, configuration and documentation as necessary to resolve the validated scope;
-- makes ordinary technical decisions autonomously inside that scope;
-- preserves current safety/product invariants and minimizes new product surface;
-- must stop before any **new** material product, public-contract, authority/security, compatibility or irreversible external decision not settled by the validated analysis, group all such choices and return them for human decision;
-- accounts for every finding as `RESOLVED`, `ALREADY RESOLVED`, `NO CHANGE JUSTIFIED`, `DEFERRED BY VALIDATED DECISION`, `SUPERSEDED` or `HUMAN GATE`;
-- remains subject to G4-G7, including independent exact-head review; it cannot independently PASS or merge a review-required head it materially authored.
-
-Controllers remain Roadmap-driven. They must consult any materially relevant still-applicable Expert report before implementing or independently reviewing the same area, but a report does not become Controller work merely because it contains recommendations.
-
-At startup, Controllers inventory `docs/expert/*.md`, identify reports whose scope/staleness triggers overlap the selected work, read relevant reports, and classify applicability as `CURRENT`, `PARTIALLY STALE` or `STALE`. For every review-required PR, record the required **Expert advisory** block from G4. Any material departure from a still-applicable finding requires concrete repository/upstream evidence.
-
-A report is not stale merely because `main` advanced. Use its declared staleness triggers and the semantics of intervening changes. Historical reports remain immutable evidence of their exact-base state and may retain old prompt/model names when historically accurate.
-
-The independent reviewer must independently check the report inventory and the PR's Expert advisory declaration. A G7 `PASS` is invalid if a materially relevant current report was omitted, not read, materially misclassified or departed from without evidence.
-
-Absent an explicit Expert Developer launch on a validated scope, `main`, the normative files and the active Roadmap remain the implementation authority for Controllers.
-
-## Startup recovery and coherence
-
-Every Controller execution begins with one bounded coherence pass:
-
-1. resolve exact `main`;
-2. read the three normative files;
-3. inventory `docs/expert/*.md`, compare report scopes/staleness triggers with the intended work, and read every materially relevant still-applicable report;
-4. inventory open PRs and unique unintegrated branches relevant to current work;
-5. close/supersede work that the current roadmap explicitly retired;
-6. check material consistency in this direction:
-
-```text
-runtime + public contract
-        -> docs/ROADMAP.md
-        -> docs/ARCHITECTURE.md + docs/SECURITY.md
-        -> README / secondary docs
-```
-
-Historical milestone/evidence documents may remain as history. They are not current requirements unless the Roadmap names them.
-
-Selection/security-critical drift is repaired before overlapping feature work. Projection-only README/history drift may wait for the relevant cleanup tranche.
-
-## Finite roadmap execution
-
-`docs/ROADMAP.md` is the authoritative dependency map.
-
-For each active tranche it defines a finite committed set. Candidate ideas are not work merely because they are visible.
-
-For **R6 — Pareto Convergence**, observation, product prioritization and implementation are deliberately separated:
-
-1. **R6.1a** inventories meaningful ecosystem deltas;
-2. **R6.1b** performs a static product-capability review across Grist capability families, current Gia coverage, prior exclusions and explicit product-owner limitations, without running real-application tests;
-3. the resulting report is presented at the product-direction checkpoint and the product owner's priorities are recorded;
-4. **R6.2** classifies/selects the resulting candidates;
-5. only `ADOPT` items selected by R6.2 may enter **R6.3** implementation.
-
-`ALREADY COVERED`, `DEFER` and `REJECT` items are not implementation work. R6.1b must decompose broad exclusions before discarding them; for example, application-level ACL rules are evaluated separately from generic identity/share administration, and bounded cross-table semantics separately from unrestricted SQL. **R7 — Usage-Driven Evolution** remains inactive until concrete real-use evidence is explicitly promoted into a finite roadmap tranche.
-
-Selection order:
-
-1. integrate or explicitly supersede already-open overlapping work;
-2. complete the current finite tranche;
-3. reuse/adapt existing external implementation before writing equivalent code;
-4. remove obsolete complexity before adding replacement complexity;
-5. implement only gaps required by the current tranche;
-6. stop when the committed set is exhausted; do not invent another tranche.
-
-A high-priority future production or distribution item does not block useful product construction. A **DEFERRED** distribution item is not a hidden next tranche and must not be selected without explicit human promotion.
-
-## Reference review protocol
-
-For every external source used in a product decision, record:
-
-- repository/project and observed revision or date when practical;
-- the exact behavior/component inspected;
-- `REUSE`, `ADAPT`, `REIMPLEMENT` or `REJECT`;
-- licensing implications;
-- what is deliberately not imported.
-
-Do not copy code from a repository whose relevant license is not confirmed.
-
-The initial recomposition references are recorded in `docs/RECOMPOSITION-REVIEW.md`.
-
-## Independent review protocol
-
-A reviewer challenges only the submitted exact head and current tranche goal. Before reaching a verdict, the reviewer must independently inventory `docs/expert/*.md`, determine whether the PR overlaps any still-applicable report, read each relevant report, and verify the PR's **Expert advisory** block.
-
-If a relevant current report is omitted, unread, materially misclassified, or departed from without evidence, the review result is `CHANGES REQUIRED`. This check applies even if the implementation is otherwise correct.
-
-Then look for:
-
-- correctness defects;
-- accidental scope growth;
-- duplicate implementation of something already available upstream;
-- unsafe authority broadening;
-- secret/privacy regressions;
-- ambiguous/partial-write replay hazards;
-- unstable Grist identifiers or guessed normalization;
-- contract/documentation drift;
-- licensing/provenance errors;
-- test-platform growth disguised as product work;
-- unaddressed constraints or risks identified by an applicable Expert report.
-
-Durable result:
-
-```text
-AUTONOMOUS REVIEW
-Head: <exact full SHA>
-Result: PASS
-```
-
-or:
-
-```text
-AUTONOMOUS REVIEW
-Head: <exact full SHA>
-Result: CHANGES REQUIRED
-
-- <blocking finding>
-```
-
-A PASS plus green exact-head CI permits the same independent execution to merge if the head is unchanged.
-
-## Construction versus validation
-
-### R0-R3 — construct the product
-
-Optimize for a coherent, small, reusable implementation. Keep only engineering feedback needed to maintain a working codebase.
-
-### R4 — validate the product
-
-Only after the product contract is frozen enough to be worth testing, run the comprehensive campaign: domain scenarios, real Grist documents, creation and modification, security cases, failure/recovery, browser-dependent behavior when relevant, reruns, compatibility and regression characterization.
-
-### R5 — harden production; distribution remains optional
-
-Production identity, credential custody and operational hardening may be completed after R4 when they serve real deployments. Public directory submission is optional future work and does not become active merely because R5 publication material exists.
-
-### R6 — Pareto convergence
-
-First compare the stable product against current official Grist MCP semantics and relevant ecosystem references. Then perform a **static product-capability review** designed to expose blind spots and over-broad exclusions before any selection. Do not use new real-application tests or domain fixtures to discover needs in this tranche. Present the capability report to the product owner, record their priorities, then classify/select the minimum useful subset. Do not pursue parity, and do not implement before the roadmap's selection step has classified a gap `ADOPT`.
-
-### R7 — usage-driven evolution
-
-No predeclared feature backlog follows R6. Real usage may justify a future finite tranche, but until such evidence is explicitly promoted, Controllers stop rather than inventing work.
-
-## Controller protocol
-
-1. Resolve exact `main` and read `AGENTS.md`, `docs/PRODUCT_VISION.md`, `docs/ROADMAP.md`.
-2. Inventory `docs/expert/*.md`; read every materially relevant still-applicable report and classify applicability from its scope/staleness triggers.
-3. Reconstruct current PR/branch state and retire superseded work.
-4. Select the highest-value committed item in the active R tranche.
-5. Perform the bounded external-reference review first.
-6. Implement the smallest coherent change on a short branch.
-7. Run baseline CI; add only focused construction-time tests when needed.
-8. Open/update the PR with provenance, scope, what was deliberately not built, review-gate classification, and the G4 **Expert advisory** block when review is required.
-9. Leave authored review-required heads for independent review. An independent reviewer must repeat the Expert-report relevance check before PASS. Then continue any genuinely non-overlapping eligible work.
-10. Never request a human implementation decision while useful committed work can progress by simplification or deferral. At an explicit roadmap product-direction checkpoint, however, present the requested decision-support report and stop rather than substituting an autonomous product-priority judgment.
-11. Stop when no committed useful work remains. Deferred public-distribution actions are not committed work and must not be revived autonomously.
+# Development contract
+
+Gia is a compact MCP adaptation layer for Grist Community. The client reasons
+and orchestrates; Gia executes bounded generic operations; Grist owns state and
+permissions. Business applications are consumers, never core dependencies.
+
+## Authority and startup
+
+- Resolve the exact GitHub `main` SHA and read this file,
+  [Product Vision](docs/PRODUCT_VISION.md) and [Roadmap](docs/ROADMAP.md) at that SHA.
+- Reconstruct relevant open PRs, exact heads, CI, reviews and dependencies.
+  Conversation history and another execution's progress are not project state.
+- Implement only an explicit user-authorized scope or current committed Roadmap
+  work. Advice, issues, upstream features and deferred publication are not
+  implicit implementation authority. Stop when the authorized finite scope is exhausted.
+- Use official Grist behavior as the semantic oracle. Prefer a proven licensed
+  implementation or the smallest compatible adaptation. Confirm licensing
+  before copying code; retain required attribution and record provenance in the PR.
+- Make routine technical choices autonomously within the authorized scope.
+  New product scope, authority expansion, production secrets or irreversible
+  external actions require authorization; continue independent eligible work.
+
+## Changes and integration
+
+- Work on a short-lived branch with one purpose, never directly on `main`.
+  Finish or explicitly supersede overlapping work before replacing it.
+- Preserve the current [MCP contract](docs/MCP-CONTRACT.md),
+  [security invariants](docs/SECURITY.md) and untargeted user state.
+  Do not delete a current constraint before moving it into code, tests or the
+  appropriate normative document.
+- Remove obsolete complexity before adding a replacement. Refactor only when
+  the result has less net complexity; no aesthetic splitting or speculative abstraction.
+- Add focused regressions for meaningful semantic or safety boundaries. Keep
+  useful existing tests; remove tests whose sole subject is a removed artifact.
+- A PR states scope, dependencies, net complexity reduction, validation and
+  `Review gate: REQUIRED` or `Review gate: NOT REQUIRED` with a reason.
+- Independent exact-head review is required for runtime semantics, MCP contract,
+  authorization/security, stable IDs, partial/uncertain writes, non-trivial
+  architecture, and governance or product-selection changes. Bounded factual
+  documentation/link fixes normally do not require it.
+- An author must not independently PASS or merge a review-required head they
+  materially authored. Delegate review to an isolated reviewer who did not author
+  it, or leave it for a fresh independent execution. Review challenges correctness,
+  scope, security, preservation, licensing, contract coherence and convergence.
+- Record the verdict on the PR as `Head: <full SHA>` and `Result: PASS` or
+  `Result: CHANGES REQUIRED`. A verdict is valid only for that exact head.
+- Require green exact-head CI and an applicable independent PASS before merging
+  review-required work. Recheck `main`, PR head and dependencies before push,
+  review, readiness or merge. If they moved, reconstruct state and adapt;
+  never blind-force over concurrent work. Resolve review findings, merge through
+  GitHub and verify the resulting `main`.
+
+## Convergence Invariant
+
+**An evolution is complete only when its temporary artifacts have been absorbed
+into the current product or removed from `main`.**
+
+`main` describes only the current product; Git/GitHub preserves history.
+
+- Keep only the current normative documents listed in [Development](docs/DEVELOPMENT.md).
+  Update existing documentation rather than adding reports or parallel specifications.
+- Put analysis, decisions, review evidence and test results in PRs/issues;
+  use commits, tags, releases and CI artifacts for history. No committed reports,
+  evidence archives, POCs, dated release notes, milestone documents, completed
+  Roadmap slices, obsolete contracts or dormant implementation banks.
+- Before merge, remove superseded code, tests, tools and compatibility that have
+  no current consumer; absorb durable constraints; repair references; remove
+  integrated Roadmap tasks. Keep compatibility promised by the current contract.
+- Run `npm run check:convergence`, type checks, tests, production dependency audit
+  and build. Use the retained native Grist checks when relevant.
+- CI enforces the document inventory, forbidden artifacts, unfinished-only
+  Roadmap and local documentation links. Changing that policy requires a
+  justified governance review, not an exception to preserve temporary material.

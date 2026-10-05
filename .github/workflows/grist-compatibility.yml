@@ -1,0 +1,75 @@
+name: Grist compatibility
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/grist-compatibility.yml"
+      - "tools/grist-compatibility.ts"
+      - "docs/MCP-CONTRACT.md"
+      - "src/**"
+      - "test/**"
+      - "package*.json"
+      - "tsconfig*.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compatibility:
+    name: Grist Community ${{ matrix.grist_version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        grist_version:
+          - "1.7.16"
+          - "1.7.17"
+          - "1.7.18"
+          - "1.7.19"
+          - "1.7.20"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start Grist Community
+        run: |
+          docker run --detach --name test-grist \
+            --publish 8484:8484 \
+            --env GRIST_SESSION_SECRET=compatibility-session-secret \
+            --env GRIST_IN_SERVICE=true \
+            --env GRIST_TEST_LOGIN=1 \
+            --env GRIST_LOG_LEVEL=warn \
+            gristlabs/grist-oss:${{ matrix.grist_version }}
+
+      - name: Wait for Grist Community
+        run: |
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent --show-error http://127.0.0.1:8484/api/orgs >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs test-grist
+          exit 1
+
+      - name: Exercise MCP v2
+        env:
+          GRIST_COMPAT_BASE_URL: http://127.0.0.1:8484
+          GRIST_COMPAT_VERSION: ${{ matrix.grist_version }}
+        run: node --import tsx tools/grist-compatibility.ts
+
+      - name: Grist logs on failure
+        if: failure()
+        run: docker logs test-grist || true

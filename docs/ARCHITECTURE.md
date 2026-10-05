@@ -1,235 +1,71 @@
 # Architecture
 
-## Status
-
-This document describes the **MCP v2 product** after R4 validation, R5 production hardening and completion of the seven finite R6 targeted-adoption capabilities. Gia 0.7.0 is the corresponding post-R6 version line. Public-directory distribution is optional and currently deferred; retained R5-F material is historical preparation unless explicitly reactivated by a future human product decision.
-
-`docs/ROADMAP.md` remains authoritative for tranche eligibility. Historical architecture and milestone documents remain evidence only.
-
-## Architectural objective
-
-Keep the product thin:
-
-```text
-MCP-capable LLM
-  reason / plan / orchestrate
-        |
-        v
-Gia
-  MCP v2 semantic tools
-  compact Grist context
-  bounded generic mutations
-  authorization + safety normalization
-        |
-        v
-Grist Community REST / bounded internal adapters
-```
-
-The product does not contain a general reasoning planner, business workflow engine or hidden application lifecycle state machine.
-
-## Responsibility split
-
-### MCP client / LLM
-
-Owns:
-
-- understanding user intent;
-- deciding which Grist information is relevant;
-- multi-step reasoning and sequencing;
-- deciding what result satisfies the user's request;
-- adapting after tool results.
-
-### Gia
-
-Owns:
-
-- discovery of allowed Grist resources;
-- compact semantic context;
-- stable semantic inputs/outputs;
-- bounded data/schema/UI intentions and, when explicitly selected by the Roadmap, bounded application-policy intentions;
-- translation between public identifiers and private Grist references;
-- input/output bounds;
-- principal/resource/capability enforcement;
-- server-side selection of the current principal's upstream credential;
-- partial/ambiguous-write classification;
-- preservation of unrelated state during supported read-modify-write operations;
-- targeted post-write verification where material;
-- data and secret minimization.
-
-### Grist
-
-Owns application state: records, formulas, native schema behavior, pages/widgets and native permissions. In multi-principal production mode, Grist Community service accounts are the upstream least-privilege identity primitive.
+Gia is a thin semantic execution layer. The MCP client owns reasoning and
+multi-step orchestration; Grist owns application state and native authorization.
+The [MCP contract](MCP-CONTRACT.md) and [Security](SECURITY.md) define the public
+and trust boundaries.
 
 ## Runtime composition
 
-```text
-HTTP /mcp
-   |
-   +-- static bearer -> one configured MCP Principal
-   |
-   `-- OAuth JWT/JWKS -> request Principal
-            |
-            v
-    GristContextFactory
-      |      |       |
-      |      |       `-- deployment resource policy
-      |      `---------- authorization + audit
-      `----------------- credential-derived Grist client
-            |
-            v
-   AuthorizedGristService
-            |
-            +-- semantic data/schema operations
-            +-- DocumentUiService
-            `-- bounded UI action adapter
-            |
-            v
-       Grist Community
-```
+| Area | Responsibility |
+| --- | --- |
+| `src/server.ts`, `src/config.ts` | localhost HTTP application, validated deployment configuration, authentication and request limits |
+| `src/auth/` | bearer/JWT verification, opaque principal identity, capability and resource-grant checks |
+| `src/grist/credentials.ts`, `contextFactory.ts` | server-side credential selection and principal-bound service graph |
+| `src/grist/accessPolicy.ts` | deployment ceiling and principal-local resource discovery/cache |
+| `src/mcp/leanRegistry.ts`, `leanTools.ts` | ten-tool metadata, closed action schemas, bounded dispatch and progressive help |
+| `src/operations/` | internal operation/capability mapping and supported schema-field validation |
+| `src/grist/authorizedService.ts`, `service.ts`, `client.ts` | authorization/audit boundary, bounded semantic operations, fixed Grist REST calls |
+| `src/grist/documentContext.ts`, `documentUi.ts`, normalization modules | compact context, stable-ID resolution and completeness reporting |
+| `src/grist/uiActionsAdapter.ts`, `accessRules.ts` | fixed private native actions, preservation and postcondition verification |
+| `src/mcp/results.ts`, `publicMetadata.ts` | typed effect reporting and minimized public projections |
+| `src/audit/`, `src/ops/` | protected audit events and low-cardinality operational signals |
 
-`GristContextFactory` creates a fresh credential-derived client, discovery cache, access policy and authorization/service graph for every principal context; principal-derived state is not reused across principals.
+Static bearer mode has one controlled deployment principal and one service graph.
+OAuth mode validates each request before constructing a fresh principal-bound
+client, discovery cache, access policy and authorized service graph.
+The JWKS verifier is shared cryptographic infrastructure, not a principal credential cache.
 
-`StaticApiKeyCredentialProvider` remains for controlled single-principal/development use. R5-C adds `FilePrincipalApiKeyCredentialProvider`: it reads an operator-mounted mapping once at startup and resolves the exact opaque OAuth principal to a Grist Community service-account key. `principal-map` configuration forbids a shared `GRIST_API_KEY` fallback.
+Upstream credentials are selected independently of transport authentication:
+`static` uses one operator-provided key for controlled single-principal use;
+`principal-map` selects the exact opaque OAuth principal's Grist service-account
+key from a protected, read-only startup mapping. There is no shared-key fallback.
 
-## Public MCP contract
+## Inspection and mutation
 
-MCP v2 exposes ten tools:
+Inspection returns an application map rather than a copy of business data.
+Rows are read through bounded queries; private or unsupported metadata is
+reported as incomplete instead of guessed. Public projections retain only the
+numeric compatibility detail promised by the current contract. Complete internal
+snapshots remain available for preservation and verification.
 
-```text
-grist_discover
-grist_inspect
-grist_query
-grist_add_records
-grist_change_records
-grist_add_structure
-grist_change_structure
-grist_add_ui
-grist_change_ui
-grist_help
-```
+A mutation validates one closed semantic intention, authorizes explicit targets,
+reads material current state, resolves native references privately, preserves
+untargeted state, performs fixed REST/native actions and verifies material postconditions.
+Record batches execute sequentially and are non-atomic as a group.
+Confirmed partial effects and uncertain outcomes remain machine-readable;
+there is no automatic whole-operation replay or durable workflow journal.
 
-These map to the conceptual responsibilities:
+Access-rule inspection/editing additionally requires fresh native Owner proof
+before reading ACL metadata. Writes verify the requested persisted group and an
+internal fingerprint of untargeted policy; they do not prove confidentiality.
 
-```text
-discover
-inspect
-query
-change_data
-change_structure
-change_ui
-help
-```
+Document creation requires an explicitly allowed destination workspace and one
+matching schema-write grant. Template copy separately authorizes source read,
+uses native `asTemplate=true`, retains known created IDs, invalidates discovery
+after every attempt and verifies destination membership under the same principal.
+A returned ID never expands deployment policy.
 
-Manager tools use closed action variants. One invocation is still one bounded semantic intention; there is no arbitrary multi-action dispatcher.
+## Dependencies and reference boundary
 
-The historical MCP v1 registrars were removed in R3. GPT Actions/OpenAPI is also retired from the active candidate instead of being maintained as a second public contract.
+The production dependencies are the official MCP Express/Node/server packages,
+Express and Zod. TypeScript and tsx are development/build tools.
+`package-lock.json` defines the reproducible versions and dependency licensing;
+CI keeps the existing high-severity production vulnerability gate.
 
-## Context architecture
-
-The agent needs an application map, not a copy of all data.
-
-Compact inspection preferentially includes:
-
-- tables and stable column IDs;
-- types and formulas;
-- Ref/RefList relationships;
-- safe reverse-relation information when exactly resolvable;
-- pages and stable widget IDs;
-- supported normalized layout/configuration;
-- explicit incompleteness/truncation markers.
-
-Business rows are read only through bounded query operations. Unresolvable private Grist metadata is reported as incomplete rather than guessed.
-
-For MCP v2 compatibility, legacy numeric UI layout/sort/identity detail is retained alongside normalized semantics. Shared public page/widget projections allow only numeric BoxSpec structure, supported sort tokens, display flags and custom-widget access/identity. Arbitrary URLs, plugin configuration and unsupported metadata remain internal; omitted detail is marked `compatibilityMetadataOmitted: true`. Complete internal snapshots remain available for preservation and post-write verification. The remaining non-secret compatibility fields are not R6 mutation inputs; removing them requires an explicitly reviewed incompatible MCP contract major change.
-
-## Mutation architecture
-
-Mutations are ordinary bounded semantic operations, not persisted Builder plans.
-
-A typical agent sequence is:
-
-```text
-grist_inspect
-  -> grist_change_structure
-  -> grist_change_ui
-  -> grist_query
-```
-
-One semantic mutation may internally perform the small read/translate/write/re-read sequence needed for safety. Cross-operation orchestration remains with the MCP client.
-
-### Stable identifiers
-
-Public inputs prefer explicit workspace/document IDs, table IDs, column IDs and stable current page/widget IDs. Workspace IDs are public only where a bounded operation such as C8 document bootstrap genuinely targets a workspace; private numeric document-metadata refs stay server-side.
-
-The R5-C credential mapping likewise uses the bridge's non-reversible stable `oauth:<sha256>` principal ID rather than a raw provider subject.
-
-### Preservation
-
-For a supported composite update, the bridge resolves current state, preserves untargeted state and refuses the write if exact preservation cannot be established.
-
-### Partial and ambiguous effects
-
-The retained J0/J1 semantic rules are direct operation invariants:
-
-- preserve confirmed completed targets/results;
-- distinguish proven no-effect from uncertain effect;
-- never blindly replay an uncertain non-idempotent write;
-- expose compact information for the agent's next safe decision, including known created IDs and explicit `APPLIED`/ `UNCERTAIN` effect knowledge when postcondition verification fails.
-
-The retired generalized J1 journal/coordinator is not part of the active candidate.
-
-## Authorization architecture
-
-The capability vocabulary is intentionally small:
-
-```text
-doc:read
-doc:write
-doc.schema:write
-```
-
-Effective bridge authority is bounded by the selected upstream Grist credential, deployment document/workspace ceiling, principal grants and required capability. The bridge may reduce upstream authority but cannot elevate it.
-
-Two R6-selected directions refine this boundary without adding a new public OAuth scope:
-
-- **application-level access rules (C1)** may change the document's own native policy only through a bounded semantic adapter, with local `doc.schema:write` plus the upstream Grist authority required by Grist itself. This is distinct from user/group/org/share/service-account administration and must never substitute for native Owner enforcement;
-- **document creation/copy-as-template (C8)** authorizes the destination workspace explicitly through both the deployment workspace ceiling and one matching principal workspace grant with `doc.schema:write`; template copy additionally requires separate source `doc:read` while Grist's native copy authorization remains authoritative. Access to an existing document does not imply authority to create in its parent workspace, and a newly returned document ID does not widen the bridge allowlist. The tool's baseline OAuth scheme remains `doc.schema:write`, while Gia publishes and challenges the additional `doc:read` requirement specifically for `copy_document_as_template`. Creation is non-idempotent: known created IDs are retained for postcondition failures, uncertain outcomes are not replayed by name, and principal-local discovery is invalidated after every attempt.
-
-Static bearer mode plus static Grist credential mode is the minimum controlled deployment. Provider-neutral OAuth/JWKS plus `principal-map` credentials is the production multi-principal path. Service-account creation/grants/expiry/rotation/revocation and generic sharing administration remain operator-side Grist administration, not model-facing product operations.
-
-## Deliberate exclusions
-
-The R3 candidate excludes:
-
-- business-specific stage/CCF/CRM logic;
-- internal application planner/contract engine;
-- generalized ImpactGraph/ManagedScope machinery;
-- generic browser automation;
-- wizard or sub-agent frameworks;
-- generated custom-widget platform;
-- lifecycle scheduler/monitor;
-- generic webhooks/integrations;
-- generic user/group/org/share/service-account administration;
-- raw SQL model surface;
-- arbitrary `/apply`, UserAction or HTTP escape hatches;
-- GPT Actions/OpenAPI duplicate public transport;
-- an internal credential database or secret-manager implementation.
-
-Historical code/documents for later production or distribution work may remain outside the runtime path.
-
-## External reference position
-
-- Grist official behavior is the functional oracle.
-- Grist Community service accounts are **ADAPTED** for R5-C as the upstream identity/least-privilege primitive; no Grist server code is copied.
-- `gwhthompson/grist-mcp-server` informed compact manager-style tools/help.
-- `nic01asFr/GristCoder` informed semantic application context.
-- `Xe138/grist-mcp-server` informed the small capability/resource vocabulary without code reuse where licensing was unclear.
-- `nic01asFr/mcp-server-grist` served as broad API/formula reference.
-
-See `docs/RECOMPOSITION-REVIEW.md`, `docs/R3-DEPENDENCY-PROVENANCE.md`, `docs/R5-PRODUCTION-DISTRIBUTION-AUDIT.md` and `docs/CREDENTIALS.md` for provenance/licensing decisions.
-
-## Construction versus validation
-
-R0-R3 kept only baseline CI and focused unit/contract regressions needed to maintain the candidate. R4 performed broad product validation. R5 added production-specific identity, credential, operational-hardening and reviewer-package evidence without broadening the lean MCP v2 runtime.
-
-R5-C production evidence is recorded in `docs/R5-C-LIVE-EVIDENCE.md`; R5-D operational-hardening evidence is recorded in `docs/R5-D-LIVE-EVIDENCE.md`; R5-E reviewer/package qualification is recorded in `docs/R5-E-LIVE-EVIDENCE.md`. Those technical hardening tranches are complete. R5-F public-directory publication is deferred optional future work and is not an active architectural dependency.
+Grist's public REST API and documented native metadata/actions are the behavior
+oracle. The adapter uses fixed private native actions where REST lacks the required
+semantic primitive; it does not depend on unavailable proprietary MCP internals.
+Community manager-tool and semantic-context patterns informed the design;
+no external project source is incorporated beyond declared dependencies.
+Required licensing/attribution for any future copied code belongs with that code.

@@ -1,200 +1,66 @@
 # Gia
 
-**Gia** is a compact open-source **MCP adaptation layer for Grist Community**. It gives an MCP-capable agent stable semantic tools to discover, inspect and modify Grist applications while keeping credentials, low-level Grist references and safety policy server-side.
+Gia **0.7.0** is a compact open-source MCP adaptation layer for Grist Community.
+It provides exactly ten bounded semantic tools under **MCP contract major 2**.
+The client reasons and orchestrates; Gia normalizes and executes; Grist remains
+authoritative for application state and permissions.
 
-> [!IMPORTANT]
-> This repository is an independent prototype. It is not an official Grist Labs, DINUM / La Suite numérique, or OpenAI integration.
+This is an independent project, without official affiliation with Grist Labs,
+DINUM / La Suite numérique or OpenAI.
 
-## Product boundary
+## Start
 
-```text
-User
-  |
-  v
-MCP-capable LLM client
-  reason / plan / orchestrate
-  |
-  v
-Gia
-  compact MCP v2 contract
-  bounded semantic Grist operations
-  authorization + stable-ID normalization
-  partial/ambiguous-write safety
-  |
-  v
-Grist Community
-```
+Requirements: Node.js 22+ and a Grist Community deployment.
 
-The bridge is deliberately **not** an internal planner, business workflow engine, generic Grist proxy, generic identity/share administration layer, raw SQL surface, arbitrary `/apply` endpoint or browser automation framework. Gia does expose the separately bounded R6 application-level ACL capability described below.
-
-Business applications such as stage tracking or pedagogy are validation cases, not architecture dependencies.
-
-See:
-
-- [Product vision](docs/PRODUCT_VISION.md)
-- [Authoritative roadmap](docs/ROADMAP.md)
-- [MCP v2 contract](docs/MCP-CONTRACT.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Security model](docs/SECURITY.md)
-- [Grist credential boundary](docs/CREDENTIALS.md)
-- [Generic usage flow](docs/R3-GENERIC-USAGE-FLOW.md)
-- [Dependency/provenance audit](docs/R3-DEPENDENCY-PROVENANCE.md)
-
-## Current product
-
-Gia **0.7.0** is the post-R6 version line prepared by this codebase. R6 is complete: the seven finite Pareto-selected capabilities are integrated and the public MCP contract remains **v2 with exactly ten model-facing tools**.
-
-| Tool | Purpose |
-| --- | --- |
-| `grist_discover` | discover explicitly allowed workspaces, documents, tables or columns |
-| `grist_inspect` | inspect semantic document/page/widget/access-rule context |
-| `grist_query` | read bounded records |
-| `grist_add_records` | create a bounded record batch |
-| `grist_change_records` | update or delete explicit records |
-| `grist_add_structure` | create an empty document, copy a source as a template, or create tables/columns |
-| `grist_change_structure` | update, rename or delete targeted structure, including one bounded ACL group |
-| `grist_add_ui` | create a page or add a supported widget |
-| `grist_change_ui` | change or delete supported page/widget state |
-| `grist_help` | progressively disclose the contract |
-
-`grist_help` reports MCP contract version `2`.
-
-The historical 23-tool MCP v1 surface is retired. The historical GPT Actions/OpenAPI compatibility surface is also retired from the product rather than maintained as a second public contract. Historical design and submission artefacts remain in the repository as history and possible R5 evidence; they do not control the current runtime.
-
-## What the agent can do
-
-### Discover and inspect
-
-The agent can discover resources allowed by deployment policy, including explicitly allowed workspaces even when empty, and inspect compact application structure without indiscriminately loading business rows. Inspection includes supported table/column metadata, formulas and relationships plus normalized page/widget/access-rule information where Grist state can be resolved exactly.
-
-Unresolvable or unsupported private metadata is reported as incomplete rather than guessed.
-
-### Query and change data
-
-Reads are bounded by explicit query limits. Record creation, update and deletion target one table and a bounded set of records.
-
-Large record mutations may be sent to Grist in sequential internal batches. Those batches are not atomic as a group. Confirmed partial results are preserved and an ambiguous upstream write is never treated as a proven no-effect suitable for blind replay.
-
-### Change structure
-
-The bridge supports bounded document bootstrap, table/column creation and targeted structural changes through stable semantic inputs. Document bootstrap is limited to empty creation or native same-installation copy-as-template into an explicitly authorized workspace; it does not expose arbitrary import/full-data clone. Template copy requires destination `doc.schema:write` **and** source `doc:read`, while Grist's native copy and destination authorization remain authoritative. Application-level ACL editing is similarly bounded to supported stable table/column rule groups and requires native document-Owner proof. Persisted ACL verification is not presented as proof of effective confidentiality. Arbitrary Grist UserActions and `/apply` payloads are not public inputs.
-
-### Change UI
-
-Supported UI operations cover bounded creation/modification/deletion of native pages and widgets, including stable visible-field configuration, persistent filters, native summaries, Card/Card List layout and hierarchy-preserving page ordering. Private metadata references are resolved server-side. Read-modify-write operations preserve unrelated configuration and re-read material postconditions where practical.
-
-MCP v2 retains legacy numeric UI `layoutSpec`, sort and identity detail alongside normalized stable-ID fields. Public options are limited to supported display flags and custom-widget access/identity; arbitrary URLs, plugin settings and other configuration stay internal. Unsupported compatibility detail is omitted with `compatibilityMetadataOmitted: true`. This security correction preserves complete internal snapshots for read-modify-write. New integrations should use normalized fields; removal of the remaining non-secret compatibility fields requires an explicitly reviewed major-contract decision.
-
-## Security boundary
-
-Grist remains authoritative for the authority of the selected upstream credential. The bridge can restrict that authority through:
-
-```text
-upstream Grist permissions
-∩ deployment document/workspace ceiling
-∩ principal resource grant
-∩ required capability
-```
-
-The compact capability vocabulary is:
-
-- `doc:read`
-- `doc:write`
-- `doc.schema:write`
-
-Credentials, bearer/OAuth tokens, API keys and principal credential mappings are never tool inputs or model-visible outputs.
-
-Upstream Grist credentials have two explicit modes. `static` preserves one server-side `GRIST_API_KEY` for controlled single-principal/development use. `principal-map` is the R5-C multi-principal production path: it loads an operator-mounted read-only mapping from opaque OAuth principal IDs to Grist Community service-account keys. Principal-map mode forbids `GRIST_API_KEY`, so an unmapped principal fails closed rather than falling back to shared authority. See [docs/CREDENTIALS.md](docs/CREDENTIALS.md).
-
-Authenticated MCP requests are also bounded independently per principal at the outer HTTP boundary. The default ceiling is 120 requests/minute; exhausted principals receive HTTP `429` with `Retry-After`. Principal identifiers remain private limiter keys and are not exported in general operational events.
-
-## Installation
-
-Requirements: **Node.js 22+**.
-
-```bash
+```sh
 cp .env.example .env
 npm ci
 npm run dev
 ```
 
-For the smallest controlled deployment, configure:
+For controlled single-principal use, configure `GRIST_BASE_URL`, server-side
+`GRIST_API_KEY`, `MCP_BEARER_TOKEN` (at least 32 random characters), and at least
+one explicit `GRIST_ALLOWED_DOCUMENT_IDS` or `GRIST_ALLOWED_WORKSPACE_IDS` ceiling.
+For production multi-principal use, configure OAuth and a protected read-only
+principal-to-service-account mapping. See [Operations](docs/OPERATIONS.md).
 
-```dotenv
-GRIST_BASE_URL=https://grist.example.org
-GRIST_CREDENTIAL_MODE=static
-GRIST_API_KEY=<server-side Grist API key>
-GRIST_ALLOWED_DOCUMENT_IDS=<one-or-more-document-ids>
-MCP_BEARER_TOKEN=<random-value-at-least-32-characters>
-```
+The process binds to localhost. Remote access uses an HTTPS reverse proxy and
+`MCP_ALLOWED_HOSTS`. `/mcp` serves authenticated MCP; `/healthz` reports health.
 
-`GRIST_ALLOWED_WORKSPACE_IDS` may be used instead of or alongside document IDs. The process refuses to start unless at least one deployment resource boundary is configured.
+## Tools
 
-Optional guardrails:
+| Tool | Purpose |
+| --- | --- |
+| `grist_discover` | allowed workspaces, documents, tables and columns |
+| `grist_inspect` | compact document/page/widget/access-rule structure |
+| `grist_query` | bounded records |
+| `grist_add_records` | bounded record creation |
+| `grist_change_records` | explicit record updates/deletion |
+| `grist_add_structure` | empty document/template bootstrap and table/column creation |
+| `grist_change_structure` | targeted schema changes and bounded application-rule groups |
+| `grist_add_ui` | native pages/widgets, including summaries |
+| `grist_change_ui` | bounded page/widget configuration, layout and order |
+| `grist_help` | progressive current-contract disclosure |
 
-- `MCP_CAPABILITIES` — defaults to all three capability classes;
-- `GRIST_MAX_READ_RECORDS` — default `5000`;
-- `GRIST_MAX_WRITE_RECORDS` — default `500`;
-- `GRIST_WRITE_BATCH_RECORDS` — default `200`;
-- `GRIST_MAX_SCHEMA_ITEMS` — default `100`;
-- `MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE` — positive per-principal authenticated request ceiling, default `120`;
-- `MCP_ALLOWED_HOSTS` — additional public hostnames accepted by the MCP HTTP application;
-- `PORT` — default `3000`;
-- `HOST` — intentionally restricted to localhost.
+Credentials stay server-side. Effective authority intersects native Grist rights,
+deployment ceiling, principal grants and required capability. Partial/uncertain
+writes preserve known effects and forbid blind replay. Inspection/mutation use
+stable identifiers and refuse unsafe incomplete metadata.
+Persisted ACL verification does not prove confidentiality; hidden fields/filters
+are presentation state. A native template copy retains substantial metadata and
+is not a privacy scrub.
 
-The default authentication mode is static bearer:
+## Documentation and contributing
 
-```dotenv
-MCP_AUTH_MODE=static
-MCP_BEARER_TOKEN=<random-value-at-least-32-characters>
-```
+- [Product Vision](docs/PRODUCT_VISION.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [MCP Contract](docs/MCP-CONTRACT.md)
+- [Security](docs/SECURITY.md)
+- [Operations](docs/OPERATIONS.md)
+- [Development and verification](docs/DEVELOPMENT.md)
+- [Current unfinished work](docs/ROADMAP.md)
+- [Development contract](AGENTS.md)
+- [Privacy](PRIVACY.md), [Terms](TERMS.md), [Support](SUPPORT.md)
 
-A provider-neutral JWT/JWKS OAuth mode also exists. Gia validates issuer/audience/expiry, optional `nbf`, supported JOSE algorithms, compatible key families/curves, RSA key strength and rejects unsupported critical JOSE extensions:
-
-
-
-```dotenv
-MCP_AUTH_MODE=oauth
-OAUTH_ISSUER=https://auth.example.org/oidc
-OAUTH_JWKS_URI=https://auth.example.org/oidc/jwks
-MCP_RESOURCE_URI=https://mcp.example.org/mcp
-```
-
-When OAuth mode is selected, `MCP_BEARER_TOKEN` must be absent. For production multi-principal OAuth, also configure:
-
-```dotenv
-GRIST_CREDENTIAL_MODE=principal-map
-GRIST_PRINCIPAL_CREDENTIALS_FILE=/run/secrets/grist-principals.json
-```
-
-and omit `GRIST_API_KEY`. Production OAuth preflight rejects a static upstream Grist credential as insufficient multi-principal isolation.
-
-## Endpoints
-
-```text
-/mcp                                      MCP v2
-/healthz                                  health check
-/.well-known/oauth-protected-resource     OAuth mode only
-```
-
-The Node process binds only to localhost. Use a reverse proxy for remote HTTPS exposure and list the public hostname in `MCP_ALLOWED_HOSTS`.
-
-## Development checks
-
-The construction baseline is intentionally small:
-
-```bash
-npm ci
-npm audit --omit=dev --audit-level=high
-npm run check
-npm test
-npm run build
-```
-
-These checks remain the baseline for the post-R6 product. Release-sensitive Grist-native seams are additionally exercised by the bounded compatibility workflow documented in [docs/R4-COMPATIBILITY.md](docs/R4-COMPATIBILITY.md).
-
-## Repository history
-
-The repository contains substantial historical P0-P4, C4-C8, J0-J2 and public-distribution design/evidence documents. They remain useful evidence or component-bank material, but `docs/ROADMAP.md`, `docs/PRODUCT_VISION.md` and the current runtime define the active project.
-
-Do not infer current requirements from a historical milestone merely because its files remain present.
+`main` describes the current product. Git/GitHub preserves history.
+An evolution is complete only after temporary artifacts have been absorbed or removed.
