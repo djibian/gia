@@ -12,17 +12,17 @@ import { registerLeanTools } from "../src/mcp/leanTools.js";
 
 const PRIVATE_URL = "https://widget.example.invalid/private?apiKey=synthetic-secret-marker";
 
-function harness(applyWrite = true) {
-  let options = {
+function harness(applyWrite = true, initialOptions?: unknown) {
+  let options: unknown = initialOptions ?? {
     unrelated: { keep: true },
-    customView: {
+    customView: JSON.stringify({
       url: PRIVATE_URL,
       widgetId: "@example/widget",
       pluginId: "private-plugin",
       access: "none",
       widgetOptions: { keep: [1, 2] },
       columnsMapping: { title: 11 }
-    }
+    })
   };
   const writes: unknown[] = [];
 
@@ -62,7 +62,7 @@ function harness(applyWrite = true) {
                 title: "Custom",
                 description: "",
                 chartType: "",
-                options: JSON.stringify(options),
+                options: options === "" ? "" : JSON.stringify(options),
                 layoutSpec: "",
                 sortColRefs: "[]",
                 linkSrcSectionRef: 0,
@@ -114,7 +114,7 @@ function harness(applyWrite = true) {
   return {
     service: new AuthorizedGristService(inner, authorization, audit, principal, uiActions),
     writes,
-    currentOptions: () => options
+    currentOptions: () => options as Record<string, unknown>
   };
 }
 
@@ -148,7 +148,7 @@ test("authorized custom widget update resolves stable IDs and preserves complete
   assert.equal(written.widgetId, 21);
   assert.deepEqual(JSON.parse(written.update.optionsJson), {
     unrelated: { keep: true },
-    customView: {
+    customView: JSON.stringify({
       url: PRIVATE_URL,
       widgetId: "@example/widget",
       pluginId: "private-plugin",
@@ -159,7 +159,7 @@ test("authorized custom widget update resolves stable IDs and preserves complete
         contacts: [12],
         optional: null
       }
-    }
+    })
   });
   assert.deepEqual(currentOptions(), JSON.parse(written.update.optionsJson));
   assert.deepEqual(result.widget.options, {
@@ -228,7 +228,19 @@ test("registered inspect and change callbacks never return private custom option
   assert.equal(result.isError, undefined);
   assert.equal(JSON.stringify(result).includes("synthetic-secret-marker"), false);
   assert.equal(JSON.stringify(result).includes("private-plugin"), false);
-  assert.equal(currentOptions().customView.url, PRIVATE_URL);
-  assert.deepEqual(currentOptions().customView.widgetOptions, { keep: [1, 2] });
+  const customView = JSON.parse(currentOptions().customView as string);
+  assert.equal(customView.url, PRIVATE_URL);
+  assert.deepEqual(customView.widgetOptions, { keep: [1, 2] });
   assert.equal(writes.length, 1);
+});
+
+test("a freshly created native blank custom widget accepts bounded settings", async () => {
+  const { service, writes, currentOptions } = harness(true, "");
+  const result = await service.updatePageWidget("doc-1", 7, 21, {
+    customWidgetSettings: { access: "none", columnsMapping: { title: "Name" } }
+  }) as any;
+  assert.equal(writes.length, 1);
+  assert.equal(typeof currentOptions().customView, "string");
+  assert.deepEqual(JSON.parse(currentOptions().customView as string), { access: "none", columnsMapping: { title: 11 } });
+  assert.deepEqual(result.widget.customWidgetSettings, { access: "none", columnsMapping: { title: "Name" } });
 });

@@ -41,11 +41,13 @@ The pre-existing numeric `layoutSpec`, sort and identity read detail remains ava
 
 `cardLayout` and `visibleFields` are deliberately separate intentions. The visible field set is changed first; card layout then arranges exactly those current fields. Native Grist may leave stale positive field refs in persisted Card layout after a field is hidden; Gia prunes only those known stale native leaves during normalization while still refusing malformed or ambiguous layouts.
 
+Custom-widget access and column mappings accept native empty configuration and preserve every untargeted setting. Native JSON-encoded settings and already persisted object settings can be read; updates use native encoding. Missing, malformed or unresolved state still refuses unsafe updates. URLs, plugin configuration and raw mappings remain private.
+
 ## Page order
 
 Gia keeps the ten-tool MCP v2 surface unchanged. `grist_change_ui(action="reorder_pages")` accepts one complete ordered list of the stable page IDs currently eligible for normal navigation.
 
-The bridge resolves private `_grist_Pages` row IDs and native `pagePos` values internally. It reuses the current visible-page position slots, preserves untargeted/special page rows, does not expose or mutate `indentation`, and rejects any requested permutation that would change the existing page-parent relation or visible page set. The exact normalized navigation state is verified after write. Page ordering adds no folder/navigation framework and no raw metadata/UserAction input.
+The bridge resolves private `_grist_Pages` row IDs and native `pagePos` values internally. It requests the current visible-page position slots and accepts Grist's native position canonicalization only for targetable visible pages. It preserves complete persisted order, identities, hierarchy and untargeted/special page positions; it does not mutate `indentation` and rejects permutations that change the existing page-parent relation or visible page set. The normalized navigation state is verified after write. Page ordering adds no folder/navigation framework and no raw metadata/UserAction input.
 
 Document/page inspection additionally returns `navigationPageIds`, the exact current stable page-ID set that page reorder expects for a complete reorder request. When navigation is unavailable, unsupported or exceeds a bound, inspection retains the available context, omits guessed IDs and returns `navigationNormalizationIncomplete: true`. Document UI completeness summaries include this condition. The stricter complete-snapshot requirement still applies to reorder writes.
 

@@ -36,7 +36,7 @@ const audit = {
   record: () => undefined
 } as unknown as AuditLogger;
 
-function harness(options: { applyWrite?: boolean } = {}) {
+function harness(options: { applyWrite?: boolean; nativePositions?: boolean } = {}) {
   const applyWrite = options.applyWrite ?? true;
   const pages = [
     { id: 101, viewRef: 1, indentation: 0, pagePos: 1 },
@@ -87,6 +87,7 @@ function harness(options: { applyWrite?: boolean } = {}) {
         const page = pages.find((candidate) => candidate.id === update.pageRecordId)!;
         page.pagePos = update.pagePos;
       }
+      if (options.nativePositions) for (const page of pages) page.pagePos -= 0.5;
     }
   } as unknown as GristUiActionsAdapter;
 
@@ -101,6 +102,11 @@ function harness(options: { applyWrite?: boolean } = {}) {
     writes
   };
 }
+
+test("page reorder accepts native fractional positions while verifying order and hierarchy", async () => {
+  const { service } = harness({ nativePositions: true });
+  assert.deepEqual(await service.reorderPages("doc-1", [4, 1, 2, 3]), { documentId: "doc-1", pageIds: [4, 1, 2, 3] });
+});
 
 test("authorized page reorder writes resolved page records and verifies exact navigation state", async () => {
   const { service, writes } = harness();

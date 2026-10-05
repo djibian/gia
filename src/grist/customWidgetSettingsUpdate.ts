@@ -1,4 +1,5 @@
 import {
+  customViewOptions,
   MAX_CUSTOM_WIDGET_MAPPED_COLUMNS,
   MAX_CUSTOM_WIDGET_MAPPING_KEYS,
   MAX_CUSTOM_WIDGET_SCHEMA_COLUMNS,
@@ -172,7 +173,7 @@ export function resolveCustomWidgetSettingsUpdate(
   }
 
   const currentOptions = record(widget.options);
-  const currentCustomView = record(currentOptions?.customView);
+  const currentCustomView = customViewOptions(currentOptions);
   if (!currentOptions || !currentCustomView) {
     throw new Error(
       `Custom widget ${widget.id} has malformed or unavailable current options; refusing to overwrite them.`
@@ -180,7 +181,7 @@ export function resolveCustomWidgetSettingsUpdate(
   }
 
   const options = cloneJsonRecord(currentOptions);
-  const customView = record(options.customView)!;
+  const customView = cloneJsonRecord(currentCustomView);
 
   if (update.access !== undefined) {
     if (!(["none", "read table", "full"] as const).includes(update.access)) {
@@ -196,6 +197,7 @@ export function resolveCustomWidgetSettingsUpdate(
         : resolveMappings(widget, tableResponse, update.columnsMapping);
   }
 
+  options.customView = JSON.stringify(customView);
   return { options, optionsJson: JSON.stringify(options) };
 }
 

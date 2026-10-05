@@ -118,6 +118,14 @@ test("special Grist pages are not targetable and keep their position", () => {
   assert.deepEqual(current.visiblePageIds, [1, 4]);
   assert.equal(plan.expected.pages.find((page) => page.pageId === 9)?.pagePos, 2);
   assert.deepEqual(plan.expected.visiblePageIds, [4, 1]);
+  const fractional = { ...plan.expected, pages: plan.expected.pages.map((page) => ({ ...page, pagePos: page.isSpecial ? page.pagePos : page.pagePos - 0.5 })) };
+  assert.equal(samePageOrderSnapshot(fractional, plan.expected), true);
+  const specialMoved = { ...fractional, pages: fractional.pages.map((page) => ({ ...page, pagePos: page.isSpecial ? page.pagePos + 0.1 : page.pagePos })) };
+  assert.equal(samePageOrderSnapshot(specialMoved, plan.expected), false);
+  const changedParent = { ...fractional, pages: fractional.pages.map((page, index) => ({ ...page, parentPageId: index === 0 ? 999 : page.parentPageId })) };
+  assert.equal(samePageOrderSnapshot(changedParent, plan.expected), false);
+  const changedRelativeOrder = { ...fractional, pages: [fractional.pages[0]!, fractional.pages[2]!, fractional.pages[1]!] };
+  assert.equal(samePageOrderSnapshot(changedRelativeOrder, plan.expected), false);
 });
 
 test("requires the exact current visible-page set and rejects ambiguous metadata", () => {
@@ -147,6 +155,11 @@ test("requires the exact current visible-page set and rejects ambiguous metadata
       ),
     /duplicate page positions/
   );
+  for (const value of [Infinity, NaN]) {
+    const invalid = metadata();
+    invalid.pages.records[1]!.fields.pagePos = value;
+    assert.throws(() => normalizePageOrderSnapshot(invalid.pages, invalid.views, invalid.tables), /malformed page navigation/);
+  }
 
   const invalidIndentation = metadata();
   invalidIndentation.pages.records[1]!.fields.indentation = 2;

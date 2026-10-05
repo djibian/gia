@@ -51,7 +51,7 @@ test("resolves stable custom widget settings while preserving every untargeted o
 
   assert.deepEqual(result.options, {
     unrelatedTopLevel: { keep: true },
-    customView: {
+    customView: JSON.stringify({
       mode: "url",
       url: "https://widget.example.invalid/private",
       widgetId: "@example/people-widget",
@@ -63,7 +63,7 @@ test("resolves stable custom widget settings while preserving every untargeted o
         extras: [12, 13],
         optional: null
       }
-    }
+    })
   });
   assert.deepEqual(JSON.parse(result.optionsJson), result.options);
   assert.equal(widget.options.customView.access, "none");
@@ -74,11 +74,26 @@ test("access-only update does not require or rewrite existing mappings", () => {
   const result = resolveCustomWidgetSettingsUpdate(widget, { tables: [] }, {
     access: "full"
   });
-  assert.equal((result.options.customView as Record<string, unknown>).access, "full");
+  assert.equal(JSON.parse(result.options.customView as string).access, "full");
   assert.deepEqual(
-    (result.options.customView as Record<string, unknown>).columnsMapping,
+    JSON.parse(result.options.customView as string).columnsMapping,
     { title: 11 }
   );
+});
+
+test("native encoded and empty custom settings write native JSON while preserving private values", () => {
+  for (const customView of ["", undefined, JSON.stringify(widget.options.customView)]) {
+    const options = { keep: true, ...(customView !== undefined ? { customView } : {}) };
+    const result = resolveCustomWidgetSettingsUpdate({ ...widget, options }, expandedTables, { access: "none" });
+    assert.equal(result.options.keep, true);
+    assert.equal(typeof result.options.customView, "string");
+    const decoded = JSON.parse(result.options.customView as string);
+    assert.equal(decoded.access, "none");
+    if (customView) assert.equal(decoded.url, widget.options.customView.url);
+  }
+  for (const options of [undefined, null, "broken", { customView: "broken" }, { customView: "null" }, { customView: [] }]) {
+    assert.throws(() => resolveCustomWidgetSettingsUpdate({ ...widget, options }, expandedTables, { access: "none" }), /refusing to overwrite/);
+  }
 });
 
 test("mapping clear is explicit and preserves the rest of customView", () => {
@@ -86,11 +101,11 @@ test("mapping clear is explicit and preserves the rest of customView", () => {
     columnsMapping: null
   });
   assert.equal(
-    (result.options.customView as Record<string, unknown>).columnsMapping,
+    JSON.parse(result.options.customView as string).columnsMapping,
     null
   );
   assert.equal(
-    (result.options.customView as Record<string, unknown>).widgetId,
+    JSON.parse(result.options.customView as string).widgetId,
     "@example/people-widget"
   );
 });

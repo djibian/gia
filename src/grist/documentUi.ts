@@ -182,7 +182,7 @@ export class DocumentUiService {
       const tableId = tableIds.get(tableRef);
       const description = text(section.fields.description);
       const chartType = text(section.fields.chartType);
-      const options = jsonText(section.fields.options);
+      const options = section.fields.options === "" ? {} : jsonText(section.fields.options);
       const layoutSpec = jsonText(section.fields.layoutSpec);
       const sortColRefs = jsonText(section.fields.sortColRefs);
       const sourceSectionId = ref(section.fields.linkSrcSectionRef);

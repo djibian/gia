@@ -664,6 +664,45 @@ async function run(): Promise<void> {
       }
     });
 
+    const custom = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "add_widget", documentId, pageId, tableId: TABLE_ID, type: "custom"
+    }), "custom_widget");
+    const customWidgetId = positiveResultId((custom.widget as Record<string, unknown>)?.id, "custom_widget_id");
+    const configuredCustom = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: customWidgetId,
+      update: { customWidgetSettings: { access: "none", columnsMapping: { title: "Name" } } }
+    }), "custom_settings");
+    const customSettings = (configuredCustom.widget as Record<string, unknown>)?.customWidgetSettings as Record<string, unknown>;
+    assert(customSettings?.access === "none", "native_empty_custom_settings_not_configured");
+    assert((customSettings?.columnsMapping as Record<string, unknown>)?.title === "Name", "custom_mapping_not_stable");
+    const sections = await gristApi(gristBaseUrl, apiKey, `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Views_section/records`) as { records: Array<{ id: number; fields: Record<string, unknown> }> };
+    const customSection = sections.records.find((section) => section.id === customWidgetId);
+    const nativeOptions = JSON.parse(customSection?.fields.options as string) as Record<string, unknown>;
+    assert(typeof nativeOptions.customView === "string", "custom_settings_not_native_encoded");
+    const nativeCustomView = JSON.parse(nativeOptions.customView as string) as Record<string, unknown>;
+    nativeCustomView.url = "https://widget.example.invalid/private-canary";
+    nativeCustomView.pluginId = "private-plugin-canary";
+    nativeOptions.customView = JSON.stringify(nativeCustomView);
+    nativeOptions.keepCanary = true;
+    await gristApi(gristBaseUrl, apiKey, `/api/docs/${encodeURIComponent(documentId)}/apply`, {
+      method: "POST", body: JSON.stringify([["UpdateRecord", "_grist_Views_section", customWidgetId, { options: JSON.stringify(nativeOptions) }]])
+    });
+    const customUpdated = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: customWidgetId,
+      update: { customWidgetSettings: { access: "read table" } }
+    }), "native_custom_update");
+    assert(!JSON.stringify(customUpdated).includes("private-canary") && !JSON.stringify(customUpdated).includes("private-plugin-canary"), "custom_private_settings_leaked");
+    const afterSections = await gristApi(gristBaseUrl, apiKey, `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Views_section/records`) as typeof sections;
+    const afterOptions = JSON.parse(afterSections.records.find((section) => section.id === customWidgetId)?.fields.options as string) as Record<string, unknown>;
+    const afterCustom = JSON.parse(afterOptions.customView as string) as Record<string, unknown>;
+    assert(afterOptions.keepCanary === true && afterCustom.url === nativeCustomView.url && afterCustom.pluginId === nativeCustomView.pluginId, "native_custom_untargeted_settings_changed");
+
+    const navigation = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", { action: "pages", documentId }), "navigation");
+    assert(Array.isArray(navigation.navigationPageIds), "navigation_ids_missing");
+    const requestedOrder = [...navigation.navigationPageIds].reverse();
+    const reordered = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", { action: "reorder_pages", documentId, pageIds: requestedOrder }), "native_page_reorder");
+    assert(JSON.stringify(reordered.pageIds) === JSON.stringify(requestedOrder), "native_page_order_not_verified");
+
     const accessRules = resultJson(
       await callTool(bridgeBaseUrl, "grist_inspect", {
         action: "access_rules",
