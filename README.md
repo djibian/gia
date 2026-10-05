@@ -1,6 +1,6 @@
 # Gia
 
-Gia **0.7.0** is a compact open-source MCP adaptation layer for Grist Community.
+Gia **0.7.1** is a compact open-source MCP adaptation layer for Grist Community.
 It provides exactly ten bounded semantic tools under **MCP contract major 2**.
 The client reasons and orchestrates; Gia normalizes and executes; Grist remains
 authoritative for application state and permissions.
