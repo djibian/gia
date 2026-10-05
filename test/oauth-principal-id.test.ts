@@ -39,3 +39,16 @@ test("operator principal-id helper fails without exposing incomplete inputs", ()
   assert.equal(result.stderr.trim(), "principal_id: FAIL");
   assert.doesNotMatch(result.stdout + result.stderr, /auth\.example\.test/);
 });
+
+test("operator helper preserves exact subject bytes like the request boundary", () => {
+  const issuer = "https://auth.example.test/oidc";
+  const subject = " raw-subject-sentinel ";
+  const result = spawnSync(process.execPath, tool, {
+    env: { PATH: process.env.PATH, OAUTH_ISSUER: issuer, OAUTH_SUBJECT: subject },
+    encoding: "utf8"
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), `principal_id: ${oauthPrincipalId(issuer, subject)}`);
+  assert.notEqual(oauthPrincipalId(issuer, subject), oauthPrincipalId(issuer, subject.trim()));
+  assert.doesNotMatch(result.stdout + result.stderr, /raw-subject-sentinel/);
+});

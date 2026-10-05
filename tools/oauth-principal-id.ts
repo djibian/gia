@@ -9,7 +9,7 @@ import { oauthPrincipalId } from "../src/auth/oauthPrincipal.js";
  */
 export function runPrincipalIdTool(env: NodeJS.ProcessEnv = process.env): number {
   const issuer = env.OAUTH_ISSUER?.trim();
-  const subject = env.OAUTH_SUBJECT?.trim();
+  const subject = env.OAUTH_SUBJECT;
   if (!issuer || !subject) {
     console.error("principal_id: FAIL");
     return 1;
