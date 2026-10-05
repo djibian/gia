@@ -51,7 +51,10 @@ no MCP capability. Publication is outside current scope. Never commit a real tok
 
 Zero disables the configurable read/write/schema count ceiling; use finite positive
 limits in production. Fixed semantic bounds still apply. Exhausted rate limits
-return HTTP 429 with `Retry-After`. Inbound request/header timeouts are 120/60
+return HTTP 429 with `Retry-After`. The fixed-window limiter is process-local;
+a globally coordinated multi-replica ceiling belongs to shared/proxy infrastructure.
+Bound anonymous/pre-authentication traffic separately at the reverse-proxy edge.
+Inbound request/header timeouts are 120/60
 seconds and do not cap streaming-response duration.
 
 ## Production OAuth and upstream isolation
@@ -61,6 +64,10 @@ Use an Authorization Code + PKCE flow with the configured resource audience.
 Public scopes remain exactly `doc:read`, `doc:write`, `doc.schema:write`.
 Logto can provide authorization and ProConnect an upstream identity source;
 no provider-specific login logic is required in bridge core.
+Self-contained JWTs are validated without online grant introspection: revoking an
+authorization-server grant alone need not invalidate an already-issued unexpired
+JWT. For an immediate Grist cutoff, revoke its native upstream credential or remove
+its principal mapping and restart; never rely on client disconnection alone.
 
 For multi-principal production, use native Grist service accounts and
 `GRIST_CREDENTIAL_MODE=principal-map`. The protected JSON schema is:
@@ -113,6 +120,11 @@ Before release/deployment, require exact-head review and CI, run relevant native
 regressions, build the reviewed tree, and retain the previous deployable version.
 After deployment or rollback, repeat smoke plus bounded authenticated allowed,
 denied and unmapped-principal checks. Never roll back by blindly replaying writes.
+If qualification fails, stop routing traffic to the candidate, restore the prior
+known-good application artifact/configuration and restart with the **current valid
+secret state**. Secrets remain outside application artifacts: never restore revoked
+or expired credentials/mappings from an old snapshot. Repeat smoke and qualification
+reads before resuming traffic.
 Record sanitized results in GitHub/CI, not as committed evidence documents.
 
 ## Logs and monitoring
