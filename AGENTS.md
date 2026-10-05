@@ -174,36 +174,41 @@ A public-directory submission, reviewer package, publisher-specific requirement 
 - Product evolution may freely invalidate or supersede earlier submission assumptions, metadata, reviewer fixtures or platform-specific preparation.
 - When publication is explicitly resumed, revalidate the then-current product and platform requirements rather than preserving stale submission compatibility.
 
-### G12 — Expert is an advisory lane, not a second Controller
+### G12 — Expert analysis and deep implementation are separate lanes
 
-Gia may use a strong reasoning model in an **Expert** role in parallel with Controllers. The Expert exists to improve difficult product/architecture decisions without taking implementation authority.
+Gia has two explicit, model-agnostic Expert modes alongside Controllers:
 
-The Expert:
+- **Expert Analyst** performs deep analysis and recommendation without implementation;
+- **Expert Developer** deeply resolves an explicitly validated Analyst scope;
+- **Controllers** continue ordinary Roadmap execution.
 
-- starts from the exact current `main` SHA and reconstructs relevant mutable GitHub facts;
-- may inspect runtime code, normative documentation, open PRs, official Grist behavior/documentation and relevant external references;
-- performs deep analysis, threat/risk review, semantic comparison, design compression and forward-looking compatibility review;
-- **must not modify runtime code, tests, dependencies, configuration, deployment, MCP schemas or product implementation**;
-- **must not change Roadmap eligibility, Product Vision or this governance contract during an ordinary Expert run**;
-- leaves durable advice only under `docs/expert/`, following `docs/EXPERT-PROTOCOL.md`;
-- may open and, when the change is advisory-documentation-only and CI is green, merge its own short-lived report PR with `Review gate: NOT REQUIRED`;
-- does not create committed work merely by recommending it;
-- does not satisfy the independent exact-head review required by G7 unless it is launched separately under the independent-review protocol for that exact head;
-- never blocks Controllers solely because an Expert report is absent or stale.
+The Expert Analyst starts from exact current `main`, reconstructs relevant mutable GitHub facts, may inspect all product/runtime/normative material and relevant upstream evidence, and challenges architecture, semantics, security and product boundaries. **Before explicit human validation it must not modify the repository at all.** At the end of analysis it groups all genuine human decisions, presents a concise proposed treatment and proposed Expert Developer scope, then stops.
 
-Controllers must consult any **relevant, still-applicable** Expert report before implementing or independently reviewing the same high-risk semantic area. Consultation is a durable, reviewable obligation rather than an implicit expectation:
+After explicit human validation, the Analyst may publish one durable report under `docs/expert/` following `docs/EXPERT-PROTOCOL.md`. The report records the decisions actually made and a finite accepted `Expert Developer scope`. It remains **not Controller Roadmap authority** and does not itself start implementation.
 
-- at startup, inventory `docs/expert/*.md` and identify reports whose declared scope or staleness triggers overlap the selected work;
-- read the relevant report before design/review conclusions are finalized;
-- classify its applicability as `CURRENT`, `PARTIALLY STALE` or `STALE` against current `main`, Roadmap and upstream facts;
-- for every review-required PR, record the required **Expert advisory** block from G4;
-- if the Controller departs materially from a `CURRENT` or still-applicable part of a `PARTIALLY STALE` report, record the concrete repository/upstream evidence that justifies the departure.
+An Expert Developer may act only when explicitly launched on an integrated validated Analyst report with a non-empty accepted scope. The validated report scope plus that explicit launch is implementation authority for that Expert Developer execution, **even when the accepted findings are not ordinary active Roadmap tasks**. This exceptional authority is local to that scope: it does not amend the Roadmap, create hidden Controller eligibility or authorize unrelated feature work.
 
-A report is not made stale merely because `main` advanced. Use the report's own staleness triggers and the semantics of intervening changes. A report marked `STALE` remains historical evidence but must not be used as current authority.
+The Expert Developer:
 
-The independent reviewer must independently check the report inventory and the PR's Expert advisory declaration. A G7 `PASS` is invalid if a materially relevant current report was omitted, not read, or misclassified. If that evidence is missing or wrong, return `CHANGES REQUIRED` before evaluating merge.
+- revalidates the report against exact current `main` and current upstream facts;
+- builds a resolution ledger covering every accepted in-scope finding;
+- investigates root causes rather than merely translating recommendations into mechanical tasks;
+- may modify runtime code, tests, dependencies, configuration and documentation as necessary to resolve the validated scope;
+- makes ordinary technical decisions autonomously inside that scope;
+- preserves current safety/product invariants and minimizes new product surface;
+- must stop before any **new** material product, public-contract, authority/security, compatibility or irreversible external decision not settled by the validated analysis, group all such choices and return them for human decision;
+- accounts for every finding as `RESOLVED`, `ALREADY RESOLVED`, `NO CHANGE JUSTIFIED`, `DEFERRED BY VALIDATED DECISION`, `SUPERSEDED` or `HUMAN GATE`;
+- remains subject to G4-G7, including independent exact-head review; it cannot independently PASS or merge a review-required head it materially authored.
 
-Expert reports are evidence, not authority. `main`, the normative files and the active Roadmap remain authoritative. Absence of a relevant current report never blocks otherwise eligible work.
+Controllers remain Roadmap-driven. They must consult any materially relevant still-applicable Expert report before implementing or independently reviewing the same area, but a report does not become Controller work merely because it contains recommendations.
+
+At startup, Controllers inventory `docs/expert/*.md`, identify reports whose scope/staleness triggers overlap the selected work, read relevant reports, and classify applicability as `CURRENT`, `PARTIALLY STALE` or `STALE`. For every review-required PR, record the required **Expert advisory** block from G4. Any material departure from a still-applicable finding requires concrete repository/upstream evidence.
+
+A report is not stale merely because `main` advanced. Use its declared staleness triggers and the semantics of intervening changes. Historical reports remain immutable evidence of their exact-base state and may retain old prompt/model names when historically accurate.
+
+The independent reviewer must independently check the report inventory and the PR's Expert advisory declaration. A G7 `PASS` is invalid if a materially relevant current report was omitted, not read, materially misclassified or departed from without evidence.
+
+Absent an explicit Expert Developer launch on a validated scope, `main`, the normative files and the active Roadmap remain the implementation authority for Controllers.
 
 ## Startup recovery and coherence
 
