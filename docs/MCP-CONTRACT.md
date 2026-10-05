@@ -4,7 +4,7 @@ Current contract: **Gia MCP v2**
 
 The contract version describes the model-facing MCP tool surface. It is intentionally independent from the package/server implementation version.
 
-## v2 surface
+## Tool surface
 
 A v2 server exposes exactly these ten tools:
 
@@ -25,53 +25,33 @@ A v2 server exposes exactly these ten tools:
 
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
-## Compatibility and migration
-
-### Historical MCP v1
-
-The historical MCP v1 exposed 23 granular tools. It stopped being registered when the lean R1-B surface became active. R3 removed its dormant registration modules and contract-only compatibility tests rather than shipping two MCP contracts in parallel.
-
-There is deliberately:
-
-- no environment switch that re-enables MCP v1;
-- no dual v1/v2 tool registration;
-- no hidden alias layer that preserves old tool names.
-
-A v1 MCP client must migrate to the v2 manager tools. The semantic Grist service underneath is reused, but the public tool names/schemas are not compatibility-promised across that boundary.
-
-### Historical GPT Actions/OpenAPI surface
-
-GPT Actions/OpenAPI was a separate HTTP compatibility surface, not MCP v1. R3 retired it from the product candidate: the runtime does not register `/api/v1` or `/openapi.json`, and no GPT Actions token is required to start the bridge.
-
-R5-E reintroduces only the optional `/.well-known/openai-apps-challenge` domain-verification route required for remote-MCP distribution. It is absent unless an exact portal-issued `OPENAI_APPS_CHALLENGE_TOKEN` is configured, returns only that token as plain text, and does **not** add a model-facing tool or compatibility API. It therefore does not change the MCP v2 contract version.
-
 ## Versioning rule
 
 Increment the MCP contract major version when a model-facing change is incompatible, including removal/rename of a tool or action, incompatible input/output schema changes, or a materially changed semantic/safety meaning.
 
 Compatible clarifications, descriptions, implementation fixes and additional result detail that existing clients may safely ignore do not require a major contract increment. New capabilities should first be justified by the roadmap; versioning is not permission to grow the surface speculatively.
 
-Gia package/runtime version **0.7.0** therefore continues to implement MCP contract major **2**. The R6 capabilities and release-stabilization corrections are additive or corrective within the existing ten-tool shape.
+Gia package/runtime version **0.7.0** implements MCP contract major **2**.
 
-## Compatible R6 widget detail
+## Widget detail
 
-R6 C5 keeps the ten-tool MCP v2 surface unchanged. `grist_inspect.page_widgets` may additionally return a normalized `cardLayout` for native Card/Card List widgets, and `grist_change_ui.update_widget` may accept the corresponding complete stable-column layout tree. This is additive result/input detail inside the existing closed semantic action. C5 inputs never accept private Grist field refs, raw BoxSpec JSON or raw UserActions.
+Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect.page_widgets` returns a normalized `cardLayout` for native Card/Card List widgets, and `grist_change_ui.update_widget` accepts the corresponding complete stable-column layout tree. This is additive result/input detail inside the existing closed semantic action. Card layout inputs never accept private Grist field refs, raw BoxSpec JSON or raw UserActions.
 
-The pre-existing numeric `layoutSpec`, sort and identity read detail remains available for MCP v2 compatibility and is not the stable semantic contract for R6 writes. Public `options` contains only present, valid supported display flags and custom-widget access/identity; arbitrary URL/plugin/configuration fields remain internal. Layouts with unsupported attributes and invalid raw sort tokens are omitted rather than forwarded. `compatibilityMetadataOmitted: true` identifies omitted detail. This security correction does not remove the promised supported numeric layout shape; removal of the remaining non-secret compatibility fields requires an incompatible MCP major-version decision. New clients should use normalized stable-ID fields.
+The pre-existing numeric `layoutSpec`, sort and identity read detail remains available for MCP v2 compatibility and is not the stable semantic contract for writes. Public `options` contains only present, valid supported display flags and custom-widget access/identity; arbitrary URL/plugin/configuration fields remain internal. Layouts with unsupported attributes and invalid raw sort tokens are omitted rather than forwarded. `compatibilityMetadataOmitted: true` identifies omitted detail. This security correction does not remove the promised supported numeric layout shape; removal of the remaining non-secret compatibility fields requires an incompatible MCP major-version decision. New clients should use normalized stable-ID fields.
 
 `cardLayout` and `visibleFields` are deliberately separate intentions. The visible field set is changed first; card layout then arranges exactly those current fields. Native Grist may leave stale positive field refs in persisted Card layout after a field is hidden; Gia prunes only those known stale native leaves during normalization while still refusing malformed or ambiguous layouts.
 
-## Compatible R6 page-order detail
+## Page order
 
-R6 C10 keeps the ten-tool MCP v2 surface unchanged. `grist_change_ui(action="reorder_pages")` accepts one complete ordered list of the stable page IDs currently eligible for normal navigation.
+Gia keeps the ten-tool MCP v2 surface unchanged. `grist_change_ui(action="reorder_pages")` accepts one complete ordered list of the stable page IDs currently eligible for normal navigation.
 
-The bridge resolves private `_grist_Pages` row IDs and native `pagePos` values internally. It reuses the current visible-page position slots, preserves untargeted/special page rows, does not expose or mutate `indentation`, and rejects any requested permutation that would change the existing page-parent relation or visible page set. The exact normalized navigation state is verified after write. C10 adds no folder/navigation framework and no raw metadata/UserAction input.
+The bridge resolves private `_grist_Pages` row IDs and native `pagePos` values internally. It reuses the current visible-page position slots, preserves untargeted/special page rows, does not expose or mutate `indentation`, and rejects any requested permutation that would change the existing page-parent relation or visible page set. The exact normalized navigation state is verified after write. Page ordering adds no folder/navigation framework and no raw metadata/UserAction input.
 
-Document/page inspection additionally returns `navigationPageIds`, the exact current stable page-ID set that C10 expects for a complete reorder request. When navigation is unavailable, unsupported or exceeds a bound, inspection retains the available context, omits guessed IDs and returns `navigationNormalizationIncomplete: true`. Document UI completeness summaries include this condition. The stricter complete-snapshot requirement still applies to reorder writes.
+Document/page inspection additionally returns `navigationPageIds`, the exact current stable page-ID set that page reorder expects for a complete reorder request. When navigation is unavailable, unsupported or exceeds a bound, inspection retains the available context, omits guessed IDs and returns `navigationNormalizationIncomplete: true`. Document UI completeness summaries include this condition. The stricter complete-snapshot requirement still applies to reorder writes.
 
-## Compatible R6 access-rule detail
+## Application access rules
 
-R6 C1 keeps the ten-tool MCP v2 surface unchanged. `grist_inspect(action="access_rules")` returns a normalized view of persisted ordinary table/column access-rule groups, while `grist_change_structure(action="access_rule_group")` accepts exactly one `create`, `replace` or `delete` intention.
+Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect(action="access_rules")` returns a normalized view of persisted ordinary table/column access-rule groups, while `grist_change_structure(action="access_rule_group")` accepts exactly one `create`, `replace` or `delete` intention.
 
 Targets use stable table/column IDs; private ACL resource/rule row IDs remain bridge-internal. Writable conditions are a deliberately small typed subset with no arbitrary literal or formula text: everyone, one native Grist role comparison, or one same-table record-column comparison with a bounded built-in user property. Permissions are explicit `allow|deny|unspecified`; native `S`, `all` and `none` forms are outside the writable subset.
 
@@ -79,13 +59,13 @@ Opaque formulas, memos, user-attribute definitions, default/special/schema-edit 
 
 Mutations require local `doc.schema:write` and remain subject to Grist's native Owner enforcement. The bridge verifies the requested persisted definition and an internal fingerprint of all untargeted persisted ACL state after re-read. A successful result explicitly does **not** claim effective enforcement verification; persisted rule rows alone are not treated as a confidentiality proof. If post-write persisted verification fails, the MCP result preserves the operation's `UNCERTAIN` effect knowledge with `retryWholeOperation: false` rather than collapsing it into a generic failure.
 
-## Compatible R6 document-bootstrap detail
+## Document bootstrap
 
-R6 C8 keeps the ten-tool MCP v2 surface unchanged. `grist_discover(action="workspaces")` returns only deployment-allowed workspaces for which the current principal has an explicit workspace grant with `doc:read`; unlike document discovery it includes allowed workspaces that currently contain no documents. This discovery result is selection context only and never implies creation authority.
+Gia keeps the ten-tool MCP v2 surface unchanged. `grist_discover(action="workspaces")` returns only deployment-allowed workspaces for which the current principal has an explicit workspace grant with `doc:read`; unlike document discovery it includes allowed workspaces that currently contain no documents. This discovery result is selection context only and never implies creation authority.
 
 `grist_add_structure(action="create_document")` creates exactly one empty document in an explicit positive `workspaceId`. The destination must be inside the deployment workspace ceiling and one principal grant must name that same workspace with `doc.schema:write`. A document-only allowlist or an unrelated schema grant never authorizes its parent workspace. Native Grist workspace `ADD` authorization remains authoritative, and native Grist creator ownership plus destination inheritance are disclosed effects rather than bridge-managed grants.
 
-`grist_add_structure(action="copy_document_as_template")` additionally requires a separately authorized `sourceDocumentId` with local `doc:read`. The bridge always invokes Grist's native same-installation copy with `asTemplate: true`; local source readability is only a bridge precondition and is **not** presented as proof of native full-copy authority. Grist's own template-copy/download authorization and destination `ADD` checks remain authoritative. Gia exposes no full-data copy flag, arbitrary upload/import, fork, destination auto-selection or sharing/grant mutation in this slice.
+`grist_add_structure(action="copy_document_as_template")` additionally requires a separately authorized `sourceDocumentId` with local `doc:read`. The bridge always invokes Grist's native same-installation copy with `asTemplate: true`; local source readability is only a bridge precondition and is **not** presented as proof of native full-copy authority. Grist's own template-copy/download authorization and destination `ADD` checks remain authoritative. Gia exposes no full-data copy flag, arbitrary upload/import, fork, destination auto-selection or sharing/grant mutation in this contract.
 
 The tool-level OAuth security scheme remains the baseline `doc.schema:write` because `create_document` does not require source read authority. For `copy_document_as_template`, tool metadata also publishes `gia/actionScopeRequirements.copy_document_as_template = ["doc.schema:write", "doc:read"]`, and insufficient-scope results challenge specifically for a missing `doc:read` requirement. A resource denial is not misreported as an OAuth scope failure when the read scope is already present.
 
@@ -97,4 +77,48 @@ Template mode removes user-table data, attachment rows/blobs and history accordi
 
 MCP v2 does not expose generic HTTP forwarding, raw SQL, arbitrary Grist `/apply`, arbitrary UserActions or heterogeneous multi-action transactions. Grist remains authoritative for upstream permissions; the bridge may only reduce authority. Partial/ambiguous writes are not blindly replayed, private Grist references remain server-side where practical, and principal-derived state must not cross principal boundaries.
 
-Release 0.7.0 also hardens JWT/JWKS verification: optional `nbf` is enforced, unsupported JOSE critical extensions are rejected, algorithms must match the JWK key family/curve, and RSA verification keys must be at least 2048 bits.
+JWT/JWKS verification enforces: optional `nbf` is enforced, unsupported JOSE critical extensions are rejected, algorithms must match the JWK key family/curve, and RSA verification keys must be at least 2048 bits.
+
+## Supported UI intentions and bounds
+
+- `visibleFields` is a complete ordered list of 0–200 current stable column IDs;
+  optional widths are integers from 1–2000 pixels. Retained field-owned metadata
+  is preserved. Hiding a field never deletes its table column.
+- `filters` patches at most 200 columns using include/exclude sets of at most 200
+  scalar values, finite ordered numeric ranges, or removal. Omitted pinning is
+  preserved; new filters default to pinned. Final persisted state is also bounded
+  to 200 filters. Unsupported native encodings or incomplete state refuse writes.
+- Saved sort uses at most 20 stable columns with asc/desc, optional emptyLast,
+  Text-only naturalSort and Choice/ChoiceList-only orderByChoice; null/[] clears it.
+- Card/Card List layout is a complete tree over current visible fields, bounded
+  to 500 nodes and depth 50 with finite positive sizes. `visibleFields` and
+  `cardLayout` cannot be combined in one update; update the visible set first.
+  Inspection reports `unplacedColumnIds` rather than guessing browser defaults.
+- `groupByColumnIds` on widget creation accepts 0–20 unique columns from one
+  ordinary source table; an empty list creates a native grand-total summary.
+  Grist owns generated tables and formulas. The bridge verifies actual generated/
+  reused table identity and grouping from the re-read section/metadata, rather than
+  interpreting the returned source table reference as the summary identity.
+- Page reorder uses a complete current `navigationPageIds` set, preserves the
+  full existing hierarchy and special/censored rows, and verifies exact post-state.
+- Select-by uses an advertised exact direct or supported non-summary Ref/RefList
+  link; null clears it. Unsupported links/cycles are rejected.
+- Existing custom-widget settings accept only bounded access and stable-column
+  mappings, never URL/plugin identity or arbitrary widget-owned options.
+
+Schema inputs accept only supported table/column metadata. Rename results report
+the actual native resulting column ID. No raw metadata refs are writable inputs.
+ACL targets use one table and either all ordinary columns or 1–50 unique column
+IDs, with 1–20 ordered rules. Table permissions are read/update/create/delete;
+column permissions are read/update. Writable record/user comparisons accept only
+built-in Email, UserID, Name, UserRef, Origin, IsLoggedIn with compatible types.
+
+Success-only mutation results do not forward arbitrary upstream response bodies.
+Schema verification failure retains applied effect knowledge; UI creation retains
+known created IDs. Partial and uncertain outcomes use explicit typed errors and
+`retryWholeOperation: false`. Error content is text-only to avoid validation against
+a success output schema. No atomicity, effective confidentiality or automatic retry
+guarantee is implied by a successful persisted-state verification.
+
+Read-back and internal fingerprints detect divergence; they do not provide native
+compare-and-set, transaction isolation or simultaneous-writer guarantees.
