@@ -122,6 +122,10 @@ column permissions are read/update. Writable record/user comparisons accept only
 built-in Email, UserID, Name, UserRef, Origin, IsLoggedIn with compatible types.
 
 Success-only mutation results do not forward arbitrary upstream response bodies.
+Record-field, query-filter and custom-mapping dictionaries reject the own key
+`__proto__` before parsing, rather than silently dropping it. Other ordinary
+string keys and arbitrary nested cell values remain supported. Persisted custom
+mappings containing this unsupported key are explicitly marked incomplete.
 Schema verification failure retains applied effect knowledge; UI creation retains
 known created IDs. Partial and uncertain outcomes use explicit typed errors and
 `retryWholeOperation: false`. Error content is text-only to avoid validation against

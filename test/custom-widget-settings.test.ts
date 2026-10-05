@@ -138,6 +138,15 @@ test("drops unresolved mapping entries and marks incomplete without leaking refs
   assert.equal(normalized.includes('"11"'), false);
 });
 
+test("persisted prototype mapping keys are explicitly incomplete rather than silently lost", () => {
+  const result = normalizeCustomWidgetSettings({
+    type: "custom", tableId: "People", tableRef: 1,
+    options: { customView: { columnsMapping: JSON.parse('{"__proto__":11,"constructor":12,"toString":11}') } }
+  }, expandedTables);
+  assert.equal(result?.customWidgetSettingsNormalizationIncomplete, true);
+  assert.deepEqual(result?.customWidgetSettings?.columnsMapping, { constructor: "Email", toString: "Name" });
+});
+
 test("bounds mapping keys and ignores legacy calendar alias", () => {
   const columnsMapping = Object.fromEntries(
     Array.from({ length: MAX_CUSTOM_WIDGET_MAPPING_KEYS + 5 }, (_, index) => [

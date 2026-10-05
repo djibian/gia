@@ -65,6 +65,18 @@ function boundedArray<T extends z.ZodType>(schema: T, max: number) {
   return result;
 }
 
+function dictionarySchema<T extends z.ZodType>(valueSchema: T, minKeyLength = 0) {
+  // Zod skips __proto__ before validating record keys. Reject the raw own key
+  // first so an accepted mutation/filter can never silently lose an intention.
+  return z.preprocess((value, context) => {
+    if (value !== null && typeof value === "object" && Object.hasOwn(value, "__proto__")) {
+      context.addIssue({ code: "custom", message: "Dictionary key __proto__ is unsupported.", path: ["__proto__"] });
+      return z.NEVER;
+    }
+    return value;
+  }, z.record(z.string().min(minKeyLength), valueSchema));
+}
+
 const documentIdSchema = z.string().trim().min(1);
 const tableIdSchema = z.string().trim().min(1);
 const columnIdSchema = z.string().trim().min(1);
@@ -136,8 +148,7 @@ const customWidgetMappingValueSchema = z.union([
   z.null()
 ]);
 
-const customWidgetColumnsMappingSchema = z
-  .record(z.string().min(1), customWidgetMappingValueSchema)
+const customWidgetColumnsMappingSchema = dictionarySchema(customWidgetMappingValueSchema, 1)
   .refine(
     (value) => Object.keys(value).length <= MAX_CUSTOM_WIDGET_MAPPING_KEYS,
     `Custom widget mappings support at most ${MAX_CUSTOM_WIDGET_MAPPING_KEYS} keys.`
@@ -436,11 +447,11 @@ export function registerLeanTools(
   limits: LeanToolLimits
 ): void {
   const newRecordSchema = z.object({
-    fields: z.record(z.string(), z.unknown())
+    fields: dictionarySchema(z.unknown())
   }).strict();
   const updateRecordSchema = z.object({
     id: positiveIdSchema,
-    fields: z.record(z.string(), z.unknown())
+    fields: dictionarySchema(z.unknown())
   }).strict();
   const columnSpecSchema = z.object({
     id: columnIdSchema,
@@ -570,7 +581,7 @@ export function registerLeanTools(
         .object({
           documentId: documentIdSchema,
           tableId: tableIdSchema,
-          filter: z.record(z.string(), z.array(z.unknown())).optional(),
+          filter: dictionarySchema(z.array(z.unknown())).optional(),
           sort: z.string().min(1).optional(),
           limit: boundedPositiveInt(
             limits.maxReadRecords,

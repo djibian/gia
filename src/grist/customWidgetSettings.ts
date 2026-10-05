@@ -169,7 +169,7 @@ export function normalizeCustomWidgetSettings(
         for (let index = 0; index < entries.length; index += 1) {
           if (index >= MAX_CUSTOM_WIDGET_MAPPING_KEYS) break;
           const [key, rawValue] = entries[index]!;
-          if (!key.trim()) {
+          if (!key.trim() || key === "__proto__") {
             incomplete = true;
             continue;
           }

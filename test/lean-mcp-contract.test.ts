@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { McpServer } from "@modelcontextprotocol/server";
+import * as z from "zod/v4";
 
 import { LEAN_TOOL_REGISTRY } from "../src/mcp/leanRegistry.js";
 import { registerLeanTools } from "../src/mcp/leanTools.js";
@@ -68,6 +69,36 @@ function capture(grist: any = {}): Registration[] {
   });
   return registrations;
 }
+
+test("registered dictionary schemas reject raw own __proto__ keys without dispatch or silent loss", async () => {
+  const calls: unknown[] = [];
+  const registrations = capture(new Proxy({}, { get: () => async (...args: unknown[]) => { calls.push(args); return {}; } }));
+  const values = JSON.parse('{"__proto__":"must-not-disappear","constructor":"preserved","Name":{"__proto__":"nested-cell-data"}}');
+  const filter = JSON.parse('{"__proto__":["must-not-disappear"],"constructor":["preserved"]}');
+  const mapping = JSON.parse('{"__proto__":"Name","constructor":"Name"}');
+  const cases = [
+    ["grist_add_records", { documentId: "doc-1", tableId: "Tasks", records: [{ fields: values }] }],
+    ["grist_change_records", { action: "update", documentId: "doc-1", tableId: "Tasks", records: [{ id: 1, fields: values }] }],
+    ["grist_query", { documentId: "doc-1", tableId: "Tasks", filter }],
+    ["grist_change_ui", { action: "update_widget", documentId: "doc-1", pageId: 7, widgetId: 11, update: { customWidgetSettings: { columnsMapping: mapping } } }]
+  ] as const;
+  for (const [name, input] of cases) {
+    const registration = registrations.find((entry) => entry.name === name)!;
+    await assert.rejects(async () => registration.callback(registration.options.inputSchema!.parse(input)), /Dictionary key __proto__ is unsupported/);
+    // The preprocess guard retains an object-shaped advertised dictionary schema.
+    const jsonSchema = z.toJSONSchema(registration.options.inputSchema as z.ZodType, { io: "input" });
+    assert.equal(JSON.stringify(jsonSchema).includes('"propertyNames"'), true);
+  }
+  assert.deepEqual(calls, []);
+  delete values.__proto__;
+  const add = registrations.find((entry) => entry.name === "grist_add_records")!;
+  const valid = { documentId: "doc-1", tableId: "Tasks", records: [{ fields: values }] };
+  assert.deepEqual(add.options.inputSchema!.parse(valid).records[0].fields, values);
+  assert.equal(Object.hasOwn(values.Name, "__proto__"), true);
+  delete mapping.__proto__;
+  const ui = registrations.find((entry) => entry.name === "grist_change_ui")!;
+  assert.deepEqual(ui.options.inputSchema!.parse({ ...cases[3][1], update: { customWidgetSettings: { columnsMapping: mapping } } }).update.customWidgetSettings.columnsMapping, mapping);
+});
 
 test("lean MCP surface is exactly ten prefixed bounded tools with precise risk classes", () => {
   const registrations = capture();

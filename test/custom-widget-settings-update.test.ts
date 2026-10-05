@@ -110,6 +110,14 @@ test("mapping clear is explicit and preserves the rest of customView", () => {
   );
 });
 
+test("mapping resolver refuses an own prototype key and retains ordinary shadowing keys", () => {
+  assert.throws(() => resolveCustomWidgetSettingsUpdate(widget, expandedTables, {
+    columnsMapping: JSON.parse('{"__proto__":"Name","constructor":"Email"}')
+  }), /__proto__ is unsupported/);
+  const result = resolveCustomWidgetSettingsUpdate(widget, expandedTables, { columnsMapping: { constructor: "Email", toString: "Name" } });
+  assert.deepEqual(JSON.parse(result.options.customView as string).columnsMapping, { constructor: 12, toString: 11 });
+});
+
 test("refuses non-custom targets, malformed options and unknown or duplicate column IDs", () => {
   assert.throws(
     () =>
