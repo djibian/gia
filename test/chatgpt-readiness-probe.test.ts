@@ -49,6 +49,14 @@ test("readiness CLI rejects noncanonical URLs and duplicate scope/server metadat
     const validAuthenticated = run(authenticated);
     assert.equal(validAuthenticated.status, 0, validAuthenticated.stdout + validAuthenticated.stderr);
     assert.match(validAuthenticated.stdout, /Live tools\/list is exactly the ten-tool MCP v2 contract: PASS/);
+    const reordered = tools.map(({name, securitySchemes}) => {
+      const schemes = securitySchemes.map(({type, scopes}) => ({scopes, type}));
+      return { name, securitySchemes: schemes, _meta: { securitySchemes: schemes } };
+    });
+    const validReordered = run({ ...authenticated, TEST_TOOLS: JSON.stringify(reordered) });
+    assert.equal(validReordered.status, 0, validReordered.stdout + validReordered.stderr);
+    assert.match(validReordered.stdout, /Root OAuth securitySchemes match lean tool capabilities: PASS/);
+    assert.match(validReordered.stdout, /Compatibility _meta securitySchemes mirror matches: PASS/);
     for (const extra of [
       { MCP_RESOURCE_URI: "https://bridge.example.org/mcp?" },
       { MCP_RESOURCE_URI: "https://bridge.example.org/mcp#" },
@@ -58,7 +66,9 @@ test("readiness CLI rejects noncanonical URLs and duplicate scope/server metadat
       { TEST_SERVERS: JSON.stringify(["https://auth.example.org/oidc#"]) },
       { ...authenticated, TEST_TOOLS: JSON.stringify([...tools, tools[0]]) },
       { ...authenticated, TEST_TOOLS: JSON.stringify([...tools, { malformed: true }]) },
-      { ...authenticated, TEST_TOOLS: JSON.stringify([...tools.slice(1), null]) }
+      { ...authenticated, TEST_TOOLS: JSON.stringify([...tools.slice(1), null]) },
+      { ...authenticated, TEST_TOOLS: JSON.stringify(tools.map(t => ({ ...t, securitySchemes: [{ type: "oauth2", scopes: [] }] }))) },
+      { ...authenticated, TEST_TOOLS: JSON.stringify(tools.map(t => ({ ...t, securitySchemes: t.securitySchemes.map(s => ({...s, unexpected: true})) }))) }
     ]) {
       const result = run(extra);
       assert.equal(result.status, 1, result.stdout + result.stderr);

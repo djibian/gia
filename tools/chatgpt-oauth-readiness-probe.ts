@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { LEAN_TOOL_REGISTRY } from "../src/mcp/leanRegistry.js";
 import { oauthSecuritySchemesForTool } from "../src/mcp/oauthToolSecurity.js";
 
@@ -138,10 +139,6 @@ async function postMcp(options: {
   };
 }
 
-function sameJson(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
 function inspectToolSecurity(body: unknown): {
   toolsListAccepted: boolean;
   exactLeanToolSet: boolean;
@@ -175,19 +172,19 @@ function inspectToolSecurity(body: unknown): {
   const expectedNames = LEAN_TOOL_REGISTRY.map((tool) => tool.name).sort();
   const actualNames = [...byName.keys()].sort();
   const exactLeanToolSet = tools.length === expectedNames.length &&
-    byName.size === tools.length && sameJson(actualNames, expectedNames);
+    byName.size === tools.length && isDeepStrictEqual(actualNames, expectedNames);
   let rootSecuritySchemesMatch = exactLeanToolSet;
   let compatibilityMirrorMatches = exactLeanToolSet;
 
   for (const definition of LEAN_TOOL_REGISTRY) {
     const tool = byName.get(definition.name);
     const expected = oauthSecuritySchemesForTool(definition.name);
-    if (!tool || !expected || !sameJson(tool.securitySchemes, expected)) {
+    if (!tool || !expected || !isDeepStrictEqual(tool.securitySchemes, expected)) {
       rootSecuritySchemesMatch = false;
     }
 
     const meta = tool && isObject(tool._meta) ? tool._meta : undefined;
-    if (!meta || !expected || !sameJson(meta.securitySchemes, expected)) {
+    if (!meta || !expected || !isDeepStrictEqual(meta.securitySchemes, expected)) {
       compatibilityMirrorMatches = false;
     }
   }
