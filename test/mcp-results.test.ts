@@ -63,7 +63,7 @@ test("projects schema result-normalization failure as an applied no-retry verifi
   assert.equal(JSON.stringify(parsed).includes("Native result missing"), false);
 });
 
-test("projects C1 verification uncertainty without exposing policy internals", () => {
+test("projects access-rule verification uncertainty without exposing policy internals", () => {
   const result = errorResult(
     new AccessRuleWriteVerificationError("Persisted ACL postcondition differs")
   );
@@ -78,7 +78,7 @@ test("projects C1 verification uncertainty without exposing policy internals", (
   assertNoStructuredErrorContent(result);
 });
 
-test("projects a known C8 created document ID as an applied effect with unverified postcondition", () => {
+test("projects a known created document ID as an applied effect with unverified postcondition", () => {
   const result = errorResult(
     new DocumentBootstrapVerificationError("doc-created-123", "membership re-read failed")
   );

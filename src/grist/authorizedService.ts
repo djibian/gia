@@ -1339,7 +1339,7 @@ export class AuthorizedGristService {
       const snapshot = await this.loadPageOrderSnapshot(documentId);
       return { navigationPageIds: [...snapshot.visiblePageIds] };
     } catch {
-      // Unavailable C10 state must not discard otherwise authorized inspection.
+      // Unavailable navigation state must not discard otherwise authorized inspection.
       // Reorder writes continue to use the strict snapshot loader directly.
       return { navigationNormalizationIncomplete: true };
     }

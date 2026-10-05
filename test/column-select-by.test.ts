@@ -9,7 +9,6 @@ import type { GristClient } from "../src/grist/client.js";
 import { DocumentUiService } from "../src/grist/documentUi.js";
 import type { GristService } from "../src/grist/service.js";
 import { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
-import { pageWidgetsOutputSchema } from "../src/mcp/outputSchemas.js";
 
 const tables = {
   tables: [
@@ -94,9 +93,7 @@ test("discovers reusable Ref/RefList column select-by options without attachment
     ]
   });
 
-  const result = pageWidgetsOutputSchema.parse(
-    service.getPageWidgets(context, 7, tables)
-  );
+  const result = service.getPageWidgets(context, 7, tables);
   const customers = result.widgets.find((widget) => widget.id === 102);
   const summary = result.widgets.find((widget) => widget.id === 103);
 

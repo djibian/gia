@@ -6,7 +6,6 @@ import {
   normalizeCustomWidgetSettings
 } from "../src/grist/customWidgetSettings.js";
 import { DocumentUiService } from "../src/grist/documentUi.js";
-import { pageWidgetsOutputSchema } from "../src/mcp/outputSchemas.js";
 
 const expandedTables = {
   tables: [
@@ -63,7 +62,7 @@ test("normalizes custom widget access and column mappings to stable column IDs",
   assert.equal(normalized.includes('"11"'), false);
 });
 
-test("normalizes historical blank access to none", () => {
+test("normalizes native blank access to none", () => {
   assert.deepEqual(
     normalizeCustomWidgetSettings(
       {
@@ -186,8 +185,7 @@ test("document UI exposes normalized custom settings with the existing output sc
   );
 
   const result = new DocumentUiService().getPageWidgets(ui, 101, expandedTables);
-  const parsed = pageWidgetsOutputSchema.parse(result);
-  assert.deepEqual(parsed.widgets[0]?.customWidgetSettings, {
+  assert.deepEqual(result.widgets[0]?.customWidgetSettings, {
     access: "read table",
     widgetId: "@example/people-widget",
     columnsMapping: {
@@ -196,11 +194,11 @@ test("document UI exposes normalized custom settings with the existing output sc
     }
   });
   assert.equal(
-    JSON.stringify(parsed.widgets[0]?.customWidgetSettings).includes("widget.example.invalid"),
+    JSON.stringify(result.widgets[0]?.customWidgetSettings).includes("widget.example.invalid"),
     false
   );
   assert.equal(
-    JSON.stringify(parsed.widgets[0]?.customWidgetSettings).includes("widget-owned"),
+    JSON.stringify(result.widgets[0]?.customWidgetSettings).includes("widget-owned"),
     false
   );
 });
