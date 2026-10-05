@@ -2,175 +2,148 @@
 
 ## Purpose
 
-The **Expert** is a parallel advisory role for Gia. It exists to spend deeper reasoning and research effort on difficult semantic, architectural, security and product-boundary questions while Controllers continue normal repository work.
+Gia has two explicit, model-agnostic Expert modes alongside the ordinary Controller lane:
 
-The Expert does **not** implement the product. Its durable output is analysis that future Controllers can reuse.
+- **Expert Analyst** — deep read-only analysis, challenge and recommendation;
+- **Expert Developer** — deep implementation of an explicitly validated Analyst scope.
 
-The role is intentionally suitable for a high-capability model such as **GPT-6 Astra**.
+Controllers remain responsible for ordinary Roadmap execution. The two Expert modes exist to preserve a clean separation between understanding a difficult product problem and exhaustively resolving a validated expert diagnosis.
 
-## Authority boundary
+## Shared state discipline
 
-The Expert may:
+Every Expert execution:
 
-- inspect the exact current repository state, runtime code and tests;
-- inspect open PRs and current heads;
-- inspect official Grist behavior, documentation and source where publicly available;
-- inspect the external references already admitted by Product Vision/Roadmap;
-- compare alternative designs;
-- identify hidden coupling, authority expansion, unstable/private primitives and maintenance risks;
-- challenge current assumptions and recommend smaller/better designs;
-- prepare implementation guidance, invariants and focused verification ideas for Controllers.
+1. resolves the exact current `main` SHA;
+2. reads `AGENTS.md`, `docs/PRODUCT_VISION.md`, `docs/ROADMAP.md`, this protocol, `docs/ARCHITECTURE.md` and `docs/SECURITY.md` from that state;
+3. reconstructs relevant mutable GitHub facts instead of trusting chat history;
+4. inventories materially relevant `docs/expert/` reports and their staleness triggers;
+5. rechecks current upstream/external evidence when it can materially change the conclusion;
+6. treats conversation memory as non-authoritative.
 
-The Expert must not, during an ordinary Expert run:
+Experts never coordinate through guessed private execution state. Durable GitHub state is the coordination surface.
 
-- edit runtime or test code;
-- change dependencies, configuration, deployment or release state;
-- change MCP schemas/tool behavior;
-- modify AGENTS.md, Product Vision, Roadmap or Security/Architecture normative claims;
-- change roadmap eligibility or create committed implementation work;
-- merge or alter an implementation PR;
-- issue the formal G7 exact-head PASS for a PR merely because it inspected that PR as part of expert analysis.
+## Expert Analyst
 
-If governance itself needs revision, the Expert records the finding in its advisory report. A Controller or explicit governance task handles the normative change separately.
+### Purpose
 
-## Parallelism
+The Expert Analyst spends deeper reasoning and research effort on difficult semantic, architectural, security, code-quality and product-boundary questions. It challenges the product as a system and recommends what should change.
 
-Expert runs are independent and may happen while zero, one or many Controllers are active.
+Good uses include whole-product or pre-release reviews, authority-sensitive design, repeated defects that suggest a wrong abstraction, architectural compression, upstream semantic comparison, and investigation of recommendations that ordinary Roadmap execution may not naturally surface.
 
-The Expert must never coordinate by guessing another execution's private state. It reconstructs only durable GitHub facts.
+### Read-only phase
 
-To reduce merge conflicts, ordinary Expert runs write only one new report under:
+Before explicit human validation, an Analyst run is repository read-only. It may inspect code, tests, documentation, PRs, official Grist behavior/source and admitted external references, but it must not modify the repository in any way.
 
-`docs/expert/`
+The Analyst must:
 
-They do not update a shared index.
+- distinguish facts, upstream observations and inference;
+- identify bugs, architectural gaps, unsafe assumptions, missing generic capability, obsolete complexity and maintenance risk;
+- consider the smallest viable option and explicit non-work;
+- group all genuine human decisions instead of discovering them one by one during implementation;
+- finish with a concise proposed treatment and proposed Expert Developer scope;
+- stop for explicit human validation before any repository write.
 
-## When an Expert run is useful
+The Analyst does not issue a G7 PASS merely because it inspected an implementation head.
 
-Good triggers include:
+### Validated report
 
-- before an authority-sensitive capability such as ACLs, document/workspace creation, credential or permission changes;
-- before exposing a Grist primitive that is private, unstable, weakly documented or version-sensitive;
-- when several implementation designs are plausible and choosing badly would create long-lived complexity;
-- when an upstream Grist/MCP release may materially change the best design;
-- when repeated Controller iterations suggest the conceptual model may be wrong;
-- before a major new roadmap tranche;
-- periodically, to challenge whether current work still matches the Pareto product boundary.
-
-Routine mechanical changes do not need an Expert run.
-
-## Startup procedure
-
-Each Expert execution:
-
-1. resolves the exact SHA of `main`;
-2. reads `AGENTS.md`, `docs/PRODUCT_VISION.md`, `docs/ROADMAP.md`, this protocol, `docs/ARCHITECTURE.md` and `docs/SECURITY.md`;
-3. reconstructs current open PRs and their exact heads when relevant;
-4. lists/searches existing `docs/expert/` reports relevant to the current subject;
-5. identifies what is already established versus what is mutable or uncertain;
-6. researches current upstream/external evidence when it can materially change the advice.
-
-Conversation memory is not project state.
-
-## Scope selection
-
-If the launch supplies an explicit topic, analyze that topic only.
-
-Without an explicit topic, choose the **highest-leverage unresolved question** in the active roadmap, preferring:
-
-1. security/authority-sensitive work;
-2. design choices that could expand the public contract;
-3. unstable/private Grist primitives;
-4. cross-cutting decisions that affect several future slices;
-5. a material assumption that has not yet received deep independent challenge.
-
-Do not duplicate a recent still-current Expert report unless new repository/upstream evidence justifies a refresh.
-
-On the first Expert run for a substantial tranche, a bounded tranche-wide survey is useful. It may identify several risks, but should deep-dive at most two questions so the report remains actionable.
-
-## Research and provenance
-
-For every external source that materially supports a recommendation, record:
-
-- project/source;
-- observed version, revision or date when practical;
-- behavior inspected;
-- whether the report recommends REUSE, ADAPT, REIMPLEMENT or REJECT;
-- licensing/provenance implications when source code is relevant.
-
-Distinguish:
-
-- repository facts;
-- upstream documented facts;
-- source-code observations;
-- inference/recommendation.
-
-Do not present inference as an upstream guarantee.
-
-## Durable report
-
-Filename:
+After explicit validation, the Analyst may create exactly one new report under:
 
 `docs/expert/YYYY-MM-DD-<short-scope>-<main7>.md`
 
-The report must begin with:
+The report records:
+
+- exact base `main`;
+- evidence and material findings;
+- the human decisions actually made;
+- accepted, rejected and deferred recommendations;
+- a finite `Expert Developer scope` made of accepted finding IDs;
+- staleness triggers and provenance.
+
+Its header is:
 
 ```text
-EXPERT ADVISORY
+EXPERT ANALYSIS
 Date: YYYY-MM-DD
 Base main: <exact full SHA>
 Scope: <bounded subject>
-Status: ADVISORY — NOT ROADMAP AUTHORITY
+Status: VALIDATED ANALYSIS — NOT CONTROLLER ROADMAP AUTHORITY
+Expert Developer scope: <accepted finding IDs, or none>
+Activation: EXPLICIT EXPERT DEVELOPER LAUNCH REQUIRED
 ```
 
-Recommended sections:
+A validated report is durable decision/evidence input. It does not by itself start implementation, alter the Roadmap or create ordinary Controller eligibility.
 
-1. **Executive findings** — the few conclusions Controllers should notice first.
-2. **Current-state facts** — relevant Gia behavior and current PR state.
-3. **Upstream/reference findings** — exact Grist/ecosystem evidence.
-4. **Risk and invariant analysis** — what must not be broken or broadened.
-5. **Options considered** — include the smallest viable option and rejected alternatives.
-6. **Expert recommendation** — concrete but advisory.
-7. **Controller guidance** — implementation boundaries, likely modules/contracts, focused verification ideas; no code patch.
-8. **Questions / decision points** — only genuine unresolved product/external decisions.
-9. **Staleness triggers** — what future changes would require the report to be refreshed.
-10. **Provenance**.
+The Analyst may integrate that report through a documentation-only PR after validation. It must not combine the report with product implementation or normative governance changes.
 
-The report should summarize reasoning and evidence; it must not contain hidden chain-of-thought.
+## Expert Developer
 
-## Repository integration
+### Purpose
 
-An ordinary Expert run may create a short-lived branch and PR containing only its new `docs/expert/` report.
+The Expert Developer exists for the gap between ordinary Roadmap execution and a deep validated expert diagnosis. It is launched explicitly on one or more validated Analyst reports and treats the accepted scope exhaustively rather than stopping because a recommendation is not encoded as a Roadmap task.
 
-PR requirements:
+### Authority
 
-- title starts with `Expert:`;
-- body states the exact base `main` SHA and scope;
-- `Review gate: NOT REQUIRED — advisory evidence only`;
-- no normative/runtime files are changed.
+The combination of:
 
-If exact-head CI is green, the report PR is conflict-free/current enough for its advisory purpose, and no G7-sensitive file was touched, the Expert may merge that report PR itself.
+1. an integrated validated Analyst report with a finite `Expert Developer scope`; and
+2. an explicit Expert Developer launch on that scope
 
-If `main` moved materially while the report was being prepared, re-evaluate affected claims before merge rather than mechanically rebasing stale advice.
+is implementation authority for that Expert Developer execution.
 
-## How Controllers use reports
+This authority is exceptional and local to the validated scope. It **does not**:
 
-Expert reports do not authorize work and do not override current normative files.
+- rewrite or implicitly promote the Roadmap;
+- make the work automatically eligible to Controllers;
+- authorize unrelated feature development;
+- authorize a new product/public-contract/authority decision that the validated analysis did not settle.
 
-Consultation is explicit and auditable. Every Controller execution must inventory `docs/expert/*.md` during startup and compare each report's declared scope and staleness triggers with the selected work.
+Inside the validated scope, the Expert Developer may modify runtime code, tests, dependencies, configuration and documentation as necessary. Ordinary technical choices are autonomous.
 
-For any report that materially overlaps the implementation or review subject, the Controller must:
+If a new material product, public-contract, security/authority, compatibility or irreversible external decision appears, the Expert Developer must stop before that affected change, group all such decisions, and return them for human choice.
 
-1. read the report before finalizing design/review conclusions;
-2. revalidate the mutable repository/upstream facts that matter;
-3. classify applicability:
-   - `CURRENT` — the relevant findings still apply;
-   - `PARTIALLY STALE` — some findings remain usable and the stale parts are identified;
-   - `STALE` — a staleness trigger or semantic change invalidates the report for the current decision;
-4. adopt useful constraints/recommendations where they still fit;
-5. record any material departure from current advice with concrete evidence.
+### Resolution discipline
 
-Every `Review gate: REQUIRED` PR must contain:
+At startup, the Expert Developer revalidates every named report against current `main` and classifies applicability as `CURRENT`, `PARTIALLY STALE` or `STALE`.
+
+It then creates a resolution ledger covering every accepted in-scope finding. No finding may disappear merely because it is absent from the active Roadmap.
+
+Allowed terminal states are:
+
+- `RESOLVED`;
+- `ALREADY RESOLVED`;
+- `NO CHANGE JUSTIFIED`;
+- `DEFERRED BY VALIDATED DECISION`;
+- `SUPERSEDED`;
+- `HUMAN GATE`.
+
+Implementation should investigate root cause, minimize product surface, preserve Gia's safety invariants and verify relevant postconditions. A recommendation may be narrowed or rejected only with concrete current evidence.
+
+### PR and review rules
+
+Normal repository rules remain in force:
+
+- PRs are the unit of integration;
+- optimistic concurrency applies;
+- relevant Expert reports must be declared in the PR's `Expert advisory` block;
+- G7 review is required whenever the change falls under G7;
+- an Expert Developer that authored or materially modified a review-required exact head cannot independently PASS or merge that same head.
+
+A PR that implements a validated Analyst finding must identify the source report and finding IDs plus their resulting resolution status.
+
+## Controllers and Expert reports
+
+Controllers remain the ordinary autonomous development lane and select work from the current authoritative Roadmap. A validated Analyst report does not add hidden Controller work.
+
+Controllers must still inventory `docs/expert/*.md` and consult every materially relevant still-applicable report before finalizing implementation or independent review conclusions.
+
+For each relevant report they classify applicability:
+
+- `CURRENT` — material findings still apply;
+- `PARTIALLY STALE` — only identified parts remain applicable;
+- `STALE` — a staleness trigger or semantic change invalidates it for the current decision.
+
+Every `Review gate: REQUIRED` PR keeps the existing evidence block:
 
 ```text
 Expert advisory:
@@ -180,20 +153,18 @@ Expert advisory:
 - departures: <none, or concise evidence-backed reason>
 ```
 
-When no report is materially relevant, use `consulted: none` and `applicability: NONE RELEVANT`. Do not manufacture relevance.
+When no report is materially relevant, use `consulted: none` and `applicability: NONE RELEVANT`.
 
-The independent G7 reviewer repeats the inventory/relevance check rather than trusting the author declaration. A reviewer must return `CHANGES REQUIRED` if a materially relevant current report was omitted, not actually consulted, materially misclassified, or departed from without evidence. A `PASS` without this check is invalid under `AGENTS.md`.
+The independent G7 reviewer repeats this relevance check. A PASS is invalid when a materially relevant current report was omitted, unread, materially misclassified or departed from without evidence.
 
-A report is not stale merely because its base SHA is older than current `main`; use the report's own staleness triggers and the semantics of intervening changes. Absence of a relevant current Expert report never blocks otherwise eligible Controller work.
+## Staleness and history
 
-A report may later become historical evidence. Its filename/base SHA and staleness section make that explicit.
+A report is not stale merely because `main` advanced. Use its declared staleness triggers and the semantics of intervening changes.
 
-## Current first-use opportunity
+Historical reports remain immutable evidence of the state and protocol that existed at their exact base. Do not rewrite old reports merely because prompt names, Expert roles or governance later changed.
 
-At the time this protocol is introduced, R6.3 contains several bounded adopted capabilities. If they remain current when the first Expert run starts, the highest-value non-code work is expected to include:
+Validated Analyst reports may authorize later Expert Developer work only for findings that remain applicable. If staleness changes the product decision rather than merely the technical implementation, obtain a fresh Analyst/human decision before proceeding.
 
-- a tranche-wide R6.3 risk/dependency survey;
-- a deep semantic/security review of **C1 — bounded application-level ACL rules**;
-- a deep authority/resource-boundary review of **C8 — document creation/copy-as-template**.
+## Parallelism
 
-This is guidance, not frozen work. If the Roadmap has moved, follow the current state instead.
+Zero, one or many Controllers and Experts may exist concurrently. Each execution reconstructs durable state independently. No role should delay unrelated eligible work merely because another private execution may exist.
