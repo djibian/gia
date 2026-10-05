@@ -31,7 +31,7 @@ Increment the MCP contract major version when a model-facing change is incompati
 
 Compatible clarifications, descriptions, implementation fixes and additional result detail that existing clients may safely ignore do not require a major contract increment. New capabilities should first be justified by the roadmap; versioning is not permission to grow the surface speculatively.
 
-Gia package/runtime version **0.7.0** implements MCP contract major **2**.
+Gia package/runtime version **0.7.1** implements MCP contract major **2**.
 
 ## Widget detail
 
