@@ -109,7 +109,13 @@ JWT/JWKS verification enforces: optional `nbf` is enforced, unsupported JOSE cri
   mappings, never URL/plugin identity or arbitrary widget-owned options.
 
 Schema inputs accept only supported table/column metadata. Rename results report
-the actual native resulting column ID. No raw metadata refs are writable inputs.
+the actual native resulting column ID. Table/column PATCH results retain the
+requested `targetTableIds`/`targetColumnIds` and add `updatedTables`/`updatedColumns`
+mapping each target to its re-read native stable ID. Grist may canonicalize table
+names or rename a column with its label. Gia correlates private metadata identities
+before and after PATCH, refuses ambiguous pre-state, and reports an applied,
+unverified, non-retryable outcome if resulting IDs cannot be resolved. No raw
+metadata refs are writable inputs or returned in these mappings.
 ACL targets use one table and either all ordinary columns or 1–50 unique column
 IDs, with 1–20 ordered rules. Table permissions are read/update/create/delete;
 column permissions are read/update. Writable record/user comparisons accept only

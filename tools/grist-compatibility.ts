@@ -487,6 +487,31 @@ async function run(): Promise<void> {
       ]
     });
 
+    await callTool(bridgeBaseUrl, "grist_add_structure", {
+      action: "create_tables", documentId,
+      tables: [{ id: "Compat_Identity", columns: [{ id: "Before", fields: { type: "Text" } }] }]
+    });
+    const renamedTable = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "update_tables", documentId,
+      tables: [{ id: "Compat_Identity", fields: { tableId: "Compat Identity Probe" } }]
+    }), "canonical_table_id");
+    assert(JSON.stringify(renamedTable.updatedTables) === JSON.stringify([
+      { targetTableId: "Compat_Identity", tableId: "Compat_Identity_Probe" }
+    ]), "canonical_table_id_not_reported");
+    const renamedColumn = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "update_columns", documentId, tableId: "Compat_Identity_Probe",
+      columns: [{ id: "Before", fields: { label: "Native label" } }]
+    }), "label_column_id");
+    assert(JSON.stringify(renamedColumn.updatedColumns) === JSON.stringify([
+      { targetColumnId: "Before", columnId: "Native_label" }
+    ]), "label_rename_id_not_reported");
+    await callTool(bridgeBaseUrl, "grist_add_records", {
+      documentId, tableId: "Compat_Identity_Probe", records: [{ fields: { Native_label: "resolved" } }]
+    });
+    await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "delete_table", documentId, tableId: "Compat_Identity_Probe"
+    });
+
     const createdPage = resultJson(
       await callTool(bridgeBaseUrl, "grist_add_ui", {
         action: "create_page",
