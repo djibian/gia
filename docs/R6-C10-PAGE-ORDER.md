@@ -32,7 +32,7 @@ The public C10 input is a complete ordered array of positive stable page IDs:
 pageIds: [pageId, ...]
 ```
 
-The list must contain every currently navigable page exactly once. `grist_inspect(action="document")` and `grist_inspect(action="pages")` return `navigationPageIds`, the exact stable page-ID set accepted by this complete-list intention. Private `_grist_Pages` record IDs and raw `pagePos` values are never C10 mutation inputs; legacy MCP v2 detailed read projections may still contain raw compatibility metadata outside this normalized C10 contract.
+The list must contain every currently navigable page exactly once. `grist_inspect(action="document")` and `grist_inspect(action="pages")` return `navigationPageIds`, the exact stable page-ID set accepted by this complete-list intention. If that set cannot be established within the supported bounds, inspection preserves the available context and returns `navigationNormalizationIncomplete: true` without guessed IDs; reorder writes still refuse incomplete or unsupported state. Private `_grist_Pages` record IDs and raw `pagePos` values are never C10 mutation inputs; legacy MCP v2 detailed read projections may still contain non-secret numeric compatibility metadata outside this normalized C10 contract.
 
 Gia conservatively treats censored/empty-name pages, `GristDocTour`, `GristDocTutorial` and pages backed by `GristHidden_*` primary tables as non-targetable. This deliberately avoids importing client-only flags that can temporarily expose Grist's special pages.
 

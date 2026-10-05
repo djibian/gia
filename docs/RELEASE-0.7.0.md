@@ -28,7 +28,7 @@ The post-R6 Expert findings were used as a finite release-stabilization set.
 0.7.0 corrects or hardens:
 
 - native `CreateViewSection` summary return handling;
-- native stale Card leaves after field hide/re-show;
+- native stale Card leaves after field hide/re-show, while preserving clean unary groups through write/re-read;
 - machine-readable no-blind-retry effect state for C1/C8 post-write failures;
 - JWT optional `nbf`, JOSE critical extensions, algorithm/key-family/curve
   compatibility and minimum 2048-bit RSA signing keys;
@@ -37,7 +37,8 @@ The post-R6 Expert findings were used as a finite release-stabilization set.
 - Card completeness in compact document inspection;
 - actual native resulting column ID after rename;
 - unknown native page-layout keys before replacement;
-- exact inspectable page-navigation target sets;
+- exact inspectable page-navigation target sets, with explicit incompleteness rather than discarded context when C10 cannot resolve them;
+- safe shared page/widget result projections that retain numeric layout compatibility while omitting arbitrary URL/plugin/configuration metadata;
 - retirement of the obsolete current v1 OAuth probe path and current Gia probe
   identity.
 
@@ -65,14 +66,17 @@ blind replay or guessed cleanup.
 
 ## MCP v2 compatibility disposition
 
-0.7.0 intentionally keeps the pre-existing raw UI read-only compatibility
-fields of MCP v2, including some detailed layout/option metadata. They are not
-the semantic R6 mutation contract, new features do not expand that raw surface,
-and new integrations should use normalized stable-ID fields.
+0.7.0 keeps the supported numeric UI layout/sort/identity compatibility detail
+of MCP v2. Public options are limited to display flags and custom-widget
+access/identity. Arbitrary URLs, plugin settings, unsupported layout attributes
+and invalid raw sort tokens are omitted with `compatibilityMetadataOmitted: true`.
+Complete internal snapshots remain unchanged for read-modify-write preservation
+and exact verification. This security correction introduces no exception to the
+secret boundary and preserves the promised supported numeric layout shape.
 
-Removing those promised fields silently would be an incompatible output change.
-That cleanup is therefore **not hidden inside 0.7.0**; it requires a separately
-reviewed future MCP major-version decision.
+New integrations should use normalized stable-ID fields. Removing the remaining
+non-secret compatibility fields requires a separately reviewed future MCP
+major-version decision.
 
 ## Grist Community compatibility evidence
 

@@ -269,6 +269,26 @@ test("preserves a valid numeric nbf claim for resource-server validation", async
   assert.equal(claims.notBefore, 1_500_000_000);
 });
 
+test("leading zero octets cannot inflate a weak RSA modulus to the minimum strength", async () => {
+  const weak = rsaFixtureWithBits(1024);
+  const n = Buffer.from(weak.jwk.n!, "base64url");
+  const padded = {
+    ...weak.jwk,
+    n: Buffer.concat([Buffer.alloc(257 - n.length), n]).toString("base64url")
+  };
+  const verifier = new JwksOAuthAccessTokenVerifier({
+    jwksUri: JWKS_URI,
+    fetcher: jwksFetcher(padded)
+  });
+
+  await assert.rejects(
+    verifier.verify(jwt(weak.privateKey, validPayload())),
+    (error: unknown) =>
+      error instanceof JwksAccessTokenVerifierError &&
+      error.code === "signing_key_not_found"
+  );
+});
+
 test("requires an HTTPS JWKS URI without embedded credentials or fragment", () => {
   assert.throws(
     () => new JwksOAuthAccessTokenVerifier({ jwksUri: "http://auth.example.test/jwks" }),

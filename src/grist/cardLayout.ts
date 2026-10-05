@@ -171,7 +171,11 @@ export function normalizeCardLayout(
     // Grist's persisted layout may retain a now-redundant wrapper after a field
     // is hidden. Collapse a size-less unary group so the normalized semantic
     // tree remains stable across that native stale-leaf state.
-    if (children.length === 1 && size === undefined) return children[0];
+    if (
+      children.length === 1 &&
+      children.length < node.children.length &&
+      size === undefined
+    ) return children[0];
     return {
       kind: "group",
       children,

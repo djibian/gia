@@ -83,7 +83,7 @@ The bridge supports bounded document bootstrap, table/column creation and target
 
 Supported UI operations cover bounded creation/modification/deletion of native pages and widgets, including stable visible-field configuration, persistent filters, native summaries, Card/Card List layout and hierarchy-preserving page ordering. Private metadata references are resolved server-side. Read-modify-write operations preserve unrelated configuration and re-read material postconditions where practical.
 
-MCP v2 retains a small set of **legacy raw read-only compatibility fields** such as existing UI `layoutSpec`/option projections. They are not accepted as the R6 mutation contract and may contain private Grist metadata references. New integrations should use the normalized stable-ID fields. Removing those legacy fields would be an incompatible MCP contract change and is therefore deferred to an explicitly reviewed future major contract, not hidden inside 0.7.0.
+MCP v2 retains legacy numeric UI `layoutSpec`, sort and identity detail alongside normalized stable-ID fields. Public options are limited to supported display flags and custom-widget access/identity; arbitrary URLs, plugin settings and other configuration stay internal. Unsupported compatibility detail is omitted with `compatibilityMetadataOmitted: true`. This security correction preserves complete internal snapshots for read-modify-write. New integrations should use normalized fields; removal of the remaining non-secret compatibility fields requires an explicitly reviewed major-contract decision.
 
 ## Security boundary
 

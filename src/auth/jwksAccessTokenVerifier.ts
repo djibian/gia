@@ -124,13 +124,15 @@ function rsaModulusBits(value: unknown): number | undefined {
   } catch {
     return undefined;
   }
-  if (bytes.length === 0) return undefined;
-  let first = bytes[0]!;
+  let offset = 0;
+  while (offset < bytes.length && bytes[offset] === 0) offset += 1;
+  if (offset === bytes.length) return 0;
+  const first = bytes[offset]!;
   let leadingZeroBits = 0;
   while (leadingZeroBits < 8 && (first & (0x80 >> leadingZeroBits)) === 0) {
     leadingZeroBits += 1;
   }
-  return bytes.length * 8 - leadingZeroBits;
+  return (bytes.length - offset) * 8 - leadingZeroBits;
 }
 
 function keyMatchesAlgorithm(

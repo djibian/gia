@@ -140,7 +140,7 @@ Compact inspection preferentially includes:
 
 Business rows are read only through bounded query operations. Unresolvable private Grist metadata is reported as incomplete rather than guessed.
 
-For MCP v2 compatibility, a small inherited set of raw UI read projections (for example existing `layoutSpec`/option fields) is retained alongside normalized semantics. Those compatibility fields are not accepted as the R6 mutation contract and may contain private Grist metadata refs. New capabilities must not expand this raw surface; removing it requires an explicitly reviewed incompatible MCP contract major change.
+For MCP v2 compatibility, legacy numeric UI layout/sort/identity detail is retained alongside normalized semantics. Shared public page/widget projections allow only numeric BoxSpec structure, supported sort tokens, display flags and custom-widget access/identity. Arbitrary URLs, plugin configuration and unsupported metadata remain internal; omitted detail is marked `compatibilityMetadataOmitted: true`. Complete internal snapshots remain available for preservation and post-write verification. The remaining non-secret compatibility fields are not R6 mutation inputs; removing them requires an explicitly reviewed incompatible MCP contract major change.
 
 ## Mutation architecture
 

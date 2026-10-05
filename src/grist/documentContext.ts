@@ -39,6 +39,7 @@ type DocumentRelation = {
 
 type CompletenessAwareDocumentUiContext = DocumentUiContext & {
   metadataSnapshotIncomplete?: true;
+  navigationNormalizationIncomplete?: true;
 };
 
 function record(value: unknown): JsonRecord | null {
@@ -135,7 +136,7 @@ function compactPage(page: GristPage) {
 }
 
 function hasIncompleteUiNormalization(ui: CompletenessAwareDocumentUiContext): boolean {
-  if (ui.metadataSnapshotIncomplete) return true;
+  if (ui.metadataSnapshotIncomplete || ui.navigationNormalizationIncomplete) return true;
   return ui.pages.some(
     (page) =>
       page.layoutNormalizationIncomplete ||
@@ -162,6 +163,9 @@ function compactUiContext(ui: CompletenessAwareDocumentUiContext) {
     },
     ...(ui.metadataSnapshotIncomplete
       ? { metadataSnapshotIncomplete: true as const }
+      : {}),
+    ...(ui.navigationNormalizationIncomplete
+      ? { navigationNormalizationIncomplete: true as const }
       : {}),
     pages: ui.pages.map(compactPage)
   };

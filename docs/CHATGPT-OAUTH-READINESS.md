@@ -55,7 +55,7 @@ OAUTH_ACCESS_TOKEN='<protected environment only>' \
   npm run probe:chatgpt-oauth-readiness
 ```
 
-The authenticated probe performs only `tools/list`. It requires the exact ten-tool v2 set, the baseline root/compatibility OAuth schemes and the published action-specific requirement metadata. It never prints the token and never performs a Grist write.
+The authenticated probe performs only `tools/list`. It requires the exact ten-tool v2 set and the baseline root/compatibility OAuth schemes. Focused contract tests separately verify the published action-specific requirement metadata and challenges. The probe never prints the token and never performs a Grist write.
 
 Use `npm run probe:oauth-negative` separately for isolated wrong-audience/resource and insufficient-scope evidence. The runtime verifier/unit suite also locks issuer, audience, expiry and scope rejection.
 

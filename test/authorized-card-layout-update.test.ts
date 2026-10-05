@@ -214,6 +214,34 @@ test("authorized Card layout fails closed when the write cannot be verified", as
   assert.equal(writes.length, 1);
 });
 
+test("clean unary Card groups retain their shape through write and re-read", async () => {
+  const layouts = [
+    {
+      root: {
+        kind: "group" as const,
+        children: [requestedLayout.root]
+      }
+    },
+    {
+      root: {
+        kind: "group" as const,
+        children: [
+          { kind: "group" as const, children: [{ kind: "field" as const, columnId: "Email" }] },
+          { kind: "field" as const, columnId: "Name" }
+        ]
+      }
+    }
+  ];
+  for (const cardLayout of layouts) {
+    const { service, writes } = harness();
+    const result = await service.updatePageWidget("doc-1", 7, 21, { cardLayout }) as {
+      widget: { cardLayout: unknown };
+    };
+    assert.equal(writes.length, 1);
+    assert.deepEqual(result.widget.cardLayout, { ...cardLayout, unplacedColumnIds: [] });
+  }
+});
+
 test("card layout is limited to Card/Card List and cannot be combined with visibleFields", async () => {
   const tableHarness = harness({ widgetType: "record" });
   await assert.rejects(

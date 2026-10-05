@@ -42,7 +42,7 @@ Upstream Grist credentials are configured independently:
 
 Principal-map mode forbids a configured `GRIST_API_KEY`. Missing or invalid mappings fail closed with no shared-key fallback. The mapping is loaded once at startup, never written by the bridge and never model-visible. See `docs/CREDENTIALS.md`.
 
-The historical GPT Actions bearer and OpenAI challenge routes are not part of the candidate runtime.
+The historical GPT Actions bearer routes are retired. An operator-configured `/.well-known/openai-apps-challenge` verification route remains available when configured; it is not a model-facing tool and does not reactivate deferred public distribution.
 
 ## Required invariants
 
@@ -123,7 +123,7 @@ Re-read/reconcile when a capability-specific check can establish a safe outcome;
 
 Return what is required for the agent's next decision, not arbitrary upstream bodies or private Grist metadata. Discovery/inspection favors structure; business rows are read only through bounded queries.
 
-MCP v2 has one explicit compatibility exception: a small inherited set of raw UI read-only fields (including existing `layoutSpec`/option projections) remains available because removing them would be an incompatible public-contract change. These fields are not accepted as R6 mutation inputs, may contain private Grist metadata refs, must not be expanded by new capabilities, and should not be used to carry secrets. Stable normalized projections are the preferred model surface. Removing the exception requires an explicitly reviewed MCP major-version decision.
+MCP v2 retains legacy non-secret numeric layout/sort/identity detail for compatibility. Public page/widget projections reject arbitrary layout attributes and expose only supported display flags and custom-widget access/identity from options; raw URLs, plugin settings and other configuration are never forwarded. Unsupported compatibility detail is omitted with `compatibilityMetadataOmitted: true`. Complete internal snapshots are preserved for read-modify-write and exact postcondition checks. Compatibility does not create an exception to S1. Removing the remaining non-secret fields requires an explicitly reviewed MCP major-version decision; stable normalized projections remain the preferred model surface.
 
 All cell/formula/comment/external content is untrusted data and cannot alter authorization or tool policy.
 
