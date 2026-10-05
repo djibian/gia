@@ -133,8 +133,11 @@ a success output schema. No atomicity, effective confidentiality or automatic re
 guarantee is implied by a successful persisted-state verification.
 
 Missing, malformed or duplicate page/widget identity metadata marks the UI
-snapshot incomplete and prevents graph-dependent mutations. Column normalization
-and mutation require unique stable IDs/references and agreement between a widget's
+snapshot incomplete and prevents graph-dependent mutations, including widgets
+whose view has no page and fields/filters whose parent section does not exist.
+Native raw sections remain valid outside the page/widget graph. Column normalization
+and mutation require unique stable IDs, document-wide unique column references
+in a complete schema of at most 5000 columns, and agreement between a widget's
 table ID and table reference. Ambiguous or oversized select-by schema produces no
 advertised column links, marks existing column links incomplete and refuses writes.
 ACL and navigation visibility resolution also reject duplicate metadata identities.

@@ -20,6 +20,10 @@ export function tableColumnMaps(
   if (!Array.isArray(root?.tables)) return null;
   const tableIds = new Set<string>();
   const tableRefs = new Set<number>();
+  const columnRefs = new Set<number>();
+  const byRef = new Map<number, string>();
+  const byId = new Map<string, number>();
+  const fieldsById = new Map<string, JsonRecord>();
   let table: JsonRecord | null = null;
   for (const value of root.tables) {
     const candidate = record(value);
@@ -29,26 +33,24 @@ export function tableColumnMaps(
     tableIds.add(id);
     tableRefs.add(ref);
     if (ref === widget.tableRef) table = candidate;
+    if (!Array.isArray(candidate?.columns)) return null;
+    const columnIds = new Set<string>();
+    for (const value of candidate.columns) {
+      const column = record(value);
+      const columnId = typeof column?.id === "string" && column.id.trim() ? column.id : undefined;
+      const fields = record(column?.fields);
+      const columnRef = positiveInteger(fields?.colRef);
+      if (!columnId || !columnRef || columnRefs.has(columnRef) || columnIds.has(columnId)) return null;
+      columnRefs.add(columnRef);
+      columnIds.add(columnId);
+      if (columnRefs.size > 5000) return null;
+      if (ref !== widget.tableRef) continue;
+      byRef.set(columnRef, columnId);
+      byId.set(columnId, columnRef);
+      fieldsById.set(columnId, fields!);
+    }
   }
   if (widget.tableId !== undefined && table?.id !== widget.tableId) return null;
-  if (!table || !Array.isArray(table.columns)) return null;
-  if (table.columns.length > 5000) return null;
-
-  const byRef = new Map<number, string>();
-  const byId = new Map<string, number>();
-  const fieldsById = new Map<string, JsonRecord>();
-  for (const value of table.columns) {
-    const column = record(value);
-    const columnId =
-      typeof column?.id === "string" && column.id.trim().length > 0 ? column.id : undefined;
-    const fields = record(column?.fields);
-    const columnRef = positiveInteger(fields?.colRef);
-    if (!columnId || !columnRef || byRef.has(columnRef) || byId.has(columnId)) {
-      return null;
-    }
-    byRef.set(columnRef, columnId);
-    byId.set(columnId, columnRef);
-    fieldsById.set(columnId, fields!);
-  }
+  if (!table) return null;
   return { byRef, byId, fieldsById };
 }

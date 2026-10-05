@@ -46,6 +46,7 @@ test("custom mapping mutation refuses ambiguous and malformed metadata instead o
     { tables: [{ ...table, columns: [...table.columns, { id: "Name", fields: { colRef: 99, type: "Text" } }] }] },
     { tables: [{ ...table, columns: [...table.columns, null] }] },
     { tables: [table, { ...table, id: "Other" }] },
+    { tables: [table, { id: "Other", fields: { tableRef: 2 }, columns: [{ id: "Unrelated", fields: { colRef: 11, type: "Text" } }] }] },
     { tables: [{ ...table, fields: { tableRef: 99 } }] }
   ]) {
     assert.throws(() => resolveCustomWidgetSettingsUpdate(widget, metadata, { columnsMapping: { title: "Name" } }), /metadata.*ambiguous/);

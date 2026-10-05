@@ -35,6 +35,7 @@ test("saved sort never guesses through ambiguous, malformed or conflicting stabl
     { tables: [{ ...table, columns: [...table.columns, null] }] },
     { tables: [{ ...table, columns: null }] },
     { tables: [table, { ...table, id: "Other" }] },
+    { tables: [table, { id: "Other", fields: { tableRef: 3 }, columns: [{ id: "Unrelated", fields: { colRef: 21, type: "Text" } }] }] },
     { tables: [table, { ...table, fields: { tableRef: 99 } }] },
     { tables: [{ ...table, fields: { tableRef: 99 } }] }
   ];

@@ -186,11 +186,14 @@ export class DocumentUiService {
     const incomplete = () => { metadataIncomplete = true; };
     const tableIds = tableRefMap(tableResponse, incomplete);
     const views = new Map(records(viewsResponse, incomplete).map((view) => [view.id, view]));
+    const pageRecords = records(pagesResponse, incomplete);
+    const pageIds = new Set(pageRecords.map((page) => ref(page.fields.viewRef)));
     const sections = records(sectionsResponse, incomplete);
+    const sectionIds = new Set(sections.map((section) => section.id));
     for (const [response, parentKey] of [[sectionFieldsResponse, "parentId"], [filtersResponse, "viewSectionRef"]] as const) {
       if (response === undefined) continue;
       for (const item of records(response, incomplete)) {
-        if (!ref(item.fields[parentKey]) || !ref(item.fields.colRef)) incomplete();
+        if (!sectionIds.has(ref(item.fields[parentKey])) || !ref(item.fields.colRef)) incomplete();
       }
     }
 
@@ -198,7 +201,7 @@ export class DocumentUiService {
     for (const section of sections) {
       const pageId = ref(section.fields.parentId);
       if (section.fields.parentId === 0) continue; // Native raw sections are not page widgets.
-      if (!pageId || !views.has(pageId)) { incomplete(); continue; }
+      if (!pageId || !views.has(pageId) || !pageIds.has(pageId)) { incomplete(); continue; }
 
       const tableRef = ref(section.fields.tableRef);
       const tableId = tableIds.get(tableRef);
@@ -280,7 +283,7 @@ export class DocumentUiService {
     }
 
     const seenViewRefs = new Set<number>();
-    const pages = records(pagesResponse, incomplete)
+    const pages = pageRecords
       .flatMap((pageRecord) => {
         const pageId = ref(pageRecord.fields.viewRef);
         if (!pageId || seenViewRefs.has(pageId)) { incomplete(); return []; }

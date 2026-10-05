@@ -77,7 +77,7 @@ function sectionRecord(id: number, linkSrcSectionRef: number) {
 test("malformed, missing and duplicate UI identities remain explicit and block mutations before dispatch", async () => {
   const base = {
     _grist_Pages: { records: [pageRecord(1, 7)] },
-    _grist_Views: { records: [viewRecord(7, "Vue")] },
+    _grist_Views: { records: [viewRecord(7, "Vue"), viewRecord(8, "Unlisted view")] },
     _grist_Views_section: { records: [sectionRecord(11, 0)] },
     _grist_Views_section_field: { records: [] },
     _grist_Filters: { records: [] }
@@ -86,12 +86,15 @@ test("malformed, missing and duplicate UI identities remain explicit and block m
     ["_grist_Views_section", { records: [sectionRecord(11, 0), null] }],
     ["_grist_Views_section", {}],
     ["_grist_Views_section", { records: [sectionRecord(11, 0), sectionRecord(11, 0)] }],
+    ["_grist_Views_section", { records: [sectionRecord(11, 0), { id: 12, fields: { ...sectionRecord(12, 0).fields, parentId: 8 } }] }],
     ["_grist_Views_section", { records: [{ id: 11, fields: { ...sectionRecord(11, 0).fields, parentId: ["C"] } }] }],
     ["_grist_Views_section", { records: [{ id: 11, fields: { ...sectionRecord(11, 0).fields, tableRef: ["C"] } }] }],
     ["_grist_Views_section", { records: [{ id: 11, fields: { ...sectionRecord(11, 0).fields, linkSrcSectionRef: ["C"] } }] }],
     ["_grist_Views", { records: [] }],
     ["_grist_Pages", { records: [pageRecord(1, 7), pageRecord(2, 7)] }],
     ["_grist_Views_section_field", { records: [null] }],
+    ["_grist_Views_section_field", { records: [{ id: 1, fields: { parentId: 999, colRef: 21 } }] }],
+    ["_grist_Filters", { records: [{ id: 1, fields: { viewSectionRef: 999, colRef: 21 } }] }],
     ["_grist_Filters", { records: [{ id: 1, fields: { colRef: 21 } }] }]
   ] as const) {
     const writes: unknown[] = [];
