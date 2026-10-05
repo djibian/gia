@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+test("duplicate view metadata cannot bypass the last-visible-page deletion guard", async () => {
+  const writes: unknown[] = [];
+  const client = {
+    queryRecords: async (_id: string, tableId: string) => ({ records: tableId === "_grist_Pages"
+      ? [{ id: 1, fields: { viewRef: 7 } }]
+      : tableId === "_grist_Views" ? [{ id: 7, fields: { name: "Only page" } }, { id: 7, fields: { name: "GristDocTour" } }] : [] }),
+    applyUserActions: async (...args: unknown[]) => { writes.push(args); return {}; }
+  };
+  await assert.rejects(() => new GristUiActionsAdapter(client).deletePage("doc", 7), /malformed view metadata/);
+  assert.deepEqual(writes, []);
+});
+
 import type { GristClient } from "../src/grist/client.js";
 import { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
 

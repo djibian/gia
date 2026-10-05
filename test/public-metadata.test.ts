@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+test("public discovery rejects ambiguous table identities and column IDs", () => {
+  const table = { id: "Items", fields: { tableRef: 1 } };
+  assert.throws(() => projectPublicTables({ tables: [table, { ...table, id: "Other" }] }), /Ambiguous/);
+  assert.throws(() => projectPublicTables({ tables: [table, { ...table, fields: { tableRef: 2 } }] }), /Ambiguous/);
+  assert.throws(() => projectPublicColumns({ columns: [{ id: "Name", fields: {} }, { id: "Name", fields: {} }] }), /Ambiguous/);
+});
+
 import {
   projectPublicColumns,
   projectPublicPage,

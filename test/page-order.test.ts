@@ -29,6 +29,12 @@ function metadata() {
   };
 }
 
+test("page order refuses duplicate view and table row identities before visibility can be overwritten", () => {
+  const source = metadata();
+  assert.throws(() => normalizePageOrderSnapshot(source.pages, { records: [...source.views.records, { id: 1, fields: { name: "GristDocTour" } }] }, source.tables), /malformed view metadata/);
+  assert.throws(() => normalizePageOrderSnapshot(source.pages, source.views, { records: [{ id: 1, fields: {} }, { id: 1, fields: {} }] }), /malformed table metadata/);
+});
+
 test("reorders hierarchy-preserving page subtrees using existing native position slots", () => {
   const source = metadata();
   const current = normalizePageOrderSnapshot(

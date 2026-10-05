@@ -15,6 +15,7 @@ interface SelectByTable {
   ref: number;
   isSummary: boolean;
   columns: SelectByColumn[];
+  columnIdsByRef: Map<number, string>;
 }
 
 interface SelectBySchemaIndex {
@@ -59,64 +60,52 @@ function positiveInteger(value: unknown): number | undefined {
     : undefined;
 }
 
-function buildSelectBySchemaIndex(tableResponse: unknown): SelectBySchemaIndex {
+export function buildSelectBySchemaIndex(tableResponse: unknown): SelectBySchemaIndex {
   const root = record(tableResponse);
-  const tables = Array.isArray(root?.tables) ? root.tables : [];
   const byId = new Map<string, SelectByTable>();
   const byRef = new Map<number, SelectByTable>();
-
+  const invalid = (): SelectBySchemaIndex => ({ byId: new Map(), byRef: new Map(), truncated: true });
+  if (!Array.isArray(root?.tables)) return invalid();
+  const tables = root.tables;
   for (const value of tables) {
     const table = record(value);
     const id = text(table?.id);
     const fields = record(table?.fields);
     const ref = positiveInteger(fields?.tableRef);
-    if (!id || !ref) continue;
+    if (!id?.trim() || !ref || byId.has(id) || byRef.has(ref)) return invalid();
     const parsed: SelectByTable = {
-      id,
-      ref,
+      id, ref,
       isSummary: positiveInteger(fields?.summarySourceTable) !== undefined,
-      columns: []
+      columns: [], columnIdsByRef: new Map()
     };
     byId.set(id, parsed);
     byRef.set(ref, parsed);
   }
 
   let remainingColumns = MAX_SELECT_BY_SCHEMA_COLUMNS;
-  let truncated = false;
+  const seenRefs = new Set<number>();
   for (const value of tables) {
-    const table = record(value);
-    const id = text(table?.id);
-    const parsed = id ? byId.get(id) : undefined;
-    if (!parsed) continue;
-    const columns = Array.isArray(table?.columns) ? table.columns : [];
-    if (columns.length > remainingColumns) truncated = true;
-    const limit = Math.min(columns.length, remainingColumns);
-    for (let index = 0; index < limit; index++) {
-      const column = record(columns[index]);
+    const table = record(value)!;
+    const parsed = byId.get(table.id as string)!;
+    if (!Array.isArray(table.columns) || table.columns.length > remainingColumns) return invalid();
+    const seenIds = new Set<string>();
+    for (const value of table.columns) {
+      const column = record(value);
       const columnId = text(column?.id);
       const fields = record(column?.fields);
       const colRef = positiveInteger(fields?.colRef);
       const type = text(fields?.type);
-      const match = type ? /^(Ref|RefList):(.+)$/.exec(type) : null;
-      if (!columnId || !colRef || !match) continue;
-      const targetTableId = match[2];
-      const targetTable = targetTableId ? byId.get(targetTableId) : undefined;
-      if (!targetTable || targetTable.isSummary) continue;
-      parsed.columns.push({ id: columnId, ref: colRef, targetTableId: targetTable.id });
+      if (!columnId?.trim() || !colRef || !type || seenIds.has(columnId) || seenRefs.has(colRef)) return invalid();
+      seenIds.add(columnId);
+      seenRefs.add(colRef);
+      parsed.columnIdsByRef.set(colRef, columnId);
+      const match = /^(Ref|RefList):(.+)$/.exec(type);
+      const targetTable = match?.[2] ? byId.get(match[2]) : undefined;
+      if (targetTable && !targetTable.isSummary) parsed.columns.push({ id: columnId, ref: colRef, targetTableId: targetTable.id });
     }
-    remainingColumns -= limit;
-    if (remainingColumns === 0) {
-      if (tables.slice(tables.indexOf(value) + 1).some((entry) => {
-        const next = record(entry);
-        return Array.isArray(next?.columns) && next.columns.length > 0;
-      })) {
-        truncated = true;
-      }
-      break;
-    }
+    remainingColumns -= table.columns.length;
   }
-
-  return { byId, byRef, truncated };
+  return { byId, byRef, truncated: false };
 }
 
 function tableForWidget(
@@ -126,7 +115,7 @@ function tableForWidget(
   const table =
     (widget.tableId ? schema.byId.get(widget.tableId) : undefined) ??
     schema.byRef.get(widget.tableRef);
-  return table && !table.isSummary ? table : undefined;
+  return table && table.ref === widget.tableRef && (widget.tableId === undefined || table.id === widget.tableId) && !table.isSummary ? table : undefined;
 }
 
 function nodesForWidget(
@@ -177,6 +166,7 @@ function selectByGraphValidator(context: DocumentUiContext) {
   );
   const paths = new Map<number, { ancestors: Set<number>; cycle: boolean }>();
   return (source: GristPageWidget, target: GristPageWidget): void => {
+    if (context.metadataSnapshotIncomplete) throw new Error("Select-by requires a complete and unambiguous page/widget graph.");
     if (source.id === target.id) throw new Error("A Grist widget cannot select itself.");
     if (source.pageId !== target.pageId) {
       throw new Error("Select-by is limited to widgets on the same Grist page.");
@@ -242,6 +232,7 @@ export function discoverColumnSelectByOptions(
   const maxOptions = limits.maxOptions ?? 1000;
   const maxCandidates = limits.maxCandidates ?? 10000;
   const schema = buildSelectBySchemaIndex(tableResponse);
+  if (schema.truncated) return { options: [], truncated: true };
   const targetNodes = nodesForWidget(target, schema);
   const page = context.pages.find((candidate) => candidate.id === target.pageId);
   if (!page || targetNodes.length === 0) {
@@ -251,7 +242,7 @@ export function discoverColumnSelectByOptions(
   const assertGraphSafe = selectByGraphValidator(context);
   const options: ColumnSelectByOption[] = [];
   let candidates = 0;
-  let truncated = schema.truncated;
+  let truncated: boolean = false;
 
   outer: for (const source of page.widgets) {
     try {
@@ -297,6 +288,7 @@ export function resolveColumnSelectByAllowed(
   }
   selectByGraphValidator(context)(source, target);
   const schema = buildSelectBySchemaIndex(tableResponse);
+  if (schema.truncated) throw new Error("Select-by schema is incomplete or ambiguous; refusing to resolve a column link.");
   const sourceNode = nodeForColumnId(source, schema, input.sourceColumnId);
   const targetNode = nodeForColumnId(target, schema, input.targetColumnId);
   if (sourceNode.logicalTableId !== targetNode.logicalTableId) {

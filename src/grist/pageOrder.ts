@@ -62,13 +62,15 @@ function metadataRecords(value: unknown, label: string): MetadataRecord[] {
   if (!root || !Array.isArray(root.records)) {
     throw new Error(`Cannot resolve Grist page order: ${label} metadata is unavailable.`);
   }
+  const seenIds = new Set<number>();
   return root.records.map((entry) => {
     const item = record(entry);
     const id = positiveInteger(item?.id);
     const fields = record(item?.fields);
-    if (!id || !fields) {
+    if (!id || !fields || seenIds.has(id)) {
       throw new Error(`Cannot resolve Grist page order: malformed ${label} metadata.`);
     }
+    seenIds.add(id);
     return { id, fields };
   });
 }

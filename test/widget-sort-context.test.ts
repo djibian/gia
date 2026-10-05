@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DocumentUiService } from "../src/grist/documentUi.js";
-import { normalizeWidgetSort } from "../src/grist/widgetSort.js";
+import { normalizeWidgetSort, resolveWidgetSort } from "../src/grist/widgetSort.js";
 
 const expandedTables = {
   tables: [
@@ -25,6 +25,25 @@ const pageRecords = {
 const viewRecords = {
   records: [{ id: 7, fields: { name: "Vue", type: "empty", layoutSpec: "" } }]
 };
+
+test("saved sort never guesses through ambiguous, malformed or conflicting stable metadata", () => {
+  const table = expandedTables.tables[0]!;
+  const widget = { id: 11, tableRef: 2, tableId: "Personnes", sortColRefs: [21] };
+  const cases = [
+    { tables: [{ ...table, columns: [...table.columns, { id: "Nom", fields: { colRef: 99, type: "Text" } }] }] },
+    { tables: [{ ...table, columns: [...table.columns, { id: "Other", fields: { colRef: 21, type: "Text" } }] }] },
+    { tables: [{ ...table, columns: [...table.columns, null] }] },
+    { tables: [{ ...table, columns: null }] },
+    { tables: [table, { ...table, id: "Other" }] },
+    { tables: [table, { id: "Other", fields: { tableRef: 3 }, columns: [{ id: "Unrelated", fields: { colRef: 21, type: "Text" } }] }] },
+    { tables: [table, { ...table, fields: { tableRef: 99 } }] },
+    { tables: [{ ...table, fields: { tableRef: 99 } }] }
+  ];
+  for (const metadata of cases) {
+    assert.throws(() => resolveWidgetSort(widget, metadata, [{ columnId: "Nom", direction: "asc" }]), /metadata.*ambiguous/);
+    assert.deepEqual(normalizeWidgetSort(widget, metadata), { sort: [], sortNormalizationIncomplete: true });
+  }
+});
 
 function sectionRecords(sortColRefs: unknown): unknown {
   return {

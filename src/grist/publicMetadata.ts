@@ -121,7 +121,7 @@ function publicColumn(entry: unknown): { id: string; fields: JsonRecord } {
   const column = record(entry);
   const id = typeof column?.id === "string" ? column.id : undefined;
   const fields = record(column?.fields);
-  if (!id || !fields) {
+  if (!id?.trim() || !fields) {
     throw new Error("Unexpected Grist column metadata shape.");
   }
 
@@ -134,6 +134,16 @@ function publicColumn(entry: unknown): { id: string; fields: JsonRecord } {
   if (typeof fields.widgetOptions === "string") projected.widgetOptions = fields.widgetOptions;
 
   return { id, fields: projected };
+}
+
+function publicColumns(entries: unknown[]) {
+  const seen = new Set<string>();
+  return entries.map((entry) => {
+    const column = publicColumn(entry);
+    if (seen.has(column.id)) throw new Error("Ambiguous Grist column metadata IDs.");
+    seen.add(column.id);
+    return column;
+  });
 }
 
 function tableEntries(value: unknown): unknown[] {
@@ -160,15 +170,18 @@ function columnEntries(value: unknown): unknown[] {
 export function projectPublicTables(value: unknown): unknown {
   const entries = tableEntries(value);
   const tableIdByRef = new Map<number, string>();
+  const tableIds = new Set<string>();
 
   for (const entry of entries) {
     const table = record(entry);
     const id = typeof table?.id === "string" ? table.id : undefined;
     const fields = record(table?.fields);
     const tableRef = positiveInteger(fields?.tableRef);
-    if (!id || !fields) {
+    if (!id?.trim() || !fields) {
       throw new Error("Unexpected Grist table metadata shape.");
     }
+    if (tableIds.has(id) || (tableRef !== undefined && tableIdByRef.has(tableRef))) throw new Error("Ambiguous Grist table metadata identities.");
+    tableIds.add(id);
     if (tableRef !== undefined) tableIdByRef.set(tableRef, id);
   }
 
@@ -191,7 +204,7 @@ export function projectPublicTables(value: unknown): unknown {
       }
 
       const columns = Array.isArray(table.columns)
-        ? table.columns.map(publicColumn)
+        ? publicColumns(table.columns)
         : undefined;
 
       return {
@@ -205,5 +218,5 @@ export function projectPublicTables(value: unknown): unknown {
 
 /** Project the public list_columns response without internal engine refs. */
 export function projectPublicColumns(value: unknown): unknown {
-  return { columns: columnEntries(value).map(publicColumn) };
+  return { columns: publicColumns(columnEntries(value)) };
 }

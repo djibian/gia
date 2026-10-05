@@ -90,6 +90,7 @@ export interface GristPage {
 
 export interface DocumentUiContext {
   documentId: string;
+  metadataSnapshotIncomplete?: true;
   summary: {
     pageCount: number;
     widgetCount: number;
@@ -103,15 +104,21 @@ function record(value: unknown): JsonRecord | null {
     : null;
 }
 
-function records(value: unknown): MetaRecord[] {
+function records(value: unknown, incomplete: () => void): MetaRecord[] {
   const root = record(value);
-  const source = Array.isArray(root?.records) ? root.records : [];
-  return source.flatMap((entry) => {
+  if (!Array.isArray(root?.records)) { incomplete(); return []; }
+  const result = new Map<number, MetaRecord>();
+  const seenIds = new Set<number>();
+  for (const entry of root.records) {
     const item = record(entry);
-    const id = typeof item?.id === "number" && Number.isInteger(item.id) ? item.id : undefined;
+    const id = typeof item?.id === "number" && Number.isInteger(item.id) && item.id > 0 ? item.id : undefined;
     const fields = record(item?.fields);
-    return id !== undefined && fields ? [{ id, fields }] : [];
-  });
+    if (id === undefined || !fields) { incomplete(); continue; }
+    if (seenIds.has(id)) { incomplete(); result.delete(id); continue; }
+    seenIds.add(id);
+    result.set(id, { id, fields });
+  }
+  return [...result.values()];
 }
 
 function text(value: unknown): string | undefined {
@@ -139,16 +146,22 @@ function jsonText(value: unknown): unknown | undefined {
   }
 }
 
-function tableRefMap(tableResponse: unknown): Map<number, string> {
+function tableRefMap(tableResponse: unknown, incomplete: () => void): Map<number, string> {
   const root = record(tableResponse);
-  const source = Array.isArray(root?.tables) ? root.tables : [];
+  if (!Array.isArray(root?.tables)) { incomplete(); return new Map(); }
+  const source = root.tables;
   const result = new Map<number, string>();
+  const seenIds = new Set<string>();
   for (const entry of source) {
     const table = record(entry);
     const id = text(table?.id);
     const fields = record(table?.fields);
     const tableRef = ref(fields?.tableRef);
-    if (id && tableRef) result.set(tableRef, id);
+    if (!id?.trim() || !tableRef || seenIds.has(id) || result.has(tableRef)) {
+      incomplete(); return new Map();
+    }
+    seenIds.add(id);
+    result.set(tableRef, id);
   }
   return result;
 }
@@ -169,17 +182,30 @@ export class DocumentUiService {
     sectionFieldsResponse?: unknown,
     filtersResponse?: unknown
   ): DocumentUiContext {
-    const tableIds = tableRefMap(tableResponse);
-    const views = new Map(records(viewsResponse).map((view) => [view.id, view]));
-    const sections = records(sectionsResponse);
+    let metadataIncomplete = false;
+    const incomplete = () => { metadataIncomplete = true; };
+    const tableIds = tableRefMap(tableResponse, incomplete);
+    const views = new Map(records(viewsResponse, incomplete).map((view) => [view.id, view]));
+    const pageRecords = records(pagesResponse, incomplete);
+    const pageIds = new Set(pageRecords.map((page) => ref(page.fields.viewRef)));
+    const sections = records(sectionsResponse, incomplete);
+    const sectionIds = new Set(sections.map((section) => section.id));
+    for (const [response, parentKey] of [[sectionFieldsResponse, "parentId"], [filtersResponse, "viewSectionRef"]] as const) {
+      if (response === undefined) continue;
+      for (const item of records(response, incomplete)) {
+        if (!sectionIds.has(ref(item.fields[parentKey])) || !ref(item.fields.colRef)) incomplete();
+      }
+    }
 
     const widgetsByPage = new Map<number, GristPageWidget[]>();
     for (const section of sections) {
       const pageId = ref(section.fields.parentId);
-      if (!pageId) continue;
+      if (section.fields.parentId === 0) continue; // Native raw sections are not page widgets.
+      if (!pageId || !views.has(pageId) || !pageIds.has(pageId)) { incomplete(); continue; }
 
       const tableRef = ref(section.fields.tableRef);
       const tableId = tableIds.get(tableRef);
+      if (!tableRef || !tableId) incomplete();
       const description = text(section.fields.description);
       const chartType = text(section.fields.chartType);
       const options = section.fields.options === "" ? {} : jsonText(section.fields.options);
@@ -188,6 +214,11 @@ export class DocumentUiService {
       const sourceSectionId = ref(section.fields.linkSrcSectionRef);
       const sourceColumnRef = ref(section.fields.linkSrcColRef);
       const targetColumnRef = ref(section.fields.linkTargetColRef);
+      for (const key of ["linkSrcSectionRef", "linkSrcColRef", "linkTargetColRef"]) {
+        const value = section.fields[key];
+        if (value !== undefined && !(typeof value === "number" && Number.isInteger(value) && value >= 0)) incomplete();
+      }
+      if (!sourceSectionId && (sourceColumnRef || targetColumnRef)) incomplete();
 
       const widget: GristPageWidget = {
         id: section.id,
@@ -251,12 +282,14 @@ export class DocumentUiService {
       widgetsByPage.set(pageId, widgets);
     }
 
-    const pages = records(pagesResponse)
+    const seenViewRefs = new Set<number>();
+    const pages = pageRecords
       .flatMap((pageRecord) => {
         const pageId = ref(pageRecord.fields.viewRef);
-        if (!pageId) return [];
+        if (!pageId || seenViewRefs.has(pageId)) { incomplete(); return []; }
+        seenViewRefs.add(pageId);
         const view = views.get(pageId);
-        if (!view) return [];
+        if (!view) { incomplete(); return []; }
 
         const pagePos = number(pageRecord.fields.pagePos);
         const layoutSpec = jsonText(view.fields.layoutSpec);
@@ -293,6 +326,13 @@ export class DocumentUiService {
       },
       pages
     };
+    const widgetIds = new Set(context.pages.flatMap((page) => page.widgets.map((widget) => widget.id)));
+    for (const page of context.pages) {
+      for (const widget of page.widgets) {
+        if (widget.selectBy && !widgetIds.has(widget.selectBy.sourceSectionId)) incomplete();
+      }
+    }
+    if (metadataIncomplete) context.metadataSnapshotIncomplete = true;
 
     if (hasExpandedColumns(tableResponse)) {
       for (const page of context.pages) {

@@ -72,6 +72,16 @@ const sections = {
   ]
 };
 
+test("native raw sections and their fields remain valid outside the page/widget graph", () => {
+  const raw = { id: 299, fields: { parentId: 0, tableRef: 1, parentKey: "record" } };
+  const context = new DocumentUiService().build("doc-1", tables, pages, views,
+    { records: [...sections.records, raw] },
+    { records: [{ id: 399, fields: { parentId: 299, colRef: 14 } }] },
+    { records: [{ id: 499, fields: { viewSectionRef: 299, colRef: 14 } }] });
+  assert.equal(context.metadataSnapshotIncomplete, undefined);
+  assert.deepEqual(context.summary, { pageCount: 2, widgetCount: 2 });
+});
+
 test("builds normalized pages, widgets, layout and select-by links", () => {
   const service = new DocumentUiService();
   const context = service.build("doc-1", tables, pages, views, sections);

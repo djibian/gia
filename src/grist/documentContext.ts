@@ -180,16 +180,25 @@ export class DocumentContextService {
     ui?: CompletenessAwareDocumentUiContext
   ): unknown {
     const raw = record(tableResponse);
+    let incomplete = !Array.isArray(raw?.tables);
+    const tableIds = new Set<string>();
     const sourceTables = Array.isArray(raw?.tables) ? raw.tables : [];
     const parsedTables = sourceTables.flatMap((value) => {
       const table = record(value);
       const tableId = text(table?.id);
-      if (!tableId) return [];
+      if (!tableId?.trim()) { incomplete = true; return []; }
+      if (tableIds.has(tableId)) throw new Error("Ambiguous Grist document table IDs.");
+      tableIds.add(tableId);
+      const columnIds = new Set<string>();
+      if (!Array.isArray(table?.columns)) incomplete = true;
       const sourceColumns = Array.isArray(table?.columns) ? table.columns : [];
       const columns: ParsedColumn[] = sourceColumns.flatMap((columnValue) => {
         const column = record(columnValue);
         const columnId = text(column?.id);
-        if (!columnId) return [];
+        if (!columnId?.trim()) { incomplete = true; return []; }
+        if (columnIds.has(columnId)) throw new Error("Ambiguous Grist document column IDs.");
+        columnIds.add(columnId);
+        if (!record(column?.fields) || !text(record(column?.fields)?.type)) incomplete = true;
         const fields = record(column?.fields) ?? {};
         return [{
           tableId,
@@ -207,10 +216,17 @@ export class DocumentContextService {
     }));
 
     const columnByRef = new Map<number, ParsedColumn>();
+    const ambiguousRefs = new Set<number>();
     for (const table of parsedTables) {
       for (const column of table.columns) {
         const colRef = positiveInteger(column.fields.colRef);
-        if (colRef !== undefined) columnByRef.set(colRef, column);
+        if (colRef !== undefined) {
+          if (columnByRef.has(colRef) || ambiguousRefs.has(colRef)) {
+            ambiguousRefs.add(colRef);
+            columnByRef.delete(colRef);
+            incomplete = true;
+          } else columnByRef.set(colRef, column);
+        }
       }
     }
 
@@ -249,6 +265,7 @@ export class DocumentContextService {
 
             if (
               sourceRef !== undefined &&
+              !ambiguousRefs.has(sourceRef) &&
               reverseColumn !== undefined &&
               reverseRelation !== undefined &&
               reverseColumn.tableId === relation.targetTable &&
@@ -302,6 +319,7 @@ export class DocumentContextService {
     const compactUi = ui ? compactUiContext(ui) : undefined;
     return {
       documentId,
+      ...(incomplete ? { resultNormalizationIncomplete: true as const } : {}),
       summary: {
         tableCount: tables.length,
         columnCount: tables.reduce((count, table) => count + table.columns.length, 0),
