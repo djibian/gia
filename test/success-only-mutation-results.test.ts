@@ -170,6 +170,7 @@ test("schema PATCH refuses missing, malformed and ambiguous identity metadata be
     const valid = { id: "Target", fields: { [refField]: 1 } };
     for (const metadata of [
       {}, { [collection]: [null] }, { [collection]: [{ id: "Target", fields: { [refField]: 0 } }] },
+      { [collection]: [{ id: "   ", fields: { [refField]: 1 } }] },
       { [collection]: [valid, { id: "Target", fields: { [refField]: 2 } }] },
       { [collection]: [valid, { id: "Other", fields: { [refField]: 1 } }] },
       { [collection]: [{ id: "Other", fields: { [refField]: 1 } }] }
@@ -186,7 +187,7 @@ test("schema PATCH refuses missing, malformed and ambiguous identity metadata be
 test("acknowledged schema PATCH retains applied no-retry knowledge when its identity re-read fails", async () => {
   for (const collection of ["tables", "columns"] as const) {
     const refField = collection === "tables" ? "tableRef" : "colRef";
-    for (const after of [undefined, {}, { [collection]: [] }, { [collection]: [
+    for (const after of [undefined, {}, { [collection]: [] }, { [collection]: [{ id: "   ", fields: { [refField]: 1 } }] }, { [collection]: [
       { id: "One", fields: { [refField]: 1 } }, { id: "Two", fields: { [refField]: 1 } }
     ] }]) {
       let reads = 0;

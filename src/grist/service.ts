@@ -155,7 +155,7 @@ function schemaIdentities(
     const id = item?.id;
     const ref = jsonRecord(item?.fields)?.[collection === "tables" ? "tableRef" : "colRef"];
     if (
-      typeof id !== "string" || !id.length ||
+      typeof id !== "string" || !id.trim() ||
       typeof ref !== "number" || !Number.isInteger(ref) || ref <= 0 ||
       byId.has(id) || byRef.has(ref)
     ) {
