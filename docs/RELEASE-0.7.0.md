@@ -80,20 +80,30 @@ major-version decision.
 
 ## Grist Community compatibility evidence
 
-On exact Gia head
-`3ba9267258d7df74e10d3efb729bec69fd905612`, GitHub Actions compatibility run
-**37242250026** passed the bounded release probe on:
+The final release-stabilization head
+`ee902d4e1d3f3d05c67b823ed652b162788dfee1` received an independent exact-head
+G7 **PASS** after the blocking review findings were corrected.
 
-- Grist Community 1.7.16;
-- 1.7.17;
-- 1.7.18;
-- 1.7.19;
-- 1.7.20.
+On that same exact head, GitHub Actions passed:
 
-The same exact head also passed baseline CI run **37242250022** and the retained
-existing-application validation run **37242250036**. See
-`docs/R4-COMPATIBILITY.md` for the exact bounded native scenarios and the
-limits of this compatibility claim.
+- baseline CI run **37270496007**;
+- `R4 Grist Community compatibility` run **37270495989**, including Grist
+  Community 1.7.16, 1.7.17, 1.7.18, 1.7.19 and 1.7.20;
+- retained existing-application validation run **37270495929**.
+
+PR #216 squash-merged that candidate as
+`dbe26c4fe064d04bcb0109d81cdcc59c8d242302` with the **same Git tree**
+(`4fb91ac931348e1b9c3193da71a9d4667b30bd0b`) as the reviewed head.
+
+The later PR #217 changes only Expert governance/prompts. Its exact head
+`608d1f639b65b0d0fa3b76d53773137d3215a430` also received an independent
+G7 **PASS** and green baseline CI run **37278387147**; it does not change
+runtime code, tests, dependencies, the MCP contract, Product Vision, Roadmap,
+Architecture or Security.
+
+See `docs/R4-COMPATIBILITY.md` for the bounded native scenarios and the limits
+of the compatibility claim. Historical evidence recorded there remains tied to
+the exact head on which it was originally collected.
 
 ## Deferred work
 
