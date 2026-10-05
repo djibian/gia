@@ -117,6 +117,7 @@ function resolveMappings(
 
   for (const [key, value] of entries) {
     exactNonEmptyText(key, "Custom widget mapping key");
+    if (key === "__proto__") throw new Error("Custom widget mapping key __proto__ is unsupported.");
     if (value === null) {
       resolved[key] = null;
       continue;
