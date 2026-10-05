@@ -50,7 +50,7 @@ test("deployment preflight rejects incompatible transport, shared credentials an
   }
 });
 
-test("CLI reports only sanitized status and requires R5-C principal mapping", () => {
+test("CLI reports only sanitized status and requires production principal mapping", () => {
   const run = (extra: Record<string, string> = {}) => spawnSync(process.execPath,
     ["--import", "tsx", "tools/oauth-deployment-preflight.ts"],
     { env: { PATH: process.env.PATH, ...environment, ...extra }, encoding: "utf8" });

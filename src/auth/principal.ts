@@ -1,4 +1,4 @@
-export type PrincipalTransport = "gpt-actions" | "mcp";
+export type PrincipalTransport = "mcp";
 
 export const GRIST_CAPABILITIES = [
   "doc:read",

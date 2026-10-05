@@ -40,6 +40,8 @@ labels or alternative contracts to the integrated tree.
 `tools/check-convergence.mjs` checks the explicit document inventory, forbidden
 artifact categories, current-only documentation, unfinished-only Roadmap and local
 Markdown links. It also sees unignored new files during local development.
+The guard rejects dormant parallel-contract/provider modules and declarations;
+TypeScript rejects unused locals and parameters across runtime and maintained tools.
 The PR template makes absorption/deletion and net complexity reduction part of
 completion. Changes to the inventory/policy require a justified independent review.
 The guard is deliberately small; semantic consistency still requires review and tests.

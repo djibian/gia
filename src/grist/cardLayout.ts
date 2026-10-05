@@ -201,7 +201,7 @@ export function normalizeCardLayout(
 /**
  * Resolve a complete stable-column Card/Card List layout into Grist's private
  * BoxSpec field-row references. The request must place every currently visible
- * field exactly once; showing/hiding fields remains the separate C2 intention.
+ * field exactly once; showing/hiding fields remains a separate visible-field intention.
  */
 export function resolveCardLayoutUpdate(
   widget: WidgetIdentity,

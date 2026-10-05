@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { assertDirectSelectByAllowed } from "../src/grist/selectBy.js";
-import { pageWidgetsOutputSchema, pagesOutputSchema } from "../src/mcp/outputSchemas.js";
 import { GristApiError } from "../src/grist/client.js";
 import { DocumentUiService } from "../src/grist/documentUi.js";
 
@@ -138,12 +137,10 @@ test("lists pages compactly and returns widgets for an explicit page", () => {
     widgetCount: 2,
     widgetIds: [201, 202]
   });
-  assert.equal(pagesOutputSchema.safeParse(listed).success, true);
 
   const result = service.getPageWidgets(context, 101);
   const widgets = result as { widgets: Array<{ id: number }> };
   assert.deepEqual(widgets.widgets.map((widget) => widget.id), [201, 202]);
-  assert.equal(pageWidgetsOutputSchema.safeParse(result).success, true);
 
   assert.throws(
     () => service.getPageWidgets(context, 999),
@@ -207,7 +204,6 @@ test("discovers only direct select-by sources accepted for each target", () => {
         widgets.find(w => w.id === option.sourceWidgetId)!, widgets.find(w => w.id === target.id)!));
     }
   }
-  assert.equal(pageWidgetsOutputSchema.safeParse(result).success, true);
   // Excludes self, other table/page, chart/custom and existing/new cycles.
   assert.deepEqual(result.widgets.find(w => w.id === 1)?.directSelectByOptions,
     [{ sourceWidgetId: 2 }]);
@@ -222,7 +218,7 @@ test("bounds discovery output and marks incomplete lists deterministically", () 
     Array.from({ length: 40 }, (_, i) => ({ id: 40 - i,
       fields: { parentId: 101, tableRef: 1, parentKey: "record" } }))
   });
-  const result = pageWidgetsOutputSchema.parse(service.getPageWidgets(context, 101));
+  const result = service.getPageWidgets(context, 101);
   assert.equal(result.widgets.reduce((n, w) => n + w.directSelectByOptions.length, 0), 1000);
   assert.deepEqual(result.widgets[0]?.directSelectByOptions[0], { sourceWidgetId: 2 });
   assert.equal(result.widgets[0]?.directSelectByOptionsTruncated, false);
@@ -238,7 +234,7 @@ test("bounds rejected candidate work even when no options are produced", () => {
     Array.from({ length: 101 }, (_, i) => ({ id: i + 1,
       fields: { parentId: 101, tableRef: 1, parentKey: "chart" } }))
   });
-  const result = pageWidgetsOutputSchema.parse(service.getPageWidgets(context, 101));
+  const result = service.getPageWidgets(context, 101);
   assert.equal(result.widgets.every(w => w.directSelectByOptions.length === 0), true);
   assert.equal(result.widgets[98]?.directSelectByOptionsTruncated, false);
   assert.equal(result.widgets[99]?.directSelectByOptionsTruncated, true);

@@ -3,7 +3,6 @@ import test from "node:test";
 
 import { DocumentUiService } from "../src/grist/documentUi.js";
 import { normalizeExistingSelectBy } from "../src/grist/selectByContext.js";
-import { pageWidgetsOutputSchema } from "../src/mcp/outputSchemas.js";
 
 const expandedTables = {
   tables: [
@@ -90,9 +89,7 @@ test("normalizes existing select-by column refs to stable column IDs", () => {
     }
   );
 
-  const output = pageWidgetsOutputSchema.parse(
-    service.getPageWidgets(context, 7, expandedTables)
-  );
+  const output = service.getPageWidgets(context, 7, expandedTables);
   const target = output.widgets.find((widget) => widget.id === 12);
   assert.deepEqual(target?.selectByNormalized, {
     sourceWidgetId: 11,

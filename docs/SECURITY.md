@@ -17,6 +17,8 @@ returns a sanitized challenge; JWKS availability failure returns HTTP 503.
 OAuth issuer/subject produce an opaque non-reversible principal ID. OAuth scopes
 restrict capabilities; they neither grant Grist access nor create resource authority.
 Each OAuth request gets a fresh principal-bound Grist client/context/cache.
+The transport access token is used only for verification and is never forwarded
+to Grist; upstream credentials come exclusively from the server-side provider.
 
 `principal-map` credentials are loaded once from a protected operator-mounted
 read-only file. Missing/invalid mapping or an unmapped principal fails closed.

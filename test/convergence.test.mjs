@@ -30,10 +30,24 @@ test("new reports cannot bypass the inventory by changing their names or format"
 });
 
 test("completed slices and old contracts are rejected even in an allowed document", () => {
-  for (const text of ["R6 is DONE", "J0 proof", "M3 results", "- [x] integrated", "MCP v1", "grist-chatgpt"]) {
+  for (const text of ["R6 is DONE", "J0 proof", "M3 results", "- [x] integrated", "MCP v1", "grist-chatgpt", "contractVersion: 1", "GPT Actions"]) {
     const files = currentTree();
     files.set("docs/ROADMAP.md", text);
     assert.ok(convergenceErrors(files).length > 0, text);
+  }
+});
+
+test("dormant schemas and provider POCs cannot return as a parallel product contract", () => {
+  for (const [path, content] of [
+    ["src/mcp/outputSchemas.ts", ""],
+    ["src/operations/progressiveHelp.ts", ""],
+    ["src/compat/provider.ts", ""],
+    ["prompts/developer.txt", ""],
+    ["src/mcp/other.ts", "export function structuredResult() {}"]
+  ]) {
+    const files = currentTree();
+    files.set(path, content);
+    assert.ok(convergenceErrors(files).length > 0, path);
   }
 });
 

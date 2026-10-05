@@ -46,7 +46,7 @@ export function capabilitiesFromOAuthScope(
   if (/\s{2,}/.test(scope.trim())) {
     // Repeated whitespace is legal in many tolerant OAuth implementations, but
     // accepting only the conventional single-space serialization keeps the
-    // bridge contract deterministic for the POC.
+    // bridge contract deterministic.
     throw new OAuthPrincipalError("invalid_scope");
   }
 

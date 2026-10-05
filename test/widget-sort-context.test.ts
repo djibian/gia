@@ -3,7 +3,6 @@ import test from "node:test";
 
 import { DocumentUiService } from "../src/grist/documentUi.js";
 import { normalizeWidgetSort } from "../src/grist/widgetSort.js";
-import { pageWidgetsOutputSchema } from "../src/mcp/outputSchemas.js";
 
 const expandedTables = {
   tables: [
@@ -91,7 +90,7 @@ test("marks normalization incomplete instead of inventing unsupported semantics"
   );
 });
 
-test("document UI exposes normalized saved sort while preserving the raw v1 field", () => {
+test("document UI exposes normalized saved sort while preserving the supported numeric compatibility field", () => {
   const service = new DocumentUiService();
   const context = service.build(
     "doc-1",
@@ -101,9 +100,7 @@ test("document UI exposes normalized saved sort while preserving the raw v1 fiel
     sectionRecords(["-21:naturalSort", "23:orderByChoice"])
   );
 
-  const output = pageWidgetsOutputSchema.parse(
-    service.getPageWidgets(context, 7, expandedTables)
-  );
+  const output = service.getPageWidgets(context, 7, expandedTables);
   assert.deepEqual(output.widgets[0]?.sort, [
     { columnId: "Nom", direction: "desc", naturalSort: true },
     { columnId: "Statut", direction: "asc", orderByChoice: true }

@@ -4,11 +4,20 @@ import test from "node:test";
 import { AuthorizationService } from "../src/auth/authorizationService.js";
 import type { Principal } from "../src/auth/principal.js";
 import { AccessPolicy } from "../src/grist/accessPolicy.js";
+import { getRequiredCapability } from "../src/operations/registry.js";
 import type {
   GristClient,
   GristOrgSummary,
   GristWorkspaceSummary
 } from "../src/grist/client.js";
+
+test("internal operation authorization rejects unknown names and keeps UI deletion schema-bound", () => {
+  for (const name of ["unknown", "__proto__", "constructor"]) {
+    assert.throws(() => getRequiredCapability(name), /Unknown operation/);
+  }
+  assert.equal(getRequiredCapability("delete_page"), "doc.schema:write");
+  assert.equal(getRequiredCapability("delete_page_widget"), "doc.schema:write");
+});
 
 function fakeClient(): GristClient {
   const orgs: GristOrgSummary[] = [

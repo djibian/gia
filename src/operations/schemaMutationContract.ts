@@ -26,35 +26,3 @@ export const columnMutationFieldsSchema = z
     widgetOptions: z.string().optional()
   })
   .strict();
-
-export const tableMutationFieldsOpenApiSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    tableId: {
-      type: "string",
-      minLength: 1,
-      description: "New stable table ID when renaming the table."
-    },
-    onDemand: {
-      type: "boolean",
-      description: "Whether Grist loads the table on demand."
-    }
-  }
-} as const;
-
-export const columnMutationFieldsOpenApiSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    label: { type: "string" },
-    type: { type: "string" },
-    isFormula: { type: "boolean" },
-    formula: { type: "string" },
-    description: { type: "string" },
-    widgetOptions: {
-      type: "string",
-      description: "JSON string in the format expected by Grist."
-    }
-  }
-} as const;

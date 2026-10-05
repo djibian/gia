@@ -35,18 +35,6 @@ export function textResult(value: unknown) {
   };
 }
 
-export function structuredResult<T extends Record<string, unknown>>(value: T) {
-  return {
-    content: [
-      {
-        type: "text" as const,
-        text: JSON.stringify(value, null, 2)
-      }
-    ],
-    structuredContent: value
-  };
-}
-
 export function errorResult(error: unknown) {
   let body: McpErrorBody;
 

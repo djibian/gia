@@ -173,7 +173,7 @@ function finalizeSnapshot(pages: readonly ParsedPage[]): PageOrderSnapshot {
 
 /**
  * Normalize the persisted page tree and the page list that Grist exposes in
- * normal navigation. C10 treats tutorial/doc-tour/hidden-table pages as
+ * normal navigation. The adapter treats tutorial/doc-tour/hidden-table pages as
  * non-targetable and keeps their native positions untouched.
  */
 export function normalizePageOrderSnapshot(

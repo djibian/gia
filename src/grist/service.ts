@@ -165,26 +165,6 @@ export class GristService {
     return this.options.maxSchemaItems;
   }
 
-  async listDocuments(): Promise<unknown> {
-    return {
-      documents: (await this.accessPolicy.listAllowedDocuments()).map(
-        ({ org, workspace, document }) => ({
-          org: {
-            id: org.id,
-            name: org.name,
-            domain: org.domain
-          },
-          workspace: {
-            id: workspace.id,
-            name: workspace.name,
-            access: workspace.access
-          },
-          document
-        })
-      )
-    };
-  }
-
   async createDocument(
     workspaceId: number,
     name: string
@@ -376,7 +356,7 @@ export class GristService {
     this.assertUniqueStrings(columnIds, "Column IDs");
     for (const columnId of columnIds) this.assertIdentifier(columnId, "Column ID");
 
-    await this.executeBatchesForAcknowledgement(
+    await this.executeBatches(
       "deleteColumns",
       columnIds.map((columnId) => [columnId]),
       async (batch) => {
@@ -429,7 +409,7 @@ export class GristService {
   ): Promise<unknown> {
     const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
     this.assertWriteCount(records.length);
-    await this.executeBatchesForAcknowledgement(
+    await this.executeBatches(
       "updateRecords",
       chunk(records, this.options.writeBatchRecords),
       async (batch) => {
@@ -452,7 +432,7 @@ export class GristService {
     const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
     this.assertRecordIds(recordIds);
     this.assertWriteCount(recordIds.length);
-    await this.executeBatchesForAcknowledgement(
+    await this.executeBatches(
       "deleteRecords",
       chunk(recordIds, this.options.writeBatchRecords),
       async (batch) => {
@@ -508,51 +488,6 @@ export class GristService {
     }
 
     return batchedResult(results);
-  }
-
-  private async executeBatchesForAcknowledgement<T>(
-    operation: string,
-    batches: T[][],
-    execute: (batch: T[]) => Promise<unknown>
-  ): Promise<void> {
-    const confirmedResults: unknown[] = [];
-    let completedItems = 0;
-
-    for (let index = 0; index < batches.length; index += 1) {
-      const batch = batches[index]!;
-      try {
-        confirmedResults.push(await execute(batch));
-        completedItems += batch.length;
-      } catch (error) {
-        const remainingBatches = batches.length - index - 1;
-        const remainingItems = countRemainingItems(batches, index);
-        if (isUncertainGristEffect(error)) {
-          throw new UncertainWriteError(
-            operation,
-            index,
-            completedItems,
-            index + 1,
-            batch.length,
-            remainingBatches,
-            remainingItems,
-            [...confirmedResults],
-            error
-          );
-        }
-        if (index === 0) throw error;
-        throw new PartialBatchError(
-          operation,
-          index,
-          completedItems,
-          index + 1,
-          error,
-          [...confirmedResults],
-          batch.length,
-          remainingBatches,
-          remainingItems
-        );
-      }
-    }
   }
 
   private defaultReadLimit(): number {

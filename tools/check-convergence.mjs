@@ -10,7 +10,11 @@ const documents = new Set([
   ".github/pull_request_template.md"
 ]);
 const forbiddenPath = /(?:^|\/)(?:[JRMP]\d+(?=[._/-]|$)|poc|archive[s]?|history|reports?|evidence|milestones?|expert)(?:\/|[._-]|$)/i;
-const historicalText = /\b(?:[JRMP]\d+(?:\.\d+)*|DONE|RETIRED)\b|\[[xX]\]|\bMCP\s+v1\b|\bgrist-chatgpt\b/i;
+const historicalText = /\b(?:[JRMP]\d+(?:\.\d+)*|DONE|RETIRED)\b|\[[xX]\]|\bMCP\s+v1\b|\bgrist-chatgpt\b|\bGPT\s+Actions\b|\bcontractVersion\s*[:=]\s*["']?1\b/i;
+const forbiddenModules = new Set([
+  "src/mcp/outputSchemas.ts", "src/operations/progressiveHelp.ts"
+]);
+const forbiddenDeclaration = /\b(?:getMcpToolMetadata|operationHelp|progressiveOperationHelp|structuredResult|tableMutationFieldsOpenApiSchema|columnMutationFieldsOpenApiSchema)\b/;
 
 /** The integrated tree is a current specification, never an evidence archive. */
 export function convergenceErrors(files) {
@@ -20,6 +24,12 @@ export function convergenceErrors(files) {
   }
   for (const [path, content] of files) {
     if (forbiddenPath.test(path)) errors.push(`Historical artifact path: ${path}`);
+    if (forbiddenModules.has(path) || path.startsWith("src/compat/") || path.startsWith("prompts/")) {
+      errors.push(`Dormant contract/provider module: ${path}`);
+    }
+    if (path.startsWith("src/") && forbiddenDeclaration.test(content)) {
+      errors.push(`Dormant contract declaration: ${path}`);
+    }
     if ((path.startsWith("docs/") || /\.md$/i.test(path)) && !documents.has(path)) {
       errors.push(`Outside current document inventory: ${path}`);
     }

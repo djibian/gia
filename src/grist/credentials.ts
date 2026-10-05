@@ -18,9 +18,8 @@ export interface GristCredentialProvider {
 }
 
 /**
- * Development/backward-compatible provider preserving the controlled
- * single-key deployment while the rest of the runtime depends only on the
- * provider seam.
+ * Controlled single-principal provider. The rest of the runtime obtains
+ * credentials through the same provider seam as principal-map mode.
  */
 export class StaticApiKeyCredentialProvider implements GristCredentialProvider {
   constructor(private readonly apiKey: string) {
