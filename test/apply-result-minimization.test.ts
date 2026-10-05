@@ -12,7 +12,7 @@ function harness() {
       observed.push({ documentId, actions });
       return {
         actionNum: 481,
-        retValues: ["internal-engine-result"],
+        retValues: ["Name_2"],
         stored: ["must-not-be-forwarded"]
       };
     }
@@ -32,7 +32,7 @@ function harness() {
   };
 }
 
-test("rename_column returns only the requested stable identifiers", async () => {
+test("rename_column returns the native resulting stable identifier", async () => {
   const { grist, observed } = harness();
 
   assert.deepEqual(
@@ -40,7 +40,7 @@ test("rename_column returns only the requested stable identifiers", async () => 
     {
       tableId: "People",
       oldColumnId: "FullName",
-      newColumnId: "Name",
+      newColumnId: "Name_2",
       renamed: true
     }
   );
@@ -50,6 +50,31 @@ test("rename_column returns only the requested stable identifiers", async () => 
       actions: [["RenameColumn", "People", "FullName", "Name"]]
     }
   ]);
+});
+
+test("rename_column fails with no-retry verification semantics when native result identity is unusable", async () => {
+  const observed: unknown[] = [];
+  const client = {
+    applyUserActions: async (documentId: string, actions: unknown) => {
+      observed.push({ documentId, actions });
+      return { actionNum: 1, retValues: [null] };
+    }
+  } as unknown as GristClient;
+  const accessPolicy = {
+    assertDocumentAllowed: async (documentId: string) => documentId
+  } as unknown as AccessPolicy;
+  const grist = new GristService(client, accessPolicy, {
+    maxReadRecords: 1000,
+    maxWriteRecords: 100,
+    writeBatchRecords: 20,
+    maxSchemaItems: 100
+  });
+
+  await assert.rejects(
+    () => grist.renameColumn("doc-1", "People", "FullName", "Name"),
+    /may already have succeeded.*do not retry/i
+  );
+  assert.equal(observed.length, 1);
 });
 
 test("delete_table returns a semantic acknowledgement without Grist action internals", async () => {

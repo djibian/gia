@@ -1,5 +1,7 @@
 # User-aware Grist contexts
 
+> **Historical design record.** This document predates the completed R5/R6 runtime. Its principal-bound context isolation remains useful background, but current OAuth principal, credential selection and authority are defined by `docs/ARCHITECTURE.md`, `docs/SECURITY.md` and `docs/CREDENTIALS.md`; this file is not an active roadmap or deployment instruction.
+
 C3 separates static deployment policy from all state derived from a user's Grist credential.
 
 ## Context boundary

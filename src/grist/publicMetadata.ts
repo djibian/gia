@@ -1,3 +1,10 @@
+import type { GristPage, GristPageWidget } from "./documentUi.js";
+import {
+  MAX_NORMALIZED_LAYOUT_DEPTH,
+  MAX_NORMALIZED_LAYOUT_NODES
+} from "./pageLayout.js";
+import { MAX_WIDGET_SORT_COLUMNS } from "./widgetSort.js";
+
 type JsonRecord = Record<string, unknown>;
 
 function record(value: unknown): JsonRecord | null {
@@ -10,6 +17,103 @@ function positiveInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0
     ? value
     : undefined;
+}
+
+function safeCompatibilityLayout(value: unknown): boolean {
+  let visited = 0;
+  const walk = (value: unknown, depth: number, root: boolean): boolean => {
+    if (depth > MAX_NORMALIZED_LAYOUT_DEPTH || visited >= MAX_NORMALIZED_LAYOUT_NODES) {
+      return false;
+    }
+    const node = record(value);
+    if (!node) return false;
+    visited += 1;
+    const allowedKeys = root
+      ? ["leaf", "children", "size", "collapsed"]
+      : ["leaf", "children", "size"];
+    if (Object.keys(node).some((key) => !allowedKeys.includes(key))) return false;
+    if (
+      node.size !== undefined &&
+      (typeof node.size !== "number" || !Number.isFinite(node.size) || node.size < 0)
+    ) return false;
+    const hasLeaf = node.leaf !== undefined;
+    const hasChildren = node.children !== undefined;
+    if (hasLeaf === hasChildren) return false;
+    if (hasLeaf && positiveInteger(node.leaf) === undefined) return false;
+    if (hasChildren) {
+      if (!Array.isArray(node.children) || (!root && node.children.length === 0)) return false;
+      if (!node.children.every((child) => walk(child, depth + 1, false))) return false;
+    }
+    if (node.collapsed !== undefined && node.collapsed !== null) {
+      if (!Array.isArray(node.collapsed)) return false;
+      if (!node.collapsed.every((child) => {
+        const leaf = record(child);
+        return leaf?.children === undefined && walk(child, depth + 1, false);
+      })) return false;
+    }
+    return true;
+  };
+  return walk(value, 0, true);
+}
+
+/** Keep legacy numeric layout detail without forwarding arbitrary metadata. */
+export function projectPublicPage(page: GristPage) {
+  const { widgets, layoutSpec, ...projected } = page;
+  const safeLayout = layoutSpec !== undefined && safeCompatibilityLayout(layoutSpec);
+  return {
+    ...projected,
+    ...(safeLayout ? { layoutSpec } : {}),
+    ...(layoutSpec !== undefined && !safeLayout
+      ? { compatibilityMetadataOmitted: true as const }
+      : {})
+  };
+}
+
+/** Full options remain internal for preservation and post-write verification. */
+export function projectPublicWidget(widget: GristPageWidget) {
+  const { options, layoutSpec, sortColRefs, ...projected } = widget;
+  let omitted = false;
+  let publicOptions: JsonRecord | undefined;
+  if (options !== undefined) {
+    const raw = record(options);
+    if (!raw) {
+      omitted = true;
+    } else {
+      publicOptions = {};
+      for (const key of [
+        "verticalGridlines", "horizontalGridlines", "zebraStripes", "rowNumbers"
+      ] as const) {
+        const value = widget.gridOptions?.[key];
+        if (value !== undefined && raw[key] === value) publicOptions[key] = value;
+      }
+      const customView = record(raw.customView);
+      if (customView) {
+        const safeView: JsonRecord = {};
+        for (const key of ["access", "widgetId"] as const) {
+          const value = widget.customWidgetSettings?.[key];
+          if (value !== undefined && customView[key] === value) safeView[key] = value;
+        }
+        publicOptions.customView = safeView;
+      }
+      omitted = JSON.stringify(publicOptions) !== JSON.stringify(raw);
+    }
+  }
+  const safeLayout = layoutSpec !== undefined && safeCompatibilityLayout(layoutSpec);
+  if (layoutSpec !== undefined && !safeLayout) omitted = true;
+  const safeSort = Array.isArray(sortColRefs) &&
+    sortColRefs.length <= MAX_WIDGET_SORT_COLUMNS &&
+    sortColRefs.every((value) =>
+      (typeof value === "number" && Number.isInteger(value) && value !== 0) ||
+      (typeof value === "string" && /^-?[1-9]\d*(?::(?:emptyLast|naturalSort|orderByChoice)(?:;(?:emptyLast|naturalSort|orderByChoice))*)?$/.test(value))
+    );
+  if (sortColRefs !== undefined && !safeSort) omitted = true;
+  return {
+    ...projected,
+    ...(publicOptions !== undefined ? { options: publicOptions } : {}),
+    ...(safeLayout ? { layoutSpec } : {}),
+    ...(safeSort ? { sortColRefs } : {}),
+    ...(omitted ? { compatibilityMetadataOmitted: true as const } : {})
+  };
 }
 
 function publicColumn(entry: unknown): { id: string; fields: JsonRecord } {

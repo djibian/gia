@@ -81,7 +81,7 @@ function requestMeta(): JsonObject {
   return {
     "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
     "io.modelcontextprotocol/clientInfo": {
-      name: "grist-chatgpt-oauth-v2-readiness-probe",
+      name: "gia-oauth-v2-readiness-probe",
       version: "2.0.0"
     },
     "io.modelcontextprotocol/clientCapabilities": {}

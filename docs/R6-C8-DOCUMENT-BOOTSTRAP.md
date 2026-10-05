@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation candidate for the final selected R6.3 slice.
+**Integrated in R6.3 C8.** Gia 0.7.0 keeps the same bounded document-bootstrap authority model and adds explicit action-specific OAuth/read requirements plus machine-readable no-replay effect reporting.
 
 C8 adds the smallest document-lifecycle surface selected by
 `docs/R6-PARETO-GAP-SELECTION.md`: empty document creation plus same-installation
@@ -25,6 +25,12 @@ The existing ten-tool MCP v2 shape is retained:
 
 No arbitrary import payload, file upload, full-data-copy toggle, workspace
 auto-selection or permission mutation is model-visible.
+
+For OAuth metadata, `doc.schema:write` remains the tool-level baseline because
+empty creation has no source document. The
+`copy_document_as_template` action additionally requires source `doc:read`;
+Gia advertises that action-specific requirement and challenges for a missing
+read scope without treating a resource denial as a request for broader scope.
 
 ## Authorization boundary
 
@@ -135,3 +141,20 @@ C8 does not add:
 
 These remain outside the finite R6 selection unless a future usage-driven
 roadmap explicitly promotes them.
+
+
+## Release-facing limits
+
+A template copy is a bootstrap primitive, **not a privacy scrub**. Native
+`asTemplate=true` removes user-table data and attachments/history according to
+Grist semantics while retaining substantial document metadata such as formulas,
+comments/configuration and access-rule metadata. Gia does not claim that copied
+application policy remains equivalent or effective after referenced data has
+been removed.
+
+After a known created document ID is returned, a failed membership/postcondition
+re-read is reported with that exact `createdDocumentId`,
+`effectState: "APPLIED"`, `postconditionVerified: false` and
+`retryWholeOperation: false`. If the creation result itself is ambiguous and
+no stable ID can be recovered, the effect remains `UNCERTAIN`. Neither case
+authorizes a name-based replay or guessed cleanup.

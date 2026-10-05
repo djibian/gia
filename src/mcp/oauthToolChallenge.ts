@@ -16,12 +16,37 @@ function requestedToolName(options: McpHandlerRequestOptions | undefined): strin
   return typeof body.params.name === "string" ? body.params.name : undefined;
 }
 
-function requiredCapability(toolName: string): GristCapability | undefined {
-  try {
-    return getLeanTool(toolName).capability ?? undefined;
-  } catch {
+function requestedToolArguments(
+  options: McpHandlerRequestOptions | undefined
+): Record<string, unknown> | undefined {
+  const body = options?.parsedBody;
+  if (!isRecord(body) || body.method !== "tools/call" || !isRecord(body.params)) {
     return undefined;
   }
+  return isRecord(body.params.arguments) ? body.params.arguments : undefined;
+}
+
+function requiredCapabilities(
+  toolName: string,
+  options: McpHandlerRequestOptions | undefined
+): GristCapability[] {
+  let baseline: GristCapability | null;
+  try {
+    baseline = getLeanTool(toolName).capability;
+  } catch {
+    return [];
+  }
+
+  const capabilities: GristCapability[] = baseline ? [baseline] : [];
+  const args = requestedToolArguments(options);
+  if (
+    toolName === "grist_add_structure" &&
+    args?.action === "copy_document_as_template" &&
+    !capabilities.includes("doc:read")
+  ) {
+    capabilities.push("doc:read");
+  }
+  return capabilities;
 }
 
 function principalHasCapability(
@@ -48,7 +73,14 @@ function addChallengeToErrorResult(
         ...value.result,
         _meta: {
           ...meta,
-          "mcp/www_authenticate": [challenge]
+          "mcp/www_authenticate": [
+            ...(Array.isArray(meta["mcp/www_authenticate"])
+              ? meta["mcp/www_authenticate"].filter(
+                  (value): value is string => typeof value === "string"
+                )
+              : []),
+            challenge
+          ]
         }
       }
     }
@@ -66,13 +98,13 @@ export function installOAuthToolAuthChallenges(
 
   handler.fetch = async (request, requestOptions) => {
     const toolName = requestedToolName(requestOptions);
-    const capability = toolName ? requiredCapability(toolName) : undefined;
-    const missingCapability =
-      capability !== undefined &&
-      !principalHasCapability(options.principal, capability);
+    const required = toolName ? requiredCapabilities(toolName, requestOptions) : [];
+    const missingCapability = required.find(
+      (capability) => !principalHasCapability(options.principal, capability)
+    );
 
     const response = await originalFetch(request, requestOptions);
-    if (!missingCapability || !capability) return response;
+    if (!missingCapability) return response;
 
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     if (!contentType.includes("application/json")) return response;
@@ -86,7 +118,7 @@ export function installOAuthToolAuthChallenges(
 
     const challenge = buildInsufficientScopeToolChallenge(
       options.resourceMetadataUrl,
-      capability
+      missingCapability
     );
     const transformed = addChallengeToErrorResult(body, challenge);
     if (!transformed.changed) return response;

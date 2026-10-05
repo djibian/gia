@@ -67,6 +67,49 @@ test("reports implicit native layout as stable unplaced visible fields", () => {
   );
 });
 
+test("prunes stale native field refs after hide and accepts a re-shown field with a new ref", () => {
+  const hiddenFields = {
+    records: [
+      { id: 101, fields: { parentId: 7, parentPos: 1, colRef: 11, width: 120 } }
+    ]
+  };
+  assert.deepEqual(
+    normalizeCardLayout(
+      widget,
+      { children: [{ leaf: 101 }, { leaf: 102 }] },
+      tables,
+      hiddenFields
+    ),
+    {
+      cardLayout: {
+        root: { kind: "field", columnId: "Name" },
+        unplacedColumnIds: []
+      }
+    }
+  );
+
+  const reshownFields = {
+    records: [
+      { id: 101, fields: { parentId: 7, parentPos: 1, colRef: 11, width: 120 } },
+      { id: 202, fields: { parentId: 7, parentPos: 2, colRef: 12, width: 0 } }
+    ]
+  };
+  assert.deepEqual(
+    normalizeCardLayout(
+      widget,
+      { children: [{ leaf: 101 }, { leaf: 102 }] },
+      tables,
+      reshownFields
+    ),
+    {
+      cardLayout: {
+        root: { kind: "field", columnId: "Name" },
+        unplacedColumnIds: ["Email"]
+      }
+    }
+  );
+});
+
 test("resolves a complete stable-column layout to private field refs", () => {
   assert.deepEqual(
     resolveCardLayoutUpdate(widget, tables, sectionFields, {
@@ -138,6 +181,14 @@ test("fails closed for missing, duplicate, unknown or malformed layout state", (
 
   assert.deepEqual(
     normalizeCardLayout(widget, { children: [{ leaf: 999 }] }, tables, sectionFields),
+    {
+      cardLayout: {
+        unplacedColumnIds: ["Email", "Name"]
+      }
+    }
+  );
+  assert.deepEqual(
+    normalizeCardLayout(widget, { children: [{ leaf: "bad" }] }, tables, sectionFields),
     { cardLayoutNormalizationIncomplete: true }
   );
 });

@@ -5,6 +5,7 @@ import type { McpHttpHandler } from "@modelcontextprotocol/server";
 
 import { LEAN_TOOL_REGISTRY } from "../src/mcp/leanRegistry.js";
 import {
+  actionScopeRequirementsForTool,
   addRootOAuthSecuritySchemesToToolList,
   installOAuthToolSecuritySchemes,
   oauthSecuritySchemesForTool
@@ -34,6 +35,13 @@ test("derives OAuth scopes from the lean MCP registry", () => {
   ]);
   assert.equal(oauthSecuritySchemesForTool("list_documents"), undefined);
   assert.equal(oauthSecuritySchemesForTool("unknown_tool"), undefined);
+});
+
+test("publishes the additional action-specific read requirement for template copy", () => {
+  assert.deepEqual(actionScopeRequirementsForTool("grist_add_structure"), {
+    copy_document_as_template: ["doc.schema:write", "doc:read"]
+  });
+  assert.equal(actionScopeRequirementsForTool("grist_add_records"), undefined);
 });
 
 test("every public lean tool has an explicit OAuth security scheme", () => {
@@ -135,6 +143,10 @@ test("wire adapter transforms JSON tool lists and removes stale content-length",
   assert.deepEqual((body.result.tools[0]?._meta as Record<string, unknown>)?.securitySchemes, [
     { type: "oauth2", scopes: ["doc.schema:write"] }
   ]);
+  assert.deepEqual(
+    (body.result.tools[0]?._meta as Record<string, unknown>)?.["gia/actionScopeRequirements"],
+    { copy_document_as_template: ["doc.schema:write", "doc:read"] }
+  );
 });
 
 test("wire adapter leaves non-JSON responses byte-for-byte available", async () => {

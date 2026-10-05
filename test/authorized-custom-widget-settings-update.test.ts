@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { McpServer } from "@modelcontextprotocol/server";
 
 import type { AuditLogger } from "../src/audit/auditLogger.js";
 import type { AuthorizationService } from "../src/auth/authorizationService.js";
@@ -7,12 +8,15 @@ import type { Principal } from "../src/auth/principal.js";
 import { AuthorizedGristService } from "../src/grist/authorizedService.js";
 import type { GristService } from "../src/grist/service.js";
 import type { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
+import { registerLeanTools } from "../src/mcp/leanTools.js";
+
+const PRIVATE_URL = "https://widget.example.invalid/private?apiKey=synthetic-secret-marker";
 
 function harness(applyWrite = true) {
   let options = {
     unrelated: { keep: true },
     customView: {
-      url: "https://widget.example.invalid/private",
+      url: PRIVATE_URL,
       widgetId: "@example/widget",
       pluginId: "private-plugin",
       access: "none",
@@ -145,7 +149,7 @@ test("authorized custom widget update resolves stable IDs and preserves complete
   assert.deepEqual(JSON.parse(written.update.optionsJson), {
     unrelated: { keep: true },
     customView: {
-      url: "https://widget.example.invalid/private",
+      url: PRIVATE_URL,
       widgetId: "@example/widget",
       pluginId: "private-plugin",
       access: "read table",
@@ -158,7 +162,10 @@ test("authorized custom widget update resolves stable IDs and preserves complete
     }
   });
   assert.deepEqual(currentOptions(), JSON.parse(written.update.optionsJson));
-  assert.deepEqual(result.widget.options, currentOptions());
+  assert.deepEqual(result.widget.options, {
+    customView: { access: "read table", widgetId: "@example/widget" }
+  });
+  assert.equal(JSON.stringify(result).includes(PRIVATE_URL), false);
   assert.deepEqual(result.widget.customWidgetSettings, {
     access: "read table",
     widgetId: "@example/widget",
@@ -187,4 +194,41 @@ test("custom widget post-write divergence is non-retryable verification failure"
       return true;
     }
   );
+});
+
+test("registered inspect and change callbacks never return private custom options", async () => {
+  const { service, currentOptions, writes } = harness();
+  const callbacks = new Map<string, (input: any) => Promise<any>>();
+  const server = {
+    registerTool: (name: string, _options: unknown, callback: (input: any) => Promise<any>) => {
+      callbacks.set(name, callback);
+      return {};
+    }
+  } as unknown as McpServer;
+  registerLeanTools(server, service, {
+    maxReadRecords: 200,
+    maxWriteRecords: 50,
+    maxSchemaItems: 100
+  });
+  const before = JSON.stringify(currentOptions());
+  for (const action of ["document", "pages", "page_widgets"]) {
+    const result = await callbacks.get("grist_inspect")!({ action, documentId: "doc-1", pageId: 7 });
+    assert.equal(result.isError, undefined);
+    assert.equal(JSON.stringify(result).includes("synthetic-secret-marker"), false);
+    assert.equal(JSON.stringify(result).includes("private-plugin"), false);
+  }
+  assert.equal(JSON.stringify(currentOptions()), before);
+  const result = await callbacks.get("grist_change_ui")!({
+    action: "update_widget",
+    documentId: "doc-1",
+    pageId: 7,
+    widgetId: 21,
+    update: { customWidgetSettings: { access: "read table" } }
+  });
+  assert.equal(result.isError, undefined);
+  assert.equal(JSON.stringify(result).includes("synthetic-secret-marker"), false);
+  assert.equal(JSON.stringify(result).includes("private-plugin"), false);
+  assert.equal(currentOptions().customView.url, PRIVATE_URL);
+  assert.deepEqual(currentOptions().customView.widgetOptions, { keep: [1, 2] });
+  assert.equal(writes.length, 1);
 });

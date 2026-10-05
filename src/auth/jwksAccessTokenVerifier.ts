@@ -26,6 +26,7 @@ export class JwksAccessTokenVerifierError extends Error {
       | "invalid_jwks_uri"
       | "malformed_token"
       | "unsupported_alg"
+      | "unsupported_crit"
       | "jwks_fetch_failed"
       | "invalid_jwks"
       | "signing_key_not_found"
@@ -98,10 +99,56 @@ function parseHeader(segment: string): JwtHeader {
   if (header.kid !== undefined && typeof header.kid !== "string") {
     throw new JwksAccessTokenVerifierError("malformed_token");
   }
+  if (header.crit !== undefined) {
+    if (
+      !Array.isArray(header.crit) ||
+      header.crit.length === 0 ||
+      !header.crit.every((value) => typeof value === "string" && value.length > 0)
+    ) {
+      throw new JwksAccessTokenVerifierError("malformed_token");
+    }
+    // Gia currently implements no JWS extensions that may be marked critical.
+    throw new JwksAccessTokenVerifierError("unsupported_crit");
+  }
   return {
     alg: alg as SupportedAlgorithm,
     ...(typeof header.kid === "string" ? { kid: header.kid } : {})
   };
+}
+
+function rsaModulusBits(value: unknown): number | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(value, "base64url");
+  } catch {
+    return undefined;
+  }
+  let offset = 0;
+  while (offset < bytes.length && bytes[offset] === 0) offset += 1;
+  if (offset === bytes.length) return 0;
+  const first = bytes[offset]!;
+  let leadingZeroBits = 0;
+  while (leadingZeroBits < 8 && (first & (0x80 >> leadingZeroBits)) === 0) {
+    leadingZeroBits += 1;
+  }
+  return (bytes.length - offset) * 8 - leadingZeroBits;
+}
+
+function keyMatchesAlgorithm(
+  key: Record<string, unknown>,
+  algorithm: SupportedAlgorithm
+): boolean {
+  if (algorithm.startsWith("RS") || algorithm.startsWith("PS")) {
+    return key.kty === "RSA" && (rsaModulusBits(key.n) ?? 0) >= 2048;
+  }
+  if (algorithm === "ES256") return key.kty === "EC" && key.crv === "P-256";
+  if (algorithm === "ES384") return key.kty === "EC" && key.crv === "P-384";
+  if (algorithm === "ES512") return key.kty === "EC" && key.crv === "P-521";
+  if (algorithm === "EdDSA") {
+    return key.kty === "OKP" && (key.crv === "Ed25519" || key.crv === "Ed448");
+  }
+  return false;
 }
 
 function eligibleSigningKeys(
@@ -113,7 +160,7 @@ function eligibleSigningKeys(
     if (key.use !== undefined && key.use !== "sig") return false;
     if (key.alg !== undefined && key.alg !== header.alg) return false;
     if (header.kid !== undefined && key.kid !== header.kid) return false;
-    return true;
+    return keyMatchesAlgorithm(key, header.alg);
   });
 }
 
@@ -193,6 +240,9 @@ function claimsFromPayload(
   if (typeof payload.exp !== "number" || !Number.isFinite(payload.exp)) {
     throw new JwksAccessTokenVerifierError("invalid_claims");
   }
+  if (payload.nbf !== undefined && (typeof payload.nbf !== "number" || !Number.isFinite(payload.nbf))) {
+    throw new JwksAccessTokenVerifierError("invalid_claims");
+  }
   if (payload.scope !== undefined && typeof payload.scope !== "string") {
     throw new JwksAccessTokenVerifierError("invalid_claims");
   }
@@ -202,6 +252,7 @@ function claimsFromPayload(
     subject: payload.sub,
     audience: parseAudience(payload.aud),
     expiresAt: payload.exp,
+    ...(typeof payload.nbf === "number" ? { notBefore: payload.nbf } : {}),
     ...(typeof payload.scope === "string" ? { scope: payload.scope } : {})
   };
 }

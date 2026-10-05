@@ -21,6 +21,7 @@ import {
   type NormalizedPageLayout
 } from "./pageLayout.js";
 import { normalizeExistingSelectBy } from "./selectByContext.js";
+import { projectPublicPage, projectPublicWidget } from "./publicMetadata.js";
 import {
   normalizeWidgetSort,
   type WidgetSortInput
@@ -313,10 +314,10 @@ export class DocumentUiService {
     return {
       documentId: context.documentId,
       summary: context.summary,
-      pages: context.pages.map(({ widgets, ...page }) => ({
-        ...page,
-        widgetCount: widgets.length,
-        widgetIds: widgets.map((widget) => widget.id)
+      pages: context.pages.map((page) => ({
+        ...projectPublicPage(page),
+        widgetCount: page.widgets.length,
+        widgetIds: page.widgets.map((widget) => widget.id)
       }))
     };
   }
@@ -333,7 +334,7 @@ export class DocumentUiService {
         404
       );
     }
-    const { widgets, ...pageInfo } = page;
+    const { widgets } = page;
     const assertAllowed = directSelectByValidator(context);
     let remainingOptions = 1000;
     let remainingCandidates = 10000;
@@ -342,7 +343,7 @@ export class DocumentUiService {
 
     return {
       documentId: context.documentId,
-      page: pageInfo,
+      page: projectPublicPage(page),
       widgets: widgets.map((target, targetIndex) => {
         const directSelectByOptions: Array<{ sourceWidgetId: number }> = [];
         let examined = 0;
@@ -399,7 +400,7 @@ export class DocumentUiService {
         );
 
         return {
-          ...target,
+          ...projectPublicWidget(target),
           directSelectByOptions,
           directSelectByOptionsTruncated: examined < widgets.length,
           columnSelectByOptions,

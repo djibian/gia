@@ -352,6 +352,12 @@ export function resolveWidgetFiltersUpdate(
     if (change.filterJson !== undefined || change.pinned !== undefined) update.push(change);
   }
 
+  if (expectedByColumn.size > MAX_WIDGET_FILTERS) {
+    throw new Error(
+      `Widget persistent-filter state may contain at most ${MAX_WIDGET_FILTERS} columns after the update.`
+    );
+  }
+
   return {
     expected: [...expectedByColumn.values()].sort((a, b) => a.columnId.localeCompare(b.columnId)),
     removeFilterIds,

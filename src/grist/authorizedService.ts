@@ -60,6 +60,8 @@ import { DocumentContextService } from "./documentContext.js";
 import { DocumentUiService, type DocumentUiContext } from "./documentUi.js";
 import {
   projectPublicColumns,
+  projectPublicPage,
+  projectPublicWidget,
   projectPublicTables
 } from "./publicMetadata.js";
 import type { GristService, QueryRecordsOptions } from "./service.js";
@@ -100,6 +102,7 @@ const FILTERS_METADATA = Symbol("filtersMetadata");
 
 type CompletenessAwareDocumentUiContext = DocumentUiContext & {
   metadataSnapshotIncomplete?: true;
+  navigationNormalizationIncomplete?: true;
   [SECTION_FIELDS_METADATA]?: unknown;
   [FILTERS_METADATA]?: unknown;
 };
@@ -284,7 +287,15 @@ export class AuthorizedGristService {
     return this.execute("inspect_document", documentIdOrUrl, undefined, async (id) => {
       const tableResponse = await this.inner.listTables(id, { expandColumns: true });
       const ui = await this.loadDocumentUi(id, tableResponse, true, true);
-      return this.documentContext.build(id, tableResponse, ui);
+      const navigation = await this.inspectNavigation(id);
+      if ("navigationNormalizationIncomplete" in navigation) {
+        ui.navigationNormalizationIncomplete = true;
+      }
+      const context = this.documentContext.build(id, tableResponse, ui);
+      return {
+        ...(context as Record<string, unknown>),
+        ...navigation
+      };
     });
   }
 
@@ -302,7 +313,15 @@ export class AuthorizedGristService {
   async getPages(documentIdOrUrl: string): Promise<unknown> {
     return this.execute("get_pages", documentIdOrUrl, undefined, async (id) => {
       const ui = await this.loadDocumentUi(id);
-      return exposeUiSnapshotCompleteness(this.documentUi.listPages(ui), ui);
+      const navigation = await this.inspectNavigation(id);
+      const projected = exposeUiSnapshotCompleteness(
+        this.documentUi.listPages(ui),
+        ui
+      );
+      return {
+        ...(projected as Record<string, unknown>),
+        ...navigation
+      };
     });
   }
 
@@ -337,11 +356,11 @@ export class AuthorizedGristService {
         if (!page) {
           throw new Error(`Created page ${created.pageId} was not found on re-read.`);
         }
-        const { widgets, ...pageInfo } = page;
+        const { widgets } = page;
         return {
           documentId: id,
           page: {
-            ...pageInfo,
+            ...projectPublicPage(page),
             widgetCount: widgets.length,
             widgetIds: widgets.map((widget) => widget.id)
           }
@@ -401,27 +420,32 @@ export class AuthorizedGristService {
         const widget = page?.widgets.find(
           (candidate) => candidate.id === created.widgetId
         );
-        if (!widget || widget.tableRef !== created.tableRef) {
+        if (!widget) {
           throw new Error(
-            `Created widget ${created.widgetId} was not found with the returned table on re-read.`
+            `Created widget ${created.widgetId} was not found on re-read.`
           );
         }
 
         if (!summaryPlan) {
-          return { documentId: id, pageId, widget };
+          if (widget.tableRef !== created.tableRef) {
+            throw new Error(
+              `Created widget ${created.widgetId} did not target the returned source table on re-read.`
+            );
+          }
+          return { documentId: id, pageId, widget: projectPublicWidget(widget) };
         }
 
         const summary = verifySummaryCreation(
           afterTables,
           summaryPlan,
-          created.tableRef
+          widget.tableRef
         );
         if (widget.tableId !== summary.summaryTableId) {
           throw new Error(
             "Created summary widget does not target the verified generated table."
           );
         }
-        return { documentId: id, pageId, widget, summary };
+        return { documentId: id, pageId, widget: projectPublicWidget(widget), summary };
       } catch (error) {
         throw new UiWriteVerificationError(
           "add_page_widget",
@@ -458,11 +482,11 @@ export class AuthorizedGristService {
         if (!page || page.name !== pageName) {
           throw new Error(`Renamed page ${pageId} did not match the requested name on re-read.`);
         }
-        const { widgets, ...pageInfo } = page;
+        const { widgets } = page;
         return {
           documentId: id,
           page: {
-            ...pageInfo,
+            ...projectPublicPage(page),
             widgetCount: widgets.length,
             widgetIds: widgets.map((widget) => widget.id)
           }
@@ -626,11 +650,11 @@ export class AuthorizedGristService {
             `Updated page ${pageId} did not match the requested normalized layout on re-read.`
           );
         }
-        const { widgets, ...pageInfo } = updatedPage;
+        const { widgets } = updatedPage;
         return {
           documentId: id,
           page: {
-            ...pageInfo,
+            ...projectPublicPage(updatedPage),
             widgetCount: widgets.length,
             widgetIds: widgets.map((widget) => widget.id)
           }
@@ -935,7 +959,7 @@ export class AuthorizedGristService {
         ) {
           throw new Error(`Updated widget ${widgetId} did not match the requested select-by link on re-read.`);
         }
-        return { documentId: id, pageId, widget };
+        return { documentId: id, pageId, widget: projectPublicWidget(widget) };
       } catch (error) {
         throw new UiWriteVerificationError(
           "update_page_widget",
@@ -1305,6 +1329,20 @@ export class AuthorizedGristService {
       );
     }
     return normalizeAccessRulesSnapshot(resources, rules, tables, columns);
+  }
+
+  private async inspectNavigation(documentId: string): Promise<
+    | { navigationPageIds: number[] }
+    | { navigationNormalizationIncomplete: true }
+  > {
+    try {
+      const snapshot = await this.loadPageOrderSnapshot(documentId);
+      return { navigationPageIds: [...snapshot.visiblePageIds] };
+    } catch {
+      // Unavailable C10 state must not discard otherwise authorized inspection.
+      // Reorder writes continue to use the strict snapshot loader directly.
+      return { navigationNormalizationIncomplete: true };
+    }
   }
 
   private async loadPageOrderSnapshot(

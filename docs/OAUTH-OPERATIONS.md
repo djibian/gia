@@ -1,4 +1,4 @@
-# OAuth operating model — R5
+# OAuth operating model — current Gia runtime
 
 This is the current operating runbook for the MCP v2 product. The bridge remains a provider-neutral OAuth 2.1 resource server. Logto OSS is the reference authorization server and ProConnect may remain an upstream identity source, but no Logto SDK or provider-specific login logic is embedded in bridge core.
 
@@ -10,7 +10,7 @@ doc:write
 doc.schema:write
 ```
 
-The ten-tool MCP v2 registry is the single source of each tool's required capability. Root `securitySchemes`, compatibility `_meta.securitySchemes`, and insufficient-scope `mcp/www_authenticate` challenges must all agree with that registry.
+The ten-tool MCP v2 registry remains the source of each tool's **baseline** capability. Root `securitySchemes` and compatibility `_meta.securitySchemes` publish that baseline. Closed actions may declare an additional requirement when their semantics genuinely need it: `grist_add_structure(action="copy_document_as_template")` additionally requires source `doc:read` while empty document creation remains `doc.schema:write`-only. Insufficient-scope `mcp/www_authenticate` challenges are derived from the actual call arguments and missing applicable scopes; they never manufacture a resource grant or native Grist authority.
 
 Never record OAuth access/refresh/ID tokens, authorization codes, PKCE verifiers, cookies, Logto/ProConnect secrets, raw provider identities, Grist API keys or principal credential mapping contents in GitHub, chat, durable evidence or probe output.
 
@@ -77,7 +77,7 @@ The probe checks RFC 9728 metadata/resource binding, the fixed three scopes, aut
 
 For an authenticated proof, supply a fresh access token only through protected local environment state. The authenticated extension performs only `tools/list`, requires exactly the ten MCP v2 tools and verifies their OAuth schemes. It never prints the token or performs a Grist write.
 
-Issuer, audience/resource, expiry and scope rejection remain covered by verifier/unit tests and isolated negative probes. Do not weaken those checks to make a deployment pass.
+Issuer, audience/resource, expiry/`nbf`, JOSE critical-extension/key-family constraints and scope rejection remain covered by verifier/unit tests and isolated negative probes. Do not weaken those checks to make a deployment pass.
 
 ## Reviewer-capable identity path
 
@@ -87,7 +87,7 @@ R5-C adds a separate upstream requirement: every production OAuth principal used
 
 OAuth authorization never creates, rotates or grants that service account. Service-account lifecycle remains operator-side Grist administration.
 
-## R5-C release/evidence sequence
+## Historical R5-C release/evidence sequence
 
 1. Resolve the exact reviewed candidate SHA and require green exact-head CI.
 2. Provision at least two Grist Community service accounts outside the bridge, each with narrow native grants and finite expiry.
@@ -102,6 +102,6 @@ OAuth authorization never creates, rotates or grants that service account. Servi
 
 ## Current boundary
 
-R5-B and R5-C are complete. The repository implementation for principal-aware service-account selection is integrated in #182, and `docs/R5-C-LIVE-EVIDENCE.md` records the 2026-09-29 sanitized live two-service-account isolation and unmapped-principal fail-closed proof.
+R5-B, R5-C, R5-D and R5-E are complete; their live evidence remains historical qualification of those exact candidates. R6 is also complete. The current release candidate is Gia 0.7.0, with no new public OAuth scope: `doc:read`, `doc:write` and `doc.schema:write` remain the complete capability vocabulary.
 
-R5-C does not add scopes, a credential database, service-account administration, generic ACL administration or model-facing secret inputs. R5-D is now the next eligible tranche and owns operational rate/counter hardening plus exercised OAuth issuer/JWKS outage/recovery and service-account rotation/revocation.
+The bridge still does not add a credential database, service-account lifecycle, generic identity/share/organization administration or model-facing secret inputs. C1 is a separate bounded **application-level persisted access-rule** capability and must not be described as generic identity/ACL administration. R7 and R5-F public distribution remain deferred; neither is latent release work.

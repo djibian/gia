@@ -25,7 +25,7 @@ Gia
 Grist Community
 ```
 
-The bridge is deliberately **not** an internal planner, business workflow engine, generic Grist proxy, ACL administration layer, raw SQL surface, arbitrary `/apply` endpoint or browser automation framework.
+The bridge is deliberately **not** an internal planner, business workflow engine, generic Grist proxy, generic identity/share administration layer, raw SQL surface, arbitrary `/apply` endpoint or browser automation framework. Gia does expose the separately bounded R6 application-level ACL capability described below.
 
 Business applications such as stage tracking or pedagogy are validation cases, not architecture dependencies.
 
@@ -40,9 +40,9 @@ See:
 - [Generic usage flow](docs/R3-GENERIC-USAGE-FLOW.md)
 - [Dependency/provenance audit](docs/R3-DEPENDENCY-PROVENANCE.md)
 
-## Current candidate
+## Current product
 
-The R3 candidate is MCP-first and exposes exactly ten model-facing tools:
+Gia **0.7.0** is the post-R6 version line prepared by this codebase. R6 is complete: the seven finite Pareto-selected capabilities are integrated and the public MCP contract remains **v2 with exactly ten model-facing tools**.
 
 | Tool | Purpose |
 | --- | --- |
@@ -59,7 +59,7 @@ The R3 candidate is MCP-first and exposes exactly ten model-facing tools:
 
 `grist_help` reports MCP contract version `2`.
 
-The historical 23-tool MCP v1 surface is retired. The historical GPT Actions/OpenAPI compatibility surface is also retired from the candidate rather than maintained as a second public product. Historical design and submission artefacts remain in the repository as history and possible R5 evidence; they do not control the current runtime.
+The historical 23-tool MCP v1 surface is retired. The historical GPT Actions/OpenAPI compatibility surface is also retired from the product rather than maintained as a second public contract. Historical design and submission artefacts remain in the repository as history and possible R5 evidence; they do not control the current runtime.
 
 ## What the agent can do
 
@@ -77,11 +77,13 @@ Large record mutations may be sent to Grist in sequential internal batches. Thos
 
 ### Change structure
 
-The bridge supports bounded document bootstrap, table/column creation and targeted structural changes through stable semantic inputs. Document bootstrap is limited to empty creation or native same-installation copy-as-template into an explicitly authorized workspace; it does not expose arbitrary import/full-data clone. Application-level ACL editing is similarly bounded to supported stable table/column rule groups. Arbitrary Grist UserActions and `/apply` payloads are not public inputs.
+The bridge supports bounded document bootstrap, table/column creation and targeted structural changes through stable semantic inputs. Document bootstrap is limited to empty creation or native same-installation copy-as-template into an explicitly authorized workspace; it does not expose arbitrary import/full-data clone. Template copy requires destination `doc.schema:write` **and** source `doc:read`, while Grist's native copy and destination authorization remain authoritative. Application-level ACL editing is similarly bounded to supported stable table/column rule groups and requires native document-Owner proof. Persisted ACL verification is not presented as proof of effective confidentiality. Arbitrary Grist UserActions and `/apply` payloads are not public inputs.
 
 ### Change UI
 
-Supported UI operations cover bounded creation/modification/deletion of native pages and widgets. Private metadata references are resolved server-side. Read-modify-write operations preserve unrelated configuration and re-read material postconditions where practical.
+Supported UI operations cover bounded creation/modification/deletion of native pages and widgets, including stable visible-field configuration, persistent filters, native summaries, Card/Card List layout and hierarchy-preserving page ordering. Private metadata references are resolved server-side. Read-modify-write operations preserve unrelated configuration and re-read material postconditions where practical.
+
+MCP v2 retains legacy numeric UI `layoutSpec`, sort and identity detail alongside normalized stable-ID fields. Public options are limited to supported display flags and custom-widget access/identity; arbitrary URLs, plugin settings and other configuration stay internal. Unsupported compatibility detail is omitted with `compatibilityMetadataOmitted: true`. This security correction preserves complete internal snapshots for read-modify-write. New integrations should use normalized fields; removal of the remaining non-secret compatibility fields requires an explicitly reviewed major-contract decision.
 
 ## Security boundary
 
@@ -147,7 +149,9 @@ MCP_AUTH_MODE=static
 MCP_BEARER_TOKEN=<random-value-at-least-32-characters>
 ```
 
-A provider-neutral JWT/JWKS OAuth mode also exists:
+A provider-neutral JWT/JWKS OAuth mode also exists. Gia validates issuer/audience/expiry, optional `nbf`, supported JOSE algorithms, compatible key families/curves, RSA key strength and rejects unsupported critical JOSE extensions:
+
+
 
 ```dotenv
 MCP_AUTH_MODE=oauth
@@ -187,7 +191,7 @@ npm test
 npm run build
 ```
 
-R0-R3 use these checks as engineering feedback, not as comprehensive product proof. Domain scenarios, real-document campaigns, rerun/failure characterization and broader compatibility testing belong to R4.
+These checks remain the baseline for the post-R6 product. Release-sensitive Grist-native seams are additionally exercised by the bounded compatibility workflow documented in [docs/R4-COMPATIBILITY.md](docs/R4-COMPATIBILITY.md).
 
 ## Repository history
 

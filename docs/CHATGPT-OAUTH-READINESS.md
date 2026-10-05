@@ -16,8 +16,8 @@ The OAuth resource server exposes:
 2. the canonical MCP resource URI through that metadata and `WWW-Authenticate` challenges;
 3. fixed public scopes only: `doc:read`, `doc:write`, `doc.schema:write`;
 4. OAuth `securitySchemes` on each of the ten lean tools, derived from the lean MCP registry and mirrored in `_meta` for compatibility;
-5. runtime `_meta["mcp/www_authenticate"]` insufficient-scope challenges derived from the same lean-tool capability;
-6. provider-neutral JWT/JWKS verification with fail-closed issuer, audience/resource, expiry and scope enforcement.
+5. runtime `_meta["mcp/www_authenticate"]` insufficient-scope challenges derived from the baseline tool capability plus any closed action-specific requirement (currently source `doc:read` for `copy_document_as_template`);
+6. provider-neutral JWT/JWKS verification with fail-closed issuer, audience/resource, expiry/optional `nbf`, JOSE critical-extension/key-family constraints and scope enforcement.
 
 The bridge does not implement Logto client registration and does not depend on a Logto SDK.
 
@@ -30,32 +30,32 @@ The bridge does not implement Logto client registration and does not depend on a
 | `grist_query` | `doc:read` |
 | `grist_add_records` | `doc:write` |
 | `grist_change_records` | `doc:write` |
-| `grist_add_structure` | `doc.schema:write` |
+| `grist_add_structure` | `doc.schema:write` baseline; `copy_document_as_template` additionally requires source `doc:read` |
 | `grist_change_structure` | `doc.schema:write` |
 | `grist_add_ui` | `doc.schema:write` |
 | `grist_change_ui` | `doc.schema:write` |
 | `grist_help` | OAuth required, no additional document scope |
 
-This map is metadata, not an authority elevation. Grist permissions remain authoritative and bridge policy may only reduce them.
+This map is metadata, not an authority elevation. The copy action's additional read requirement is also published as action-specific metadata and used only for missing-scope challenge behavior. Grist permissions and Gia resource grants remain authoritative; bridge policy may only reduce them.
 
 ## Current readiness probe
 
 Public, non-destructive checks:
 
 ```bash
-MCP_RESOURCE_URI='https://grist-chatgpt.loeildumaitre.fr/mcp' \
+MCP_RESOURCE_URI='https://gia.loeildumaitre.fr/mcp' \
   npm run probe:chatgpt-oauth-readiness
 ```
 
 Optional authenticated ten-tool proof, using a fresh token only from protected local environment state:
 
 ```bash
-MCP_RESOURCE_URI='https://grist-chatgpt.loeildumaitre.fr/mcp' \
+MCP_RESOURCE_URI='https://gia.loeildumaitre.fr/mcp' \
 OAUTH_ACCESS_TOKEN='<protected environment only>' \
   npm run probe:chatgpt-oauth-readiness
 ```
 
-The authenticated probe performs only `tools/list`. It requires the exact ten-tool v2 set and exact root plus compatibility OAuth schemes. It never prints the token and never performs a Grist write.
+The authenticated probe performs only `tools/list`. It requires the exact ten-tool v2 set and the baseline root/compatibility OAuth schemes. Focused contract tests separately verify the published action-specific requirement metadata and challenges. The probe never prints the token and never performs a Grist write.
 
 Use `npm run probe:oauth-negative` separately for isolated wrong-audience/resource and insufficient-scope evidence. The runtime verifier/unit suite also locks issuer, audience, expiry and scope rejection.
 
@@ -76,9 +76,9 @@ The historical proof also confirmed bounded read/write/delete behavior, but it r
 
 Configured access-token lifetime for the historical revocation proof was 3600 seconds. Removing the Logto grant did not retroactively revoke the already-issued self-contained JWT; after expiry, ChatGPT required reconnection.
 
-## R5-B completion gate
+## Historical R5-B completion gate — satisfied
 
-Repository-level R5-B work is complete only when code/CI and the operating probes agree on the ten-tool v2 contract. Final live completion additionally requires an authorized deployment of the reviewed candidate and sanitized evidence that:
+R5-B is complete. Its historical completion criteria were that code/CI and the operating probes agree on the ten-tool v2 contract, followed by an authorized deployment of the reviewed candidate and sanitized evidence that:
 
 - protected-resource discovery succeeds;
 - PKCE `S256`, resource binding and current CIMD registration succeed;

@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { AccessRuleWriteVerificationError } from "../src/grist/accessRules.js";
+import { DocumentBootstrapVerificationError } from "../src/grist/authorizedService.js";
 import { GristApiError } from "../src/grist/client.js";
-import { PartialBatchError } from "../src/grist/service.js";
+import {
+  PartialBatchError,
+  SchemaWriteVerificationError
+} from "../src/grist/service.js";
 import { UiWriteVerificationError } from "../src/grist/uiActionsAdapter.js";
 import { errorResult } from "../src/mcp/results.js";
 
@@ -43,6 +48,52 @@ test("ambiguous UI writes preserve retryWholeOperation false and a created ID wh
   assert.equal(parsed.retryWholeOperation, false);
   assertNoStructuredErrorContent(result);
 });
+
+test("projects schema result-normalization failure as an applied no-retry verification error", () => {
+  const result = errorResult(
+    new SchemaWriteVerificationError("rename_column", "Native result missing")
+  );
+  const parsed = body(result);
+
+  assert.equal(parsed.code, "write_verification_failed");
+  assert.equal(parsed.operation, "rename_column");
+  assert.equal(parsed.effectState, "APPLIED");
+  assert.equal(parsed.postconditionVerified, false);
+  assert.equal(parsed.retryWholeOperation, false);
+  assert.equal(JSON.stringify(parsed).includes("Native result missing"), false);
+});
+
+test("projects C1 verification uncertainty without exposing policy internals", () => {
+  const result = errorResult(
+    new AccessRuleWriteVerificationError("Persisted ACL postcondition differs")
+  );
+  const parsed = body(result);
+
+  assert.equal(parsed.code, "write_verification_failed");
+  assert.equal(parsed.operation, "access_rule_group");
+  assert.equal(parsed.effectState, "UNCERTAIN");
+  assert.equal(parsed.postconditionVerified, false);
+  assert.equal(parsed.retryWholeOperation, false);
+  assert.equal(JSON.stringify(parsed).includes("Persisted ACL postcondition differs"), false);
+  assertNoStructuredErrorContent(result);
+});
+
+test("projects a known C8 created document ID as an applied effect with unverified postcondition", () => {
+  const result = errorResult(
+    new DocumentBootstrapVerificationError("doc-created-123", "membership re-read failed")
+  );
+  const parsed = body(result);
+
+  assert.equal(parsed.code, "write_verification_failed");
+  assert.equal(parsed.operation, "document_bootstrap");
+  assert.equal(parsed.effectState, "APPLIED");
+  assert.equal(parsed.postconditionVerified, false);
+  assert.equal(parsed.createdDocumentId, "doc-created-123");
+  assert.equal(parsed.retryWholeOperation, false);
+  assert.equal(JSON.stringify(parsed).includes("membership re-read failed"), false);
+  assertNoStructuredErrorContent(result);
+});
+
 
 test("upstream errors expose a stable category and status without leaking response bodies", () => {
   const secretBody = "upstream body that must stay server-side";

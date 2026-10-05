@@ -39,6 +39,38 @@ function rsaFixture(): {
   };
 }
 
+function rsaFixtureWithBits(modulusLength: number): {
+  privateKey: KeyObject;
+  jwk: JsonWebKey & { kid: string; use: string };
+} {
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength });
+  return {
+    privateKey,
+    jwk: {
+      ...(publicKey.export({ format: "jwk" }) as JsonWebKey),
+      kid: "poc-key",
+      use: "sig"
+    }
+  };
+}
+
+function ecFixture(): {
+  privateKey: KeyObject;
+  jwk: JsonWebKey & { kid: string; use: string };
+} {
+  const { privateKey, publicKey } = generateKeyPairSync("ec", {
+    namedCurve: "prime256v1"
+  });
+  return {
+    privateKey,
+    jwk: {
+      ...(publicKey.export({ format: "jwk" }) as JsonWebKey),
+      kid: "poc-key",
+      use: "sig"
+    }
+  };
+}
+
 function jwt(
   privateKey: KeyObject,
   payload: Record<string, unknown>,
@@ -161,6 +193,99 @@ test("rejects invalid required claim shapes after successful signature verificat
     (error: unknown) =>
       error instanceof JwksAccessTokenVerifierError &&
       error.code === "invalid_claims"
+  );
+});
+
+
+test("rejects unsupported critical JOSE extensions before JWKS lookup", async () => {
+  let fetchCalls = 0;
+  const verifier = new JwksOAuthAccessTokenVerifier({
+    jwksUri: JWKS_URI,
+    fetcher: async () => {
+      fetchCalls += 1;
+      return new Response(JSON.stringify({ keys: [] }), { status: 200 });
+    }
+  });
+  const fixture = rsaFixture();
+  const token = jwt(fixture.privateKey, validPayload(), {
+    alg: "RS256",
+    kid: "poc-key",
+    crit: ["unsupported-extension"],
+    "unsupported-extension": true
+  });
+
+  await assert.rejects(
+    verifier.verify(token),
+    (error: unknown) =>
+      error instanceof JwksAccessTokenVerifierError &&
+      error.code === "unsupported_crit"
+  );
+  assert.equal(fetchCalls, 0);
+});
+
+test("rejects signing keys whose JOSE family or RSA strength is incompatible", async () => {
+  const ec = ecFixture();
+  const ecVerifier = new JwksOAuthAccessTokenVerifier({
+    jwksUri: JWKS_URI,
+    fetcher: jwksFetcher(ec.jwk)
+  });
+  const ecToken = jwt(ec.privateKey, validPayload(), {
+    alg: "RS256",
+    kid: "poc-key"
+  });
+  await assert.rejects(
+    ecVerifier.verify(ecToken),
+    (error: unknown) =>
+      error instanceof JwksAccessTokenVerifierError &&
+      error.code === "signing_key_not_found"
+  );
+
+  const weakRsa = rsaFixtureWithBits(1024);
+  const weakVerifier = new JwksOAuthAccessTokenVerifier({
+    jwksUri: JWKS_URI,
+    fetcher: jwksFetcher(weakRsa.jwk)
+  });
+  const weakToken = jwt(weakRsa.privateKey, validPayload(), {
+    alg: "RS256",
+    kid: "poc-key"
+  });
+  await assert.rejects(
+    weakVerifier.verify(weakToken),
+    (error: unknown) =>
+      error instanceof JwksAccessTokenVerifierError &&
+      error.code === "signing_key_not_found"
+  );
+});
+
+test("preserves a valid numeric nbf claim for resource-server validation", async () => {
+  const fixture = rsaFixture();
+  const verifier = new JwksOAuthAccessTokenVerifier({
+    jwksUri: JWKS_URI,
+    fetcher: jwksFetcher(fixture.jwk)
+  });
+  const claims = await verifier.verify(
+    jwt(fixture.privateKey, { ...validPayload(), nbf: 1_500_000_000 })
+  );
+  assert.equal(claims.notBefore, 1_500_000_000);
+});
+
+test("leading zero octets cannot inflate a weak RSA modulus to the minimum strength", async () => {
+  const weak = rsaFixtureWithBits(1024);
+  const n = Buffer.from(weak.jwk.n!, "base64url");
+  const padded = {
+    ...weak.jwk,
+    n: Buffer.concat([Buffer.alloc(257 - n.length), n]).toString("base64url")
+  };
+  const verifier = new JwksOAuthAccessTokenVerifier({
+    jwksUri: JWKS_URI,
+    fetcher: jwksFetcher(padded)
+  });
+
+  await assert.rejects(
+    verifier.verify(jwt(weak.privateKey, validPayload())),
+    (error: unknown) =>
+      error instanceof JwksAccessTokenVerifierError &&
+      error.code === "signing_key_not_found"
   );
 });
 

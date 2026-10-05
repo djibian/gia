@@ -39,6 +39,7 @@ type DocumentRelation = {
 
 type CompletenessAwareDocumentUiContext = DocumentUiContext & {
   metadataSnapshotIncomplete?: true;
+  navigationNormalizationIncomplete?: true;
 };
 
 function record(value: unknown): JsonRecord | null {
@@ -106,6 +107,10 @@ function compactWidget(widget: GristPageWidget) {
     ...(widget.visibleFieldsNormalizationIncomplete
       ? { visibleFieldsNormalizationIncomplete: true as const }
       : {}),
+    ...(widget.cardLayout !== undefined ? { cardLayout: widget.cardLayout } : {}),
+    ...(widget.cardLayoutNormalizationIncomplete
+      ? { cardLayoutNormalizationIncomplete: true as const }
+      : {}),
     ...(widget.filters !== undefined ? { filters: widget.filters } : {}),
     ...(widget.filtersNormalizationIncomplete
       ? { filtersNormalizationIncomplete: true as const }
@@ -131,7 +136,7 @@ function compactPage(page: GristPage) {
 }
 
 function hasIncompleteUiNormalization(ui: CompletenessAwareDocumentUiContext): boolean {
-  if (ui.metadataSnapshotIncomplete) return true;
+  if (ui.metadataSnapshotIncomplete || ui.navigationNormalizationIncomplete) return true;
   return ui.pages.some(
     (page) =>
       page.layoutNormalizationIncomplete ||
@@ -142,6 +147,7 @@ function hasIncompleteUiNormalization(ui: CompletenessAwareDocumentUiContext): b
           widget.customWidgetSettingsNormalizationIncomplete ||
           widget.gridOptionsNormalizationIncomplete ||
           widget.visibleFieldsNormalizationIncomplete ||
+          widget.cardLayoutNormalizationIncomplete ||
           widget.filtersNormalizationIncomplete
       )
   );
@@ -157,6 +163,9 @@ function compactUiContext(ui: CompletenessAwareDocumentUiContext) {
     },
     ...(ui.metadataSnapshotIncomplete
       ? { metadataSnapshotIncomplete: true as const }
+      : {}),
+    ...(ui.navigationNormalizationIncomplete
+      ? { navigationNormalizationIncomplete: true as const }
       : {}),
     pages: ui.pages.map(compactPage)
   };

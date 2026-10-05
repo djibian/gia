@@ -3,8 +3,11 @@ import test from "node:test";
 
 import {
   projectPublicColumns,
+  projectPublicPage,
+  projectPublicWidget,
   projectPublicTables
 } from "../src/grist/publicMetadata.js";
+import type { GristPage, GristPageWidget } from "../src/grist/documentUi.js";
 
 test("table projection resolves summary source IDs without exposing numeric refs", () => {
   const projected = projectPublicTables({
@@ -81,4 +84,35 @@ test("unexpected upstream metadata shapes fail closed", () => {
   assert.throws(() => projectPublicColumns({ columns: [{ id: "A" }] }), /column metadata shape/);
   assert.throws(() => projectPublicTables({ nope: [] }), /table metadata response shape/);
   assert.throws(() => projectPublicColumns({ nope: [] }), /column metadata response shape/);
+});
+
+test("legacy numeric UI layouts remain available but arbitrary layout metadata is omitted", () => {
+  const safeLayout = {
+    children: [{ leaf: 21, size: 60 }, { children: [{ leaf: 22 }] }],
+    collapsed: [{ leaf: 23 }]
+  };
+  const widget: GristPageWidget = {
+    id: 21, pageId: 7, tableRef: 2, type: "single", title: "Card",
+    layoutSpec: safeLayout,
+    sortColRefs: [11, "-12:emptyLast;naturalSort"]
+  };
+  const page: GristPage = {
+    id: 7, pageRecordId: 12, name: "Page", type: "empty", indentation: 0,
+    layoutSpec: safeLayout, widgets: [widget]
+  };
+  assert.deepEqual(projectPublicPage(page).layoutSpec, safeLayout);
+  assert.deepEqual(projectPublicWidget(widget).layoutSpec, safeLayout);
+  assert.deepEqual(projectPublicWidget(widget).sortColRefs, widget.sortColRefs);
+
+  const raw = { ...safeLayout, privateUrl: "https://example.invalid/?LinkKey=synthetic-secret" };
+  for (const projected of [
+    projectPublicPage({ ...page, layoutSpec: raw }),
+    projectPublicWidget({ ...widget, layoutSpec: raw }),
+    projectPublicWidget({ ...widget, layoutSpec: { leaf: "synthetic-secret" } }),
+    projectPublicWidget({ ...widget, sortColRefs: ["synthetic-secret"] })
+  ]) {
+    assert.equal(JSON.stringify(projected).includes("synthetic-secret"), false);
+    assert.equal(projected.compatibilityMetadataOmitted, true);
+  }
+  assert.equal(raw.privateUrl.includes("synthetic-secret"), true);
 });

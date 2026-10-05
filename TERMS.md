@@ -10,7 +10,7 @@ Gia by L’Œil du Maître is an independent project published by Emmanuel Blanc
 
 The plugin provides bounded semantic operations for inspecting, querying and modifying data, schema, pages and widgets on one configured self-hosted Grist Community deployment through an MCP-capable client.
 
-The plugin does not provide generic HTTP forwarding, raw SQL access, arbitrary Grist actions, account creation, organization administration or Grist ACL administration.
+The plugin does not provide generic HTTP forwarding, raw SQL access, arbitrary Grist actions, account creation, organization administration, identity/share administration or general-purpose Grist ACL administration. Gia may expose the narrowly bounded application-level table/column access-rule subset documented in the MCP contract; native Grist permissions remain authoritative.
 
 ## 2. Authorized use
 

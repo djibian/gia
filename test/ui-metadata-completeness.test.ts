@@ -191,3 +191,53 @@ test("post-write verification fails closed if the metadata snapshot reaches the 
   );
   assert.equal(createCalls, 1);
 });
+
+for (const scenario of ["oversized", "truncated", "ambiguous"] as const) {
+  test(`inspection survives ${scenario} navigation while reorder still refuses it`, async () => {
+    const pageCount = scenario === "oversized" ? 501 : 2;
+    const writes: unknown[] = [];
+    const inner = {
+      maxReadRecords: scenario === "truncated" ? 2 : 5000,
+      maxWriteRecords: 500,
+      writeBatchRecords: 200,
+      maxSchemaItems: 100,
+      listTables: async () => tableResponse(),
+      queryRecords: async (_documentId: string, tableId: string) => ({
+        records: tableId === "_grist_Pages"
+          ? Array.from({ length: pageCount }, (_, index) => ({
+              id: index + 1,
+              fields: {
+                viewRef: index + 1,
+                indentation: 0,
+                pagePos: scenario === "ambiguous" ? 1 : index + 1
+              }
+            }))
+          : tableId === "_grist_Views"
+            ? Array.from({ length: pageCount }, (_, index) =>
+                viewRecord(index + 1, `Page ${index + 1}`))
+            : []
+      })
+    } as unknown as GristService;
+    const uiActions = {
+      reorderPages: async (...args: unknown[]) => { writes.push(args); }
+    } as unknown as GristUiActionsAdapter;
+    const service = new AuthorizedGristService(inner, authorization, audit, principal, uiActions);
+
+    const pages = await service.getPages("doc-1") as any;
+    assert.equal(pages.navigationNormalizationIncomplete, true);
+    assert.equal(pages.navigationPageIds, undefined);
+    assert.equal(pages.pages.length, pageCount);
+    const document = await service.inspectDocument("doc-1") as any;
+    assert.equal(document.navigationNormalizationIncomplete, true);
+    assert.equal(document.navigationPageIds, undefined);
+    assert.equal(document.summary.uiIncomplete, true);
+    assert.equal(document.ui.summary.incomplete, true);
+    assert.deepEqual(document.tables.map((table: { id: string }) => table.id), ["Personnes"]);
+
+    await assert.rejects(
+      () => service.reorderPages("doc-1", pages.pages.map((page: { id: number }) => page.id)),
+      /maximum of 500|read limit|duplicate page positions/
+    );
+    assert.deepEqual(writes, []);
+  });
+}

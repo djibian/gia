@@ -106,7 +106,7 @@ test("addPageWidget emits exactly one bounded CreateViewSection action", async (
 
 test("addPageWidget creates a native summary with only resolved private group-by refs", async () => {
   const { adapter, observed } = harness([
-    { tableRef: 4, viewRef: 7, sectionRef: 12 }
+    { tableRef: 2, viewRef: 7, sectionRef: 12 }
   ]);
 
   const result = await adapter.addPageWidget(
@@ -117,9 +117,28 @@ test("addPageWidget creates a native summary with only resolved private group-by
     [11, 12]
   );
 
-  assert.deepEqual(result, { pageId: 7, tableRef: 4, widgetId: 12 });
+  assert.deepEqual(result, { pageId: 7, tableRef: 2, widgetId: 12 });
   assert.deepEqual(observed, [
     [["CreateViewSection", 2, 7, "record", [11, 12], null]]
+  ]);
+});
+
+test("addPageWidget accepts native grand-total summary response that echoes the source table", async () => {
+  const { adapter, observed } = harness([
+    { tableRef: 2, viewRef: 7, sectionRef: 13 }
+  ]);
+
+  const result = await adapter.addPageWidget(
+    "doc-1",
+    7,
+    2,
+    "record",
+    []
+  );
+
+  assert.deepEqual(result, { pageId: 7, tableRef: 2, widgetId: 13 });
+  assert.deepEqual(observed, [
+    [["CreateViewSection", 2, 7, "record", [], null]]
   ]);
 });
 

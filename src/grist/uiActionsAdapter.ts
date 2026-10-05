@@ -314,15 +314,13 @@ export class GristUiActionsAdapter {
     const returnedTableRef = positiveInteger(result.tableRef);
     const returnedPageId = positiveInteger(result.viewRef);
     const widgetId = positiveInteger(result.sectionRef);
-    const expectedOrdinaryTable =
-      groupByColumnRefs === undefined && returnedTableRef === sourceTableRef;
-    const expectedSummaryTable =
-      groupByColumnRefs !== undefined &&
-      returnedTableRef !== undefined &&
-      returnedTableRef !== sourceTableRef;
 
+    // Native CreateViewSection always echoes the input source tableRef, even
+    // when Grist creates a distinct generated summary table for group-by.
+    // The actual section table is resolved from the fresh section metadata by
+    // AuthorizedGristService after this action returns.
     if (
-      (!expectedOrdinaryTable && !expectedSummaryTable) ||
+      returnedTableRef !== sourceTableRef ||
       returnedPageId !== pageId ||
       widgetId === undefined
     ) {
@@ -333,7 +331,7 @@ export class GristUiActionsAdapter {
       );
     }
 
-    return { pageId: returnedPageId, tableRef: returnedTableRef!, widgetId };
+    return { pageId: returnedPageId, tableRef: returnedTableRef, widgetId };
   }
 
   async renamePage(documentId: string, pageId: number, name: string): Promise<void> {

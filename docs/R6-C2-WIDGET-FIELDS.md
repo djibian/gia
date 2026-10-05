@@ -2,7 +2,7 @@
 
 Date: 2026-10-04
 
-Status: implementation slice for the R6.2-selected **C2** capability.
+Status: **integrated R6.3 C2 capability**. The release candidate retains the same stable-ID field semantics.
 
 ## Current reference / provenance
 
@@ -49,6 +49,6 @@ C2 does not expose:
 - raw `_grist_Views_section_field` record IDs;
 - arbitrary `widgetOptions`, `visibleCol`, `displayCol`, rules or private JSON;
 - field formatting or conditional styling (C6 remains deferred);
-- card field layout (C5 remains a separate selected slice);
-- persistent widget filters (C4 remains the next selected slice);
+- card field layout (C5 is a separate integrated R6 intention);
+- persistent widget filters (C4 is a separate integrated R6 intention);
 - generic Grist `/apply` or UserActions.

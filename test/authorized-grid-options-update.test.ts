@@ -125,7 +125,13 @@ test("authorized grid update preserves unrelated options and returns normalized 
     rowNumbers: "rowId",
     unrelated: { keep: [1, 2, 3] }
   });
-  assert.deepEqual(result.widget.options, currentOptions());
+  assert.deepEqual(currentOptions(), JSON.parse(written.update.optionsJson));
+  assert.deepEqual(result.widget.options, {
+    verticalGridlines: false,
+    horizontalGridlines: true,
+    zebraStripes: true,
+    rowNumbers: "rowId"
+  });
   assert.deepEqual(result.widget.gridOptions, {
     verticalGridlines: false,
     horizontalGridlines: true,

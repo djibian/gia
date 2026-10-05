@@ -1,6 +1,6 @@
 # J0/J1 execution-engine specification
 
-Status: **target specification; no runtime implementation is implied by this document**.
+Status: **HISTORICAL ONLY — the J0/J1 execution-engine path is retired and is not the current Gia runtime or roadmap.** The original specification is retained below as dated evidence.
 
 Baseline audited for this specification: `main` `4582828f637717b5a8414debc9429f800b67104a`.
 

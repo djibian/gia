@@ -129,6 +129,37 @@ test("document snapshot keeps semantic UI state and removes private/raw Grist re
   }
 });
 
+test("document snapshot projects normalized Card layout and includes Card incompleteness in UI summary", () => {
+  const ui = sampleUi();
+  delete ui.metadataSnapshotIncomplete;
+  delete ui.pages[0]!.widgets[1]!.gridOptionsNormalizationIncomplete;
+  Object.assign(ui.pages[0]!.widgets[0]!, {
+    type: "single",
+    cardLayout: {
+      root: { kind: "field", columnId: "Nom" },
+      unplacedColumnIds: []
+    },
+    cardLayoutNormalizationIncomplete: true
+  });
+
+  const context = new DocumentContextService().build(
+    "doc-1",
+    { tables: [] },
+    ui
+  ) as any;
+
+  assert.deepEqual(context.ui.pages[0].widgets[0].cardLayout, {
+    root: { kind: "field", columnId: "Nom" },
+    unplacedColumnIds: []
+  });
+  assert.equal(
+    context.ui.pages[0].widgets[0].cardLayoutNormalizationIncomplete,
+    true
+  );
+  assert.equal(context.summary.uiIncomplete, true);
+  assert.equal(context.ui.summary.incomplete, true);
+});
+
 test("document snapshot reports complete UI explicitly when normalized metadata is complete", () => {
   const ui = sampleUi();
   delete ui.metadataSnapshotIncomplete;

@@ -29,6 +29,15 @@ export function oauthSecuritySchemesForTool(
   ];
 }
 
+export function actionScopeRequirementsForTool(
+  name: string
+): Record<string, string[]> | undefined {
+  if (name !== "grist_add_structure") return undefined;
+  return {
+    copy_document_as_template: ["doc.schema:write", "doc:read"]
+  };
+}
+
 export function addRootOAuthSecuritySchemesToToolList(
   value: unknown
 ): { value: unknown; changed: boolean } {
@@ -45,12 +54,16 @@ export function addRootOAuthSecuritySchemesToToolList(
 
     changed = true;
     const meta = isRecord(tool._meta) ? tool._meta : {};
+    const actionScopeRequirements = actionScopeRequirementsForTool(tool.name);
     return {
       ...tool,
       securitySchemes,
       _meta: {
         ...meta,
-        securitySchemes
+        securitySchemes,
+        ...(actionScopeRequirements
+          ? { "gia/actionScopeRequirements": actionScopeRequirements }
+          : {})
       }
     };
   });

@@ -51,17 +51,23 @@ Increment the MCP contract major version when a model-facing change is incompati
 
 Compatible clarifications, descriptions, implementation fixes and additional result detail that existing clients may safely ignore do not require a major contract increment. New capabilities should first be justified by the roadmap; versioning is not permission to grow the surface speculatively.
 
+Gia package/runtime version **0.7.0** therefore continues to implement MCP contract major **2**. The R6 capabilities and release-stabilization corrections are additive or corrective within the existing ten-tool shape.
+
 ## Compatible R6 widget detail
 
-R6 C5 keeps the ten-tool MCP v2 surface unchanged. `grist_inspect.page_widgets` may additionally return a normalized `cardLayout` for native Card/Card List widgets, and `grist_change_ui.update_widget` may accept the corresponding complete stable-column layout tree. This is additive result/input detail inside the existing closed semantic action. C5 inputs never accept private Grist field refs, raw BoxSpec JSON or raw UserActions; the pre-existing raw `layoutSpec` compatibility output is unchanged and is not used as the C5 mutation contract.
+R6 C5 keeps the ten-tool MCP v2 surface unchanged. `grist_inspect.page_widgets` may additionally return a normalized `cardLayout` for native Card/Card List widgets, and `grist_change_ui.update_widget` may accept the corresponding complete stable-column layout tree. This is additive result/input detail inside the existing closed semantic action. C5 inputs never accept private Grist field refs, raw BoxSpec JSON or raw UserActions.
 
-`cardLayout` and `visibleFields` are deliberately separate intentions. The visible field set is changed first; card layout then arranges exactly those current fields.
+The pre-existing numeric `layoutSpec`, sort and identity read detail remains available for MCP v2 compatibility and is not the stable semantic contract for R6 writes. Public `options` contains only present, valid supported display flags and custom-widget access/identity; arbitrary URL/plugin/configuration fields remain internal. Layouts with unsupported attributes and invalid raw sort tokens are omitted rather than forwarded. `compatibilityMetadataOmitted: true` identifies omitted detail. This security correction does not remove the promised supported numeric layout shape; removal of the remaining non-secret compatibility fields requires an incompatible MCP major-version decision. New clients should use normalized stable-ID fields.
+
+`cardLayout` and `visibleFields` are deliberately separate intentions. The visible field set is changed first; card layout then arranges exactly those current fields. Native Grist may leave stale positive field refs in persisted Card layout after a field is hidden; Gia prunes only those known stale native leaves during normalization while still refusing malformed or ambiguous layouts.
 
 ## Compatible R6 page-order detail
 
 R6 C10 keeps the ten-tool MCP v2 surface unchanged. `grist_change_ui(action="reorder_pages")` accepts one complete ordered list of the stable page IDs currently eligible for normal navigation.
 
 The bridge resolves private `_grist_Pages` row IDs and native `pagePos` values internally. It reuses the current visible-page position slots, preserves untargeted/special page rows, does not expose or mutate `indentation`, and rejects any requested permutation that would change the existing page-parent relation or visible page set. The exact normalized navigation state is verified after write. C10 adds no folder/navigation framework and no raw metadata/UserAction input.
+
+Document/page inspection additionally returns `navigationPageIds`, the exact current stable page-ID set that C10 expects for a complete reorder request. When navigation is unavailable, unsupported or exceeds a bound, inspection retains the available context, omits guessed IDs and returns `navigationNormalizationIncomplete: true`. Document UI completeness summaries include this condition. The stricter complete-snapshot requirement still applies to reorder writes.
 
 ## Compatible R6 access-rule detail
 
@@ -71,7 +77,7 @@ Targets use stable table/column IDs; private ACL resource/rule row IDs remain br
 
 Opaque formulas, memos, user-attribute definitions, default/special/schema-edit policy and other unsupported persisted semantics are preserved but not copied into editable model content. Before reading ACL metadata, the bridge performs a fresh native document metadata read and requires `access === "owners"`; this prevents censored non-owner metadata from being mistaken for an empty policy. The bridge also refuses incomplete/censored/truncated ACL metadata, duplicate or overlapping stable targets, and any selected group it cannot normalize without loss.
 
-Mutations require local `doc.schema:write` and remain subject to Grist's native Owner enforcement. The bridge verifies the requested persisted definition and an internal fingerprint of all untargeted persisted ACL state after re-read. A successful result explicitly does **not** claim effective enforcement verification; persisted rule rows alone are not treated as a confidentiality proof.
+Mutations require local `doc.schema:write` and remain subject to Grist's native Owner enforcement. The bridge verifies the requested persisted definition and an internal fingerprint of all untargeted persisted ACL state after re-read. A successful result explicitly does **not** claim effective enforcement verification; persisted rule rows alone are not treated as a confidentiality proof. If post-write persisted verification fails, the MCP result preserves the operation's `UNCERTAIN` effect knowledge with `retryWholeOperation: false` rather than collapsing it into a generic failure.
 
 ## Compatible R6 document-bootstrap detail
 
@@ -79,12 +85,16 @@ R6 C8 keeps the ten-tool MCP v2 surface unchanged. `grist_discover(action="works
 
 `grist_add_structure(action="create_document")` creates exactly one empty document in an explicit positive `workspaceId`. The destination must be inside the deployment workspace ceiling and one principal grant must name that same workspace with `doc.schema:write`. A document-only allowlist or an unrelated schema grant never authorizes its parent workspace. Native Grist workspace `ADD` authorization remains authoritative, and native Grist creator ownership plus destination inheritance are disclosed effects rather than bridge-managed grants.
 
-`grist_add_structure(action="copy_document_as_template")` additionally requires a separately authorized source `documentId` with local `doc:read`. The bridge always invokes Grist's native same-installation copy with `asTemplate: true`; local source readability is only a bridge precondition and is **not** presented as proof of native full-copy authority. Grist's own template-copy/download authorization and destination `ADD` checks remain authoritative. Gia exposes no full-data copy flag, arbitrary upload/import, fork, destination auto-selection or sharing/grant mutation in this slice.
+`grist_add_structure(action="copy_document_as_template")` additionally requires a separately authorized `sourceDocumentId` with local `doc:read`. The bridge always invokes Grist's native same-installation copy with `asTemplate: true`; local source readability is only a bridge precondition and is **not** presented as proof of native full-copy authority. Grist's own template-copy/download authorization and destination `ADD` checks remain authoritative. Gia exposes no full-data copy flag, arbitrary upload/import, fork, destination auto-selection or sharing/grant mutation in this slice.
 
-Both creation paths are non-idempotent. After a known created ID is returned, Gia invalidates principal-local discovery and verifies that the created document currently resolves inside the requested destination under the same principal and required destination capability. If verification fails, the known ID is retained in an explicit verification error and the operation must not be retried by name or “cleaned up” by guessing. Response loss or an acknowledged mutation whose created ID cannot be normalized remains `UNCERTAIN`; the discovery cache is still invalidated, but Gia does not replay the request automatically.
+The tool-level OAuth security scheme remains the baseline `doc.schema:write` because `create_document` does not require source read authority. For `copy_document_as_template`, tool metadata also publishes `gia/actionScopeRequirements.copy_document_as_template = ["doc.schema:write", "doc:read"]`, and insufficient-scope results challenge specifically for a missing `doc:read` requirement. A resource denial is not misreported as an OAuth scope failure when the read scope is already present.
+
+Both creation paths are non-idempotent. After a known created ID is returned, Gia invalidates principal-local discovery and verifies that the created document currently resolves inside the requested destination under the same principal and required destination capability. If verification fails, the model-facing result retains `effectState: "APPLIED"`, `postconditionVerified: false`, the exact `createdDocumentId`, and `retryWholeOperation: false`; the operation must not be retried by name or “cleaned up” by guessing. Response loss or an acknowledged mutation whose created ID cannot be normalized remains `UNCERTAIN`; the discovery cache is still invalidated, but Gia does not replay the request automatically.
 
 Template mode removes user-table data, attachment rows/blobs and history according to native Grist behavior, while retaining substantial document metadata. It is therefore a bootstrap primitive, not a privacy scrub or a guarantee that copied application access rules remain operational after referenced data is removed.
 
 ## Safety invariants
 
 MCP v2 does not expose generic HTTP forwarding, raw SQL, arbitrary Grist `/apply`, arbitrary UserActions or heterogeneous multi-action transactions. Grist remains authoritative for upstream permissions; the bridge may only reduce authority. Partial/ambiguous writes are not blindly replayed, private Grist references remain server-side where practical, and principal-derived state must not cross principal boundaries.
+
+Release 0.7.0 also hardens JWT/JWKS verification: optional `nbf` is enforced, unsupported JOSE critical extensions are rejected, algorithms must match the JWK key family/curve, and RSA verification keys must be at least 2048 bits.

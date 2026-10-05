@@ -3,7 +3,13 @@ import {
   GristTransportError,
   isUncertainGristEffect
 } from "../grist/client.js";
-import { PartialBatchError, UncertainWriteError } from "../grist/service.js";
+import { AccessRuleWriteVerificationError } from "../grist/accessRules.js";
+import { DocumentBootstrapVerificationError } from "../grist/authorizedService.js";
+import {
+  PartialBatchError,
+  SchemaWriteVerificationError,
+  UncertainWriteError
+} from "../grist/service.js";
 import { UiWriteVerificationError } from "../grist/uiActionsAdapter.js";
 
 export type McpErrorCode =
@@ -74,12 +80,42 @@ export function errorResult(error: unknown) {
       remainingItems: error.remainingItems,
       retryWholeOperation: false
     };
+  } else if (error instanceof SchemaWriteVerificationError) {
+    body = {
+      code: "write_verification_failed",
+      error: "Grist schema write verification failed",
+      operation: error.operation,
+      effectState: "APPLIED",
+      postconditionVerified: false,
+      retryWholeOperation: false
+    };
   } else if (error instanceof UiWriteVerificationError) {
     body = {
       code: "write_verification_failed",
       error: "Grist UI write verification failed",
       operation: error.operation,
       ...(error.createdId !== undefined ? { createdId: error.createdId } : {}),
+      effectState: error.createdId !== undefined ? "APPLIED" : "UNCERTAIN",
+      postconditionVerified: false,
+      retryWholeOperation: false
+    };
+  } else if (error instanceof AccessRuleWriteVerificationError) {
+    body = {
+      code: "write_verification_failed",
+      error: "Grist access-rule write verification failed",
+      operation: "access_rule_group",
+      effectState: "UNCERTAIN",
+      postconditionVerified: false,
+      retryWholeOperation: false
+    };
+  } else if (error instanceof DocumentBootstrapVerificationError) {
+    body = {
+      code: "write_verification_failed",
+      error: "Grist document bootstrap verification failed",
+      operation: "document_bootstrap",
+      effectState: "APPLIED",
+      postconditionVerified: false,
+      createdDocumentId: error.createdDocumentId,
       retryWholeOperation: false
     };
   } else if (isUncertainGristEffect(error)) {
