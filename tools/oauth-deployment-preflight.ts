@@ -16,8 +16,8 @@ export function checkOAuthDeployment(config: Config): DeploymentCheck[] {
     {
       id: "canonical_mcp_resource",
       passed: resource !== undefined && resource.protocol === "https:" &&
-        resource.pathname === "/mcp" && resource.search === "" &&
-        resource.hash === "" && resource.username === "" && resource.password === ""
+        resource.pathname === "/mcp" && !resource.href.includes("?") &&
+        !resource.href.includes("#") && resource.username === "" && resource.password === ""
     },
     {
       id: "public_resource_host_allowed",

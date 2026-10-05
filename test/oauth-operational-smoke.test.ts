@@ -7,6 +7,14 @@ import { runOAuthOperationalSmoke } from "../tools/oauth-operational-smoke.js";
 const resourceUri = "https://bridge.example.org/mcp";
 const metadataUrl = "https://bridge.example.org/.well-known/oauth-protected-resource";
 
+test("public OAuth smoke refuses empty delimiters before making network requests", async () => {
+  let calls = 0;
+  for (const delimiter of ["?", "#"]) {
+    assert.deepEqual(await runOAuthOperationalSmoke(resourceUri + delimiter, async () => { calls++; return new Response(); }), [{ id: "configuration_valid", passed: false }]);
+  }
+  assert.equal(calls, 0);
+});
+
 function response(body: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers);
   if (!headers.has("content-type")) headers.set("content-type", "application/json");

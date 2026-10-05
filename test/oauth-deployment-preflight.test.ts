@@ -23,6 +23,9 @@ test("deployment preflight rejects incompatible transport, shared credentials an
   try {
     const config = loadConfig();
     assert.ok(checkOAuthDeployment(config).every((check) => check.passed));
+    for (const delimiter of ["?", "#"]) {
+      assert.equal(checkOAuthDeployment({ ...config, mcpAuth: { mode: "oauth", issuer: environment.OAUTH_ISSUER, jwksUri: environment.OAUTH_JWKS_URI, resourceUri: environment.MCP_RESOURCE_URI + delimiter } }).find((check) => check.id === "canonical_mcp_resource")?.passed, false);
+    }
     const failures = checkOAuthDeployment({
       ...config,
       mcpAuth: { mode: "oauth", issuer: environment.OAUTH_ISSUER,

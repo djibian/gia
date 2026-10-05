@@ -41,6 +41,17 @@ const BASE_ENV = {
   PORT: "3000"
 };
 
+test("OAuth URL validation rejects even empty fragments without changing exact valid URLs", () => {
+  const oauth = { ...BASE_ENV, MCP_AUTH_MODE: "oauth", MCP_BEARER_TOKEN: undefined,
+    OAUTH_ISSUER: "https://auth.example.org/oidc", OAUTH_JWKS_URI: "https://auth.example.org/jwks?key=1", MCP_RESOURCE_URI: "https://bridge.example.org/mcp" };
+  for (const key of ["OAUTH_ISSUER", "OAUTH_JWKS_URI", "MCP_RESOURCE_URI"] as const) {
+    withEnv({ ...oauth, [key]: oauth[key] + "#" }, () => assert.throws(() => loadConfig(), /without embedded credentials or a fragment/));
+  }
+  withEnv(oauth, () => assert.deepEqual(loadConfig().mcpAuth, {
+    mode: "oauth", issuer: oauth.OAUTH_ISSUER, jwksUri: oauth.OAUTH_JWKS_URI, resourceUri: oauth.MCP_RESOURCE_URI
+  }));
+});
+
 test("Grist base URL preserves valid path prefixes and rejects unusable or secret-bearing URLs", () => {
   for (const [input, expected] of [
     ["https://grist.example.org/base/", "https://grist.example.org/base"],

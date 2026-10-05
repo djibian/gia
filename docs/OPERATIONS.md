@@ -49,6 +49,13 @@ no MCP capability. Publication is outside current scope. Never commit a real tok
 | `MCP_ALLOWED_HOSTS` | additional public hostnames; localhost is always allowed |
 | `HOST`, `PORT` | localhost binding; `127.0.0.1`, `3000` |
 
+OAuth URLs reject credentials and fragments, including an empty `#` delimiter.
+Deployment probes require the `/mcp` resource without any query or fragment,
+including empty `?`/`#` delimiters, exactly one HTTPS authorization server,
+and exactly the three fixed scopes. Authenticated readiness validation requires
+ten distinct valid tool entries. Encoded delimiters inside URL paths remain valid
+where those paths are supported; a JWKS query remains permitted.
+
 Zero disables the configurable read/write/schema count ceiling; use finite positive
 limits in production. Fixed semantic bounds still apply. Exhausted rate limits
 return HTTP 429 with `Retry-After`. The fixed-window limiter is process-local;
