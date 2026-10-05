@@ -142,6 +142,57 @@ function projectCreatedItems(
   };
 }
 
+function schemaIdentities(
+  response: unknown,
+  collection: "tables" | "columns"
+): { byId: Map<string, number>; byRef: Map<number, string> } {
+  const values = jsonRecord(response)?.[collection];
+  if (!Array.isArray(values)) throw new Error("Schema identity metadata is unavailable.");
+  const byId = new Map<string, number>();
+  const byRef = new Map<number, string>();
+  for (const value of values) {
+    const item = jsonRecord(value);
+    const id = item?.id;
+    const ref = jsonRecord(item?.fields)?.[collection === "tables" ? "tableRef" : "colRef"];
+    if (
+      typeof id !== "string" || !id.length ||
+      typeof ref !== "number" || !Number.isInteger(ref) || ref <= 0 ||
+      byId.has(id) || byRef.has(ref)
+    ) {
+      throw new Error("Schema identity metadata is incomplete or ambiguous; refusing to guess IDs.");
+    }
+    byId.set(id, ref);
+    byRef.set(ref, id);
+  }
+  return { byId, byRef };
+}
+
+function targetSchemaRefs(byId: Map<string, number>, ids: string[]): number[] {
+  return ids.map((id) => {
+    const ref = byId.get(id);
+    if (ref === undefined) throw new Error(`Schema target "${id}" is unavailable.`);
+    return ref;
+  });
+}
+
+async function resultingSchemaIds(
+  operation: string,
+  collection: "tables" | "columns",
+  refs: number[],
+  read: () => Promise<unknown>
+): Promise<string[]> {
+  try {
+    const { byRef } = schemaIdentities(await read(), collection);
+    return refs.map((ref) => {
+      const id = byRef.get(ref);
+      if (id === undefined) throw new Error("Updated schema identity is unavailable.");
+      return id;
+    });
+  } catch {
+    throw new SchemaWriteVerificationError(operation, "The resulting stable schema IDs could not be verified.");
+  }
+}
+
 export class GristService {
   constructor(
     private readonly client: GristClient,
@@ -251,9 +302,14 @@ export class GristService {
     this.assertSchemaCount(tables.length);
     this.assertUniqueStrings(tables.map((table) => table.id), "Table IDs");
     for (const table of tables) this.assertIdentifier(table.id, "Table ID");
+    const targetTableIds = tables.map((table) => table.id);
+    const before = schemaIdentities(await this.client.listTables(documentId), "tables");
+    const refs = targetSchemaRefs(before.byId, targetTableIds);
     await this.client.updateTables(documentId, tables);
+    const tableIds = await resultingSchemaIds("update_tables", "tables", refs, () => this.client.listTables(documentId));
     return {
-      targetTableIds: tables.map((table) => table.id),
+      targetTableIds,
+      updatedTables: targetTableIds.map((targetTableId, index) => ({ targetTableId, tableId: tableIds[index]! })),
       updated: true
     };
   }
@@ -299,10 +355,16 @@ export class GristService {
     this.assertSchemaCount(columns.length);
     this.assertUniqueStrings(columns.map((column) => column.id), "Column IDs");
     for (const column of columns) this.assertIdentifier(column.id, "Column ID");
+    const targetColumnIds = columns.map((column) => column.id);
+    const read = () => this.client.listColumns(documentId, tableId, { hidden: true });
+    const before = schemaIdentities(await read(), "columns");
+    const refs = targetSchemaRefs(before.byId, targetColumnIds);
     await this.client.updateColumns(documentId, tableId, columns);
+    const columnIds = await resultingSchemaIds("update_columns", "columns", refs, read);
     return {
       tableId,
-      targetColumnIds: columns.map((column) => column.id),
+      targetColumnIds,
+      updatedColumns: targetColumnIds.map((targetColumnId, index) => ({ targetColumnId, columnId: columnIds[index]! })),
       updated: true
     };
   }
