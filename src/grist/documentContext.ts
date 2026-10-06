@@ -97,6 +97,12 @@ function compactWidget(widget: GristPageWidget) {
     ...(widget.customWidgetSettingsNormalizationIncomplete
       ? { customWidgetSettingsNormalizationIncomplete: true as const }
       : {}),
+    ...(widget.calendarConfig !== undefined
+      ? { calendarConfig: widget.calendarConfig }
+      : {}),
+    ...(widget.calendarConfigNormalizationIncomplete
+      ? { calendarConfigNormalizationIncomplete: true as const }
+      : {}),
     ...(widget.gridOptions !== undefined ? { gridOptions: widget.gridOptions } : {}),
     ...(widget.gridOptionsNormalizationIncomplete
       ? { gridOptionsNormalizationIncomplete: true as const }
@@ -145,6 +151,7 @@ function hasIncompleteUiNormalization(ui: CompletenessAwareDocumentUiContext): b
           widget.sortNormalizationIncomplete ||
           widget.selectByNormalizationIncomplete ||
           widget.customWidgetSettingsNormalizationIncomplete ||
+          widget.calendarConfigNormalizationIncomplete ||
           widget.gridOptionsNormalizationIncomplete ||
           widget.visibleFieldsNormalizationIncomplete ||
           widget.cardLayoutNormalizationIncomplete ||
