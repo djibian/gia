@@ -86,6 +86,32 @@ test("calendarConfig rejects unusable start-date mappings", () => {
   );
 });
 
+test("visibleColumnId uses the same stable semantics for RefList", () => {
+  const before = {
+    tables: [
+      {
+        id: "Customers",
+        fields: { tableRef: 1 },
+        columns: [{ id: "Name", fields: { colRef: 12, type: "Text" } }]
+      },
+      {
+        id: "Orders",
+        fields: { tableRef: 2 },
+        columns: [
+          { id: "Customers", fields: { colRef: 23, type: "RefList:Customers" } }
+        ]
+      }
+    ]
+  };
+  const plan = resolveReferenceDisplayMutation(before, "Orders", [
+    { id: "Customers", fields: { visibleColumnId: "Name" } }
+  ]);
+  assert.deepEqual(plan.actions, [
+    ["UpdateRecord", "_grist_Tables_column", 23, { visibleCol: 12 }],
+    ["SetDisplayFormula", "Orders", null, 23, "$Customers.Name"]
+  ]);
+});
+
 test("visibleColumnId resolves to private refs and native display formula atomically", () => {
   const before = {
     tables: [
