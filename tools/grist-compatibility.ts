@@ -464,6 +464,23 @@ async function run(): Promise<void> {
     );
     assert(discovered.includes(documentId), "created_document_not_discovered");
 
+    const templateMetadata = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "update_document",
+        documentId,
+        update: { name: "Compatibility Probe Renamed", type: "template" }
+      }),
+      "document_metadata_template"
+    );
+    const templateDocument =
+      templateMetadata.document &&
+      typeof templateMetadata.document === "object" &&
+      !Array.isArray(templateMetadata.document)
+        ? (templateMetadata.document as Record<string, unknown>)
+        : undefined;
+    assert(templateDocument?.name === "Compatibility Probe Renamed", "document_rename_not_persisted");
+    assert(templateDocument?.type === "template", "document_template_type_not_persisted");
+
     const tutorialMetadata = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "update_document",
@@ -536,7 +553,8 @@ async function run(): Promise<void> {
         {
           id: "Compat_Orders",
           columns: [
-            { id: "Customer", fields: { type: "Ref:Compat_Customers" } }
+            { id: "Customer", fields: { type: "Ref:Compat_Customers" } },
+            { id: "Customers", fields: { type: "RefList:Compat_Customers" } }
           ]
         },
         {
@@ -557,15 +575,20 @@ async function run(): Promise<void> {
         documentId,
         tableId: "Compat_Orders",
         columns: [
-          { id: "Customer", fields: { visibleColumnId: "Name" } }
+          { id: "Customer", fields: { visibleColumnId: "Name" } },
+          { id: "Customers", fields: { visibleColumnId: "Name" } }
         ]
       }),
       "relation_display"
     );
     const relationUpdated = Array.isArray(relationDisplay.updatedColumns)
-      ? relationDisplay.updatedColumns[0] as Record<string, unknown> | undefined
-      : undefined;
-    assert(relationUpdated?.visibleColumnId === "Name", "relation_visible_column_not_reported");
+      ? relationDisplay.updatedColumns as Record<string, unknown>[]
+      : [];
+    assert(
+      relationUpdated.length === 2 &&
+      relationUpdated.every((column) => column.visibleColumnId === "Name"),
+      "relation_visible_column_not_reported"
+    );
     const relationInspection = resultText(
       await callTool(bridgeBaseUrl, "grist_inspect", {
         action: "document",
