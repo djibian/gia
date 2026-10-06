@@ -480,10 +480,16 @@ export class GristService {
       );
       await this.client.applyUserActions(documentId, plan.actions);
       try {
-        const afterTables = await this.client.listTables(documentId, {
-          expandColumns: true
-        });
-        verifyReferenceDisplayMutation(afterTables, plan.plans);
+        const [afterTables, afterColumns] = await Promise.all([
+          this.client.listTables(documentId, { expandColumns: true }),
+          this.client.listColumns(documentId, tableId, { hidden: true })
+        ]);
+        verifyReferenceDisplayMutation(
+          afterTables,
+          afterColumns,
+          tableId,
+          plan.plans
+        );
         const columnIds = await resultingSchemaIds(
           "update_columns",
           "columns",
