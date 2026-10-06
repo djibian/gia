@@ -21,7 +21,11 @@ const eventTables = {
         { id: "Start", fields: { colRef: 12, type: "DateTime:UTC" } },
         { id: "End", fields: { colRef: 13, type: "Date" } },
         { id: "AllDay", fields: { colRef: 14, type: "Bool" } },
-        { id: "Kind", fields: { colRef: 15, type: "Choice" } }
+        { id: "Kind", fields: { colRef: 15, type: "Choice" } },
+        { id: "FlexibleTitle", fields: { colRef: 16, type: "Any" } },
+        { id: "FlexibleType", fields: { colRef: 17, type: "Any" } },
+        { id: "BadTitle", fields: { colRef: 18, type: "Int" } },
+        { id: "BadType", fields: { colRef: 19, type: "Text" } }
       ]
     }
   ]
@@ -84,6 +88,67 @@ test("calendarConfig rejects unusable start-date mappings", () => {
       ),
     /expected Date or DateTime/
   );
+});
+
+test("calendarConfig matches Grist non-strict title/type mapping semantics", () => {
+  const widget = {
+    id: 7,
+    type: "calendar",
+    tableId: "Events",
+    tableRef: 1,
+    options: {}
+  };
+
+  assert.doesNotThrow(() =>
+    resolveCalendarConfigUpdate(widget, eventTables, {
+      titleColumnId: "FlexibleTitle",
+      startDateColumnId: "Start",
+      typeColumnId: "FlexibleType"
+    })
+  );
+  assert.throws(
+    () =>
+      resolveCalendarConfigUpdate(widget, eventTables, {
+        titleColumnId: "BadTitle",
+        startDateColumnId: "Start"
+      }),
+    /expected Text or Any/
+  );
+  assert.throws(
+    () =>
+      resolveCalendarConfigUpdate(widget, eventTables, {
+        titleColumnId: "Title",
+        startDateColumnId: "Start",
+        typeColumnId: "BadType"
+      }),
+    /expected Choice or ChoiceList or Any/
+  );
+});
+
+test("visibleColumnId rejects same-batch self-reference target relabels", () => {
+  for (const relationType of ["Ref:People", "RefList:People"]) {
+    const before = {
+      tables: [
+        {
+          id: "People",
+          fields: { tableRef: 1 },
+          columns: [
+            { id: "Name", fields: { colRef: 11, type: "Text" } },
+            { id: "Manager", fields: { colRef: 12, type: relationType } }
+          ]
+        }
+      ]
+    };
+
+    assert.throws(
+      () =>
+        resolveReferenceDisplayMutation(before, "People", [
+          { id: "Manager", fields: { visibleColumnId: "Name" } },
+          { id: "Name", fields: { label: "Display name" } }
+        ]),
+      /target column is relabelled in the same bounded update/
+    );
+  }
 });
 
 test("visibleColumnId uses the same stable semantics for RefList", () => {
