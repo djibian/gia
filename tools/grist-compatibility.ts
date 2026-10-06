@@ -464,6 +464,44 @@ async function run(): Promise<void> {
     );
     assert(discovered.includes(documentId), "created_document_not_discovered");
 
+    const tutorialMetadata = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "update_document",
+        documentId,
+        update: { name: "Compatibility Probe Renamed", type: "tutorial" }
+      }),
+      "document_metadata_tutorial"
+    );
+    const tutorialDocument =
+      tutorialMetadata.document &&
+      typeof tutorialMetadata.document === "object" &&
+      !Array.isArray(tutorialMetadata.document)
+        ? (tutorialMetadata.document as Record<string, unknown>)
+        : undefined;
+    assert(tutorialDocument?.name === "Compatibility Probe Renamed", "document_rename_not_persisted");
+    assert(tutorialDocument?.type === "tutorial", "document_tutorial_type_not_persisted");
+
+    const tutorialInspection = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "document",
+        documentId
+      }),
+      "document_metadata_inspection"
+    );
+    const inspectedDocument =
+      tutorialInspection.document &&
+      typeof tutorialInspection.document === "object" &&
+      !Array.isArray(tutorialInspection.document)
+        ? (tutorialInspection.document as Record<string, unknown>)
+        : undefined;
+    assert(inspectedDocument?.type === "tutorial", "document_tutorial_type_not_inspected");
+
+    await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "update_document",
+      documentId,
+      update: { type: "normal" }
+    });
+
     await callTool(bridgeBaseUrl, "grist_add_structure", {
       action: "create_tables",
       documentId,
@@ -486,6 +524,58 @@ async function run(): Promise<void> {
         { fields: { Name: "Beta", Qty: 2 } }
       ]
     });
+
+    await callTool(bridgeBaseUrl, "grist_add_structure", {
+      action: "create_tables",
+      documentId,
+      tables: [
+        {
+          id: "Compat_Customers",
+          columns: [{ id: "Name", fields: { type: "Text" } }]
+        },
+        {
+          id: "Compat_Orders",
+          columns: [
+            { id: "Customer", fields: { type: "Ref:Compat_Customers" } }
+          ]
+        },
+        {
+          id: "Compat_Events",
+          columns: [
+            { id: "Title", fields: { type: "Text" } },
+            { id: "Start", fields: { type: "DateTime:UTC" } },
+            { id: "End", fields: { type: "DateTime:UTC" } },
+            { id: "AllDay", fields: { type: "Bool" } },
+            { id: "Kind", fields: { type: "Choice" } }
+          ]
+        }
+      ]
+    });
+    const relationDisplay = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "update_columns",
+        documentId,
+        tableId: "Compat_Orders",
+        columns: [
+          { id: "Customer", fields: { visibleColumnId: "Name" } }
+        ]
+      }),
+      "relation_display"
+    );
+    const relationUpdated = Array.isArray(relationDisplay.updatedColumns)
+      ? relationDisplay.updatedColumns[0] as Record<string, unknown> | undefined
+      : undefined;
+    assert(relationUpdated?.visibleColumnId === "Name", "relation_visible_column_not_reported");
+    const relationInspection = resultText(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "document",
+        documentId
+      })
+    );
+    assert(
+      relationInspection.includes('"visibleColumnId": "Name"'),
+      "relation_visible_column_not_inspected"
+    );
 
     await callTool(bridgeBaseUrl, "grist_add_structure", {
       action: "create_tables", documentId,
@@ -526,6 +616,60 @@ async function run(): Promise<void> {
         ? (createdPage.page as Record<string, unknown>)
         : undefined;
     const pageId = positiveResultId(createdPageInfo?.id, "created_page_id");
+
+    const calendarResult = resultJson(
+      await callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "add_widget",
+        documentId,
+        pageId,
+        tableId: "Compat_Events",
+        type: "calendar"
+      }),
+      "calendar_widget"
+    );
+    const calendarWidget =
+      calendarResult.widget &&
+      typeof calendarResult.widget === "object" &&
+      !Array.isArray(calendarResult.widget)
+        ? (calendarResult.widget as Record<string, unknown>)
+        : undefined;
+    const calendarWidgetId = positiveResultId(calendarWidget?.id, "calendar_widget_id");
+    assert(calendarWidget?.type === "calendar", "calendar_public_type_not_normalized");
+
+    const configuredCalendar = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_ui", {
+        action: "update_widget",
+        documentId,
+        pageId,
+        widgetId: calendarWidgetId,
+        update: {
+          calendarConfig: {
+            titleColumnId: "Title",
+            startDateColumnId: "Start",
+            endDateColumnId: "End",
+            allDayColumnId: "AllDay",
+            typeColumnId: "Kind"
+          }
+        }
+      }),
+      "calendar_config"
+    );
+    const configuredCalendarWidget =
+      configuredCalendar.widget &&
+      typeof configuredCalendar.widget === "object" &&
+      !Array.isArray(configuredCalendar.widget)
+        ? (configuredCalendar.widget as Record<string, unknown>)
+        : undefined;
+    assert(
+      JSON.stringify(configuredCalendarWidget?.calendarConfig) === JSON.stringify({
+        titleColumnId: "Title",
+        startDateColumnId: "Start",
+        endDateColumnId: "End",
+        allDayColumnId: "AllDay",
+        typeColumnId: "Kind"
+      }),
+      "calendar_config_not_persisted"
+    );
 
     const groupedSummary = resultJson(
       await callTool(bridgeBaseUrl, "grist_add_ui", {
