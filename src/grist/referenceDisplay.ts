@@ -93,6 +93,32 @@ function referenceTarget(type: unknown): string | undefined {
   return match?.[1];
 }
 
+function hiddenColumnsByRef(
+  columnsResponse: unknown,
+  tableId: string
+): Map<number, ParsedColumn> {
+  const root = record(columnsResponse);
+  const columns = Array.isArray(root?.columns) ? root.columns : undefined;
+  if (!columns) {
+    throw new Error("Hidden Grist column metadata is unavailable.");
+  }
+  const byRef = new Map<number, ParsedColumn>();
+  for (const rawColumn of columns) {
+    const column = record(rawColumn);
+    const id =
+      typeof column?.id === "string" && column.id.trim()
+        ? column.id
+        : undefined;
+    const fields = record(column?.fields);
+    const ref = positiveInteger(fields?.colRef);
+    if (!id || !fields || !ref || byRef.has(ref)) {
+      throw new Error("Hidden Grist column metadata is incomplete or ambiguous.");
+    }
+    byRef.set(ref, { tableId, id, ref, fields });
+  }
+  return byRef;
+}
+
 export function hasReferenceDisplayUpdates(
   updates: readonly GristColumnUpdate[]
 ): boolean {
@@ -196,13 +222,16 @@ export function resolveReferenceDisplayMutation(
 
 export function verifyReferenceDisplayMutation(
   tableResponse: unknown,
+  sourceColumnsResponse: unknown,
+  sourceTableId: string,
   plans: readonly ReferenceDisplayPlan[]
 ): void {
   if (plans.length === 0) return;
-  const { byRef } = parsedColumns(tableResponse);
+  const { byRef: expandedByRef } = parsedColumns(tableResponse);
+  const hiddenByRef = hiddenColumnsByRef(sourceColumnsResponse, sourceTableId);
 
   for (const plan of plans) {
-    const source = byRef.get(plan.sourceColumnRef);
+    const source = hiddenByRef.get(plan.sourceColumnRef) ?? expandedByRef.get(plan.sourceColumnRef);
     if (!source) {
       throw new Error(
         `Updated relation column "${plan.sourceColumnId}" is unavailable on re-read.`
@@ -221,7 +250,9 @@ export function verifyReferenceDisplayMutation(
     }
 
     const displayRef = positiveInteger(source.fields.displayCol);
-    const displayColumn = displayRef ? byRef.get(displayRef) : undefined;
+    const displayColumn = displayRef
+      ? hiddenByRef.get(displayRef) ?? expandedByRef.get(displayRef)
+      : undefined;
     if (!displayColumn || displayColumn.fields.formula !== plan.displayFormula) {
       throw new Error(
         `Updated relation column "${source.id}" did not persist the expected display formula.`
