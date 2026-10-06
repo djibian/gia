@@ -158,13 +158,9 @@ function assertCalendarColumnTypes(
   if (config.allDayColumnId !== undefined) {
     requireType(config.allDayColumnId, "all-day", ["Bool"]);
   }
+  requireType(config.titleColumnId, "title", ["Text", "Any"]);
   if (config.typeColumnId !== undefined) {
-    requireType(config.typeColumnId, "type", ["Choice", "ChoiceList"]);
-  }
-  if (!types.has(config.titleColumnId)) {
-    throw new Error(
-      `Calendar title column "${config.titleColumnId}" does not exist on the widget's current table.`
-    );
+    requireType(config.typeColumnId, "type", ["Choice", "ChoiceList", "Any"]);
   }
 }
 
