@@ -1,6 +1,6 @@
 # Gia
 
-Gia **0.7.1** is a compact open-source MCP adaptation layer for Grist Community.
+Gia **0.8.0** is a compact open-source MCP adaptation layer for Grist Community.
 It provides exactly ten bounded semantic tools under **MCP contract major 2**.
 The client reasons and orchestrates; Gia normalizes and executes; Grist remains
 authoritative for application state and permissions.
@@ -37,9 +37,9 @@ The process binds to localhost. Remote access uses an HTTPS reverse proxy and
 | `grist_add_records` | bounded record creation |
 | `grist_change_records` | explicit record updates/deletion |
 | `grist_add_structure` | empty document/template bootstrap and table/column creation |
-| `grist_change_structure` | targeted schema changes and bounded application-rule groups |
+| `grist_change_structure` | bounded document metadata/schema changes and application-rule groups |
 | `grist_add_ui` | native pages/widgets, including summaries |
-| `grist_change_ui` | bounded page/widget configuration, layout and order |
+| `grist_change_ui` | bounded page/widget/calendar configuration, layout and order |
 | `grist_help` | progressive current-contract disclosure |
 
 Credentials stay server-side. Effective authority intersects native Grist rights,
