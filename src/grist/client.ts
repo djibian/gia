@@ -34,12 +34,20 @@ export interface GristOrgSummary {
   [key: string]: unknown;
 }
 
+export type GristDocumentType = null | "template" | "tutorial";
+
 export interface GristDocumentSummary {
   id: string | number;
   name?: string;
   urlId?: string | null;
   access?: string;
+  type?: GristDocumentType;
   [key: string]: unknown;
+}
+
+export interface GristDocumentUpdate {
+  name?: string;
+  type?: GristDocumentType;
 }
 
 export interface GristWorkspaceSummary {
@@ -128,6 +136,21 @@ export class GristClient {
     return (await this.request(
       `/api/docs/${encodeURIComponent(documentId)}`
     )) as GristDocumentSummary;
+  }
+
+  async updateDocument(
+    documentIdOrUrl: string,
+    update: GristDocumentUpdate
+  ): Promise<unknown> {
+    const documentId = this.normalizeDocumentId(documentIdOrUrl);
+    return this.request(`/api/docs/${encodeURIComponent(documentId)}`, {
+      method: "PATCH",
+      body: JSON.stringify(update)
+    });
+  }
+
+  async listWidgets(): Promise<unknown> {
+    return this.request("/api/widgets/");
   }
 
   async createDocument(workspaceId: number, name: string): Promise<string> {
