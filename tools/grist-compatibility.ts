@@ -659,6 +659,28 @@ async function run(): Promise<void> {
     const calendarWidgetId = positiveResultId(calendarWidget?.id, "calendar_widget_id");
     assert(calendarWidget?.type === "calendar", "calendar_public_type_not_normalized");
 
+    const rawSections = await gristApi(
+      gristBaseUrl,
+      apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Views_section/records?hidden=true`
+    );
+    const rawCalendarSection =
+      rawSections &&
+      typeof rawSections === "object" &&
+      !Array.isArray(rawSections) &&
+      Array.isArray((rawSections as { records?: unknown }).records)
+        ? ((rawSections as { records: Array<{ id?: unknown; fields?: Record<string, unknown> }> }).records
+            .find((record) => record.id === calendarWidgetId))
+        : undefined;
+    const expectedStoredCalendarType =
+      version === "1.7.16" || version === "1.7.17" || version === "1.7.18"
+        ? "custom.calendar"
+        : "calendar";
+    assert(
+      rawCalendarSection?.fields?.parentKey === expectedStoredCalendarType,
+      `calendar_native_representation_mismatch:${version}:${String(rawCalendarSection?.fields?.parentKey)}`
+    );
+
     const configuredCalendar = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_ui", {
         action: "update_widget",
