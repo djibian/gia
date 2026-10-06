@@ -1,4 +1,5 @@
 import type { GristPage, GristPageWidget } from "./documentUi.js";
+import { stableVisibleColumnId } from "./referenceDisplay.js";
 import { customViewOptions } from "./customWidgetSettings.js";
 import {
   MAX_NORMALIZED_LAYOUT_DEPTH,
@@ -117,7 +118,10 @@ export function projectPublicWidget(widget: GristPageWidget) {
   };
 }
 
-function publicColumn(entry: unknown): { id: string; fields: JsonRecord } {
+function publicColumn(
+  entry: unknown,
+  visibleColumnId?: string
+): { id: string; fields: JsonRecord } {
   const column = record(entry);
   const id = typeof column?.id === "string" ? column.id : undefined;
   const fields = record(column?.fields);
@@ -132,14 +136,18 @@ function publicColumn(entry: unknown): { id: string; fields: JsonRecord } {
   if (typeof fields.formula === "string") projected.formula = fields.formula;
   if (typeof fields.description === "string") projected.description = fields.description;
   if (typeof fields.widgetOptions === "string") projected.widgetOptions = fields.widgetOptions;
+  if (visibleColumnId !== undefined) projected.visibleColumnId = visibleColumnId;
 
   return { id, fields: projected };
 }
 
-function publicColumns(entries: unknown[]) {
+function publicColumns(
+  entries: unknown[],
+  visibleColumnIdFor?: (entry: unknown) => string | undefined
+) {
   const seen = new Set<string>();
   return entries.map((entry) => {
-    const column = publicColumn(entry);
+    const column = publicColumn(entry, visibleColumnIdFor?.(entry));
     if (seen.has(column.id)) throw new Error("Ambiguous Grist column metadata IDs.");
     seen.add(column.id);
     return column;
@@ -185,6 +193,23 @@ export function projectPublicTables(value: unknown): unknown {
     if (tableRef !== undefined) tableIdByRef.set(tableRef, id);
   }
 
+  const columnByRef = new Map<number, { tableId: string; id: string }>();
+  for (const entry of entries) {
+    const table = record(entry)!;
+    const tableId = table.id as string;
+    if (!Array.isArray(table.columns)) continue;
+    for (const rawColumn of table.columns) {
+      const column = record(rawColumn);
+      const id = typeof column?.id === "string" ? column.id : undefined;
+      const fields = record(column?.fields);
+      const colRef = positiveInteger(fields?.colRef);
+      if (!id?.trim() || !fields || !colRef || columnByRef.has(colRef)) {
+        throw new Error("Ambiguous Grist expanded column metadata identities.");
+      }
+      columnByRef.set(colRef, { tableId, id });
+    }
+  }
+
   return {
     tables: entries.map((entry) => {
       const table = record(entry)!;
@@ -204,7 +229,13 @@ export function projectPublicTables(value: unknown): unknown {
       }
 
       const columns = Array.isArray(table.columns)
-        ? publicColumns(table.columns)
+        ? publicColumns(table.columns, (rawColumn) => {
+            const column = record(rawColumn);
+            const fields = record(column?.fields);
+            return fields
+              ? stableVisibleColumnId({ fields }, columnByRef)
+              : undefined;
+          })
         : undefined;
 
       return {
