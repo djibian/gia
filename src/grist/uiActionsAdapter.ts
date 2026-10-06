@@ -184,10 +184,10 @@ export class GristUiActionsAdapter {
     }
     const legacyCalendarAvailable = response.some((value) => {
       const widget = record(value);
+      const source = record(widget?.source);
       return (
-        widget?.widgetId === "@gristlabs/widget-calendar" ||
-        (widget?.widgetId === "calendar" &&
-          widget?.pluginId === "bundled/grist-bundled")
+        widget?.widgetId === "@gristlabs/widget-calendar" &&
+        source?.pluginId === "bundled/grist-bundled"
       );
     });
     return legacyCalendarAvailable ? "custom.calendar" : "calendar";
