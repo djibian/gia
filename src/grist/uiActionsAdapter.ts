@@ -44,7 +44,7 @@ export interface WidgetUiUpdate {
 }
 
 type UiActionsClient = Pick<GristClient, "applyUserActions"> &
-  Partial<Pick<GristClient, "queryRecords">>;
+  Partial<Pick<GristClient, "queryRecords" | "listWidgets">>;
 type JsonRecord = Record<string, unknown>;
 
 interface MetadataRecord {
@@ -172,6 +172,27 @@ export class UiWriteVerificationError extends Error {
 export class GristUiActionsAdapter {
   constructor(private readonly client: UiActionsClient) {}
 
+  private async calendarStorageType(): Promise<"calendar" | "custom.calendar"> {
+    if (!this.client.listWidgets) {
+      throw new Error(
+        "Cannot determine the target Grist calendar representation without read-only widget-registry discovery."
+      );
+    }
+    const response = await this.client.listWidgets();
+    if (!Array.isArray(response)) {
+      throw new Error("Grist widget registry returned an unexpected response.");
+    }
+    const legacyCalendarAvailable = response.some((value) => {
+      const widget = record(value);
+      return (
+        widget?.widgetId === "@gristlabs/widget-calendar" ||
+        (widget?.widgetId === "calendar" &&
+          widget?.pluginId === "bundled/grist-bundled")
+      );
+    });
+    return legacyCalendarAvailable ? "custom.calendar" : "calendar";
+  }
+
   async mutateAccessRuleGroup(
     documentId: string,
     plan: AccessRuleMutationPlan
@@ -290,12 +311,14 @@ export class GristUiActionsAdapter {
       }
     }
 
+    const storageType =
+      type === "calendar" ? await this.calendarStorageType() : type;
     const response = await this.client.applyUserActions(documentId, [
       [
         "CreateViewSection",
         sourceTableRef,
         pageId,
-        type,
+        storageType,
         groupByColumnRefs === undefined ? null : [...groupByColumnRefs],
         null
       ]
