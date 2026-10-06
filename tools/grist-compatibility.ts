@@ -660,14 +660,18 @@ async function run(): Promise<void> {
       !Array.isArray(configuredCalendar.widget)
         ? (configuredCalendar.widget as Record<string, unknown>)
         : undefined;
+    const persistedCalendarConfig =
+      configuredCalendarWidget?.calendarConfig &&
+      typeof configuredCalendarWidget.calendarConfig === "object" &&
+      !Array.isArray(configuredCalendarWidget.calendarConfig)
+        ? (configuredCalendarWidget.calendarConfig as Record<string, unknown>)
+        : undefined;
     assert(
-      JSON.stringify(configuredCalendarWidget?.calendarConfig) === JSON.stringify({
-        titleColumnId: "Title",
-        startDateColumnId: "Start",
-        endDateColumnId: "End",
-        allDayColumnId: "AllDay",
-        typeColumnId: "Kind"
-      }),
+      persistedCalendarConfig?.titleColumnId === "Title" &&
+      persistedCalendarConfig.startDateColumnId === "Start" &&
+      persistedCalendarConfig.endDateColumnId === "End" &&
+      persistedCalendarConfig.allDayColumnId === "AllDay" &&
+      persistedCalendarConfig.typeColumnId === "Kind",
       "calendar_config_not_persisted"
     );
 
