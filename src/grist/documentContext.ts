@@ -311,11 +311,22 @@ export class DocumentContextService {
           formulaWarningCount += referenceWarnings + dereferenceWarnings;
         }
 
+        const visibleRef = relation
+          ? positiveInteger(column.fields.visibleCol)
+          : undefined;
+        const visibleColumn = visibleRef ? columnByRef.get(visibleRef) : undefined;
+        const visibleColumnId =
+          relation &&
+          visibleColumn?.tableId === relation.targetTable
+            ? visibleColumn.id
+            : undefined;
+
         return {
           id: column.id,
           label: text(column.fields.label) ?? column.id,
           type: column.type,
           isFormula,
+          ...(visibleColumnId ? { visibleColumnId } : {}),
           ...(formula ? { formula } : {}),
           ...(formulaAnalysis ? { formulaAnalysis } : {})
         };
