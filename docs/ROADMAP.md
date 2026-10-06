@@ -1,6 +1,6 @@
 # Roadmap
 
-Gia 0.7.1 is the current product, implementing MCP contract major 2.
+Gia 0.8.0 is the current product, implementing MCP contract major 2.
 No committed unfinished work is currently selected. No functional expansion
 or public-directory publication is authorized.
 
