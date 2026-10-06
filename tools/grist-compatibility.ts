@@ -676,27 +676,10 @@ async function run(): Promise<void> {
       version === "1.7.16" || version === "1.7.17" || version === "1.7.18"
         ? "custom.calendar"
         : "calendar";
-    if (rawCalendarSection?.fields?.parentKey !== expectedStoredCalendarType) {
-      const widgetRegistry = await gristApi(
-        gristBaseUrl,
-        apiKey,
-        "/api/widgets/"
-      );
-      const calendarEntries = Array.isArray(widgetRegistry)
-        ? widgetRegistry.filter((entry) => {
-            if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
-            const candidate = entry as Record<string, unknown>;
-            return (
-              candidate.widgetId === "@gristlabs/widget-calendar" ||
-              candidate.widgetId === "calendar" ||
-              candidate.name === "Calendar"
-            );
-          })
-        : widgetRegistry;
-      throw new Error(
-        `calendar_native_representation_mismatch:${version}:${String(rawCalendarSection?.fields?.parentKey)}:${JSON.stringify(calendarEntries)}`
-      );
-    }
+    assert(
+      rawCalendarSection?.fields?.parentKey === expectedStoredCalendarType,
+      `calendar_native_representation_mismatch:${version}:${String(rawCalendarSection?.fields?.parentKey)}`
+    );
 
     const configuredCalendar = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_ui", {
