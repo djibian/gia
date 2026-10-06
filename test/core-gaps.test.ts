@@ -154,7 +154,36 @@ test("visibleColumnId resolves to private refs and native display formula atomic
       }
     ]
   };
-  assert.doesNotThrow(() => verifyReferenceDisplayMutation(after, plan.plans));
+  const hiddenOrderColumns = {
+    columns: [
+      {
+        id: "Customer",
+        fields: {
+          colRef: 21,
+          type: "Ref:Customers",
+          visibleCol: 12,
+          displayCol: 22
+        }
+      },
+      {
+        id: "gristHelper_Display",
+        fields: {
+          colRef: 22,
+          type: "Text",
+          isFormula: true,
+          formula: "$Customer.Name"
+        }
+      }
+    ]
+  };
+  assert.doesNotThrow(() =>
+    verifyReferenceDisplayMutation(
+      after,
+      hiddenOrderColumns,
+      "Orders",
+      plan.plans
+    )
+  );
 });
 
 test("calendar creation chooses legacy and native storage representations without changing public type", async () => {
