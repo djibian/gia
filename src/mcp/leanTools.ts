@@ -398,7 +398,21 @@ function normalizeWidgetUpdate(
         }
       : {}),
     ...(update.calendarConfig !== undefined
-      ? { calendarConfig: { ...update.calendarConfig } }
+      ? {
+          calendarConfig: {
+            titleColumnId: update.calendarConfig.titleColumnId,
+            startDateColumnId: update.calendarConfig.startDateColumnId,
+            ...(update.calendarConfig.endDateColumnId !== undefined
+              ? { endDateColumnId: update.calendarConfig.endDateColumnId }
+              : {}),
+            ...(update.calendarConfig.allDayColumnId !== undefined
+              ? { allDayColumnId: update.calendarConfig.allDayColumnId }
+              : {}),
+            ...(update.calendarConfig.typeColumnId !== undefined
+              ? { typeColumnId: update.calendarConfig.typeColumnId }
+              : {})
+          }
+        }
       : {}),
     ...(update.gridOptions !== undefined
       ? {
@@ -856,7 +870,14 @@ export function registerLeanTools(
         switch (input.action) {
           case "update_document":
             return textResult(
-              await grist.updateDocument(input.documentId, input.update)
+              await grist.updateDocument(input.documentId, {
+                ...(input.update.name !== undefined
+                  ? { name: input.update.name }
+                  : {}),
+                ...(input.update.type !== undefined
+                  ? { type: input.update.type }
+                  : {})
+              })
             );
           case "update_tables":
             return textResult(
