@@ -16,7 +16,7 @@ and trust boundaries.
 | `src/mcp/leanRegistry.ts`, `leanTools.ts` | ten-tool metadata, closed action schemas, bounded dispatch and progressive help |
 | `src/operations/` | internal operation/capability mapping and supported schema-field validation |
 | `src/grist/authorizedService.ts`, `service.ts`, `client.ts` | authorization/audit boundary, bounded semantic operations, fixed Grist REST calls |
-| `src/grist/documentContext.ts`, `documentUi.ts`, normalization modules | compact context, stable-ID resolution and completeness reporting |
+| `src/grist/documentContext.ts`, `documentUi.ts`, `calendarConfig.ts`, `referenceDisplay.ts`, normalization modules | compact context, stable-ID resolution and completeness reporting |
 | `src/grist/uiActionsAdapter.ts`, `accessRules.ts` | fixed private native actions, preservation and postcondition verification |
 | `src/mcp/results.ts`, `publicMetadata.ts` | typed effect reporting and minimized public projections |
 | `src/audit/`, `src/ops/` | protected audit events and low-cardinality operational signals |

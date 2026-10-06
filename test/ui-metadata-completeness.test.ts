@@ -35,6 +35,10 @@ const audit = {
   record: () => undefined
 } as unknown as AuditLogger;
 
+function documentMetadata() {
+  return { id: "doc-1", name: "Test document", type: "normal" as const };
+}
+
 function tableResponse() {
   return {
     tables: [
@@ -100,7 +104,8 @@ test("malformed, missing and duplicate UI identities remain explicit and block m
     const writes: unknown[] = [];
     const inner = {
       maxReadRecords: 5000, maxWriteRecords: 500, writeBatchRecords: 200, maxSchemaItems: 100,
-      listTables: async () => tableResponse(),
+      getDocumentMetadata: async () => documentMetadata(),
+    listTables: async () => tableResponse(),
       queryRecords: async (_id: string, tableId: string) => tableId === key ? malformed : base[tableId as keyof typeof base]
     } as unknown as GristService;
     const uiActions = { updatePageWidget: async (...args: unknown[]) => { writes.push(args); } } as unknown as GristUiActionsAdapter;
@@ -118,6 +123,7 @@ test("acknowledged UI creation retains its known ID when the re-read contains ma
   let calls = 0;
   const inner = {
     maxReadRecords: 5000, maxWriteRecords: 500, writeBatchRecords: 200, maxSchemaItems: 100,
+    getDocumentMetadata: async () => documentMetadata(),
     listTables: async () => tableResponse(),
     queryRecords: async (_id: string, tableId: string) => ({ records: tableId === "_grist_Pages"
       ? [pageRecord(1, 7), ...(created ? [pageRecord(2, 8)] : [])]
@@ -142,6 +148,7 @@ test("metadata reads that reach the bound are marked incomplete and block topolo
     maxWriteRecords: 500,
     writeBatchRecords: 200,
     maxSchemaItems: 100,
+    getDocumentMetadata: async () => documentMetadata(),
     listTables: async () => tableResponse(),
     queryRecords: async (_documentId: string, tableId: string) => {
       if (tableId === "_grist_Pages") {
@@ -202,6 +209,7 @@ test("post-write verification fails closed if the metadata snapshot reaches the 
     maxWriteRecords: 500,
     writeBatchRecords: 200,
     maxSchemaItems: 100,
+    getDocumentMetadata: async () => documentMetadata(),
     listTables: async () => tableResponse(),
     queryRecords: async (_documentId: string, tableId: string) => {
       if (tableId === "_grist_Pages") {
@@ -262,7 +270,8 @@ for (const scenario of ["oversized", "truncated", "ambiguous"] as const) {
       maxWriteRecords: 500,
       writeBatchRecords: 200,
       maxSchemaItems: 100,
-      listTables: async () => tableResponse(),
+      getDocumentMetadata: async () => documentMetadata(),
+    listTables: async () => tableResponse(),
       queryRecords: async (_documentId: string, tableId: string) => ({
         records: tableId === "_grist_Pages"
           ? Array.from({ length: pageCount }, (_, index) => ({

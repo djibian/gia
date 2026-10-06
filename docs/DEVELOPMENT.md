@@ -54,7 +54,7 @@ or run these mutating probes against a real user deployment.
 
 | Workflow / tool | Current purpose |
 | --- | --- |
-| Grist compatibility / `tools/grist-compatibility.ts` | MCP transport and native schema/UI/ACL/template boundaries across Grist Community 1.7.16–1.7.20 |
+| Grist compatibility / `tools/grist-compatibility.ts` | MCP transport plus native document metadata, relation display, calendar, schema/UI/ACL/template boundaries across Grist Community 1.7.16–1.7.20 |
 | Application preservation / `tools/application-validation.ts` | existing human configuration/data, differing native grants, a second application shape and repeat execution on Grist Community 1.7.19 |
 
 Workflows run for relevant runtime/test/tool/dependency/workflow changes and can

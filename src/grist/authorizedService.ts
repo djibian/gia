@@ -25,6 +25,11 @@ import type {
 } from "./client.js";
 import type { GristChartType } from "./chartTypes.js";
 import {
+  resolveCalendarConfigUpdate,
+  sameCalendarConfig,
+  type CalendarConfigInput
+} from "./calendarConfig.js";
+import {
   resolveCardLayoutUpdate,
   type CardLayoutUpdateInput
 } from "./cardLayout.js";
@@ -64,7 +69,11 @@ import {
   projectPublicWidget,
   projectPublicTables
 } from "./publicMetadata.js";
-import type { GristService, QueryRecordsOptions } from "./service.js";
+import type {
+  DocumentMetadataUpdateInput,
+  GristService,
+  QueryRecordsOptions
+} from "./service.js";
 import {
   GristUiActionsAdapter,
   UiWriteVerificationError,
@@ -91,6 +100,7 @@ export interface PageWidgetUpdateInput {
   sort?: readonly WidgetSortInput[] | null;
   selectBy?: ColumnSelectByInput | null;
   customWidgetSettings?: CustomWidgetSettingsUpdateInput;
+  calendarConfig?: CalendarConfigInput;
   gridOptions?: GridOptionsUpdateInput;
   visibleFields?: readonly WidgetFieldUpdateInput[];
   cardLayout?: CardLayoutUpdateInput;
@@ -285,7 +295,10 @@ export class AuthorizedGristService {
 
   async inspectDocument(documentIdOrUrl: string): Promise<unknown> {
     return this.execute("inspect_document", documentIdOrUrl, undefined, async (id) => {
-      const tableResponse = await this.inner.listTables(id, { expandColumns: true });
+      const [document, tableResponse] = await Promise.all([
+        this.inner.getDocumentMetadata(id),
+        this.inner.listTables(id, { expandColumns: true })
+      ]);
       const ui = await this.loadDocumentUi(id, tableResponse, true, true);
       const navigation = await this.inspectNavigation(id);
       if ("navigationNormalizationIncomplete" in navigation) {
@@ -294,6 +307,7 @@ export class AuthorizedGristService {
       const context = this.documentContext.build(id, tableResponse, ui);
       return {
         ...(context as Record<string, unknown>),
+        document,
         ...navigation
       };
     });
@@ -687,6 +701,7 @@ export class AuthorizedGristService {
       update.sort === undefined &&
       update.selectBy === undefined &&
       update.customWidgetSettings === undefined &&
+      update.calendarConfig === undefined &&
       update.gridOptions === undefined &&
       update.visibleFields === undefined &&
       update.cardLayout === undefined &&
@@ -711,6 +726,7 @@ export class AuthorizedGristService {
           usesColumnSelectBy ||
           update.sort !== undefined ||
           update.customWidgetSettings !== undefined ||
+          update.calendarConfig !== undefined ||
           update.visibleFields !== undefined ||
           update.cardLayout !== undefined ||
           update.filters !== undefined
@@ -732,6 +748,9 @@ export class AuthorizedGristService {
       }
       if (update.chartType !== undefined && target.type !== "chart") {
         throw new Error(`Grist widget ${widgetId} is not a chart widget.`);
+      }
+      if (update.calendarConfig !== undefined && target.type !== "calendar") {
+        throw new Error(`Grist widget ${widgetId} is not a calendar widget.`);
       }
       if (
         update.cardLayout !== undefined &&
@@ -773,6 +792,14 @@ export class AuthorizedGristService {
         adapterUpdate.sortColRefs = expectedSortColRefs;
       }
 
+      const expectedCalendarConfig =
+        update.calendarConfig !== undefined
+          ? resolveCalendarConfigUpdate(
+              target,
+              tableResponse,
+              update.calendarConfig
+            )
+          : undefined;
       let expectedOptions =
         update.customWidgetSettings !== undefined
           ? resolveCustomWidgetSettingsUpdate(
@@ -780,7 +807,7 @@ export class AuthorizedGristService {
               tableResponse,
               update.customWidgetSettings
             )
-          : undefined;
+          : expectedCalendarConfig;
       if (update.gridOptions !== undefined) {
         expectedOptions = resolveGridOptionsUpdate(
           expectedOptions !== undefined
@@ -873,6 +900,7 @@ export class AuthorizedGristService {
       try {
         const afterTableResponse =
           update.customWidgetSettings !== undefined ||
+          update.calendarConfig !== undefined ||
           update.visibleFields !== undefined ||
           update.cardLayout !== undefined ||
           update.filters !== undefined
@@ -919,6 +947,18 @@ export class AuthorizedGristService {
         ) {
           throw new Error(
             `Updated widget ${widgetId} did not preserve the exact expected options on re-read.`
+          );
+        }
+        if (
+          expectedCalendarConfig !== undefined &&
+          (widget.calendarConfigNormalizationIncomplete ||
+            !sameCalendarConfig(
+              widget.calendarConfig,
+              expectedCalendarConfig.calendarConfig
+            ))
+        ) {
+          throw new Error(
+            `Updated widget ${widgetId} did not match the requested calendar configuration on re-read.`
           );
         }
         if (
@@ -1218,6 +1258,15 @@ export class AuthorizedGristService {
         );
       }
     });
+  }
+
+  async updateDocument(
+    documentIdOrUrl: string,
+    update: DocumentMetadataUpdateInput
+  ): Promise<unknown> {
+    return this.execute("update_document", documentIdOrUrl, 1, (id) =>
+      this.inner.updateDocument(id, update)
+    );
   }
 
   async updateTables(

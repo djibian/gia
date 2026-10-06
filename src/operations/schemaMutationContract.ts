@@ -13,8 +13,8 @@ export const tableMutationFieldsSchema = z
 
 /**
  * Stable model-facing column metadata mirrored by public schema inspection.
- * Numeric engine references such as visibleCol/displayCol are deliberately
- * excluded; semantic operations must resolve those server-side when needed.
+ * Numeric engine references such as visibleCol/displayCol remain private.
+ * visibleColumnId is the stable semantic replacement resolved server-side.
  */
 export const columnMutationFieldsSchema = z
   .object({
@@ -23,6 +23,7 @@ export const columnMutationFieldsSchema = z
     isFormula: z.boolean().optional(),
     formula: z.string().optional(),
     description: z.string().optional(),
-    widgetOptions: z.string().optional()
+    widgetOptions: z.string().optional(),
+    visibleColumnId: z.string().trim().min(1).optional()
   })
   .strict();

@@ -4,11 +4,31 @@ import {
   isUncertainGristEffect,
   type GristColumnSpec,
   type GristColumnUpdate,
+  type GristDocumentSummary,
+  type GristDocumentUpdate,
   type GristTableSpec,
   type GristTableUpdate,
   type NewGristRecord,
   type UpdateGristRecord
 } from "./client.js";
+import {
+  hasReferenceDisplayUpdates,
+  resolveReferenceDisplayMutation,
+  verifyReferenceDisplayMutation
+} from "./referenceDisplay.js";
+
+export type PublicDocumentType = "normal" | "template" | "tutorial";
+
+export interface DocumentMetadataUpdateInput {
+  name?: string;
+  type?: PublicDocumentType;
+}
+
+export interface PublicDocumentMetadata {
+  id: string;
+  name: string;
+  type: PublicDocumentType;
+}
 
 export interface GristServiceOptions {
   maxReadRecords: number;
@@ -109,6 +129,26 @@ function jsonRecord(value: unknown): JsonRecord | null {
 function validCreatedId(value: unknown, kind: CreatedIdKind): value is string | number {
   if (kind === "string") return typeof value === "string" && value.length > 0;
   return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+
+function normalizeDocumentType(value: unknown): PublicDocumentType {
+  if (value === undefined || value === null) return "normal";
+  if (value === "template" || value === "tutorial") return value;
+  throw new Error("Grist returned an unsupported document type.");
+}
+
+function projectDocumentMetadata(
+  documentId: string,
+  document: GristDocumentSummary
+): PublicDocumentMetadata {
+  if (typeof document.name !== "string" || !document.name.trim()) {
+    throw new Error("Grist document name metadata is unavailable.");
+  }
+  return {
+    id: documentId,
+    name: document.name,
+    type: normalizeDocumentType(document.type)
+  };
 }
 
 function projectCreatedItems(
@@ -262,6 +302,77 @@ export class GristService {
     }
   }
 
+  async getDocumentMetadata(
+    documentIdOrUrl: string
+  ): Promise<PublicDocumentMetadata> {
+    const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    return projectDocumentMetadata(
+      documentId,
+      await this.client.getDocument(documentId)
+    );
+  }
+
+  async updateDocument(
+    documentIdOrUrl: string,
+    update: DocumentMetadataUpdateInput
+  ): Promise<unknown> {
+    const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    if (update.name === undefined && update.type === undefined) {
+      throw new Error("At least one document metadata field must be updated.");
+    }
+
+    const requestedName =
+      update.name !== undefined ? this.normalizeDocumentName(update.name) : undefined;
+    if (
+      update.type !== undefined &&
+      !(["normal", "template", "tutorial"] as const).includes(update.type)
+    ) {
+      throw new Error(`Unsupported document type "${String(update.type)}".`);
+    }
+
+    const before = projectDocumentMetadata(
+      documentId,
+      await this.client.getDocument(documentId)
+    );
+    const expected: PublicDocumentMetadata = {
+      id: documentId,
+      name: requestedName ?? before.name,
+      type: update.type ?? before.type
+    };
+    if (before.name === expected.name && before.type === expected.type) {
+      return { document: before, changed: false };
+    }
+
+    const nativeUpdate: GristDocumentUpdate = {};
+    if (requestedName !== undefined) nativeUpdate.name = requestedName;
+    if (update.type !== undefined) {
+      nativeUpdate.type = update.type === "normal" ? null : update.type;
+    }
+
+    await this.client.updateDocument(documentId, nativeUpdate);
+    try {
+      const after = projectDocumentMetadata(
+        documentId,
+        await this.client.getDocument(documentId)
+      );
+      if (
+        after.id !== expected.id ||
+        after.name !== expected.name ||
+        after.type !== expected.type
+      ) {
+        throw new Error("Document metadata did not match the requested state.");
+      }
+      return { document: after, changed: true };
+    } catch (error) {
+      throw new SchemaWriteVerificationError(
+        "update_document",
+        error instanceof Error
+          ? error.message
+          : "Updated document metadata could not be verified."
+      );
+    }
+  }
+
   async listTables(
     documentIdOrUrl: string,
     options: { expandColumns?: boolean } = {}
@@ -357,6 +468,57 @@ export class GristService {
     for (const column of columns) this.assertIdentifier(column.id, "Column ID");
     const targetColumnIds = columns.map((column) => column.id);
     const read = () => this.client.listColumns(documentId, tableId, { hidden: true });
+
+    if (hasReferenceDisplayUpdates(columns)) {
+      const beforeTables = await this.client.listTables(documentId, {
+        expandColumns: true
+      });
+      const plan = resolveReferenceDisplayMutation(
+        beforeTables,
+        tableId,
+        columns
+      );
+      await this.client.applyUserActions(documentId, plan.actions);
+      try {
+        const [afterTables, afterColumns] = await Promise.all([
+          this.client.listTables(documentId, { expandColumns: true }),
+          this.client.listColumns(documentId, tableId, { hidden: true })
+        ]);
+        verifyReferenceDisplayMutation(
+          afterTables,
+          afterColumns,
+          tableId,
+          plan.plans
+        );
+        const columnIds = await resultingSchemaIds(
+          "update_columns",
+          "columns",
+          plan.targetColumnRefs,
+          read
+        );
+        return {
+          tableId,
+          targetColumnIds,
+          updatedColumns: targetColumnIds.map((targetColumnId, index) => ({
+            targetColumnId,
+            columnId: columnIds[index]!,
+            ...(typeof columns[index]!.fields.visibleColumnId === "string"
+              ? { visibleColumnId: columns[index]!.fields.visibleColumnId }
+              : {})
+          })),
+          updated: true
+        };
+      } catch (error) {
+        if (error instanceof SchemaWriteVerificationError) throw error;
+        throw new SchemaWriteVerificationError(
+          "update_columns",
+          error instanceof Error
+            ? error.message
+            : "Updated relation display metadata could not be verified."
+        );
+      }
+    }
+
     const before = schemaIdentities(await read(), "columns");
     const refs = targetSchemaRefs(before.byId, targetColumnIds);
     await this.client.updateColumns(documentId, tableId, columns);

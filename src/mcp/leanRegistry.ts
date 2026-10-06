@@ -49,7 +49,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: false,
     title: "Inspect a Grist application",
     description:
-      "Inspect compact document, page, widget or bounded persisted access-rule structure without loading user-table rows. ACL inspection additionally requires a fresh native Grist document-owner proof, redacts unsupported/sensitive formulas and never presents persisted definitions as proof of effective enforcement or confidentiality; native defaults, schema-edit/structure authority and formulas remain relevant. Incomplete private metadata is reported rather than guessed."
+      "Inspect compact document metadata (including normalized normal/template/tutorial type), page, widget or bounded persisted access-rule structure without loading user-table rows. ACL inspection additionally requires a fresh native Grist document-owner proof, redacts unsupported/sensitive formulas and never presents persisted definitions as proof of effective enforcement or confidentiality; native defaults, schema-edit/structure authority and formulas remain relevant. Incomplete private metadata is reported rather than guessed."
   },
   {
     name: "grist_query",
@@ -99,7 +99,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: true,
     title: "Change existing Grist structure",
     description:
-      "Update, rename or delete explicitly identified tables or columns, or create/replace/delete one bounded persisted table/column access-rule group. ACL mutations use stable identifiers and a secret-safe condition subset, preserve untargeted policy, require doc.schema:write, and remain subject to Grist Owner enforcement. Exactly one bounded destructive schema action is performed per invocation."
+      "Update bounded document name/type metadata, update/rename/delete explicitly identified tables or columns (including stable-ID Ref/RefList display selection), or create/replace/delete one bounded persisted table/column access-rule group. ACL mutations use stable identifiers and a secret-safe condition subset, preserve untargeted policy, require doc.schema:write, and remain subject to Grist Owner enforcement. Exactly one bounded destructive schema action is performed per invocation."
   },
   {
     name: "grist_add_ui",
@@ -109,7 +109,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: false,
     title: "Add Grist pages or widgets",
     description:
-      "Create one page or add one supported widget using stable semantic inputs. Widgets may use bounded native summary grouping by stable source-column IDs. A summary uses a distinct generated/reused table and does not imply source-table ACL inheritance. Created identifiers and summary semantics are verified by re-reading Grist."
+      "Create one page or add one supported widget using stable semantic inputs. Calendar creation adapts internally to the supported Grist generation while remaining one public calendar concept. Widgets may use bounded native summary grouping by stable source-column IDs. A summary uses a distinct generated/reused table and does not imply source-table ACL inheritance. Created identifiers and summary semantics are verified by re-reading Grist."
   },
   {
     name: "grist_change_ui",
@@ -119,7 +119,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: true,
     title: "Change existing Grist UI",
     description:
-      "Rename, delete or hierarchy-safely reorder pages, delete one page widget, update one page layout, or reconfigure one widget. Hidden fields and persistent filters are presentation state, not access control. Private references remain server-side where the normalized contract applies; explicit targets and material postconditions are verified by re-reading Grist."
+      "Rename, delete or hierarchy-safely reorder pages, delete one page widget, update one page layout, or reconfigure one widget including stable-ID calendar mappings. Hidden fields and persistent filters are presentation state, not access control. Private references remain server-side where the normalized contract applies; explicit targets and material postconditions are verified by re-reading Grist."
   },
   {
     name: "grist_help",

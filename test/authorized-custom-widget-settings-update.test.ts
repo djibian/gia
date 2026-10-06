@@ -31,6 +31,11 @@ function harness(applyWrite = true, initialOptions?: unknown) {
     maxWriteRecords: 500,
     writeBatchRecords: 200,
     maxSchemaItems: 100,
+    getDocumentMetadata: async () => ({
+      id: "doc-1",
+      name: "Test document",
+      type: "normal"
+    }),
     listTables: async () => ({
       tables: [
         {

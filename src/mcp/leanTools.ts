@@ -154,6 +154,16 @@ const customWidgetColumnsMappingSchema = dictionarySchema(customWidgetMappingVal
     `Custom widget mappings support at most ${MAX_CUSTOM_WIDGET_MAPPING_KEYS} keys.`
   );
 
+const calendarConfigSchema = z
+  .object({
+    titleColumnId: columnIdSchema,
+    startDateColumnId: columnIdSchema,
+    endDateColumnId: columnIdSchema.optional(),
+    allDayColumnId: columnIdSchema.optional(),
+    typeColumnId: columnIdSchema.optional()
+  })
+  .strict();
+
 const customWidgetSettingsUpdateSchema = z
   .object({
     access: z.enum(["none", "read table", "full"]).optional(),
@@ -332,6 +342,7 @@ function widgetUpdateSchema() {
         .nullable()
         .optional(),
       customWidgetSettings: customWidgetSettingsUpdateSchema.optional(),
+      calendarConfig: calendarConfigSchema.optional(),
       gridOptions: gridOptionsUpdateSchema.optional(),
       visibleFields: widgetVisibleFieldsSchema.optional(),
       cardLayout: cardLayoutUpdateSchema.optional(),
@@ -346,6 +357,7 @@ function widgetUpdateSchema() {
         value.sort !== undefined ||
         value.selectBy !== undefined ||
         value.customWidgetSettings !== undefined ||
+        value.calendarConfig !== undefined ||
         value.gridOptions !== undefined ||
         value.visibleFields !== undefined ||
         value.cardLayout !== undefined ||
@@ -381,6 +393,23 @@ function normalizeWidgetUpdate(
                   columnsMapping:
                     update.customWidgetSettings.columnsMapping
                 }
+              : {})
+          }
+        }
+      : {}),
+    ...(update.calendarConfig !== undefined
+      ? {
+          calendarConfig: {
+            titleColumnId: update.calendarConfig.titleColumnId,
+            startDateColumnId: update.calendarConfig.startDateColumnId,
+            ...(update.calendarConfig.endDateColumnId !== undefined
+              ? { endDateColumnId: update.calendarConfig.endDateColumnId }
+              : {}),
+            ...(update.calendarConfig.allDayColumnId !== undefined
+              ? { allDayColumnId: update.calendarConfig.allDayColumnId }
+              : {}),
+            ...(update.calendarConfig.typeColumnId !== undefined
+              ? { typeColumnId: update.calendarConfig.typeColumnId }
               : {})
           }
         }
@@ -470,6 +499,16 @@ export function registerLeanTools(
     fields: tableMutationFieldsSchema
   }).strict();
   const documentNameSchema = z.string().trim().min(1).max(200);
+  const documentUpdateSchema = z
+    .object({
+      name: documentNameSchema.optional(),
+      type: z.enum(["normal", "template", "tutorial"]).optional()
+    })
+    .strict()
+    .refine(
+      (value) => value.name !== undefined || value.type !== undefined,
+      "At least one document metadata field must be supplied."
+    );
 
   server.registerTool(
     "grist_discover",
@@ -765,6 +804,13 @@ export function registerLeanTools(
       inputSchema: z.discriminatedUnion("action", [
         z
           .object({
+            action: z.literal("update_document"),
+            documentId: documentIdSchema,
+            update: documentUpdateSchema
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_tables"),
             documentId: documentIdSchema,
             tables: boundedArray(tableUpdateSchema, limits.maxSchemaItems)
@@ -822,6 +868,17 @@ export function registerLeanTools(
     async (input) => {
       try {
         switch (input.action) {
+          case "update_document":
+            return textResult(
+              await grist.updateDocument(input.documentId, {
+                ...(input.update.name !== undefined
+                  ? { name: input.update.name }
+                  : {}),
+                ...(input.update.type !== undefined
+                  ? { type: input.update.type }
+                  : {})
+              })
+            );
           case "update_tables":
             return textResult(
               await grist.updateTables(input.documentId, input.tables)

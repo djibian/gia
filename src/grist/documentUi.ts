@@ -3,6 +3,11 @@ import {
   type NormalizedCardLayout
 } from "./cardLayout.js";
 import {
+  canonicalWidgetType,
+  normalizeCalendarConfig,
+  type NormalizedCalendarConfig
+} from "./calendarConfig.js";
+import {
   normalizeCustomWidgetSettings,
   type NormalizedCustomWidgetSettings
 } from "./customWidgetSettings.js";
@@ -65,6 +70,8 @@ export interface GristPageWidget {
   selectByNormalizationIncomplete?: boolean;
   customWidgetSettings?: NormalizedCustomWidgetSettings;
   customWidgetSettingsNormalizationIncomplete?: true;
+  calendarConfig?: NormalizedCalendarConfig;
+  calendarConfigNormalizationIncomplete?: true;
   gridOptions?: NormalizedGridOptions;
   gridOptionsNormalizationIncomplete?: true;
   visibleFields?: NormalizedWidgetField[];
@@ -225,7 +232,9 @@ export class DocumentUiService {
         pageId,
         tableRef,
         ...(tableId !== undefined ? { tableId } : {}),
-        type: text(section.fields.parentKey) ?? "unknown",
+        type: canonicalWidgetType(
+          text(section.fields.parentKey) ?? "unknown"
+        ),
         title: text(section.fields.title) ?? "",
         ...(description !== undefined && description !== "" ? { description } : {}),
         ...(chartType !== undefined && chartType !== "" ? { chartType } : {}),
@@ -250,6 +259,13 @@ export class DocumentUiService {
       );
       if (normalizedCustomWidgetSettings) {
         Object.assign(widget, normalizedCustomWidgetSettings);
+      }
+      const normalizedCalendarConfig = normalizeCalendarConfig(
+        widget,
+        tableResponse
+      );
+      if (normalizedCalendarConfig) {
+        Object.assign(widget, normalizedCalendarConfig);
       }
       const normalizedGridOptions = normalizeGridOptions(widget);
       if (normalizedGridOptions) Object.assign(widget, normalizedGridOptions);
