@@ -214,7 +214,11 @@ test("visibleColumnId resolves to private refs and native display formula atomic
 
 test("calendar creation chooses legacy and native storage representations without changing public type", async () => {
   for (const [widgets, expectedType] of [
-    [[{ widgetId: "@gristlabs/widget-calendar" }], "custom.calendar"],
+    [[{
+      widgetId: "@gristlabs/widget-calendar",
+      source: { pluginId: "bundled/grist-bundled" }
+    }], "custom.calendar"],
+    [[{ widgetId: "@gristlabs/widget-calendar" }], "calendar"],
     [[], "calendar"]
   ] as const) {
     const observed: unknown[][][] = [];
