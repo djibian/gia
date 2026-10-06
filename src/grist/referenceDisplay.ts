@@ -144,6 +144,11 @@ export function resolveReferenceDisplayMutation(
   const actions: unknown[][] = [];
   const targetColumnRefs: number[] = [];
   const plans: ReferenceDisplayPlan[] = [];
+  const relabelledColumnIds = new Set(
+    updates
+      .filter((update) => update.fields.label !== undefined)
+      .map((update) => update.id)
+  );
 
   for (const update of updates) {
     const source = sourceColumns.get(update.id);
@@ -189,6 +194,11 @@ export function resolveReferenceDisplayMutation(
     if (!visible) {
       throw new Error(
         `Visible column "${targetTableId}.${visibleColumnId}" does not exist.`
+      );
+    }
+    if (targetTableId === tableId && relabelledColumnIds.has(visible.id)) {
+      throw new Error(
+        `Relation display for "${tableId}.${update.id}" cannot target "${visible.id}" while that target column is relabelled in the same bounded update because Grist may rename its stable column ID; update the target label first, then set visibleColumnId.`
       );
     }
 
