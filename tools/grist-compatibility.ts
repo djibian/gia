@@ -518,6 +518,36 @@ async function run(): Promise<void> {
       documentId,
       update: { type: "normal" }
     });
+    const normalInspection = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "document",
+        documentId
+      }),
+      "document_metadata_normal_inspection"
+    );
+    const normalDocument =
+      normalInspection.document &&
+      typeof normalInspection.document === "object" &&
+      !Array.isArray(normalInspection.document)
+        ? (normalInspection.document as Record<string, unknown>)
+        : undefined;
+    assert(normalDocument?.type === "normal", "document_normal_type_not_inspected");
+    const nativeNormalDocument = await gristApi(
+      gristBaseUrl,
+      apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}`
+    );
+    assert(
+      nativeNormalDocument !== null &&
+      typeof nativeNormalDocument === "object" &&
+      !Array.isArray(nativeNormalDocument),
+      "document_native_metadata_missing"
+    );
+    assert(
+      (nativeNormalDocument as Record<string, unknown>).type === null ||
+      (nativeNormalDocument as Record<string, unknown>).type === undefined,
+      "document_native_normal_type_not_null"
+    );
 
     await callTool(bridgeBaseUrl, "grist_add_structure", {
       action: "create_tables",
@@ -599,6 +629,47 @@ async function run(): Promise<void> {
       relationInspection.includes('"visibleColumnId": "Name"'),
       "relation_visible_column_not_inspected"
     );
+
+    const nativeCustomerColumns = await gristApi(
+      gristBaseUrl,
+      apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/Compat_Customers/columns?hidden=true`
+    ) as { columns: Array<{ id: string; fields: Record<string, unknown> }> };
+    const nativeOrderColumns = await gristApi(
+      gristBaseUrl,
+      apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/Compat_Orders/columns?hidden=true`
+    ) as { columns: Array<{ id: string; fields: Record<string, unknown> }> };
+    assert(Array.isArray(nativeCustomerColumns.columns), "native_customer_columns_missing");
+    assert(Array.isArray(nativeOrderColumns.columns), "native_order_columns_missing");
+    const nativeNameRef = positiveResultId(
+      nativeCustomerColumns.columns.find((column) => column.id === "Name")?.fields.colRef,
+      "native_relation_name_ref"
+    );
+    for (const [sourceColumnId, expectedFormula] of [
+      ["Customer", "$Customer.Name"],
+      ["Customers", "$Customers.Name"]
+    ] as const) {
+      const sourceColumn = nativeOrderColumns.columns.find(
+        (column) => column.id === sourceColumnId
+      );
+      assert(sourceColumn !== undefined, `native_relation_source_missing:${sourceColumnId}`);
+      assert(
+        sourceColumn.fields.visibleCol === nativeNameRef,
+        `native_relation_visible_col_mismatch:${sourceColumnId}`
+      );
+      const displayRef = positiveResultId(
+        sourceColumn.fields.displayCol,
+        `native_relation_display_ref:${sourceColumnId}`
+      );
+      const displayColumn = nativeOrderColumns.columns.find(
+        (column) => column.fields.colRef === displayRef
+      );
+      assert(
+        displayColumn?.fields.formula === expectedFormula,
+        `native_relation_display_formula_mismatch:${sourceColumnId}`
+      );
+    }
 
     await callTool(bridgeBaseUrl, "grist_add_structure", {
       action: "create_tables", documentId,
@@ -719,6 +790,50 @@ async function run(): Promise<void> {
       persistedCalendarConfig.typeColumnId === "Kind",
       "calendar_config_not_persisted"
     );
+
+    const rawCalendarSectionsAfter = await gristApi(
+      gristBaseUrl,
+      apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Views_section/records?hidden=true`
+    ) as { records: Array<{ id: number; fields: Record<string, unknown> }> };
+    const rawCalendarAfter = rawCalendarSectionsAfter.records.find(
+      (record) => record.id === calendarWidgetId
+    );
+    assert(typeof rawCalendarAfter?.fields.options === "string", "calendar_native_options_missing");
+    const nativeCalendarOptions = JSON.parse(
+      rawCalendarAfter.fields.options as string
+    ) as Record<string, unknown>;
+    assert(
+      typeof nativeCalendarOptions.customView === "string",
+      "calendar_native_custom_view_missing"
+    );
+    const nativeCalendarCustomView = JSON.parse(
+      nativeCalendarOptions.customView as string
+    ) as Record<string, unknown>;
+    const nativeCalendarMapping = nativeCalendarCustomView.columnsMapping;
+    assert(
+      nativeCalendarMapping !== null &&
+      typeof nativeCalendarMapping === "object" &&
+      !Array.isArray(nativeCalendarMapping),
+      "calendar_native_mapping_missing"
+    );
+    const nativeEventColumns = await gristApi(
+      gristBaseUrl,
+      apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/Compat_Events/columns?hidden=true`
+    ) as { columns: Array<{ id: string; fields: Record<string, unknown> }> };
+    assert(Array.isArray(nativeEventColumns.columns), "calendar_native_columns_missing");
+    const eventColumnRef = (columnId: string): number =>
+      positiveResultId(
+        nativeEventColumns.columns.find((column) => column.id === columnId)?.fields.colRef,
+        `calendar_native_ref:${columnId}`
+      );
+    const nativeMapping = nativeCalendarMapping as Record<string, unknown>;
+    assert(nativeMapping.title === eventColumnRef("Title"), "calendar_native_title_ref_mismatch");
+    assert(nativeMapping.startDate === eventColumnRef("Start"), "calendar_native_start_ref_mismatch");
+    assert(nativeMapping.endDate === eventColumnRef("End"), "calendar_native_end_ref_mismatch");
+    assert(nativeMapping.isAllDay === eventColumnRef("AllDay"), "calendar_native_all_day_ref_mismatch");
+    assert(nativeMapping.type === eventColumnRef("Kind"), "calendar_native_type_ref_mismatch");
 
     const groupedSummary = resultJson(
       await callTool(bridgeBaseUrl, "grist_add_ui", {
