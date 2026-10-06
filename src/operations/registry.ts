@@ -10,6 +10,7 @@ const OPERATION_CAPABILITIES = new Map<string, GristCapability>([
   ["update_records", "doc:write"],
   ["delete_records", "doc:write"],
   ["create_document", "doc.schema:write"],
+  ["update_document", "doc.schema:write"],
   ["copy_document_as_template", "doc.schema:write"],
   ["create_tables", "doc.schema:write"],
   ["update_tables", "doc.schema:write"],
