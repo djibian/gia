@@ -16,7 +16,7 @@ A v2 server exposes exactly these ten tools:
 | `grist_add_records` | create a bounded record batch |
 | `grist_change_records` | update or delete explicitly targeted records |
 | `grist_add_structure` | create an empty document, copy a source as a template, or create bounded tables/columns |
-| `grist_change_structure` | update, rename or delete targeted tables/columns, or mutate one bounded ACL group |
+| `grist_change_structure` | update bounded document metadata, update/rename/delete targeted tables/columns, or mutate one bounded ACL group |
 | `grist_add_ui` | create one page or add one widget |
 | `grist_change_ui` | mutate/delete explicitly targeted supported UI |
 | `grist_help` | progressive disclosure of the current contract |
@@ -31,7 +31,7 @@ Increment the MCP contract major version when a model-facing change is incompati
 
 Compatible clarifications, descriptions, implementation fixes and additional result detail that existing clients may safely ignore do not require a major contract increment. New capabilities should first be justified by the roadmap; versioning is not permission to grow the surface speculatively.
 
-Gia package/runtime version **0.7.1** implements MCP contract major **2**.
+Gia package/runtime version **0.8.0** implements MCP contract major **2**.
 
 ## Widget detail
 
@@ -42,6 +42,16 @@ The pre-existing numeric `layoutSpec`, sort and identity read detail remains ava
 `cardLayout` and `visibleFields` are deliberately separate intentions. The visible field set is changed first; card layout then arranges exactly those current fields. Native Grist may leave stale positive field refs in persisted Card layout after a field is hidden; Gia prunes only those known stale native leaves during normalization while still refusing malformed or ambiguous layouts.
 
 Custom-widget access and column mappings accept native empty configuration and preserve every untargeted setting. Native JSON-encoded settings and already persisted object settings can be read; updates use native encoding. Missing, malformed or unresolved state still refuses unsafe updates. URLs, plugin configuration and raw mappings remain private.
+
+## Document metadata, relation display and calendars
+
+Gia 0.8.0 closes three bounded end-to-end gaps without adding an MCP tool or capability.
+
+`grist_change_structure(action="update_document")` accepts only an explicit `documentId` and an `update` object containing `name?` and/or `type?: "normal"|"template"|"tutorial"`. Public `normal` maps to Grist's native null type. The operation uses existing `doc.schema:write`, changes only supplied fields, is semantically idempotent, and verifies the exact resulting `{id,name,type}` by re-reading native document metadata. `grist_inspect(action="document")` returns that normalized document metadata. A transport-ambiguous write is never blindly replayed.
+
+For Ref/RefList columns, `grist_change_structure(action="update_columns")` additionally accepts `visibleColumnId`, always as the stable ID of a column on the referenced table. Numeric `visibleCol`/`displayCol` refs remain bridge-private. Gia resolves the target privately and applies Grist's paired native semantics—updating `visibleCol` and setting the display formula—in one fixed internal action bundle, then verifies the target relation, visible column and generated display formula after re-read. `label` and `visibleColumnId` are intentionally separate mutations because a native label change may also canonicalize the source stable column ID.
+
+Calendars remain one public widget concept, `calendar`. `grist_change_ui(action="update_widget")` accepts `calendarConfig: {titleColumnId,startDateColumnId,endDateColumnId?,allDayColumnId?,typeColumnId?}`; all values are stable column IDs on the widget table. Gia validates required mappings and supported native column types, preserves untargeted widget options/mappings, and verifies the normalized mapping after write. Calendar creation/configuration adapts internally across the supported Grist Community matrix: legacy persisted `custom.calendar` is used when the old bundled calendar is discoverable, otherwise native `calendar` is used. Inspection normalizes either representation back to public `calendar`. The compatibility probe exercises document type conversion, relation display and configured calendars on every supported Grist Community version 1.7.16–1.7.20.
 
 ## Page order
 
@@ -105,10 +115,13 @@ JWT/JWKS verification enforces: optional `nbf` is enforced, unsupported JOSE cri
   full existing hierarchy and special/censored rows, and verifies exact post-state.
 - Select-by uses an advertised exact direct or supported non-summary Ref/RefList
   link; null clears it. Unsupported links/cycles are rejected.
+- Calendar configuration accepts stable IDs for required Title/Start Date and
+  optional End Date/All Day/Type mappings. Private native mapping refs remain
+  internal and untargeted widget options are preserved.
 - Existing custom-widget settings accept only bounded access and stable-column
   mappings, never URL/plugin identity or arbitrary widget-owned options.
 
-Schema inputs accept only supported table/column metadata. Rename results report
+Schema inputs accept only supported table/column metadata. Relation display uses only semantic `visibleColumnId`; native `visibleCol`, `displayCol` and helper references are never writable model inputs. Rename results report
 the actual native resulting column ID. Table/column PATCH results retain the
 requested `targetTableIds`/`targetColumnIds` and add `updatedTables`/`updatedColumns`
 mapping each target to its re-read native stable ID. Grist may canonicalize table
