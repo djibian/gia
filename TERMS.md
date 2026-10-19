@@ -39,7 +39,7 @@ Disconnecting the plugin does not delete data stored in Grist.
 
 ## 5. Open-source code and hosted service
 
-The publisher's original Gia source code, including original code from every previously published version, is offered under the GNU Affero General Public License, version 3 only (`AGPL-3.0-only`); see [LICENSE](LICENSE). Historical Git tags and commits are preserved. Third-party components retain their own licenses. The applicable software license governs copying, modification and distribution of code.
+The publisher's original Gia source code, including original code from every previously published version, is offered under the GNU Affero General Public License, version 3 or (at the recipient's option) any later version (`AGPL-3.0-or-later`); see [LICENSE](LICENSE). Historical Git tags and commits are preserved. Third-party components retain their own licenses. The applicable software license governs copying, modification and distribution of code.
 
 These Terms govern use of the publisher-operated public plugin endpoint and directory listing. They do not replace the open-source license.
 
