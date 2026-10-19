@@ -28,7 +28,7 @@ no MCP capability. Publication is outside current scope. Never commit a real tok
 
 ## Source availability for network deployments
 
-Gia is licensed under AGPL-3.0-only for the publisher's original current
+Gia is licensed under AGPL-3.0-or-later for the publisher's original current
 code. Operators who **modify** Gia and allow users to interact with that
 modified version remotely must prominently offer those users access to the
 Corresponding Source of the deployed modified version under AGPLv3 section 13.
