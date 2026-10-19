@@ -70,12 +70,9 @@ An evolution is complete only after temporary artifacts have been absorbed or re
 Gia's original source code is released under the **GNU Affero General Public
 License, version 3 only (`AGPL-3.0-only`)**. See [LICENSE](LICENSE).
 
-**Earlier versions:** As the sole copyright holder of Gia's original code,
-the publisher also makes that original code in **every previously published Gia
-version** available under `AGPL-3.0-only` as an additional licensing option.
-Historical tagged snapshots remain unchanged. Copies originally published
-under Apache-2.0 retain that license as well: rights already granted under
-Apache-2.0 cannot be withdrawn retroactively.
+**All versions:** The copyright holder makes Gia's original code from
+**every published version** available under `AGPL-3.0-only`. Original Git
+tags and commit history remain intact.
 
 These terms do not relicense independent third-party code or dependencies,
 which retain their own licenses. A provider operating a **modified** Gia
