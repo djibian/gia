@@ -79,8 +79,11 @@ generic model-facing command or committed proof platform is added.
 
 ## Licensing
 
-The repository is Apache-2.0. Dependencies retain their own license metadata in
-the lockfile. Official Grist behavior/documentation is the primary oracle:
+Gia's original code in the current repository is AGPL-3.0-only. Its sole
+copyright holder additionally offers original Gia code in all earlier published
+versions under AGPL-3.0-only; historical Apache-2.0 grants remain in force.
+Historical Git tags are not rewritten. Third-party dependencies retain their
+own license metadata in the lockfile. Official Grist behavior/documentation is the primary oracle:
 [API](https://support.getgrist.com/api/),
 [access rules](https://support.getgrist.com/access-rules/),
 [upstream source](https://github.com/gristlabs/grist-core).
