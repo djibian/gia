@@ -7,7 +7,7 @@ execution. Grist remains authoritative for data, formulas and native permissions
 
 ## Current product
 
-Gia 0.8.0 implements [MCP contract major 2](MCP-CONTRACT.md) with exactly ten tools.
+Gia 0.9.0 implements [MCP contract major 2](MCP-CONTRACT.md) with exactly ten tools.
 The product supports resource discovery, compact structural inspection, bounded
 record/schema/document-metadata changes, stable human-facing Ref/RefList display
 selection, native pages/widgets, visible fields, saved filters and sorts, Card
