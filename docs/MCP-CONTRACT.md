@@ -31,7 +31,7 @@ Increment the MCP contract major version when a model-facing change is incompati
 
 Compatible clarifications, descriptions, implementation fixes and additional result detail that existing clients may safely ignore do not require a major contract increment. New capabilities should first be justified by the roadmap; versioning is not permission to grow the surface speculatively.
 
-Gia package/runtime version **0.8.0** implements MCP contract major **2**.
+Gia package/runtime version **0.9.0** implements MCP contract major **2**.
 
 ## Widget detail
 
@@ -45,7 +45,7 @@ Custom-widget access and column mappings accept native empty configuration and p
 
 ## Document metadata, relation display and calendars
 
-Gia 0.8.0 closes three bounded end-to-end gaps without adding an MCP tool or capability.
+Gia 0.9.0 retains three bounded end-to-end capabilities without adding an MCP tool or capability.
 
 `grist_change_structure(action="update_document")` accepts only an explicit `documentId` and an `update` object containing `name?` and/or `type?: "normal"|"template"|"tutorial"`. Public `normal` maps to Grist's native null type. The operation uses existing `doc.schema:write`, changes only supplied fields, is semantically idempotent, and verifies the exact resulting `{id,name,type}` by re-reading native document metadata. `grist_inspect(action="document")` returns that normalized document metadata. A transport-ambiguous write is never blindly replayed.
 
