@@ -26,6 +26,18 @@ and add its public hostname to `MCP_ALLOWED_HOSTS`. Do not expose the Node port 
 The optional challenge route returns only the configured portal token and adds
 no MCP capability. Publication is outside current scope. Never commit a real token.
 
+## Source availability for network deployments
+
+Gia is licensed under AGPL-3.0-or-later for the publisher's original current
+code. Operators who **modify** Gia and allow users to interact with that
+modified version remotely must prominently offer those users access to the
+Corresponding Source of the deployed modified version under AGPLv3 section 13.
+A generic link to unmodified upstream Gia is not sufficient when the deployed
+service has been changed. Provide a reachable source link in the connected
+client's service description or other interface visible to remote users, and
+retain the applicable source and attribution notices. No secrets, private
+credentials, runtime logs or private Grist data belong in published source.
+
 ## Configuration
 
 `.env.example` is the maintained configuration example; `src/config.ts` validates it.

@@ -64,3 +64,18 @@ is not a privacy scrub.
 
 `main` describes the current product. Git/GitHub preserves history.
 An evolution is complete only after temporary artifacts have been absorbed or removed.
+
+## License
+
+Gia's original source code is released under the **GNU Affero General Public
+License, version 3 or (at your option) any later version
+(`AGPL-3.0-or-later`)**. See [LICENSE](LICENSE).
+
+**All versions:** The copyright holder makes Gia's original code from
+**every published version** available under `AGPL-3.0-or-later`. Original Git
+tags and commit history remain intact.
+
+These terms do not relicense independent third-party code or dependencies,
+which retain their own licenses. A provider operating a **modified** Gia
+service for remote users must comply with AGPLv3's corresponding-source
+obligations. See [Operations](docs/OPERATIONS.md).

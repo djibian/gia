@@ -1,6 +1,6 @@
 # Terms of Use — Gia by L’Œil du Maître
 
-Effective date: 2026-09-30
+Effective date: 2026-10-19
 
 These terms govern use of the public Gia by L’Œil du Maître plugin and its hosted remote MCP endpoint.
 
@@ -39,7 +39,7 @@ Disconnecting the plugin does not delete data stored in Grist.
 
 ## 5. Open-source code and hosted service
 
-The source code in this repository is licensed under the repository's Apache License 2.0. That software license governs copying, modification and distribution of the source code.
+The publisher's original Gia source code, including original code from every previously published version, is offered under the GNU Affero General Public License, version 3 or (at the recipient's option) any later version (`AGPL-3.0-or-later`); see [LICENSE](LICENSE). Historical Git tags and commits are preserved. Third-party components retain their own licenses. The applicable software license governs copying, modification and distribution of code.
 
 These Terms govern use of the publisher-operated public plugin endpoint and directory listing. They do not replace the open-source license.
 
