@@ -2,7 +2,7 @@
 
 Effective date: 2026-10-19
 
-These terms govern use of the public Gia by L’Œil du Maître plugin and its hosted remote MCP endpoint.
+These terms govern use of the publisher-operated Gia by L’Œil du Maître remote MCP service.
 
 Gia by L’Œil du Maître is an independent project published by Emmanuel Blanchard. It is not affiliated with, endorsed by, sponsored by, or an official product of Grist Labs, DINUM, or OpenAI. Grist is a trademark of Grist Labs, Inc. References to Grist Community describe compatibility with that software and do not imply endorsement.
 
@@ -39,9 +39,9 @@ Disconnecting the plugin does not delete data stored in Grist.
 
 ## 5. Open-source code and hosted service
 
-The publisher's original Gia source code, including original code from every previously published version, is offered under the GNU Affero General Public License, version 3 or (at the recipient's option) any later version (`AGPL-3.0-or-later`); see [LICENSE](LICENSE). Historical Git tags and commits are preserved. Third-party components retain their own licenses. The applicable software license governs copying, modification and distribution of code.
+The publisher's original Gia source code, including original code from every previously published version, is offered under the GNU Affero General Public License, version 3 or (at the recipient's option) any later version (`AGPL-3.0-or-later`); see [LICENSE](LICENSE). Historical Git commits are preserved; earlier GitHub release tags have been removed. Previously granted license rights remain unaffected. Third-party components retain their own licenses. The applicable software license governs copying, modification and distribution of code.
 
-These Terms govern use of the publisher-operated public plugin endpoint and directory listing. They do not replace the open-source license.
+These Terms govern use of the publisher-operated hosted MCP endpoint. They do not replace the open-source license.
 
 ## 6. Availability and changes
 

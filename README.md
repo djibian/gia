@@ -72,8 +72,8 @@ License, version 3 or (at your option) any later version
 (`AGPL-3.0-or-later`)**. See [LICENSE](LICENSE).
 
 **All versions:** The copyright holder makes Gia's original code from
-**every published version** available under `AGPL-3.0-or-later`. Original Git
-tags and commit history remain intact.
+**every published version** available under `AGPL-3.0-or-later`. Historical commits remain in Git history, but earlier GitHub release tags have
+been removed. Previously granted rights are not rescinded.
 
 These terms do not relicense independent third-party code or dependencies,
 which retain their own licenses. A provider operating a **modified** Gia
