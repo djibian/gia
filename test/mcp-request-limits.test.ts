@@ -3,6 +3,8 @@ import type { Server } from "node:http";
 import test from "node:test";
 
 import { createMcpExpressApp } from "@modelcontextprotocol/express";
+import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
+import * as z from "zod/v4";
 
 import {
   MCP_JSON_BODY_LIMIT,
@@ -60,8 +62,57 @@ test("the Express MCP parser rejects a JSON body above 100 KiB", async () => {
   }
 });
 
-test("MCP server input-element ceiling is finite and preserves typical write batch sizes", () => {
-  assert.ok(Number.isInteger(MCP_MAX_TOOL_INPUT_ELEMENTS));
-  assert.ok(MCP_MAX_TOOL_INPUT_ELEMENTS >= 500);
-  assert.ok(MCP_MAX_TOOL_INPUT_ELEMENTS <= 10_000);
+test("MCP server rejects excessive nested arguments before tool dispatch", async () => {
+  assert.equal(MCP_MAX_TOOL_INPUT_ELEMENTS, 10_000);
+  let dispatched = 0;
+  const handler = createMcpHandler(() => {
+    const server = new McpServer(
+      { name: "limit-regression", version: "0.9.0" },
+      { maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS }
+    );
+    server.registerTool(
+      "bounded",
+      { inputSchema: z.object({ values: z.array(z.number()) }) },
+      async ({ values }) => {
+        dispatched += 1;
+        return { content: [{ type: "text" as const, text: String(values.length) }] };
+      }
+    );
+    return server;
+  });
+
+  const call = async (count: number): Promise<string> => {
+    const response = await handler.fetch(new Request("https://test.local/mcp", {
+      method: "POST",
+      headers: {
+        accept: "application/json, text/event-stream",
+        "content-type": "application/json",
+        "mcp-protocol-version": "2025-06-18"
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: {
+          name: "bounded",
+          arguments: { values: Array(count).fill(1) }
+        }
+      })
+    }));
+    assert.equal(response.status, 200);
+    return response.text();
+  };
+
+  try {
+    const accepted = await call(MCP_MAX_TOOL_INPUT_ELEMENTS - 1);
+    assert.match(accepted, /9999/);
+    assert.equal(dispatched, 1);
+
+    const rejected = await call(MCP_MAX_TOOL_INPUT_ELEMENTS);
+    assert.match(rejected, /maximum of 10000 elements/);
+    assert.match(rejected, /isError/);
+    assert.equal(dispatched, 1, "over-limit call must not enter the tool handler");
+  } finally {
+    await handler.close();
+  }
 });
