@@ -42,12 +42,15 @@ operator-side Grist administration. See [Operations](OPERATIONS.md).
 4. **Closed surface.** No generic HTTP/SQL, arbitrary `/apply`/UserAction, browser,
    file/system command or heterogeneous action-list input. Private native actions
    use fixed validated translations for supported semantic operations only.
-5. **Explicit bounds and targets.** The Express MCP JSON parser retains a
-   finite 100 KiB request-body ceiling, and the MCP server refuses tool
-   arguments with more than 10,000 combined array elements and object members
-   before tool-schema validation. Closed schemas additionally validate counts,
-   stable current identifiers and supported fields. Destructive actions require
-   exact explicit targets.
+5. **Explicit bounds and targets.** MCP POST requests require a parsed
+   `application/json` body (unsupported or missing media type returns HTTP 415).
+   The Express JSON parser limits decoded POST bodies to 100 KiB, and the MCP
+   server enforces a finite ceiling of 52,000 combined array elements and object
+   members before tool-schema validation. The cardinality ceiling is above what
+   can fit within the JSON-body bound, preserving currently valid dense Grist
+   inputs; it also applies defensively to any separately pre-parsed MCP call.
+   Closed schemas additionally validate counts, stable identifiers and supported
+   fields. Destructive actions require exact explicit targets.
 6. **State preservation.** Read-modify-write operations preserve unrelated human
    configuration. Incomplete, censored, malformed, ambiguous or unsupported metadata
    refuses unsafe writes; native references are resolved server-side rather than guessed.

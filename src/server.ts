@@ -37,7 +37,7 @@ import {
   StaticApiKeyCredentialProvider
 } from "./grist/credentials.js";
 import { registerLeanTools } from "./mcp/leanTools.js";
-import { MCP_JSON_BODY_LIMIT, MCP_MAX_TOOL_INPUT_ELEMENTS } from "./mcp/requestLimits.js";
+import { MCP_JSON_BODY_LIMIT, MCP_MAX_TOOL_INPUT_ELEMENTS, hasSupportedMcpPostBody } from "./mcp/requestLimits.js";
 import { installOAuthToolAuthChallenges } from "./mcp/oauthToolChallenge.js";
 import { installOAuthToolSecuritySchemes } from "./mcp/oauthToolSecurity.js";
 import {
@@ -209,6 +209,13 @@ if (config.mcpAuth.mode === "oauth") {
 }
 
 app.all("/mcp", async (req, res) => {
+  // Do not let the Node adapter reparse non-JSON POST bodies outside Express's
+  // fixed 100 KiB parser ceiling. Other MCP methods do not carry tool inputs.
+  if (!hasSupportedMcpPostBody(req)) {
+    res.status(415).json({ error: "Unsupported Media Type" });
+    return;
+  }
+
   if (config.mcpAuth.mode === "static") {
     if (
       !isAuthorizedBearerHeader(
