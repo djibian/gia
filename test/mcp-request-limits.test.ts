@@ -10,6 +10,7 @@ import * as z from "zod/v4";
 import { isAuthorizedBearerHeader } from "../src/auth/staticBearer.js";
 import type { AuthorizedGristService } from "../src/grist/authorizedService.js";
 import { registerLeanTools } from "../src/mcp/leanTools.js";
+import { VERSION } from "../src/version.js";
 import {
   MCP_JSON_BODY_LIMIT,
   MCP_MAX_TOOL_INPUT_ELEMENTS,
@@ -53,7 +54,7 @@ async function fixture(): Promise<{
 
   const handler = createMcpHandler(() => {
     const server = new McpServer(
-      { name: "gia-limit-regression", version: "0.9.0" },
+      { name: "gia-limit-regression", version: VERSION },
       { maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS }
     );
     registerLeanTools(server, grist, {
@@ -207,7 +208,7 @@ test("the SDK still blocks excessive element counts before any handler dispatch"
   let dispatched = 0;
   const handler = createMcpHandler(() => {
     const server = new McpServer(
-      { name: "limit-regression", version: "0.9.0" },
+      { name: "limit-regression", version: VERSION },
       { maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS }
     );
     server.registerTool(
