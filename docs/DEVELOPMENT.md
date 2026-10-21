@@ -81,7 +81,8 @@ generic model-facing command or committed proof platform is added.
 
 Gia's original code in the current repository, and original Gia code from
 every earlier published version, is offered under AGPL-3.0-or-later by the
-copyright holder. Historical Git tags remain intact. Third-party dependencies
+copyright holder. Historical Git commits remain in the repository; earlier GitHub release tags
+have been removed. Third-party dependencies
 retain their own license metadata in the lockfile. Official Grist behavior/documentation is the primary oracle:
 [API](https://support.getgrist.com/api/),
 [access rules](https://support.getgrist.com/access-rules/),
