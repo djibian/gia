@@ -74,7 +74,11 @@ return HTTP 429 with `Retry-After`. The fixed-window limiter is process-local;
 a globally coordinated multi-replica ceiling belongs to shared/proxy infrastructure.
 Bound anonymous/pre-authentication traffic separately at the reverse-proxy edge.
 Inbound request/header timeouts are 120/60
-seconds and do not cap streaming-response duration.
+seconds and do not cap streaming-response duration. The built-in Express MCP
+JSON parser has an explicit 100 KiB request-body ceiling; MCP tool arguments
+are additionally limited to 10,000 nested array elements and object members
+before the tool-specific schema is validated. Exceeding either limit rejects
+the request without dispatching a Grist operation.
 
 ## Production OAuth and upstream isolation
 

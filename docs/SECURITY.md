@@ -42,8 +42,12 @@ operator-side Grist administration. See [Operations](OPERATIONS.md).
 4. **Closed surface.** No generic HTTP/SQL, arbitrary `/apply`/UserAction, browser,
    file/system command or heterogeneous action-list input. Private native actions
    use fixed validated translations for supported semantic operations only.
-5. **Explicit bounds and targets.** Closed schemas validate counts, stable current
-   identifiers and supported fields. Destructive actions require exact explicit targets.
+5. **Explicit bounds and targets.** The Express MCP JSON parser retains a
+   finite 100 KiB request-body ceiling, and the MCP server refuses tool
+   arguments with more than 10,000 combined array elements and object members
+   before tool-schema validation. Closed schemas additionally validate counts,
+   stable current identifiers and supported fields. Destructive actions require
+   exact explicit targets.
 6. **State preservation.** Read-modify-write operations preserve unrelated human
    configuration. Incomplete, censored, malformed, ambiguous or unsupported metadata
    refuses unsafe writes; native references are resolved server-side rather than guessed.

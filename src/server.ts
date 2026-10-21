@@ -37,6 +37,7 @@ import {
   StaticApiKeyCredentialProvider
 } from "./grist/credentials.js";
 import { registerLeanTools } from "./mcp/leanTools.js";
+import { MCP_JSON_BODY_LIMIT, MCP_MAX_TOOL_INPUT_ELEMENTS } from "./mcp/requestLimits.js";
 import { installOAuthToolAuthChallenges } from "./mcp/oauthToolChallenge.js";
 import { installOAuthToolSecuritySchemes } from "./mcp/oauthToolSecurity.js";
 import {
@@ -105,7 +106,7 @@ function buildServer(grist: AuthorizedGristService): McpServer {
   const server = new McpServer({
     name: "gia",
     version: VERSION
-  });
+  }, { maxToolInputElements: MCP_MAX_TOOL_INPUT_ELEMENTS });
 
   registerLeanTools(server, grist, {
     maxReadRecords: config.maxReadRecords,
@@ -177,7 +178,8 @@ function oauthProtectedResourceMetadataUrl(req: {
 
 const app = createMcpExpressApp({
   host: config.host,
-  allowedHosts: [...config.mcpAllowedHosts]
+  allowedHosts: [...config.mcpAllowedHosts],
+  jsonLimit: MCP_JSON_BODY_LIMIT
 });
 
 registerOpenAiAppsChallenge(
