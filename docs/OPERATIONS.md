@@ -74,7 +74,14 @@ return HTTP 429 with `Retry-After`. The fixed-window limiter is process-local;
 a globally coordinated multi-replica ceiling belongs to shared/proxy infrastructure.
 Bound anonymous/pre-authentication traffic separately at the reverse-proxy edge.
 Inbound request/header timeouts are 120/60
-seconds and do not cap streaming-response duration.
+seconds and do not cap streaming-response duration. POST `/mcp` accepts only
+parsed `application/json` bodies (missing/unsupported media type: HTTP 415).
+The Express JSON parser applies a decoded 100 KiB ceiling to these POST bodies
+(oversized JSON: HTTP 413). GET/DELETE and other paths are not covered by that
+JSON ceiling; apply ingress byte/rate limits at the reverse proxy as well.
+The MCP SDK additionally enforces a finite 52,000-element complexity bound before
+validating tool arguments; it is high enough not to reject a valid 100 KiB JSON
+body, including dense record batches. Semantic per-tool bounds still apply.
 
 ## Production OAuth and upstream isolation
 
