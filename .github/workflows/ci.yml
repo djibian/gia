@@ -17,6 +17,13 @@ jobs:
         with:
           node-version: "22"
       - run: npm run check:convergence
+      # Temporary lockfile generation for this security candidate only.
+      - name: Regenerate public npm lockfile candidate
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          echo GIA_PUBLIC_LOCK_BEGIN
+          base64 -w0 package-lock.json | fold -w 120
+          echo GIA_PUBLIC_LOCK_END
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run check
