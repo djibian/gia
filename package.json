@@ -1,6 +1,6 @@
 {
   "name": "gia",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "private": true,
   "license": "AGPL-3.0-or-later",
   "description": "Gia, a compact MCP adaptation layer for Grist Community.",
