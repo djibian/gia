@@ -21,11 +21,14 @@
     "check:convergence": "node tools/check-convergence.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/express": "^2.0.0",
-    "@modelcontextprotocol/node": "^2.0.0",
-    "@modelcontextprotocol/server": "^2.0.0",
+    "@modelcontextprotocol/express": "^2.0.2",
+    "@modelcontextprotocol/node": "^2.1.1",
+    "@modelcontextprotocol/server": "^2.3.1",
     "express": "^5.1.0",
     "zod": "^4.0.0"
+  },
+  "overrides": {
+    "hono": "^4.13.11"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
