@@ -933,3 +933,83 @@ test("bounded boolean literals admit proposed values but reject unsafe inputs an
     assert.doesNotMatch(JSON.stringify(view), /sensitive-value|aclFormula/);
   }
 });
+
+
+test("bounded role membership round-trips, normalizes order and is replace-noop", () => {
+  const condition = {
+    kind: "user_access_membership" as const, operator: "in" as const,
+    roles: ["viewer", "editor"] as ("viewer" | "editor")[]
+  };
+  const plan = resolveAccessRuleMutation(
+    snapshot([], []), { tableId: "Projects" }, "create",
+    [{ condition, permissions: { read: "deny", update: "unspecified" } }]
+  );
+  assert.equal(plan.rules[0]?.aclFormula, "user.Access in [EDITOR, VIEWER]");
+  assert.deepEqual(plan.normalizedRules[0]?.condition, {
+    kind: "user_access_membership", operator: "in", roles: ["editor", "viewer"]
+  });
+
+  const persisted = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{ id: 20, fields: { resource: 2, aclFormula: "user.Access in [VIEWER, EDITOR]",
+      aclFormulaParsed: '["In"]', permissionsText: "-R", rulePos: 1 } }]
+  );
+  const view = projectAccessRules(persisted) as any;
+  assert.equal(view.groups[0].editable, true);
+  assert.deepEqual(view.groups[0].rules[0].condition, plan.normalizedRules[0]?.condition);
+  assert.equal(resolveAccessRuleMutation(persisted, { tableId: "Projects" }, "replace",
+    [{ condition, permissions: { read: "deny", update: "unspecified" } }]).mode, "noop");
+  assert.equal(view.effectiveEnforcementVerified, false);
+});
+
+test("native not-in membership and bounded combinations protect unknown operands", () => {
+  const roleSet = {
+    kind: "user_access_membership" as const, operator: "not_in" as const,
+    roles: ["viewer", "owner"] as ("viewer" | "owner")[]
+  };
+  const compound = { kind: "all" as const, conditions: [
+    roleSet, { kind: "match_boolean" as const, operator: "equals" as const,
+      columnId: "Enabled", value: true }
+  ] };
+  assert.equal(resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" },
+    "create", [{ condition: compound, permissions: { read: "deny", update: "unspecified" } }]
+  ).rules[0]?.aclFormula, "(user.Access not in [OWNER, VIEWER]) and (rec.Enabled == True)");
+
+  const native = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{ id: 20, fields: { resource: 2, aclFormula: "user.Access not in [VIEWER, OWNER]",
+      aclFormulaParsed: '["NotIn"]', permissionsText: "-R", rulePos: 1 } }]
+  );
+  assert.deepEqual((projectAccessRules(native) as any).groups[0].rules[0].condition, {
+    kind: "user_access_membership", operator: "not_in", roles: ["owner", "viewer"]
+  });
+
+  for (const invalid of [
+    { ...roleSet, roles: ["owner"] as any },
+    { ...roleSet, roles: ["owner", "owner"] as any },
+    { ...roleSet, roles: ["owner", "admin"] as any },
+    { ...roleSet, roles: ["owner", "editor", "viewer", "admin"] as any },
+    { ...roleSet, operator: "is" as any },
+    { ...roleSet, roles: "owner, editor" as any }
+  ]) assert.throws(() => resolveAccessRuleMutation(
+    snapshot([], []), { tableId: "Projects" }, "create",
+    [{ condition: invalid, permissions: { read: "deny", update: "unspecified" } }]
+  ), /membership|Role|normalize/i);
+
+  for (const formula of [
+    "user.Access in [OWNER]",
+    "user.Access in [OWNER, OWNER]",
+    "user.Access in [OWNER, ADMIN]",
+    "user.Email in ['private@example.com', 'other@example.com']"
+  ]) {
+    const persisted = snapshot(
+      [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+      [{ id: 20, fields: { resource: 2, aclFormula: formula,
+        aclFormulaParsed: '["In"]', permissionsText: "-R", rulePos: 1 } }]
+    );
+    const projection = projectAccessRules(persisted) as any;
+    assert.equal(projection.groups[0].editable, false);
+    assert.equal(projection.groups[0].rules, undefined);
+    assert.doesNotMatch(JSON.stringify(projection), /private@example.com|aclFormula/);
+  }
+});

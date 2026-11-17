@@ -115,6 +115,12 @@ const accessRuleLeafConditionVariants = [
       role: z.enum(["owner", "editor", "viewer"])
     })
     .strict(),
+  z.object({
+    kind: z.literal("user_access_membership"),
+    operator: z.enum(["in", "not_in"]),
+    roles: z.array(z.enum(["owner", "editor", "viewer"])).min(2).max(3)
+      .refine((roles) => new Set(roles).size === roles.length, "Membership roles must be unique.")
+  }).strict(),
   z
     .object({
       kind: z.literal("match_user"),

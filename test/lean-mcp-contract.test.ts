@@ -569,3 +569,30 @@ test("ACL MCP schema accepts only Bool values in bounded literal predicates", ()
     { ...bool, operator: "in" }
   ]) assert.throws(() => parse(invalid));
 });
+
+
+test("ACL MCP role membership is an exact finite built-in role set", () => {
+  const registrations = capture({ changeAccessRuleGroup: async () => ({ ok: true }) });
+  const tool = registrations.find((entry) => entry.name === "grist_change_structure")!;
+  const parse = (condition: unknown) => tool.options.inputSchema!.parse({
+    action: "access_rule_group", documentId: "doc-1", mode: "create",
+    target: { tableId: "Projects" },
+    rules: [{ condition, permissions: { read: "deny", update: "unspecified" } }]
+  });
+  const roles = { kind: "user_access_membership", operator: "in",
+    roles: ["viewer", "editor"] };
+  assert.ok(parse(roles));
+  assert.ok(parse({ ...roles, operator: "not_in", roles: ["owner", "editor", "viewer"] }));
+  assert.ok(parse({ kind: "not", condition: roles }));
+  for (const rejected of [
+    { ...roles, roles: ["owner"] },
+    { ...roles, roles: [] },
+    { ...roles, roles: ["viewer", "viewer"] },
+    { ...roles, roles: ["owner", "admin"] },
+    { ...roles, roles: ["owner", "editor", "viewer", "editor"] },
+    { ...roles, roles: "viewer, editor" },
+    { ...roles, operator: "contains" },
+    { ...roles, aclFormula: "user.Access in [OWNER, EDITOR]" },
+    { ...roles, value: "secret" }
+  ]) assert.throws(() => parse(rejected));
+});

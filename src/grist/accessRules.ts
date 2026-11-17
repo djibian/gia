@@ -30,6 +30,11 @@ export type AccessRuleCondition =
       role: AccessRuleRole;
     }
   | {
+      kind: "user_access_membership";
+      operator: "in" | "not_in";
+      roles: AccessRuleRole[];
+    }
+  | {
       kind: "match_user";
       operator: AccessRuleOperator;
       columnId: string;
@@ -178,6 +183,18 @@ const OP_NATIVE: Record<AccessRuleOperator, string> = {
   not_equals: "!="
 };
 const NATIVE_OP = new Map(Object.entries(OP_NATIVE).map(([key, value]) => [value, key as AccessRuleOperator]));
+const ROLE_ORDER: AccessRuleRole[] = ["owner", "editor", "viewer"];
+
+// A small closed set is the only supported membership operand. Sort so
+// permutations normalize to the same model-visible policy.
+function normalizeRoleMembers(input: unknown): AccessRuleRole[] | undefined {
+  if (!Array.isArray(input) || input.length < 2 || input.length > 3 ||
+      new Set(input).size !== input.length ||
+      input.some((value) => typeof value !== "string" || !ROLE_ORDER.includes(value as AccessRuleRole))) {
+    return undefined;
+  }
+  return ROLE_ORDER.filter((role) => input.includes(role));
+}
 const TABLE_PERMISSION_BITS = ["C", "R", "U", "D"] as const;
 const COLUMN_PERMISSION_BITS = ["R", "U"] as const;
 
@@ -288,6 +305,19 @@ function parseLeafCondition(
     const role = NATIVE_ROLE.get(roleMatch[2]!);
     if (!operator || !role) return undefined;
     return { kind: "user_access", operator, role };
+  }
+
+  const rolesMatch = /^user\.Access (in|not in) \[((?:OWNER|EDITOR|VIEWER)(?:, (?:OWNER|EDITOR|VIEWER)){1,2})\]$/.exec(formula);
+  if (rolesMatch) {
+    const roles = normalizeRoleMembers(
+      rolesMatch[2]!.split(", ").map((native) => NATIVE_ROLE.get(native))
+    );
+    if (!roles) return undefined;
+    return {
+      kind: "user_access_membership",
+      operator: rolesMatch[1] === "in" ? "in" : "not_in",
+      roles
+    };
   }
 
   const userMatch = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) user\.(Email|UserID|Name|UserRef|Origin|IsLoggedIn)$/.exec(
@@ -475,6 +505,14 @@ function serializeLeafCondition(condition: AccessRuleLeafCondition, table: Table
 
   if (condition.kind === "user_access") {
     return `user.Access ${OP_NATIVE[condition.operator]} ${ROLE_NATIVE[condition.role]}`;
+  }
+
+  if (condition.kind === "user_access_membership") {
+    const roles = normalizeRoleMembers(condition.roles);
+    if (!roles || (condition.operator !== "in" && condition.operator !== "not_in")) {
+      throw new Error("Role membership requires two or three distinct built-in Grist roles.");
+    }
+    return `user.Access ${condition.operator === "in" ? "in" : "not in"} [${roles.map((role) => ROLE_NATIVE[role]).join(", ")}]`;
   }
 
   if (condition.kind === "match_boolean") {
