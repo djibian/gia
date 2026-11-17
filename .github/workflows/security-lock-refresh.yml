@@ -7,7 +7,7 @@ on:
       - ".github/workflows/security-lock-refresh.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   lockfile:
@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -22,8 +24,14 @@ jobs:
         run: npm install --package-lock-only --ignore-scripts
       - name: Production audit
         run: npm audit --omit=dev --audit-level=high
-      - uses: actions/upload-artifact@v4
-        with:
-          name: refreshed-package-lock
-          path: package-lock.json
-          if-no-files-found: error
+      - name: Commit generated lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "package-lock.json already current"
+            exit 0
+          fi
+          git commit -m "security: regenerate audited package lock"
+          git push origin "HEAD:${GITHUB_HEAD_REF}"
