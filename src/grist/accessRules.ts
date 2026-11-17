@@ -44,6 +44,13 @@ export type AccessRuleCondition =
       record?: "newRec" | undefined;
     }
   | {
+      kind: "match_boolean";
+      operator: AccessRuleOperator;
+      columnId: string;
+      value: boolean;
+      record?: "newRec" | undefined;
+    }
+  | {
       kind: "column_change";
       operator: AccessRuleOperator;
       columnId: string;
@@ -331,6 +338,22 @@ function parseLeafCondition(
     };
   }
 
+  // Boolean literals are the first non-secret literal subset. Match exact native
+  // spellings and existing Bool columns; never parse arbitrary formula text.
+  const boolMatch = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) (True|False)$/.exec(formula);
+  const reverseBoolMatch = /^(True|False) (==|!=) (rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(formula);
+  if (boolMatch || reverseBoolMatch) {
+    const recordScope = boolMatch ? boolMatch[1]! : reverseBoolMatch![3]!;
+    const columnId = boolMatch ? boolMatch[2]! : reverseBoolMatch![4]!;
+    const operator = NATIVE_OP.get(boolMatch ? boolMatch[3]! : reverseBoolMatch![2]!);
+    const literal = boolMatch ? boolMatch[4]! : reverseBoolMatch![1]!;
+    if (!operator || table.columns.get(columnId)?.type !== "Bool") return undefined;
+    return {
+      kind: "match_boolean", operator, columnId, value: literal === "True",
+      ...(recordScope === "newRec" ? { record: "newRec" as const } : {})
+    };
+  }
+
   // A small typed update predicate: old and proposed values of one stable column.
   // Both native operand orders normalize to a single model-facing representation.
   const changeMatch = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) (rec|newRec)\.\2$/.exec(formula);
@@ -441,8 +464,8 @@ function usesNewRec(condition: AccessRuleCondition): boolean {
   }
   if (condition.kind === "not") return usesNewRec(condition.condition);
   if (condition.kind === "column_change") return true;
-  return (condition.kind === "match_user" || condition.kind === "match_link_key") &&
-    condition.record === "newRec";
+  return (condition.kind === "match_user" || condition.kind === "match_link_key" ||
+    condition.kind === "match_boolean") && condition.record === "newRec";
 }
 
 type AccessRuleLeafCondition = Exclude<AccessRuleCondition, { kind: "all" | "any" } | { kind: "not" }>;
@@ -452,6 +475,14 @@ function serializeLeafCondition(condition: AccessRuleLeafCondition, table: Table
 
   if (condition.kind === "user_access") {
     return `user.Access ${OP_NATIVE[condition.operator]} ${ROLE_NATIVE[condition.role]}`;
+  }
+
+  if (condition.kind === "match_boolean") {
+    if (!SAFE_IDENTIFIER.test(condition.columnId) || typeof condition.value !== "boolean" ||
+        table.columns.get(condition.columnId)?.type !== "Bool") {
+      throw new Error("Boolean literal ACL predicates require an existing Bool column and a boolean value.");
+    }
+    return `${recordExpression(condition)} ${OP_NATIVE[condition.operator]} ${condition.value ? "True" : "False"}`;
   }
 
   if (condition.kind === "column_change") {
