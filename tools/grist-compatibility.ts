@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 const PROTOCOL_VERSION = "2026-07-28";
 const STATIC_BEARER = "test-static-bearer-0123456789abcdef0123456789abcdef0123456789abcdef";
 const TABLE_ID = "Compat_Items";
+const ACL_TABLE_ID = "Compat_Acl";
 const PAGE_NAME = "Compatibility";
 
 interface McpResponse {
@@ -557,8 +558,7 @@ async function run(): Promise<void> {
           id: TABLE_ID,
           columns: [
             { id: "Name", fields: { type: "Text" } },
-            { id: "Qty", fields: { type: "Int" } },
-            { id: "ShareToken", fields: { type: "Text" } }
+            { id: "Qty", fields: { type: "Int" } }
           ]
         }
       ]
@@ -568,8 +568,8 @@ async function run(): Promise<void> {
       documentId,
       tableId: TABLE_ID,
       records: [
-        { fields: { Name: "Alpha", Qty: 1, ShareToken: "alpha" } },
-        { fields: { Name: "Beta", Qty: 2, ShareToken: "beta" } }
+        { fields: { Name: "Alpha", Qty: 1 } },
+        { fields: { Name: "Beta", Qty: 2 } }
       ]
     });
 
@@ -577,6 +577,10 @@ async function run(): Promise<void> {
       action: "create_tables",
       documentId,
       tables: [
+        {
+          id: ACL_TABLE_ID,
+          columns: [{ id: "ShareToken", fields: { type: "Text" } }]
+        },
         {
           id: "Compat_Customers",
           columns: [{ id: "Name", fields: { type: "Text" } }]
@@ -1055,7 +1059,7 @@ async function run(): Promise<void> {
         action: "access_rule_group",
         documentId,
         mode: "create",
-        target: { tableId: TABLE_ID },
+        target: { tableId: ACL_TABLE_ID },
         rules: [
           {
             condition: {
@@ -1108,7 +1112,7 @@ async function run(): Promise<void> {
             target !== null &&
             typeof target === "object" &&
             !Array.isArray(target) &&
-            (target as { tableId?: unknown }).tableId === TABLE_ID &&
+            (target as { tableId?: unknown }).tableId === ACL_TABLE_ID &&
             Array.isArray(rules) &&
             rules.some((rule) => {
               if (!rule || typeof rule !== "object" || Array.isArray(rule)) return false;
@@ -1132,7 +1136,7 @@ async function run(): Promise<void> {
         action: "access_rule_group",
         documentId,
         mode: "delete",
-        target: { tableId: TABLE_ID }
+        target: { tableId: ACL_TABLE_ID }
       }),
       "access_rule_delete"
     );
@@ -1158,7 +1162,7 @@ async function run(): Promise<void> {
             target !== null &&
             typeof target === "object" &&
             !Array.isArray(target) &&
-            (target as { tableId?: unknown }).tableId === TABLE_ID
+            (target as { tableId?: unknown }).tableId === ACL_TABLE_ID
           );
         }),
       "access_rule_deleted_group_still_present"
