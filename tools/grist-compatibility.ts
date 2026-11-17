@@ -1316,6 +1316,53 @@ async function run(): Promise<void> {
     );
     assert(boolDeleted.persistedDefinitionVerified === true, "boolean_access_rule_delete_not_verified");
 
+    // Native Grist accepts closed built-in role-set membership; this is a
+    // persisted-policy compatibility check, not a confidentiality assertion.
+    const membershipCreated = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "create",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["Enabled"] },
+        rules: [
+          { condition: {
+              kind: "user_access_membership", operator: "in",
+              roles: ["viewer", "editor"]
+            }, permissions: { read: "deny", update: "unspecified" } },
+          { condition: {
+              kind: "user_access_membership", operator: "not_in",
+              roles: ["viewer", "owner"]
+            }, permissions: { read: "unspecified", update: "deny" } }
+        ]
+      }), "role_membership_access_rule_create"
+    );
+    assert(membershipCreated.persistedDefinitionVerified === true,
+      "role_membership_access_rule_not_verified");
+    assert(membershipCreated.effectiveEnforcementVerified === false,
+      "role_membership_access_rule_overclaimed_enforcement");
+    const membershipInspected = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "access_rules", documentId
+      }), "role_membership_access_rule_inspect"
+    );
+    const membershipGroup = (membershipInspected.groups as Array<Record<string, unknown>>).find((group) => {
+      const target = group.target as Record<string, unknown> | undefined;
+      return target?.tableId === ACL_TABLE_ID && Array.isArray(target.columnIds) &&
+        target.columnIds.length === 1 && target.columnIds[0] === "Enabled";
+    });
+    assert(membershipGroup?.editable === true, "role_membership_not_editable");
+    const membershipRules = membershipGroup.rules as Array<Record<string, unknown>>;
+    assert(membershipRules.length === 2 &&
+      (membershipRules[0]!.condition as Record<string, unknown>).kind === "user_access_membership" &&
+      (membershipRules[1]!.condition as Record<string, unknown>).operator === "not_in",
+      "role_membership_access_rule_not_normalized");
+    const membershipDeleted = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "delete",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["Enabled"] }
+      }), "role_membership_access_rule_delete"
+    );
+    assert(membershipDeleted.persistedDefinitionVerified === true,
+      "role_membership_access_rule_delete_not_verified");
+
     const aclDeleted = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "access_rule_group",
