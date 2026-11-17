@@ -621,3 +621,25 @@ test("ACL MCP user login status accepts only closed boolean login predicates", (
     { ...login, record: "newRec" }
   ]) assert.throws(() => parse(bad));
 });
+
+test("ACL MCP typed integer flags admit only zero/one on stable columns", () => {
+  const registrations = capture({ changeAccessRuleGroup: async () => ({ ok: true }) });
+  const tool = registrations.find((entry) => entry.name === "grist_change_structure")!;
+  const parse = (condition: unknown) => tool.options.inputSchema!.parse({
+    action: "access_rule_group", documentId: "doc-1", mode: "create",
+    target: { tableId: "Projects" },
+    rules: [{ condition, permissions: { read: "unspecified", update: "deny" } }]
+  });
+  const flag = { kind: "match_integer_flag", operator: "equals", columnId: "UserId", value: 0 };
+  assert.ok(parse(flag));
+  assert.ok(parse({ ...flag, operator: "not_equals", value: 1, record: "newRec" }));
+  assert.ok(parse({ kind: "not", condition: flag }));
+  for (const invalid of [
+    { ...flag, value: -1 }, { ...flag, value: 2 },
+    { ...flag, value: 0.5 }, { ...flag, value: "0" },
+    { ...flag, value: "private-token" }, { ...flag, value: true },
+    { ...flag, operator: "in" }, { ...flag, columnId: "" },
+    { ...flag, record: "rec" }, { ...flag, record: "other" },
+    { ...flag, aclFormula: "rec.UserId == 0" }, { ...flag, linkKeyName: "Secret" }
+  ]) assert.throws(() => parse(invalid));
+});
