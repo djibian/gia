@@ -818,6 +818,13 @@ test("column_change is update-only even within composite conditions and rejects 
     }]
   ), /existing Text|Choice/i);
 
+  assert.throws(() => resolveAccessRuleMutation(
+    clean, { tableId: "Projects" }, "create", [{
+      condition: { kind: "column_change", operator: "equals", columnId: "OwnerEmail.Bad" },
+      permissions: { read: "unspecified", update: "allow" }
+    }]
+  ), /safe stable column ID/i);
+
   const invalidNative = snapshot(
     [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
     [{ id: 20, fields: {
