@@ -43,6 +43,11 @@ export type AccessRuleCondition =
       linkKeyName: string;
       record?: "newRec" | undefined;
     }
+  | {
+      kind: "column_change";
+      operator: AccessRuleOperator;
+      columnId: string;
+    }
   | { kind: "all"; conditions: AccessRuleCondition[] }
   | { kind: "any"; conditions: AccessRuleCondition[] }
   | { kind: "not"; condition: AccessRuleCondition };
@@ -253,6 +258,10 @@ function typeCompatibleWithLinkKey(type: string): boolean {
   return type === "Text" || type === "Any";
 }
 
+// Comparing the same column before and after a proposed update needs no literals
+// and cannot expose a credential or arbitrary cell value in model-visible policy.
+const COLUMN_CHANGE_TYPES = new Set(["Text", "Choice", "Int", "Numeric", "Bool"]);
+
 function validLinkKeyName(value: string): boolean {
   return (
     value.length <= MAX_ACCESS_RULE_LINK_KEY_NAME_LENGTH &&
@@ -320,6 +329,17 @@ function parseLeafCondition(
       kind: "match_link_key", operator, columnId, linkKeyName,
       ...(recordScope === "newRec" ? { record: "newRec" as const } : {})
     };
+  }
+
+  // A small typed update predicate: old and proposed values of one stable column.
+  // Both native operand orders normalize to a single model-facing representation.
+  const changeMatch = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) (rec|newRec)\.\2$/.exec(formula);
+  if (changeMatch && changeMatch[1] !== changeMatch[4]) {
+    const columnId = changeMatch[2]!;
+    const operator = NATIVE_OP.get(changeMatch[3]!);
+    const column = table.columns.get(columnId);
+    if (!operator || !column || !COLUMN_CHANGE_TYPES.has(column.type)) return undefined;
+    return { kind: "column_change", operator, columnId };
   }
 
   return undefined;
@@ -407,11 +427,20 @@ function recordExpression(condition: { columnId: string; record?: "newRec" | und
   return `${condition.record ?? "rec"}.${condition.columnId}`;
 }
 
+function usesColumnChange(condition: AccessRuleCondition): boolean {
+  if (condition.kind === "all" || condition.kind === "any") {
+    return condition.conditions.some(usesColumnChange);
+  }
+  if (condition.kind === "not") return usesColumnChange(condition.condition);
+  return condition.kind === "column_change";
+}
+
 function usesNewRec(condition: AccessRuleCondition): boolean {
   if (condition.kind === "all" || condition.kind === "any") {
     return condition.conditions.some(usesNewRec);
   }
   if (condition.kind === "not") return usesNewRec(condition.condition);
+  if (condition.kind === "column_change") return true;
   return (condition.kind === "match_user" || condition.kind === "match_link_key") &&
     condition.record === "newRec";
 }
@@ -423,6 +452,17 @@ function serializeLeafCondition(condition: AccessRuleLeafCondition, table: Table
 
   if (condition.kind === "user_access") {
     return `user.Access ${OP_NATIVE[condition.operator]} ${ROLE_NATIVE[condition.role]}`;
+  }
+
+  if (condition.kind === "column_change") {
+    if (!SAFE_IDENTIFIER.test(condition.columnId)) {
+      throw new Error("Column-change ACL predicates require one safe stable column ID.");
+    }
+    const column = table.columns.get(condition.columnId);
+    if (!column || !COLUMN_CHANGE_TYPES.has(column.type)) {
+      throw new Error("Column-change ACL predicates require an existing Text, Choice, Int, Numeric or Bool column.");
+    }
+    return `rec.${condition.columnId} ${OP_NATIVE[condition.operator]} newRec.${condition.columnId}`;
   }
 
   if (condition.kind === "match_link_key") {
@@ -676,6 +716,14 @@ function buildGroupState(
         unsupportedReason: "newRec rules can only control row creation or update in Gia's bounded subset."
       };
     }
+    if (usesColumnChange(condition) && permissions.create !== "unspecified") {
+      return {
+        target,
+        resourceRecordId: resource.id,
+        ruleRecordIds: ordered.map((entry) => entry.id),
+        unsupportedReason: "Column-change predicates can only control updates, not row creation."
+      };
+    }
     if (condition.kind === "everyone" && index !== ordered.length - 1) {
       return {
         target,
@@ -807,6 +855,9 @@ function normalizeRequestedRules(
         (permission.normalized.read !== "unspecified" ||
          permission.normalized.delete !== "unspecified")) {
       throw new Error("newRec ACL conditions may only grant or deny row create/update permissions.");
+    }
+    if (usesColumnChange(canonicalCondition) && permission.normalized.create !== "unspecified") {
+      throw new Error("Column-change ACL predicates may only grant or deny update permissions.");
     }
     const normalizedRule = { condition: canonicalCondition, permissions: permission.normalized };
     const key = stableJson(normalizedRule);
