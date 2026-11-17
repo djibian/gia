@@ -4,6 +4,7 @@ import * as z from "zod/v4";
 import {
   ACCESS_RULE_USER_PROPERTIES,
   MAX_ACCESS_RULE_COLUMNS,
+  MAX_ACCESS_RULE_LINK_KEY_NAME_LENGTH,
   MAX_ACCESS_RULES_PER_GROUP
 } from "../grist/accessRules.js";
 import type {
@@ -82,6 +83,12 @@ const tableIdSchema = z.string().trim().min(1);
 const columnIdSchema = z.string().trim().min(1);
 const positiveIdSchema = z.number().int().positive();
 const accessPermissionValueSchema = z.enum(["allow", "deny", "unspecified"]);
+const accessRuleLinkKeyNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_ACCESS_RULE_LINK_KEY_NAME_LENGTH)
+  .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "LinkKey names must be safe identifiers.");
 const accessRuleTargetSchema = z
   .object({
     tableId: tableIdSchema,
@@ -111,6 +118,14 @@ const accessRuleConditionSchema = z.discriminatedUnion("kind", [
       operator: z.enum(["equals", "not_equals"]),
       columnId: columnIdSchema,
       userProperty: z.enum(ACCESS_RULE_USER_PROPERTIES)
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("match_link_key"),
+      operator: z.enum(["equals", "not_equals"]),
+      columnId: columnIdSchema,
+      linkKeyName: accessRuleLinkKeyNameSchema
     })
     .strict()
 ]);
