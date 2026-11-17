@@ -1389,8 +1389,10 @@ async function run(): Promise<void> {
           v.fields.tableId === ACL_TABLE_ID && v.fields.colIds === "Enabled").map((v) => v.id));
         const diagnostic = rules.records.filter((v) => matches.has(v.fields.resource as number))
           .map((v) => ({
-            formula: /^user\\.IsLoggedIn [!=]= (True|False)$/.test(String(v.fields.aclFormula))
+            formula: String(v.fields.aclFormula).includes("IsLoggedIn") &&
+              !String(v.fields.aclFormula).includes("'")
               ? v.fields.aclFormula : "<redacted>",
+            rulePos: v.fields.rulePos,
             parsedPresent: Boolean(v.fields.aclFormulaParsed),
             permissions: v.fields.permissionsText
           }));
