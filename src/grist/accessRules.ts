@@ -34,14 +34,14 @@ export type AccessRuleCondition =
       operator: AccessRuleOperator;
       columnId: string;
       userProperty: AccessRuleUserProperty;
-      record?: "newRec";
+      record?: "newRec" | undefined;
     }
   | {
       kind: "match_link_key";
       operator: AccessRuleOperator;
       columnId: string;
       linkKeyName: string;
-      record?: "newRec";
+      record?: "newRec" | undefined;
     }
   | { kind: "all"; conditions: AccessRuleCondition[] }
   | { kind: "any"; conditions: AccessRuleCondition[] }
@@ -400,7 +400,7 @@ function parseCondition(formula: string, table: TableInfo): AccessRuleCondition 
   return parse(formula, 0);
 }
 
-function recordExpression(condition: { columnId: string; record?: "newRec" }): string {
+function recordExpression(condition: { columnId: string; record?: "newRec" | undefined }): string {
   if (condition.record !== undefined && condition.record !== "newRec") {
     throw new Error("Unsupported ACL record context; only default rec or explicit newRec is allowed.");
   }
