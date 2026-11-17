@@ -1459,7 +1459,7 @@ async function run(): Promise<void> {
       "integer_flag_access_rule_delete_not_verified");
 
     // Empty-string comparison remains closed native ACL metadata, not raw input.
-    const emptyCreated = resultJson(
+    const emptyTextCreated = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "access_rule_group", documentId, mode: "create",
         target: { tableId: ACL_TABLE_ID, columnIds: ["RequiredText"] },
@@ -1473,9 +1473,9 @@ async function run(): Promise<void> {
         ]
       }), "empty_text_access_rule_create"
     );
-    assert(emptyCreated.persistedDefinitionVerified === true,
+    assert(emptyTextCreated.persistedDefinitionVerified === true,
       "empty_text_access_rule_not_verified");
-    assert(emptyCreated.effectiveEnforcementVerified === false,
+    assert(emptyTextCreated.effectiveEnforcementVerified === false,
       "empty_text_access_rule_overclaimed_enforcement");
     const emptyInspected = resultJson(
       await callTool(bridgeBaseUrl, "grist_inspect", { action: "access_rules", documentId }),
