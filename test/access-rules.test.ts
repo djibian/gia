@@ -1152,3 +1152,67 @@ test("Int flags refuse arbitrary numbers, other column types and opaque secrets"
     assert.doesNotMatch(JSON.stringify(view), /private-token|aclFormula/);
   }
 });
+
+test("empty-text ACL predicates round-trip with both literal orders and exact no-op", () => {
+  const condition = { kind: "match_empty_text" as const, operator: "equals" as const,
+    columnId: "OwnerEmail" };
+  const plan = resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" }, "create",
+    [{ condition, permissions: { read: "deny", update: "unspecified" } }]);
+  assert.equal(plan.rules[0]?.aclFormula, "rec.OwnerEmail == ''");
+  for (const formula of ["'' == rec.OwnerEmail", '"" == rec.OwnerEmail', "rec.OwnerEmail == ''"]) {
+    const persisted = snapshot(
+      [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+      [{ id: 20, fields: { resource: 2, aclFormula: formula,
+        aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+    );
+    const view = projectAccessRules(persisted) as any;
+    assert.equal(view.groups[0].editable, true);
+    assert.deepEqual(view.groups[0].rules[0].condition, condition);
+    assert.equal(resolveAccessRuleMutation(persisted, { tableId: "Projects" }, "replace",
+      [{ condition, permissions: { read: "deny", update: "unspecified" } }]).mode, "noop");
+  }
+});
+
+test("empty-text proposed-row conditions compose but cannot control read/delete", () => {
+  const condition = { kind: "any" as const, conditions: [
+    { kind: "user_login_status" as const, operator: "equals" as const, value: false },
+    { kind: "match_empty_text" as const, operator: "not_equals" as const,
+      columnId: "OwnerEmail", record: "newRec" as const }
+  ] };
+  const plan = resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" }, "create",
+    [{ condition, permissions: { read: "unspecified", update: "deny" } }]);
+  assert.equal(plan.rules[0]?.aclFormula,
+    "(user.IsLoggedIn == False) or (newRec.OwnerEmail != '')");
+  for (const permissions of [
+    { read: "deny" as const, update: "unspecified" as const },
+    { read: "unspecified" as const, update: "allow" as const, delete: "deny" as const }
+  ]) assert.throws(() => resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" },
+    "create", [{ condition, permissions }]), /newRec/);
+});
+
+test("empty-text ACL subset protects literal-bearing, unsupported and malformed conditions", () => {
+  const valid = { kind: "match_empty_text" as const, operator: "equals" as const,
+    columnId: "OwnerEmail" };
+  for (const condition of [
+    { ...valid, columnId: "Enabled" }, { ...valid, columnId: "UserId" },
+    { ...valid, columnId: "Missing" }, { ...valid, operator: "in" as any },
+    { ...valid, record: "rec" as any }
+  ]) assert.throws(() => resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" },
+    "create", [{ condition, permissions: { read: "deny", update: "unspecified" } }]
+  ), /empty-text|record context/i);
+  for (const formula of [
+    "rec.OwnerEmail == 'private-token'", "rec.OwnerEmail == ' '",
+    "rec.UserId == ''", "rec.Enabled != ''",
+    "rec.OwnerEmail in ['']", "rec.OwnerEmail == None"
+  ]) {
+    const persisted = snapshot(
+      [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+      [{ id: 20, fields: { resource: 2, aclFormula: formula,
+        aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+    );
+    const view = projectAccessRules(persisted) as any;
+    assert.equal(view.groups[0].editable, false);
+    assert.equal(view.groups[0].rules, undefined);
+    assert.doesNotMatch(JSON.stringify(view), /private-token|aclFormula/);
+  }
+});

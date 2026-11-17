@@ -13,7 +13,7 @@ record/schema/document-metadata changes, stable human-facing Ref/RefList display
 selection, native pages/widgets, visible fields, saved filters and sorts, Card
 layouts, configured calendars, native summaries, hierarchy-preserving page
 ordering, bounded application access-rule groups including typed LinkKey-to-record
-comparisons, bounded `newRec` matches, same-column old/new comparisons, Bool-literal predicates for proposed row changes, closed role memberships, boolean user-login tests and bounded Int 0/1 flags, finite boolean
+comparisons, bounded `newRec` matches, same-column old/new comparisons, Bool-literal predicates for proposed row changes, closed role memberships, boolean user-login tests, bounded Int 0/1 flags and empty-Text comparisons, finite boolean
 combinations of supported ACL leaves, and empty-document/template bootstrap.
 The supported subset and its limits are defined by the contract and executable tests.
 

@@ -643,3 +643,24 @@ test("ACL MCP typed integer flags admit only zero/one on stable columns", () => 
     { ...flag, aclFormula: "rec.UserId == 0" }, { ...flag, linkKeyName: "Secret" }
   ]) assert.throws(() => parse(invalid));
 });
+
+test("ACL MCP empty-text check accepts no model-facing literal content", () => {
+  const registrations = capture({ changeAccessRuleGroup: async () => ({ ok: true }) });
+  const tool = registrations.find((entry) => entry.name === "grist_change_structure")!;
+  const parse = (condition: unknown) => tool.options.inputSchema!.parse({
+    action: "access_rule_group", documentId: "doc-1", mode: "create",
+    target: { tableId: "Projects" },
+    rules: [{ condition, permissions: { read: "unspecified", update: "deny" } }]
+  });
+  const empty = { kind: "match_empty_text", operator: "equals", columnId: "OwnerEmail" };
+  assert.ok(parse(empty));
+  assert.ok(parse({ ...empty, operator: "not_equals", record: "newRec" }));
+  assert.ok(parse({ kind: "not", condition: empty }));
+  for (const invalid of [
+    { ...empty, value: "" }, { ...empty, value: "private-token" },
+    { ...empty, literal: "" }, { ...empty, aclFormula: "rec.OwnerEmail == ''" },
+    { ...empty, operator: "in" }, { ...empty, columnId: "" },
+    { ...empty, record: "rec" }, { ...empty, record: "other" },
+    { ...empty, linkKeyName: "Secret" }
+  ]) assert.throws(() => parse(invalid));
+});
