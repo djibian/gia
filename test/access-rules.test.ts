@@ -655,3 +655,101 @@ test("composite ACL conditions fail closed on ambiguity, depth, size and sensiti
   assert.equal(projected.groups[0].editable, false);
   assert.doesNotMatch(JSON.stringify(projected), /private-value|StageToken|aclFormula/);
 });
+
+
+test("newRec typed matches round-trip with original rec shapes and protected LinkKey values", () => {
+  const clean = snapshot([], []);
+  const condition = {
+    kind: "all" as const,
+    conditions: [
+      {
+        kind: "match_user" as const, record: "newRec" as const,
+        operator: "equals" as const, columnId: "OwnerEmail", userProperty: "Email" as const
+      },
+      {
+        kind: "not" as const,
+        condition: {
+          kind: "match_link_key" as const, record: "newRec" as const,
+          operator: "not_equals" as const, columnId: "ShareToken", linkKeyName: "StageToken"
+        }
+      }
+    ]
+  };
+  const plan = resolveAccessRuleMutation(
+    clean, { tableId: "Projects" }, "create",
+    [{ condition, permissions: { read: "unspecified", update: "allow", create: "allow" } }]
+  );
+  assert.equal(
+    plan.rules[0]?.aclFormula,
+    "(newRec.OwnerEmail == user.Email) and (not (newRec.ShareToken != user.LinkKey.StageToken))"
+  );
+  assert.deepEqual(plan.normalizedRules[0]?.condition, condition);
+
+  const persisted = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{ id: 20, fields: {
+      resource: 2,
+      aclFormula: "user.LinkKey.StageToken == newRec.ShareToken and rec.OwnerEmail == user.Email",
+      aclFormulaParsed: '["And"]',
+      permissionsText: "+U",
+      rulePos: 1
+    } }]
+  );
+  const projection = projectAccessRules(persisted) as any;
+  assert.deepEqual(projection.groups[0].rules[0].condition, {
+    kind: "all",
+    conditions: [
+      {
+        kind: "match_link_key", record: "newRec", operator: "equals",
+        columnId: "ShareToken", linkKeyName: "StageToken"
+      },
+      { kind: "match_user", operator: "equals", columnId: "OwnerEmail", userProperty: "Email" }
+    ]
+  });
+  assert.doesNotMatch(JSON.stringify(projection), /aclFormula|StageToken_|sensitive-value/);
+});
+
+test("newRec matches reject read/delete decisions, arbitrary record contexts and opaque literals", () => {
+  const clean = snapshot([], []);
+  const condition = {
+    kind: "match_user" as const, record: "newRec" as const,
+    operator: "equals" as const, columnId: "OwnerEmail", userProperty: "Email" as const
+  };
+  for (const permissions of [
+    { read: "allow" as const, update: "unspecified" as const },
+    { read: "unspecified" as const, update: "allow" as const, delete: "deny" as const }
+  ]) {
+    assert.throws(() => resolveAccessRuleMutation(
+      clean, { tableId: "Projects" }, "create", [{ condition, permissions }]
+    ), /newRec.*create\/update/i);
+  }
+  assert.throws(() => resolveAccessRuleMutation(
+    clean, { tableId: "Projects" }, "create", [{
+      condition: { ...condition, record: "rec" as any },
+      permissions: { read: "unspecified", update: "allow" }
+    }]
+  ), /Unsupported ACL record context/i);
+
+  const persisted = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{ id: 20, fields: {
+      resource: 2, aclFormula: "newRec.OwnerEmail == user.Email",
+      aclFormulaParsed: '["Eq"]', permissionsText: "+R", rulePos: 1
+    } }]
+  );
+  const projection = projectAccessRules(persisted) as any;
+  assert.equal(projection.groups[0].editable, false);
+  assert.equal(projection.groups[0].rules, undefined);
+  assert.match(projection.groups[0].unsupportedReason, /newRec/);
+
+  const literal = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{ id: 20, fields: {
+      resource: 2, aclFormula: "newRec.ShareToken == 'sensitive-value'",
+      aclFormulaParsed: '["Eq"]', permissionsText: "+U", rulePos: 1
+    } }]
+  );
+  const protectedProjection = projectAccessRules(literal);
+  assert.equal((protectedProjection as any).groups[0].editable, false);
+  assert.doesNotMatch(JSON.stringify(protectedProjection), /sensitive-value|aclFormula/);
+});
