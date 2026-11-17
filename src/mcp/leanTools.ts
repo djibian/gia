@@ -120,7 +120,8 @@ const accessRuleLeafConditionVariants = [
       kind: z.literal("match_user"),
       operator: z.enum(["equals", "not_equals"]),
       columnId: columnIdSchema,
-      userProperty: z.enum(ACCESS_RULE_USER_PROPERTIES)
+      userProperty: z.enum(ACCESS_RULE_USER_PROPERTIES),
+      record: z.literal("newRec").optional()
     })
     .strict(),
   z
@@ -128,7 +129,8 @@ const accessRuleLeafConditionVariants = [
       kind: z.literal("match_link_key"),
       operator: z.enum(["equals", "not_equals"]),
       columnId: columnIdSchema,
-      linkKeyName: accessRuleLinkKeyNameSchema
+      linkKeyName: accessRuleLinkKeyNameSchema,
+      record: z.literal("newRec").optional()
     })
     .strict()
 ] as const;
