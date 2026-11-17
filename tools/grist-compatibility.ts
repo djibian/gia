@@ -1063,10 +1063,19 @@ async function run(): Promise<void> {
         rules: [
           {
             condition: {
-              kind: "match_link_key",
-              operator: "equals",
-              columnId: "ShareToken",
-              linkKeyName: "CompatToken"
+              kind: "all",
+              conditions: [
+                {
+                  kind: "match_link_key",
+                  operator: "equals",
+                  columnId: "ShareToken",
+                  linkKeyName: "CompatToken"
+                },
+                {
+                  kind: "not",
+                  condition: { kind: "user_access", operator: "equals", role: "viewer" }
+                }
+              ]
             },
             permissions: {
               read: "allow",
@@ -1117,14 +1126,25 @@ async function run(): Promise<void> {
             rules.some((rule) => {
               if (!rule || typeof rule !== "object" || Array.isArray(rule)) return false;
               const condition = (rule as { condition?: unknown }).condition;
-              return (
-                condition !== null &&
-                typeof condition === "object" &&
-                !Array.isArray(condition) &&
-                (condition as { kind?: unknown }).kind === "match_link_key" &&
-                (condition as { columnId?: unknown }).columnId === "ShareToken" &&
-                (condition as { linkKeyName?: unknown }).linkKeyName === "CompatToken"
-              );
+              if (!condition || typeof condition !== "object" || Array.isArray(condition)) {
+                return false;
+              }
+              const composite = condition as { kind?: unknown; conditions?: unknown };
+              if (composite.kind !== "all" || !Array.isArray(composite.conditions)) return false;
+              return composite.conditions.some((item) => {
+                if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+                const leaf = item as { kind?: unknown; columnId?: unknown; linkKeyName?: unknown };
+                return leaf.kind === "match_link_key" &&
+                  leaf.columnId === "ShareToken" &&
+                  leaf.linkKeyName === "CompatToken";
+              }) && composite.conditions.some((item) => {
+                if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+                const nested = item as { kind?: unknown; condition?: unknown };
+                return nested.kind === "not" &&
+                  nested.condition !== null &&
+                  typeof nested.condition === "object" &&
+                  (nested.condition as { kind?: unknown }).kind === "user_access";
+              });
             })
           );
         }),

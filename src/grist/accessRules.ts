@@ -3,6 +3,10 @@ type JsonRecord = Record<string, unknown>;
 export const MAX_ACCESS_RULES_PER_GROUP = 20;
 export const MAX_ACCESS_RULE_COLUMNS = 50;
 export const MAX_ACCESS_RULE_LINK_KEY_NAME_LENGTH = 100;
+export const MAX_ACCESS_RULE_CONDITION_NODES = 20;
+export const MAX_ACCESS_RULE_CONDITION_DEPTH = 4;
+export const MAX_ACCESS_RULE_CONDITION_WIDTH = 6;
+export const MAX_ACCESS_RULE_FORMULA_LENGTH = 2048;
 
 export const ACCESS_RULE_USER_PROPERTIES = [
   "Email",
@@ -36,7 +40,10 @@ export type AccessRuleCondition =
       operator: AccessRuleOperator;
       columnId: string;
       linkKeyName: string;
-    };
+    }
+  | { kind: "all"; conditions: AccessRuleCondition[] }
+  | { kind: "any"; conditions: AccessRuleCondition[] }
+  | { kind: "not"; condition: AccessRuleCondition };
 
 export interface AccessRulePermissions {
   read: AccessPermissionValue;
@@ -251,7 +258,7 @@ function validLinkKeyName(value: string): boolean {
   );
 }
 
-function parseCondition(
+function parseLeafCondition(
   formula: string,
   table: TableInfo
 ): AccessRuleCondition | undefined {
@@ -308,7 +315,84 @@ function parseCondition(
   return undefined;
 }
 
-function serializeCondition(condition: AccessRuleCondition, table: TableInfo): string {
+// Recognize only balanced boolean grouping around the already-typed leaf grammar.
+// Unsupported formulas (including literal-bearing or function-call expressions)
+// remain protected rather than becoming editable policy.
+function withoutOuterParens(value: string): string {
+  let result = value.trim();
+  while (result.startsWith("(") && result.endsWith(")")) {
+    let depth = 0;
+    let enclosed = true;
+    for (let i = 0; i < result.length; i++) {
+      if (result[i] === "(") depth++;
+      if (result[i] === ")") {
+        depth--;
+        if (depth === 0 && i !== result.length - 1) enclosed = false;
+        if (depth < 0) return result;
+      }
+    }
+    if (!enclosed || depth !== 0) break;
+    result = result.slice(1, -1).trim();
+  }
+  return result;
+}
+
+function splitTopLevel(value: string, operator: " and " | " or "): string[] | undefined {
+  let depth = 0;
+  let start = 0;
+  const parts: string[] = [];
+  for (let i = 0; i < value.length; i++) {
+    if (value[i] === "(") depth++;
+    else if (value[i] === ")") {
+      depth--;
+      if (depth < 0) return undefined;
+    }
+    if (depth === 0 && value.startsWith(operator, i)) {
+      parts.push(value.slice(start, i).trim());
+      i += operator.length - 1;
+      start = i + 1;
+    }
+  }
+  if (depth !== 0 || !parts.length) return undefined;
+  parts.push(value.slice(start).trim());
+  return parts;
+}
+
+function parseCondition(formula: string, table: TableInfo): AccessRuleCondition | undefined {
+  if (formula === "") return { kind: "everyone" };
+  if (formula.length > MAX_ACCESS_RULE_FORMULA_LENGTH) return undefined;
+  const budget = { nodes: 0 };
+  function parse(source: string, depth: number): AccessRuleCondition | undefined {
+    if (++budget.nodes > MAX_ACCESS_RULE_CONDITION_NODES || depth > MAX_ACCESS_RULE_CONDITION_DEPTH) {
+      return undefined;
+    }
+    const value = withoutOuterParens(source);
+    if (!value) return undefined;
+    for (const [delimiter, kind] of [
+      [" or ", "any"],
+      [" and ", "all"]
+    ] as const) {
+      const parts = splitTopLevel(value, delimiter);
+      if (parts) {
+        if (parts.length < 2 || parts.length > MAX_ACCESS_RULE_CONDITION_WIDTH) return undefined;
+        const conditions = parts.map((part) => parse(part, depth + 1));
+        if (conditions.some((part) => !part || part.kind === "everyone")) return undefined;
+        return { kind, conditions: conditions as AccessRuleCondition[] };
+      }
+    }
+    if (value.startsWith("not ")) {
+      const condition = parse(value.slice(4), depth + 1);
+      if (!condition || condition.kind === "everyone") return undefined;
+      return { kind: "not", condition };
+    }
+    return parseLeafCondition(value, table);
+  }
+  return parse(formula, 0);
+}
+
+type AccessRuleLeafCondition = Exclude<AccessRuleCondition, { kind: "all" | "any" } | { kind: "not" }>;
+
+function serializeLeafCondition(condition: AccessRuleLeafCondition, table: TableInfo): string {
   if (condition.kind === "everyone") return "";
 
   if (condition.kind === "user_access") {
@@ -357,6 +441,40 @@ function serializeCondition(condition: AccessRuleCondition, table: TableInfo): s
     );
   }
   return `rec.${condition.columnId} ${OP_NATIVE[condition.operator]} user.${condition.userProperty}`;
+}
+
+function serializeCondition(condition: AccessRuleCondition, table: TableInfo): string {
+  const budget = { nodes: 0 };
+  function serialize(node: AccessRuleCondition, depth: number): string {
+    if (++budget.nodes > MAX_ACCESS_RULE_CONDITION_NODES || depth > MAX_ACCESS_RULE_CONDITION_DEPTH) {
+      throw new Error("Access-rule condition tree exceeds the finite node/depth bound.");
+    }
+    if (node.kind === "all" || node.kind === "any") {
+      if (!Array.isArray(node.conditions) ||
+          node.conditions.length < 2 ||
+          node.conditions.length > MAX_ACCESS_RULE_CONDITION_WIDTH) {
+        throw new Error("Composite ACL conditions require 2-6 bounded children.");
+      }
+      return node.conditions.map((child) => {
+        if (child.kind === "everyone") {
+          throw new Error("Everyone is not an ACL boolean subcondition.");
+        }
+        return "(" + serialize(child, depth + 1) + ")";
+      }).join(node.kind === "all" ? " and " : " or ");
+    }
+    if (node.kind === "not") {
+      if (node.condition.kind === "everyone") {
+        throw new Error("Everyone is not an ACL boolean subcondition.");
+      }
+      return "not (" + serialize(node.condition, depth + 1) + ")";
+    }
+    return serializeLeafCondition(node, table);
+  }
+  const native = serialize(condition, 0);
+  if (native.length > MAX_ACCESS_RULE_FORMULA_LENGTH) {
+    throw new Error("Access-rule condition exceeds the finite native formula bound.");
+  }
+  return native;
 }
 
 function emptyPermissions(): ResolvedAccessRulePermissions {
@@ -642,11 +760,15 @@ function normalizeRequestedRules(
   const seen = new Set<string>();
   for (const [index, rule] of rules.entries()) {
     const aclFormula = serializeCondition(rule.condition, table);
+    const canonicalCondition = parseCondition(aclFormula, table);
+    if (!canonicalCondition) {
+      throw new Error("Access-rule condition cannot be normalized into the bounded native subset.");
+    }
     if (rule.condition.kind === "everyone" && index !== rules.length - 1) {
       throw new Error("An everyone access rule must be the final rule in its group.");
     }
     const permission = serializePermissions(rule.permissions, target.columnIds.length > 0);
-    const normalizedRule = { condition: rule.condition, permissions: permission.normalized };
+    const normalizedRule = { condition: canonicalCondition, permissions: permission.normalized };
     const key = stableJson(normalizedRule);
     if (seen.has(key)) throw new Error("Duplicate access rules are not allowed in one group.");
     seen.add(key);

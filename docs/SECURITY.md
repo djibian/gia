@@ -76,7 +76,9 @@ Only ordinary stable table/column groups and the contract's typed secret-safe
 conditions/permission subset are writable. A bounded LinkKey name may be exposed
 as structural policy metadata only when it participates in a normalized supported
 record comparison; LinkKey values, secret-bearing URLs and literal-bearing opaque
-formulas remain excluded. Opaque formulas, memos, user attributes,
+formulas remain excluded. Finite `all` / `any` / `not` trees over the existing
+typed leaves are bounded in width, depth, total node count and output formula
+length; nested `everyone` and unrecognized expressions refuse mutation. Opaque formulas, memos, user attributes,
 legacy/special/default/schema-edit policy and virtual overlays are not converted
 into editable model content. Incomplete/censored/truncated metadata, overlapping
 targets or lossy normalization refuses mutation. Untargeted persisted policy is

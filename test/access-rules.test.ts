@@ -536,3 +536,122 @@ test("LinkKey ACL conditions reject unsafe names, literals and incompatible colu
   assert.equal(projected.groups[0].editable, false);
   assert.doesNotMatch(JSON.stringify(projected), /sensitive-value|StageToken/);
 });
+
+
+test("composite ACL conditions round-trip with native boolean precedence and LinkKey operands", () => {
+  const clean = snapshot([], []);
+  const input = {
+    kind: "all" as const,
+    conditions: [
+      { kind: "user_access" as const, operator: "not_equals" as const, role: "viewer" as const },
+      {
+        kind: "not" as const,
+        condition: {
+          kind: "match_link_key" as const,
+          operator: "not_equals" as const,
+          columnId: "ShareToken",
+          linkKeyName: "StageToken"
+        }
+      }
+    ]
+  };
+  const plan = resolveAccessRuleMutation(
+    clean, { tableId: "Projects" }, "create",
+    [{ condition: input, permissions: { read: "allow", update: "unspecified" } }]
+  );
+  assert.equal(
+    plan.rules[0]?.aclFormula,
+    "(user.Access != VIEWER) and (not (rec.ShareToken != user.LinkKey.StageToken))"
+  );
+  assert.deepEqual(plan.normalizedRules[0]?.condition, input);
+
+  const existing = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{
+      id: 20,
+      fields: {
+        resource: 2,
+        aclFormula: "user.LinkKey.StageToken == rec.ShareToken or user.Access == OWNER and rec.OwnerEmail == user.Email",
+        aclFormulaParsed: '["Or"]',
+        permissionsText: "+R",
+        rulePos: 1
+      }
+    }]
+  );
+  const projected = projectAccessRules(existing) as any;
+  assert.deepEqual(projected.groups[0].rules[0].condition, {
+    kind: "any",
+    conditions: [
+      { kind: "match_link_key", operator: "equals", columnId: "ShareToken", linkKeyName: "StageToken" },
+      {
+        kind: "all",
+        conditions: [
+          { kind: "user_access", operator: "equals", role: "owner" },
+          { kind: "match_user", operator: "equals", columnId: "OwnerEmail", userProperty: "Email" }
+        ]
+      }
+    ]
+  });
+  assert.doesNotMatch(JSON.stringify(projected), /aclFormula|StageToken_/);
+});
+
+test("non-empty parenthesized void ACL formulas never normalize into everyone", () => {
+  const invalid = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{
+      id: 20,
+      fields: {
+        resource: 2,
+        aclFormula: "(( ))",
+        aclFormulaParsed: '["Tuple",[]]',
+        permissionsText: "+R",
+        rulePos: 1
+      }
+    }]
+  );
+  const projected = projectAccessRules(invalid) as any;
+  assert.equal(projected.groups[0].editable, false);
+  assert.equal(projected.groups[0].rules, undefined);
+});
+
+test("composite ACL conditions fail closed on ambiguity, depth, size and sensitive literals", () => {
+  const clean = snapshot([], []);
+  const rule = (condition: any) => [{
+    condition, permissions: { read: "allow" as const, update: "unspecified" as const }
+  }];
+  const permitted = { kind: "user_access", operator: "equals", role: "owner" };
+  assert.throws(
+    () => resolveAccessRuleMutation(clean, { tableId: "Projects" }, "create", rule({
+      kind: "all", conditions: [permitted, { kind: "everyone" }]
+    })),
+    /Everyone is not/i
+  );
+  let tooDeep: any = permitted;
+  for (let i = 0; i < 5; i++) tooDeep = { kind: "not", condition: tooDeep };
+  assert.throws(
+    () => resolveAccessRuleMutation(clean, { tableId: "Projects" }, "create", rule(tooDeep)),
+    /depth bound/i
+  );
+  assert.throws(
+    () => resolveAccessRuleMutation(clean, { tableId: "Projects" }, "create", rule({
+      kind: "all", conditions: Array.from({ length: 7 }, () => permitted)
+    })),
+    /2-6 bounded children/i
+  );
+  const opaque = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{
+      id: 20,
+      fields: {
+        resource: 2,
+        aclFormula: "user.LinkKey.StageToken == 'private-value' and user.Access == OWNER",
+        aclFormulaParsed: '["And"]',
+        permissionsText: "+R",
+        rulePos: 1
+      }
+    }]
+  );
+  const projected = projectAccessRules(opaque) as any;
+  assert.equal(projected.groups[0].editable, false);
+  assert.doesNotMatch(JSON.stringify(projected), /private-value|StageToken|aclFormula/);
+});

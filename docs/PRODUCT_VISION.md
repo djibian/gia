@@ -13,7 +13,8 @@ record/schema/document-metadata changes, stable human-facing Ref/RefList display
 selection, native pages/widgets, visible fields, saved filters and sorts, Card
 layouts, configured calendars, native summaries, hierarchy-preserving page
 ordering, bounded application access-rule groups including typed LinkKey-to-record
-comparisons, and empty-document/template bootstrap.
+comparisons and finite boolean combinations of supported ACL leaves, and
+empty-document/template bootstrap.
 The supported subset and its limits are defined by the contract and executable tests.
 
 Business applications such as teaching, stage tracking, CRM or inventory are
