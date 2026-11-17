@@ -557,7 +557,8 @@ async function run(): Promise<void> {
           id: TABLE_ID,
           columns: [
             { id: "Name", fields: { type: "Text" } },
-            { id: "Qty", fields: { type: "Int" } }
+            { id: "Qty", fields: { type: "Int" } },
+            { id: "ShareToken", fields: { type: "Text" } }
           ]
         }
       ]
@@ -567,8 +568,8 @@ async function run(): Promise<void> {
       documentId,
       tableId: TABLE_ID,
       records: [
-        { fields: { Name: "Alpha", Qty: 1 } },
-        { fields: { Name: "Beta", Qty: 2 } }
+        { fields: { Name: "Alpha", Qty: 1, ShareToken: "alpha" } },
+        { fields: { Name: "Beta", Qty: 2, ShareToken: "beta" } }
       ]
     });
 
@@ -1057,12 +1058,26 @@ async function run(): Promise<void> {
         target: { tableId: TABLE_ID },
         rules: [
           {
-            condition: { kind: "everyone" },
+            condition: {
+              kind: "match_link_key",
+              operator: "equals",
+              columnId: "ShareToken",
+              linkKeyName: "CompatToken"
+            },
             permissions: {
               read: "allow",
               update: "allow",
               create: "allow",
               delete: "allow"
+            }
+          },
+          {
+            condition: { kind: "everyone" },
+            permissions: {
+              read: "deny",
+              update: "deny",
+              create: "deny",
+              delete: "deny"
             }
           }
         ]
@@ -1088,14 +1103,28 @@ async function run(): Promise<void> {
         accessRulesAfterCreate.groups.some((group) => {
           if (!group || typeof group !== "object" || Array.isArray(group)) return false;
           const target = (group as { target?: unknown }).target;
+          const rules = (group as { rules?: unknown }).rules;
           return (
             target !== null &&
             typeof target === "object" &&
             !Array.isArray(target) &&
-            (target as { tableId?: unknown }).tableId === TABLE_ID
+            (target as { tableId?: unknown }).tableId === TABLE_ID &&
+            Array.isArray(rules) &&
+            rules.some((rule) => {
+              if (!rule || typeof rule !== "object" || Array.isArray(rule)) return false;
+              const condition = (rule as { condition?: unknown }).condition;
+              return (
+                condition !== null &&
+                typeof condition === "object" &&
+                !Array.isArray(condition) &&
+                (condition as { kind?: unknown }).kind === "match_link_key" &&
+                (condition as { columnId?: unknown }).columnId === "ShareToken" &&
+                (condition as { linkKeyName?: unknown }).linkKeyName === "CompatToken"
+              );
+            })
           );
         }),
-      "access_rule_created_group_missing"
+      "access_rule_created_link_key_group_missing"
     );
 
     const aclDeleted = resultJson(
