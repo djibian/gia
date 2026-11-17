@@ -579,7 +579,10 @@ async function run(): Promise<void> {
       tables: [
         {
           id: ACL_TABLE_ID,
-          columns: [{ id: "ShareToken", fields: { type: "Text" } }]
+          columns: [
+            { id: "ShareToken", fields: { type: "Text" } },
+            { id: "Enabled", fields: { type: "Bool" } }
+          ]
         },
         {
           id: "Compat_Customers",
@@ -1263,6 +1266,55 @@ async function run(): Promise<void> {
     );
     assert(changedDeleted.persistedDefinitionVerified === true,
       "column_change_access_rule_delete_not_verified");
+
+    // Bool literals are native constants, never arbitrary strings or LinkKey values.
+    const boolCreated = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "create",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["Enabled"] },
+        rules: [
+          { condition: {
+              kind: "match_boolean", columnId: "Enabled",
+              operator: "equals", value: false
+            }, permissions: { read: "deny", update: "unspecified" }
+          },
+          { condition: {
+              kind: "match_boolean", columnId: "Enabled",
+              operator: "equals", value: true, record: "newRec"
+            }, permissions: { read: "unspecified", update: "allow" }
+          }
+        ]
+      }),
+      "boolean_access_rule_create"
+    );
+    assert(boolCreated.persistedDefinitionVerified === true, "boolean_access_rule_not_verified");
+    assert(boolCreated.effectiveEnforcementVerified === false, "boolean_access_rule_overclaimed_enforcement");
+    const boolInspected = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "access_rules", documentId
+      }), "boolean_access_rule_inspect"
+    );
+    const boolGroup = (boolInspected.groups as Array<Record<string, unknown>>).find((group) => {
+      const target = group.target as Record<string, unknown> | undefined;
+      return target?.tableId === ACL_TABLE_ID &&
+        Array.isArray(target.columnIds) &&
+        target.columnIds.length === 1 && target.columnIds[0] === "Enabled";
+    });
+    assert(boolGroup?.editable === true, "boolean_access_rule_not_editable");
+    const boolRules = boolGroup.rules as Array<Record<string, unknown>>;
+    assert(boolRules.length === 2 &&
+      (boolRules[0]!.condition as Record<string, unknown>).kind === "match_boolean" &&
+      (boolRules[0]!.condition as Record<string, unknown>).value === false &&
+      (boolRules[1]!.condition as Record<string, unknown>).value === true &&
+      (boolRules[1]!.condition as Record<string, unknown>).record === "newRec",
+      "boolean_access_rule_not_normalized");
+    const boolDeleted = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "delete",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["Enabled"] }
+      }), "boolean_access_rule_delete"
+    );
+    assert(boolDeleted.persistedDefinitionVerified === true, "boolean_access_rule_delete_not_verified");
 
     const aclDeleted = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
