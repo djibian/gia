@@ -542,6 +542,6 @@ test("ACL MCP schema exposes a strict, finite column_change leaf without raw rec
     { ...changed, columnId: "Status", value: "secret" },
     { ...changed, nativeFormula: "rec.Status != newRec.Status" },
     { ...changed, operator: "greater_than" },
-    { ...changed, columnId: "Status.Value" }
+    { ...changed, columnId: "" }
   ]) assert.throws(() => parse(rejected));
 });
