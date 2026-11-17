@@ -596,3 +596,28 @@ test("ACL MCP role membership is an exact finite built-in role set", () => {
     { ...roles, value: "secret" }
   ]) assert.throws(() => parse(rejected));
 });
+
+
+test("ACL MCP user login status accepts only closed boolean login predicates", () => {
+  const registrations = capture({ changeAccessRuleGroup: async () => ({ ok: true }) });
+  const tool = registrations.find((entry) => entry.name === "grist_change_structure")!;
+  const parse = (condition: unknown) => tool.options.inputSchema!.parse({
+    action: "access_rule_group", documentId: "doc-1", mode: "create",
+    target: { tableId: "Projects" },
+    rules: [{ condition, permissions: { read: "deny", update: "unspecified" } }]
+  });
+  const login = { kind: "user_login_status", operator: "equals", value: true };
+  assert.ok(parse(login));
+  assert.ok(parse({ ...login, operator: "not_equals", value: false }));
+  assert.ok(parse({ kind: "not", condition: login }));
+  for (const bad of [
+    { ...login, value: "True" },
+    { ...login, value: "private-token" },
+    { ...login, value: 1 },
+    { ...login, operator: "in" },
+    { ...login, userProperty: "SessionID" },
+    { ...login, linkKeyName: "Secret" },
+    { ...login, aclFormula: "user.IsLoggedIn == True" },
+    { ...login, record: "newRec" }
+  ]) assert.throws(() => parse(bad));
+});
