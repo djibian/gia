@@ -388,7 +388,9 @@ function parseCondition(formula: string, table: TableInfo): AccessRuleCondition 
   return parse(formula, 0);
 }
 
-function serializeLeafCondition(condition: AccessRuleCondition, table: TableInfo): string {
+type AccessRuleLeafCondition = Exclude<AccessRuleCondition, { kind: "all" | "any" } | { kind: "not" }>;
+
+function serializeLeafCondition(condition: AccessRuleLeafCondition, table: TableInfo): string {
   if (condition.kind === "everyone") return "";
 
   if (condition.kind === "user_access") {
