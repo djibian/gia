@@ -1397,6 +1397,20 @@ async function run(): Promise<void> {
             permissions: v.fields.permissionsText
           }));
         console.error("E1B6_DEBUG_TARGET_ONLY", JSON.stringify(diagnostic));
+        const view = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+          action: "access_rules", documentId
+        }), "login_status_debug_view");
+        const group = (view.groups as Array<Record<string, unknown>>).find((g) => {
+          const target = g.target as Record<string, unknown> | undefined;
+          return target?.tableId === ACL_TABLE_ID &&
+            Array.isArray(target.columnIds) && target.columnIds.length === 1 &&
+            target.columnIds[0] === "Enabled";
+        });
+        console.error("E1B6_DEBUG_PROJECTED_TARGET", JSON.stringify({
+          editable: group?.editable,
+          rules: group?.rules,
+          supported: group !== undefined
+        }));
         throw error;
       }), "login_status_access_rule_create"
     );
