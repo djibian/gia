@@ -427,4 +427,21 @@ test("ACL MCP schema exposes only bounded LinkKey names", async () => {
       /LinkKey|Too big|100/i
     );
   }
+
+  assert.throws(
+    () =>
+      tool.options.inputSchema!.parse({
+        ...valid,
+        rules: [
+          {
+            ...valid.rules[0],
+            condition: {
+              ...valid.rules[0]!.condition,
+              linkKeyValue: "must-never-enter-the-contract"
+            }
+          }
+        ]
+      }),
+    /Unrecognized key/i
+  );
 });
