@@ -41,7 +41,8 @@ export type AccessRuleCondition =
       columnId: string;
       linkKeyName: string;
     }
-  | { kind: "all" | "any"; conditions: AccessRuleCondition[] }
+  | { kind: "all"; conditions: AccessRuleCondition[] }
+  | { kind: "any"; conditions: AccessRuleCondition[] }
   | { kind: "not"; condition: AccessRuleCondition };
 
 export interface AccessRulePermissions {
