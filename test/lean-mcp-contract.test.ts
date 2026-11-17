@@ -376,3 +376,55 @@ test("lean help discloses only the lean public contract", async () => {
   );
   assert.ok(payload.concepts.includes("change_ui"));
 });
+
+
+test("ACL MCP schema exposes only bounded LinkKey names", async () => {
+  const observed: unknown[] = [];
+  const registrations = capture({
+    changeAccessRuleGroup: async (
+      documentId: string,
+      target: unknown,
+      mode: string,
+      rules: unknown
+    ) => {
+      observed.push({ documentId, target, mode, rules });
+      return { ok: true };
+    }
+  });
+  const tool = registrations.find((entry) => entry.name === "grist_change_structure")!;
+  const valid = {
+    action: "access_rule_group",
+    documentId: "doc-1",
+    mode: "create",
+    target: { tableId: "Projects" },
+    rules: [
+      {
+        condition: {
+          kind: "match_link_key",
+          operator: "equals",
+          columnId: "ShareToken",
+          linkKeyName: "StageToken"
+        },
+        permissions: { read: "allow", update: "unspecified" }
+      }
+    ]
+  };
+  await tool.callback(tool.options.inputSchema!.parse(valid));
+  assert.equal(observed.length, 1);
+
+  for (const linkKeyName of ["bad-name", "x".repeat(101)]) {
+    assert.throws(
+      () =>
+        tool.options.inputSchema!.parse({
+          ...valid,
+          rules: [
+            {
+              ...valid.rules[0],
+              condition: { ...valid.rules[0]!.condition, linkKeyName }
+            }
+          ]
+        }),
+      /LinkKey|Too big|100/i
+    );
+  }
+});
