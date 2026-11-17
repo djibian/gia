@@ -2,6 +2,7 @@ type JsonRecord = Record<string, unknown>;
 
 export const MAX_ACCESS_RULES_PER_GROUP = 20;
 export const MAX_ACCESS_RULE_COLUMNS = 50;
+export const MAX_ACCESS_RULE_LINK_KEY_NAME_LENGTH = 100;
 
 export const ACCESS_RULE_USER_PROPERTIES = [
   "Email",
@@ -29,6 +30,12 @@ export type AccessRuleCondition =
       operator: AccessRuleOperator;
       columnId: string;
       userProperty: AccessRuleUserProperty;
+    }
+  | {
+      kind: "match_link_key";
+      operator: AccessRuleOperator;
+      columnId: string;
+      linkKeyName: string;
     };
 
 export interface AccessRulePermissions {
@@ -233,6 +240,17 @@ function typeCompatibleWithUserProperty(type: string, userProperty: AccessRuleUs
   return type === "Text";
 }
 
+function typeCompatibleWithLinkKey(type: string): boolean {
+  return type === "Text" || type === "Any";
+}
+
+function validLinkKeyName(value: string): boolean {
+  return (
+    value.length <= MAX_ACCESS_RULE_LINK_KEY_NAME_LENGTH &&
+    SAFE_IDENTIFIER.test(value)
+  );
+}
+
 function parseCondition(
   formula: string,
   table: TableInfo
@@ -261,6 +279,32 @@ function parseCondition(
     return { kind: "match_user", operator, columnId, userProperty };
   }
 
+  const linkKeyMatch =
+    /^rec\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) user\.LinkKey\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(
+      formula
+    );
+  const reverseLinkKeyMatch =
+    /^user\.LinkKey\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) rec\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(
+      formula
+    );
+  if (linkKeyMatch || reverseLinkKeyMatch) {
+    const columnId = linkKeyMatch ? linkKeyMatch[1]! : reverseLinkKeyMatch![3]!;
+    const operator = NATIVE_OP.get(
+      linkKeyMatch ? linkKeyMatch[2]! : reverseLinkKeyMatch![2]!
+    );
+    const linkKeyName = linkKeyMatch ? linkKeyMatch[3]! : reverseLinkKeyMatch![1]!;
+    const column = table.columns.get(columnId);
+    if (
+      !operator ||
+      !column ||
+      !validLinkKeyName(linkKeyName) ||
+      !typeCompatibleWithLinkKey(column.type)
+    ) {
+      return undefined;
+    }
+    return { kind: "match_link_key", operator, columnId, linkKeyName };
+  }
+
   return undefined;
 }
 
@@ -269,6 +313,31 @@ function serializeCondition(condition: AccessRuleCondition, table: TableInfo): s
 
   if (condition.kind === "user_access") {
     return `user.Access ${OP_NATIVE[condition.operator]} ${ROLE_NATIVE[condition.role]}`;
+  }
+
+  if (condition.kind === "match_link_key") {
+    if (!validLinkKeyName(condition.linkKeyName)) {
+      throw new Error(
+        `LinkKey name "${condition.linkKeyName}" is not supported in the bounded access-rule condition subset.`
+      );
+    }
+    if (!SAFE_IDENTIFIER.test(condition.columnId)) {
+      throw new Error(
+        `Column ID "${condition.columnId}" is not supported in the bounded access-rule condition subset.`
+      );
+    }
+    const column = table.columns.get(condition.columnId);
+    if (!column) {
+      throw new Error(
+        `Column "${condition.columnId}" does not exist in table "${table.id}".`
+      );
+    }
+    if (!typeCompatibleWithLinkKey(column.type)) {
+      throw new Error(
+        `Column "${condition.columnId}" type "${column.type}" is not compatible with a LinkKey comparison in the bounded access-rule subset.`
+      );
+    }
+    return `rec.${condition.columnId} ${OP_NATIVE[condition.operator]} user.LinkKey.${condition.linkKeyName}`;
   }
 
   if (!SAFE_IDENTIFIER.test(condition.columnId)) {
