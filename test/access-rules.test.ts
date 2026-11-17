@@ -595,6 +595,25 @@ test("composite ACL conditions round-trip with native boolean precedence and Lin
   assert.doesNotMatch(JSON.stringify(projected), /aclFormula|StageToken_/);
 });
 
+test("non-empty parenthesized void ACL formulas never normalize into everyone", () => {
+  const invalid = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{
+      id: 20,
+      fields: {
+        resource: 2,
+        aclFormula: "(( ))",
+        aclFormulaParsed: '["Tuple",[]]',
+        permissionsText: "+R",
+        rulePos: 1
+      }
+    }]
+  );
+  const projected = projectAccessRules(invalid) as any;
+  assert.equal(projected.groups[0].editable, false);
+  assert.equal(projected.groups[0].rules, undefined);
+});
+
 test("composite ACL conditions fail closed on ambiguity, depth, size and sensitive literals", () => {
   const clean = snapshot([], []);
   const rule = (condition: any) => [{
