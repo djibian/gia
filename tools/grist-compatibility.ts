@@ -581,7 +581,8 @@ async function run(): Promise<void> {
           id: ACL_TABLE_ID,
           columns: [
             { id: "ShareToken", fields: { type: "Text" } },
-            { id: "Enabled", fields: { type: "Bool" } }
+            { id: "Enabled", fields: { type: "Bool" } },
+            { id: "StatusCode", fields: { type: "Int" } }
           ]
         },
         {
@@ -1409,6 +1410,52 @@ async function run(): Promise<void> {
     );
     assert(loginDeleted.persistedDefinitionVerified === true,
       "login_status_access_rule_delete_not_verified");
+
+    // Finite Int 0/1 literal conditions remain native policy metadata only.
+    const flagCreated = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "create",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["StatusCode"] },
+        rules: [
+          { condition: { kind: "match_integer_flag", columnId: "StatusCode",
+              operator: "equals", value: 0 },
+            permissions: { read: "unspecified", update: "deny" } },
+          { condition: { kind: "match_integer_flag", columnId: "StatusCode",
+              operator: "not_equals", value: 1, record: "newRec" },
+            permissions: { read: "unspecified", update: "deny" } }
+        ]
+      }), "integer_flag_access_rule_create"
+    );
+    assert(flagCreated.persistedDefinitionVerified === true,
+      "integer_flag_access_rule_not_verified");
+    assert(flagCreated.effectiveEnforcementVerified === false,
+      "integer_flag_access_rule_overclaimed_enforcement");
+    const flagInspected = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "access_rules", documentId
+      }), "integer_flag_access_rule_inspect"
+    );
+    const flagGroup = (flagInspected.groups as Array<Record<string, unknown>>).find((group) => {
+      const target = group.target as Record<string, unknown> | undefined;
+      return target?.tableId === ACL_TABLE_ID && Array.isArray(target.columnIds) &&
+        target.columnIds.length === 1 && target.columnIds[0] === "StatusCode";
+    });
+    assert(flagGroup?.editable === true, "integer_flag_access_rule_not_editable");
+    const flagRules = flagGroup.rules as Array<Record<string, unknown>>;
+    assert(flagRules.length === 2 &&
+      flagRules.every((rule) => (rule.condition as Record<string, unknown>).kind === "match_integer_flag") &&
+      (flagRules[0]!.condition as Record<string, unknown>).value === 0 &&
+      (flagRules[1]!.condition as Record<string, unknown>).value === 1 &&
+      (flagRules[1]!.condition as Record<string, unknown>).record === "newRec",
+      "integer_flag_access_rule_not_normalized");
+    const flagDeleted = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "delete",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["StatusCode"] }
+      }), "integer_flag_access_rule_delete"
+    );
+    assert(flagDeleted.persistedDefinitionVerified === true,
+      "integer_flag_access_rule_delete_not_verified");
 
     const aclDeleted = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {

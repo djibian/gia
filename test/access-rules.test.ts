@@ -1078,3 +1078,77 @@ test("login status only accepts boolean constants, protects unsupported and secr
     assert.doesNotMatch(JSON.stringify(view), /private-token|aclFormula/);
   }
 });
+
+test("bounded Int 0/1 ACL flags round-trip in either order without extra writes", () => {
+  const condition = { kind: "match_integer_flag" as const, columnId: "UserId",
+    operator: "equals" as const, value: 1 as const };
+  const plan = resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" }, "create",
+    [{ condition, permissions: { read: "deny", update: "unspecified" } }]);
+  assert.equal(plan.rules[0]?.aclFormula, "rec.UserId == 1");
+  const persisted = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{ id: 20, fields: { resource: 2, aclFormula: "1 == rec.UserId",
+      aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+  );
+  const view = projectAccessRules(persisted) as any;
+  assert.equal(view.groups[0].editable, true);
+  assert.deepEqual(view.groups[0].rules[0].condition, condition);
+  assert.equal(resolveAccessRuleMutation(persisted, { tableId: "Projects" }, "replace",
+    [{ condition, permissions: { read: "deny", update: "unspecified" } }]).mode, "noop");
+  assert.equal(view.effectiveEnforcementVerified, false);
+});
+
+test("Int 0/1 proposed-value conditions compose but cannot affect read or delete", () => {
+  const flag = { kind: "match_integer_flag" as const, columnId: "UserId",
+    operator: "not_equals" as const, value: 0 as const, record: "newRec" as const };
+  const composed = { kind: "any" as const, conditions: [
+    { kind: "user_login_status" as const, operator: "equals" as const, value: false },
+    flag
+  ] };
+  assert.equal(resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" }, "create",
+    [{ condition: composed, permissions: { read: "unspecified", update: "deny" } }]
+  ).rules[0]?.aclFormula, "(user.IsLoggedIn == False) or (newRec.UserId != 0)");
+  for (const permissions of [
+    { read: "deny" as const, update: "unspecified" as const },
+    { read: "unspecified" as const, update: "allow" as const, delete: "deny" as const }
+  ]) assert.throws(() => resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" },
+    "create", [{ condition: composed, permissions }]), /newRec/);
+});
+
+test("Int flags refuse arbitrary numbers, other column types and opaque secrets", () => {
+  const valid = { kind: "match_integer_flag" as const, columnId: "UserId",
+    operator: "equals" as const, value: 0 as const };
+  for (const condition of [
+    { ...valid, value: -1 as any },
+    { ...valid, value: 2 as any },
+    { ...valid, value: 0.5 as any },
+    { ...valid, value: "0" as any },
+    { ...valid, value: "secret-value" as any },
+    { ...valid, value: true as any },
+    { ...valid, columnId: "Enabled" },
+    { ...valid, columnId: "OwnerEmail" },
+    { ...valid, columnId: "Absent" },
+    { ...valid, operator: "in" as any },
+    { ...valid, record: "rec" as any }
+  ]) assert.throws(() => resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" },
+    "create", [{ condition, permissions: { read: "deny", update: "unspecified" } }]
+  ), /Int|flag|record context/i);
+  for (const formula of [
+    "rec.UserId == 2",
+    "1.0 == rec.UserId",
+    "rec.UserId == -1",
+    "rec.Enabled == 1",
+    "rec.OwnerEmail == 'private-token'",
+    "rec.UserId in [0, 1]"
+  ]) {
+    const persisted = snapshot(
+      [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+      [{ id: 20, fields: { resource: 2, aclFormula: formula,
+        aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+    );
+    const view = projectAccessRules(persisted) as any;
+    assert.equal(view.groups[0].editable, false);
+    assert.equal(view.groups[0].rules, undefined);
+    assert.doesNotMatch(JSON.stringify(view), /private-token|aclFormula/);
+  }
+});

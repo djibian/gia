@@ -61,6 +61,13 @@ export type AccessRuleCondition =
       record?: "newRec" | undefined;
     }
   | {
+      kind: "match_integer_flag";
+      operator: AccessRuleOperator;
+      columnId: string;
+      value: 0 | 1;
+      record?: "newRec" | undefined;
+    }
+  | {
       kind: "column_change";
       operator: AccessRuleOperator;
       columnId: string;
@@ -400,6 +407,22 @@ function parseLeafCondition(
     };
   }
 
+  // A finite non-secret numeric literal subset: Int flags 0/1 only.
+  // Other numeric constants (including potential IDs/secrets) remain opaque.
+  const flagMatch = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) (0|1)$/.exec(formula);
+  const reverseFlagMatch = /^(0|1) (==|!=) (rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(formula);
+  if (flagMatch || reverseFlagMatch) {
+    const recordScope = flagMatch ? flagMatch[1]! : reverseFlagMatch![3]!;
+    const columnId = flagMatch ? flagMatch[2]! : reverseFlagMatch![4]!;
+    const operator = NATIVE_OP.get(flagMatch ? flagMatch[3]! : reverseFlagMatch![2]!);
+    const literal = flagMatch ? flagMatch[4]! : reverseFlagMatch![1]!;
+    if (!operator || table.columns.get(columnId)?.type !== "Int") return undefined;
+    return {
+      kind: "match_integer_flag", operator, columnId, value: literal === "0" ? 0 : 1,
+      ...(recordScope === "newRec" ? { record: "newRec" as const } : {})
+    };
+  }
+
   // A small typed update predicate: old and proposed values of one stable column.
   // Both native operand orders normalize to a single model-facing representation.
   const changeMatch = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) (rec|newRec)\.\2$/.exec(formula);
@@ -511,7 +534,8 @@ function usesNewRec(condition: AccessRuleCondition): boolean {
   if (condition.kind === "not") return usesNewRec(condition.condition);
   if (condition.kind === "column_change") return true;
   return (condition.kind === "match_user" || condition.kind === "match_link_key" ||
-    condition.kind === "match_boolean") && condition.record === "newRec";
+    condition.kind === "match_boolean" || condition.kind === "match_integer_flag") &&
+    condition.record === "newRec";
 }
 
 type AccessRuleLeafCondition = Exclude<AccessRuleCondition, { kind: "all" | "any" } | { kind: "not" }>;
@@ -545,6 +569,16 @@ function serializeLeafCondition(condition: AccessRuleLeafCondition, table: Table
       throw new Error("Boolean literal ACL predicates require an existing Bool column and a boolean value.");
     }
     return `${recordExpression(condition)} ${OP_NATIVE[condition.operator]} ${condition.value ? "True" : "False"}`;
+  }
+
+  if (condition.kind === "match_integer_flag") {
+    if (!SAFE_IDENTIFIER.test(condition.columnId) ||
+        table.columns.get(condition.columnId)?.type !== "Int" ||
+        (condition.operator !== "equals" && condition.operator !== "not_equals") ||
+        (condition.value !== 0 && condition.value !== 1)) {
+      throw new Error("Integer-flag ACL predicates require an existing Int column and exact 0/1 values.");
+    }
+    return `${recordExpression(condition)} ${OP_NATIVE[condition.operator]} ${condition.value}`;
   }
 
   if (condition.kind === "column_change") {
