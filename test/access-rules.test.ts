@@ -18,7 +18,8 @@ function baseMetadata() {
         { id: 11, fields: { parentId: 1, colId: "OwnerEmail", type: "Text" } },
         { id: 12, fields: { parentId: 1, colId: "Title", type: "Text" } },
         { id: 13, fields: { parentId: 1, colId: "UserId", type: "Int" } },
-        { id: 14, fields: { parentId: 1, colId: "ShareToken", type: "Text" } }
+        { id: 14, fields: { parentId: 1, colId: "ShareToken", type: "Text" } },
+        { id: 15, fields: { parentId: 1, colId: "Enabled", type: "Bool" } }
       ]
     }
   };
@@ -844,4 +845,91 @@ test("column_change is update-only even within composite conditions and rejects 
   );
   assert.equal((projectAccessRules(creationNative) as any).groups[0].editable, false);
   assert.doesNotMatch(JSON.stringify(projectAccessRules(creationNative)), /aclFormula/);
+});
+
+test("bounded boolean literals round-trip and canonicalize reversed native operands", () => {
+  const condition = {
+    kind: "match_boolean" as const, columnId: "Enabled",
+    operator: "equals" as const, value: true
+  };
+  const plan = resolveAccessRuleMutation(
+    snapshot([], []), { tableId: "Projects" }, "create",
+    [{ condition, permissions: { read: "deny", update: "unspecified" } }]
+  );
+  assert.equal(plan.rules[0]?.aclFormula, "rec.Enabled == True");
+  assert.deepEqual(plan.normalizedRules[0]?.condition, condition);
+
+  const persisted = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{ id: 20, fields: {
+      resource: 2, aclFormula: "True == rec.Enabled",
+      aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1
+    } }]
+  );
+  const view = projectAccessRules(persisted) as any;
+  assert.equal(view.groups[0].editable, true);
+  assert.deepEqual(view.groups[0].rules[0].condition, condition);
+  assert.equal(view.effectiveEnforcementVerified, false);
+  assert.equal(resolveAccessRuleMutation(
+    persisted, { tableId: "Projects" }, "replace",
+    [{ condition, permissions: { read: "deny", update: "unspecified" } }]
+  ).mode, "noop");
+});
+
+test("bounded boolean literals admit proposed values but reject unsafe inputs and permissions", () => {
+  const condition = {
+    kind: "match_boolean" as const, columnId: "Enabled",
+    operator: "not_equals" as const, value: false, record: "newRec" as const
+  };
+  const compound = {
+    kind: "all" as const, conditions: [
+      { kind: "user_access" as const, role: "editor" as const, operator: "equals" as const },
+      condition
+    ]
+  };
+  const clean = snapshot([], []);
+  assert.equal(resolveAccessRuleMutation(
+    clean, { tableId: "Projects" }, "create",
+    [{ condition: compound, permissions: { read: "unspecified", update: "deny" } }]
+  ).rules[0]?.aclFormula,
+  "(user.Access == EDITOR) and (newRec.Enabled != False)");
+
+  for (const permissions of [
+    { read: "deny" as const, update: "unspecified" as const },
+    { read: "unspecified" as const, update: "allow" as const, delete: "deny" as const }
+  ]) {
+    assert.throws(() => resolveAccessRuleMutation(
+      clean, { tableId: "Projects" }, "create",
+      [{ condition: compound, permissions }]
+    ), /newRec/);
+  }
+  for (const rejected of [
+    { ...condition, value: "True" as any },
+    { ...condition, value: 1 as any },
+    { ...condition, record: "rec" as any },
+    { ...condition, columnId: "OwnerEmail" },
+    { ...condition, columnId: "NotPresent" }
+  ]) {
+    assert.throws(() => resolveAccessRuleMutation(
+      clean, { tableId: "Projects" }, "create",
+      [{ condition: rejected, permissions: { read: "unspecified", update: "allow" } }]
+    ), /Bool|boolean|record context/);
+  }
+  for (const native of [
+    "rec.OwnerEmail == True",
+    "rec.Enabled == 'sensitive-value'",
+    "rec.Enabled in [True, False]"
+  ]) {
+    const persisted = snapshot(
+      [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+      [{ id: 20, fields: {
+        resource: 2, aclFormula: native, aclFormulaParsed: '["Eq"]',
+        permissionsText: "+R", rulePos: 1
+      } }]
+    );
+    const view = projectAccessRules(persisted) as any;
+    assert.equal(view.groups[0].editable, false);
+    assert.equal(view.groups[0].rules, undefined);
+    assert.doesNotMatch(JSON.stringify(view), /sensitive-value|aclFormula/);
+  }
 });

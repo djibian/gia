@@ -545,3 +545,27 @@ test("ACL MCP schema exposes a strict, finite column_change leaf without raw rec
     { ...changed, columnId: "" }
   ]) assert.throws(() => parse(rejected));
 });
+
+test("ACL MCP schema accepts only Bool values in bounded literal predicates", () => {
+  const registrations = capture({ changeAccessRuleGroup: async () => ({ ok: true }) });
+  const tool = registrations.find((entry) => entry.name === "grist_change_structure")!;
+  const base = { action: "access_rule_group", documentId: "doc-1", mode: "create",
+    target: { tableId: "Projects" } };
+  const parse = (condition: unknown) => tool.options.inputSchema!.parse({
+    ...base, rules: [{ condition, permissions: { read: "unspecified", update: "allow" } }]
+  });
+  const bool = { kind: "match_boolean", operator: "equals", columnId: "Enabled", value: true };
+  assert.ok(parse(bool));
+  assert.ok(parse({ ...bool, value: false, record: "newRec" }));
+  assert.ok(parse({ kind: "not", condition: bool }));
+  for (const invalid of [
+    { ...bool, value: "True" },
+    { ...bool, value: 1 },
+    { ...bool, value: "private-token" },
+    { ...bool, record: "rec" },
+    { ...bool, record: "other" },
+    { ...bool, aclFormula: "rec.Enabled == True" },
+    { ...bool, columnId: "" },
+    { ...bool, operator: "in" }
+  ]) assert.throws(() => parse(invalid));
+});
