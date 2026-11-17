@@ -4,9 +4,12 @@ import * as z from "zod/v4";
 import {
   ACCESS_RULE_USER_PROPERTIES,
   MAX_ACCESS_RULE_COLUMNS,
+  MAX_ACCESS_RULE_CONDITION_DEPTH,
+  MAX_ACCESS_RULE_CONDITION_WIDTH,
   MAX_ACCESS_RULE_LINK_KEY_NAME_LENGTH,
   MAX_ACCESS_RULES_PER_GROUP
 } from "../grist/accessRules.js";
+import type { AccessRuleCondition } from "../grist/accessRules.js";
 import type {
   AuthorizedGristService,
   PageWidgetUpdateInput
@@ -103,7 +106,7 @@ const accessRuleTargetSchema = z
       .optional()
   })
   .strict();
-const accessRuleConditionSchema = z.discriminatedUnion("kind", [
+const accessRuleLeafConditionVariants = [
   z.object({ kind: z.literal("everyone") }).strict(),
   z
     .object({
@@ -128,7 +131,33 @@ const accessRuleConditionSchema = z.discriminatedUnion("kind", [
       linkKeyName: accessRuleLinkKeyNameSchema
     })
     .strict()
-]);
+] as const;
+
+// A finite-depth schema keeps tool JSON Schema acyclic and prevents unbounded
+// recursive validation before the service's independent node/formula checks.
+function boundedAccessRuleConditionSchema(depth: number): z.ZodType<AccessRuleCondition> {
+  if (depth === 0) {
+    return z.discriminatedUnion("kind", accessRuleLeafConditionVariants);
+  }
+  const child = boundedAccessRuleConditionSchema(depth - 1);
+  return z.discriminatedUnion("kind", [
+    ...accessRuleLeafConditionVariants,
+    z.object({
+      kind: z.literal("all"),
+      conditions: z.array(child).min(2).max(MAX_ACCESS_RULE_CONDITION_WIDTH)
+    }).strict(),
+    z.object({
+      kind: z.literal("any"),
+      conditions: z.array(child).min(2).max(MAX_ACCESS_RULE_CONDITION_WIDTH)
+    }).strict(),
+    z.object({
+      kind: z.literal("not"),
+      condition: child
+    }).strict()
+  ]);
+}
+
+const accessRuleConditionSchema = boundedAccessRuleConditionSchema(MAX_ACCESS_RULE_CONDITION_DEPTH);
 const accessRuleSchema = z
   .object({
     condition: accessRuleConditionSchema,
