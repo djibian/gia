@@ -1376,6 +1376,26 @@ async function run(): Promise<void> {
           { condition: { kind: "user_login_status", operator: "not_equals", value: false },
             permissions: { read: "unspecified", update: "deny" } }
         ]
+      }).catch(async (error) => {
+        // Temporary disposable-document diagnostic; NEVER print credentials or unrelated ACLs.
+        const url = `/api/docs/${encodeURIComponent(documentId)}`;
+        const resources = await gristApi(gristBaseUrl, apiKey,
+          `${url}/tables/_grist_ACLResources/records`) as
+          { records: Array<{ id: number; fields: Record<string, unknown> }> };
+        const rules = await gristApi(gristBaseUrl, apiKey,
+          `${url}/tables/_grist_ACLRules/records`) as
+          { records: Array<{ id: number; fields: Record<string, unknown> }> };
+        const matches = new Set(resources.records.filter((v) =>
+          v.fields.tableId === ACL_TABLE_ID && v.fields.colIds === "Enabled").map((v) => v.id));
+        const diagnostic = rules.records.filter((v) => matches.has(v.fields.resource as number))
+          .map((v) => ({
+            formula: /^user\\.IsLoggedIn [!=]= (True|False)$/.test(String(v.fields.aclFormula))
+              ? v.fields.aclFormula : "<redacted>",
+            parsedPresent: Boolean(v.fields.aclFormulaParsed),
+            permissions: v.fields.permissionsText
+          }));
+        console.error("E1B6_DEBUG_TARGET_ONLY", JSON.stringify(diagnostic));
+        throw error;
       }), "login_status_access_rule_create"
     );
     assert(loginCreated.persistedDefinitionVerified === true,
