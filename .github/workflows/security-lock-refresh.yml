@@ -1,0 +1,29 @@
+name: Security lock refresh helper
+
+on:
+  pull_request:
+    paths:
+      - "package.json"
+      - ".github/workflows/security-lock-refresh.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  lockfile:
+    if: github.head_ref == 'fix/security-dependency-refresh-2026-11'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Regenerate lockfile mechanically
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Production audit
+        run: npm audit --omit=dev --audit-level=high
+      - uses: actions/upload-artifact@v4
+        with:
+          name: refreshed-package-lock
+          path: package-lock.json
+          if-no-files-found: error
