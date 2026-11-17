@@ -445,3 +445,42 @@ test("ACL MCP schema exposes only bounded LinkKey names", async () => {
     /Unrecognized key/i
   );
 });
+
+
+test("ACL MCP schema bounds finite composite conditions without free-form formulas", async () => {
+  const registrations = capture({ changeAccessRuleGroup: async () => ({ ok: true }) });
+  const tool = registrations.find((entry) => entry.name === "grist_change_structure")!;
+  const leaf = { kind: "user_access", operator: "equals", role: "owner" };
+  const base = {
+    action: "access_rule_group",
+    documentId: "doc-1",
+    mode: "create",
+    target: { tableId: "Projects" }
+  };
+  const parse = (condition: unknown) => tool.options.inputSchema!.parse({
+    ...base,
+    rules: [{
+      condition,
+      permissions: { read: "allow", update: "unspecified" }
+    }]
+  });
+  assert.ok(parse({ kind: "all", conditions: [
+    leaf,
+    { kind: "not", condition: { kind: "match_link_key",
+      operator: "equals", columnId: "ShareToken", linkKeyName: "StageToken" } }
+  ] }));
+  assert.throws(() => parse({
+    kind: "any", conditions: [leaf]
+  }), /Too small|2/i);
+  assert.throws(() => parse({
+    kind: "not", condition: { kind: "literal", value: "secret" }
+  }), /Invalid|discriminator|kind/i);
+  assert.throws(() => parse({
+    kind: "all", aclFormula: "True", conditions: [leaf, leaf]
+  }), /Unrecognized key/i);
+  let tooDeep: unknown = leaf;
+  for (let i = 0; i < 5; i++) {
+    tooDeep = { kind: "not", condition: tooDeep };
+  }
+  assert.throws(() => parse(tooDeep));
+});
