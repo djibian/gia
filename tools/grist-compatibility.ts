@@ -1213,6 +1213,57 @@ async function run(): Promise<void> {
     );
     assert(newRecDeleted.persistedDefinitionVerified === true, "newrec_access_rule_delete_not_verified");
 
+    // Old/new values can be compared without any literal or secret-bearing formula.
+    // A rec/newRec pair is update-only and is checked as persisted metadata, not
+    // as a guarantee about effective per-user enforcement.
+    const changedCreated = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "create",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["ShareToken"] },
+        rules: [{
+          condition: {
+            kind: "column_change", columnId: "ShareToken", operator: "not_equals"
+          },
+          permissions: { read: "unspecified", update: "deny" }
+        }]
+      }),
+      "column_change_access_rule_create"
+    );
+    assert(changedCreated.persistedDefinitionVerified === true,
+      "column_change_access_rule_not_verified");
+    assert(changedCreated.effectiveEnforcementVerified === false,
+      "column_change_access_rule_overclaimed_enforcement");
+    const changedInspected = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "access_rules", documentId
+      }),
+      "column_change_access_rule_inspect"
+    );
+    const changedGroup = (changedInspected.groups as Array<Record<string, unknown>>).find((group) => {
+      const target = group.target as Record<string, unknown> | undefined;
+      return target?.tableId === ACL_TABLE_ID &&
+        Array.isArray(target.columnIds) &&
+        target.columnIds.length === 1 &&
+        target.columnIds[0] === "ShareToken";
+    });
+    assert(changedGroup?.editable === true, "column_change_not_editable");
+    const changedRule = (changedGroup.rules as Array<Record<string, unknown>>)[0];
+    assert(changedRule?.condition !== null &&
+      typeof changedRule?.condition === "object" &&
+      (changedRule.condition as Record<string, unknown>).kind === "column_change" &&
+      (changedRule.condition as Record<string, unknown>).columnId === "ShareToken" &&
+      (changedRule.condition as Record<string, unknown>).operator === "not_equals",
+      "column_change_not_normalized");
+    const changedDeleted = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "delete",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["ShareToken"] }
+      }),
+      "column_change_access_rule_delete"
+    );
+    assert(changedDeleted.persistedDefinitionVerified === true,
+      "column_change_access_rule_delete_not_verified");
+
     const aclDeleted = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "access_rule_group",

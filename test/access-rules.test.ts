@@ -753,3 +753,95 @@ test("newRec matches reject read/delete decisions, arbitrary record contexts and
   assert.equal((protectedProjection as any).groups[0].editable, false);
   assert.doesNotMatch(JSON.stringify(protectedProjection), /sensitive-value|aclFormula/);
 });
+
+
+test("column_change preserves typed old/new intent and canonicalizes native operand order", () => {
+  const clean = snapshot([], []);
+  const condition = {
+    kind: "column_change" as const, operator: "not_equals" as const, columnId: "OwnerEmail"
+  };
+  const plan = resolveAccessRuleMutation(
+    clean, { tableId: "Projects", columnIds: ["OwnerEmail"] }, "create",
+    [{ condition, permissions: { read: "unspecified", update: "deny" } }]
+  );
+  assert.equal(plan.rules[0]?.aclFormula, "rec.OwnerEmail != newRec.OwnerEmail");
+  assert.deepEqual(plan.normalizedRules[0]?.condition, condition);
+
+  const persisted = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "OwnerEmail" } }],
+    [{ id: 20, fields: {
+      resource: 2, aclFormula: "newRec.OwnerEmail != rec.OwnerEmail",
+      aclFormulaParsed: '["NotEq"]', permissionsText: "-U", rulePos: 1
+    } }]
+  );
+  const projection = projectAccessRules(persisted) as any;
+  assert.equal(projection.groups[0].editable, true);
+  assert.deepEqual(projection.groups[0].rules[0].condition, condition);
+  assert.equal(projection.effectiveEnforcementVerified, false);
+
+  const replace = resolveAccessRuleMutation(
+    persisted, { tableId: "Projects", columnIds: ["OwnerEmail"] }, "replace",
+    [{ condition, permissions: { read: "unspecified", update: "deny" } }]
+  );
+  assert.equal(replace.mode, "noop");
+});
+
+test("column_change is update-only even within composite conditions and rejects unsafe/native unsupported forms", () => {
+  const clean = snapshot([], []);
+  const condition = {
+    kind: "all" as const,
+    conditions: [
+      { kind: "user_access" as const, operator: "equals" as const, role: "editor" as const },
+      { kind: "column_change" as const, operator: "equals" as const, columnId: "UserId" }
+    ]
+  };
+  const plan = resolveAccessRuleMutation(
+    clean, { tableId: "Projects" }, "create",
+    [{ condition, permissions: { read: "unspecified", update: "allow" } }]
+  );
+  assert.equal(plan.rules[0]?.aclFormula,
+    "(user.Access == EDITOR) and (rec.UserId == newRec.UserId)");
+
+  for (const permissions of [
+    { read: "allow" as const, update: "allow" as const },
+    { read: "unspecified" as const, update: "allow" as const, create: "allow" as const },
+    { read: "unspecified" as const, update: "allow" as const, delete: "deny" as const }
+  ]) {
+    assert.throws(() => resolveAccessRuleMutation(
+      clean, { tableId: "Projects" }, "create", [{ condition, permissions }]
+    ), /newRec|Column-change/i);
+  }
+  assert.throws(() => resolveAccessRuleMutation(
+    clean, { tableId: "Projects" }, "create", [{
+      condition: { kind: "column_change", operator: "equals", columnId: "Missing" },
+      permissions: { read: "unspecified", update: "allow" }
+    }]
+  ), /existing Text|Choice/i);
+
+  assert.throws(() => resolveAccessRuleMutation(
+    clean, { tableId: "Projects" }, "create", [{
+      condition: { kind: "column_change", operator: "equals", columnId: "OwnerEmail.Bad" },
+      permissions: { read: "unspecified", update: "allow" }
+    }]
+  ), /safe stable column ID/i);
+
+  const invalidNative = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{ id: 20, fields: {
+      resource: 2, aclFormula: "rec.OwnerEmail == rec.OwnerEmail",
+      aclFormulaParsed: '["Eq"]', permissionsText: "+U", rulePos: 1
+    } }]
+  );
+  const invalidProjection = projectAccessRules(invalidNative) as any;
+  assert.equal(invalidProjection.groups[0].editable, false);
+  assert.equal(invalidProjection.groups[0].rules, undefined);
+  const creationNative = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{ id: 20, fields: {
+      resource: 2, aclFormula: "rec.OwnerEmail == newRec.OwnerEmail",
+      aclFormulaParsed: '["Eq"]', permissionsText: "+C", rulePos: 1
+    } }]
+  );
+  assert.equal((projectAccessRules(creationNative) as any).groups[0].editable, false);
+  assert.doesNotMatch(JSON.stringify(projectAccessRules(creationNative)), /aclFormula/);
+});

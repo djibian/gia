@@ -76,7 +76,7 @@ Only ordinary stable table/column groups and the contract's typed secret-safe
 conditions/permission subset are writable. Explicit `record: "newRec"` is
 allowed on the existing typed user/LinkKey record matches only for proposed row
 creation/update; read/delete decisions with `newRec` remain protected and
-non-editable. An omitted record context always means `rec`. A bounded LinkKey name may be exposed
+non-editable. An omitted record context always means `rec`. The typed `column_change` condition compares a single stable column's old `rec` value with its proposed `newRec` value using equality/inequality only; it requires an existing Text, Choice, Int, Numeric or Bool column and is update-only (read, create and delete stay unspecified), including in nested conditions. It admits no literal or arbitrary operand. A bounded LinkKey name may be exposed
 as structural policy metadata only when it participates in a normalized supported
 record comparison; LinkKey values, secret-bearing URLs and literal-bearing opaque
 formulas remain excluded. Finite `all` / `any` / `not` trees over the existing

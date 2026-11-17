@@ -132,7 +132,12 @@ const accessRuleLeafConditionVariants = [
       linkKeyName: accessRuleLinkKeyNameSchema,
       record: z.literal("newRec").optional()
     })
-    .strict()
+    .strict(),
+  z.object({
+    kind: z.literal("column_change"),
+    operator: z.enum(["equals", "not_equals"]),
+    columnId: columnIdSchema
+  }).strict()
 ] as const;
 
 // A finite-depth schema keeps tool JSON Schema acyclic and prevents unbounded
