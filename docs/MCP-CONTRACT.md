@@ -135,7 +135,10 @@ column permissions are read/update. Writable record/user comparisons accept only
 built-in Email, UserID, Name, UserRef, Origin, IsLoggedIn with compatible types.
 Typed LinkKey comparisons additionally accept one safe LinkKey name and one
 same-table Text/Any stable record column; LinkKey values are never model inputs
-or outputs.
+or outputs. Finite boolean condition trees allow `all` / `any` (2–6 children)
+and `not` over supported leaves, with at most 4 nesting levels, 20 total nodes
+and a serialized native formula of at most 2,048 characters. Nested `everyone`
+is invalid. Opaque or unsupported composite formulas remain protected.
 
 Success-only mutation results do not forward arbitrary upstream response bodies.
 Record-field, query-filter and custom-mapping dictionaries reject the own key
