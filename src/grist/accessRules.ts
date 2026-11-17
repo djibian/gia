@@ -34,12 +34,14 @@ export type AccessRuleCondition =
       operator: AccessRuleOperator;
       columnId: string;
       userProperty: AccessRuleUserProperty;
+      record?: "newRec" | undefined;
     }
   | {
       kind: "match_link_key";
       operator: AccessRuleOperator;
       columnId: string;
       linkKeyName: string;
+      record?: "newRec" | undefined;
     }
   | { kind: "all"; conditions: AccessRuleCondition[] }
   | { kind: "any"; conditions: AccessRuleCondition[] }
@@ -272,34 +274,39 @@ function parseLeafCondition(
     return { kind: "user_access", operator, role };
   }
 
-  const userMatch = /^rec\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) user\.(Email|UserID|Name|UserRef|Origin|IsLoggedIn)$/.exec(
+  const userMatch = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) user\.(Email|UserID|Name|UserRef|Origin|IsLoggedIn)$/.exec(
     formula
   );
   if (userMatch) {
-    const columnId = userMatch[1]!;
-    const operator = NATIVE_OP.get(userMatch[2]!);
-    const userProperty = userMatch[3] as AccessRuleUserProperty;
+    const recordScope = userMatch[1]!;
+    const columnId = userMatch[2]!;
+    const operator = NATIVE_OP.get(userMatch[3]!);
+    const userProperty = userMatch[4] as AccessRuleUserProperty;
     const column = table.columns.get(columnId);
     if (!operator || !column || !typeCompatibleWithUserProperty(column.type, userProperty)) {
       return undefined;
     }
-    return { kind: "match_user", operator, columnId, userProperty };
+    return {
+      kind: "match_user", operator, columnId, userProperty,
+      ...(recordScope === "newRec" ? { record: "newRec" as const } : {})
+    };
   }
 
   const linkKeyMatch =
-    /^rec\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) user\.LinkKey\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(
+    /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) user\.LinkKey\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(
       formula
     );
   const reverseLinkKeyMatch =
-    /^user\.LinkKey\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) rec\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(
+    /^user\.LinkKey\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) (rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(
       formula
     );
   if (linkKeyMatch || reverseLinkKeyMatch) {
-    const columnId = linkKeyMatch ? linkKeyMatch[1]! : reverseLinkKeyMatch![3]!;
+    const recordScope = linkKeyMatch ? linkKeyMatch[1]! : reverseLinkKeyMatch![3]!;
+    const columnId = linkKeyMatch ? linkKeyMatch[2]! : reverseLinkKeyMatch![4]!;
     const operator = NATIVE_OP.get(
-      linkKeyMatch ? linkKeyMatch[2]! : reverseLinkKeyMatch![2]!
+      linkKeyMatch ? linkKeyMatch[3]! : reverseLinkKeyMatch![2]!
     );
-    const linkKeyName = linkKeyMatch ? linkKeyMatch[3]! : reverseLinkKeyMatch![1]!;
+    const linkKeyName = linkKeyMatch ? linkKeyMatch[4]! : reverseLinkKeyMatch![1]!;
     const column = table.columns.get(columnId);
     if (
       !operator ||
@@ -309,7 +316,10 @@ function parseLeafCondition(
     ) {
       return undefined;
     }
-    return { kind: "match_link_key", operator, columnId, linkKeyName };
+    return {
+      kind: "match_link_key", operator, columnId, linkKeyName,
+      ...(recordScope === "newRec" ? { record: "newRec" as const } : {})
+    };
   }
 
   return undefined;
@@ -390,6 +400,22 @@ function parseCondition(formula: string, table: TableInfo): AccessRuleCondition 
   return parse(formula, 0);
 }
 
+function recordExpression(condition: { columnId: string; record?: "newRec" | undefined }): string {
+  if (condition.record !== undefined && condition.record !== "newRec") {
+    throw new Error("Unsupported ACL record context; only default rec or explicit newRec is allowed.");
+  }
+  return `${condition.record ?? "rec"}.${condition.columnId}`;
+}
+
+function usesNewRec(condition: AccessRuleCondition): boolean {
+  if (condition.kind === "all" || condition.kind === "any") {
+    return condition.conditions.some(usesNewRec);
+  }
+  if (condition.kind === "not") return usesNewRec(condition.condition);
+  return (condition.kind === "match_user" || condition.kind === "match_link_key") &&
+    condition.record === "newRec";
+}
+
 type AccessRuleLeafCondition = Exclude<AccessRuleCondition, { kind: "all" | "any" } | { kind: "not" }>;
 
 function serializeLeafCondition(condition: AccessRuleLeafCondition, table: TableInfo): string {
@@ -421,7 +447,7 @@ function serializeLeafCondition(condition: AccessRuleLeafCondition, table: Table
         `Column "${condition.columnId}" type "${column.type}" is not compatible with a LinkKey comparison in the bounded access-rule subset.`
       );
     }
-    return `rec.${condition.columnId} ${OP_NATIVE[condition.operator]} user.LinkKey.${condition.linkKeyName}`;
+    return `${recordExpression(condition)} ${OP_NATIVE[condition.operator]} user.LinkKey.${condition.linkKeyName}`;
   }
 
   if (!SAFE_IDENTIFIER.test(condition.columnId)) {
@@ -440,7 +466,7 @@ function serializeLeafCondition(condition: AccessRuleLeafCondition, table: Table
       `Column "${condition.columnId}" type "${column.type}" is not compatible with user.${condition.userProperty} in the bounded access-rule subset.`
     );
   }
-  return `rec.${condition.columnId} ${OP_NATIVE[condition.operator]} user.${condition.userProperty}`;
+  return `${recordExpression(condition)} ${OP_NATIVE[condition.operator]} user.${condition.userProperty}`;
 }
 
 function serializeCondition(condition: AccessRuleCondition, table: TableInfo): string {
@@ -641,6 +667,15 @@ function buildGroupState(
           "This group uses a condition or permission form outside Gia's bounded secret-safe ACL subset."
       };
     }
+    if (usesNewRec(condition) &&
+        (permissions.read !== "unspecified" || permissions.delete !== "unspecified")) {
+      return {
+        target,
+        resourceRecordId: resource.id,
+        ruleRecordIds: ordered.map((entry) => entry.id),
+        unsupportedReason: "newRec rules can only control row creation or update in Gia's bounded subset."
+      };
+    }
     if (condition.kind === "everyone" && index !== ordered.length - 1) {
       return {
         target,
@@ -768,6 +803,11 @@ function normalizeRequestedRules(
       throw new Error("An everyone access rule must be the final rule in its group.");
     }
     const permission = serializePermissions(rule.permissions, target.columnIds.length > 0);
+    if (usesNewRec(canonicalCondition) &&
+        (permission.normalized.read !== "unspecified" ||
+         permission.normalized.delete !== "unspecified")) {
+      throw new Error("newRec ACL conditions may only grant or deny row create/update permissions.");
+    }
     const normalizedRule = { condition: canonicalCondition, permissions: permission.normalized };
     const key = stableJson(normalizedRule);
     if (seen.has(key)) throw new Error("Duplicate access rules are not allowed in one group.");

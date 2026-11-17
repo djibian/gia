@@ -1151,6 +1151,68 @@ async function run(): Promise<void> {
       "access_rule_created_link_key_group_missing"
     );
 
+    // Proposed values are native ACL context on create/update only.
+    // This qualifies persisted Grist metadata, not effective LinkKey authorization.
+    const newRecCreated = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group",
+        documentId,
+        mode: "create",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["ShareToken"] },
+        rules: [
+          {
+            condition: {
+              kind: "match_user", record: "newRec", operator: "equals",
+              columnId: "ShareToken", userProperty: "Email"
+            },
+            permissions: { read: "unspecified", update: "allow" }
+          },
+          {
+            condition: {
+              kind: "match_link_key", record: "newRec", operator: "not_equals",
+              columnId: "ShareToken", linkKeyName: "CompatToken"
+            },
+            permissions: { read: "unspecified", update: "deny" }
+          }
+        ]
+      }),
+      "newrec_access_rule_create"
+    );
+    assert(newRecCreated.persistedDefinitionVerified === true, "newrec_access_rule_not_verified");
+    assert(newRecCreated.effectiveEnforcementVerified === false, "newrec_access_rule_overclaimed_enforcement");
+
+    const newRecInspected = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "access_rules", documentId
+      }),
+      "newrec_access_rules_inspection"
+    );
+    const newRecGroup = (newRecInspected.groups as Array<Record<string, unknown>>).find((group) => {
+      const target = group.target as Record<string, unknown> | undefined;
+      return target?.tableId === ACL_TABLE_ID &&
+        Array.isArray(target.columnIds) &&
+        target.columnIds.length === 1 &&
+        target.columnIds[0] === "ShareToken";
+    });
+    assert(newRecGroup?.editable === true, "newrec_access_rule_not_editable");
+    const newRecRules = newRecGroup.rules as Array<Record<string, unknown>>;
+    assert(newRecRules.length === 2 &&
+      newRecRules.every((rule) => (rule.condition as Record<string, unknown>)?.record === "newRec") &&
+      (newRecRules[0]!.condition as Record<string, unknown>).kind === "match_user" &&
+      (newRecRules[1]!.condition as Record<string, unknown>).kind === "match_link_key",
+      "newrec_access_rule_not_normalized");
+
+    const newRecDeleted = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group",
+        documentId,
+        mode: "delete",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["ShareToken"] }
+      }),
+      "newrec_access_rule_delete"
+    );
+    assert(newRecDeleted.persistedDefinitionVerified === true, "newrec_access_rule_delete_not_verified");
+
     const aclDeleted = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "access_rule_group",
