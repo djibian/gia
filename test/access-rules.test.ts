@@ -17,7 +17,8 @@ function baseMetadata() {
       records: [
         { id: 11, fields: { parentId: 1, colId: "OwnerEmail", type: "Text" } },
         { id: 12, fields: { parentId: 1, colId: "Title", type: "Text" } },
-        { id: 13, fields: { parentId: 1, colId: "UserId", type: "Int" } }
+        { id: 13, fields: { parentId: 1, colId: "UserId", type: "Int" } },
+        { id: 14, fields: { parentId: 1, colId: "ShareToken", type: "Text" } }
       ]
     }
   };
@@ -398,4 +399,140 @@ test("rejects unsafe permission aliases, non-terminal everyone and target overla
       ),
     /everyone access rule must be the final/i
   );
+});
+
+
+test("normalizes and writes typed LinkKey ACL conditions without exposing values", () => {
+  const existing = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [
+      {
+        id: 20,
+        fields: {
+          resource: 2,
+          aclFormula: "user.LinkKey.StageToken == rec.ShareToken",
+          aclFormulaParsed: '["Eq"]',
+          permissionsText: "+R",
+          rulePos: 1
+        }
+      },
+      {
+        id: 21,
+        fields: {
+          resource: 2,
+          aclFormula: "",
+          aclFormulaParsed: "",
+          permissionsText: "-R",
+          rulePos: 2
+        }
+      }
+    ]
+  );
+
+  const projected = projectAccessRules(existing) as any;
+  assert.deepEqual(projected.groups[0].rules[0].condition, {
+    kind: "match_link_key",
+    operator: "equals",
+    columnId: "ShareToken",
+    linkKeyName: "StageToken"
+  });
+  assert.doesNotMatch(JSON.stringify(projected), /aclFormula|StageToken_/);
+
+  const clean = snapshot([], []);
+  const plan = resolveAccessRuleMutation(
+    clean,
+    { tableId: "Projects" },
+    "create",
+    [
+      {
+        condition: {
+          kind: "match_link_key",
+          operator: "not_equals",
+          columnId: "ShareToken",
+          linkKeyName: "StageToken"
+        },
+        permissions: {
+          read: "deny",
+          update: "unspecified",
+          create: "unspecified",
+          delete: "unspecified"
+        }
+      },
+      {
+        condition: { kind: "everyone" },
+        permissions: {
+          read: "allow",
+          update: "unspecified",
+          create: "unspecified",
+          delete: "unspecified"
+        }
+      }
+    ]
+  );
+  assert.equal(plan.rules[0]?.aclFormula, "rec.ShareToken != user.LinkKey.StageToken");
+});
+
+test("LinkKey ACL conditions reject unsafe names, literals and incompatible columns", () => {
+  const clean = snapshot([], []);
+
+  assert.throws(
+    () =>
+      resolveAccessRuleMutation(
+        clean,
+        { tableId: "Projects" },
+        "create",
+        [
+          {
+            condition: {
+              kind: "match_link_key",
+              operator: "equals",
+              columnId: "ShareToken",
+              linkKeyName: "bad-name"
+            },
+            permissions: { read: "allow", update: "unspecified" }
+          }
+        ]
+      ),
+    /LinkKey name/i
+  );
+
+  assert.throws(
+    () =>
+      resolveAccessRuleMutation(
+        clean,
+        { tableId: "Projects" },
+        "create",
+        [
+          {
+            condition: {
+              kind: "match_link_key",
+              operator: "equals",
+              columnId: "UserId",
+              linkKeyName: "StageToken"
+            },
+            permissions: { read: "allow", update: "unspecified" }
+          }
+        ]
+      ),
+    /not compatible with a LinkKey comparison/i
+  );
+
+  const literal = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [
+      {
+        id: 20,
+        fields: {
+          resource: 2,
+          aclFormula: "user.LinkKey.StageToken == 'sensitive-value'",
+          aclFormulaParsed: '["Eq"]',
+          permissionsText: "+R",
+          rulePos: 1
+        }
+      }
+    ]
+  );
+  const projected = projectAccessRules(literal) as any;
+  assert.equal(projected.groups[0].editable, false);
+  assert.doesNotMatch(JSON.stringify(projected), /sensitive-value|StageToken/);
 });

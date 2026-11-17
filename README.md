@@ -37,7 +37,7 @@ The process binds to localhost. Remote access uses an HTTPS reverse proxy and
 | `grist_add_records` | bounded record creation |
 | `grist_change_records` | explicit record updates/deletion |
 | `grist_add_structure` | empty document/template bootstrap and table/column creation |
-| `grist_change_structure` | bounded document metadata/schema changes and application-rule groups |
+| `grist_change_structure` | bounded document metadata/schema changes and application-rule groups, including typed LinkKey comparisons |
 | `grist_add_ui` | native pages/widgets, including summaries |
 | `grist_change_ui` | bounded page/widget/calendar configuration, layout and order |
 | `grist_help` | progressive current-contract disclosure |

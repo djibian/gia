@@ -32,8 +32,9 @@ operator-side Grist administration. See [Operations](OPERATIONS.md).
 ## Enforced invariants
 
 1. **Secret exclusion.** API keys, bearer/OAuth/refresh tokens, authorization codes,
-   PKCE verifiers, cookies, encryption/session secrets, LinkKeys, credential-map
-   contents and raw provider subjects never become model outputs or committed
+   PKCE verifiers, cookies, encryption/session secrets, LinkKey values,
+   secret-bearing LinkKey URLs, credential-map contents and raw provider subjects
+   never become model outputs or committed
    artifacts. Do not log payloads, arbitrary upstream bodies or secret-bearing URLs.
 2. **Principal isolation.** Credentials, clients, contexts, discovery and caches
    never cross principal boundaries. Static mode has one explicitly controlled principal.
@@ -72,7 +73,10 @@ Both ACL inspection and mutation require fresh native document metadata proving
 local `doc.schema:write`; native Grist Owner enforcement remains mandatory.
 
 Only ordinary stable table/column groups and the contract's typed secret-safe
-conditions/permission subset are writable. Opaque formulas, memos, user attributes,
+conditions/permission subset are writable. A bounded LinkKey name may be exposed
+as structural policy metadata only when it participates in a normalized supported
+record comparison; LinkKey values, secret-bearing URLs and literal-bearing opaque
+formulas remain excluded. Opaque formulas, memos, user attributes,
 legacy/special/default/schema-edit policy and virtual overlays are not converted
 into editable model content. Incomplete/censored/truncated metadata, overlapping
 targets or lossy normalization refuses mutation. Untargeted persisted policy is

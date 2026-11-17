@@ -71,6 +71,10 @@ function harness(options: { applyWrite?: boolean } = {}) {
             {
               id: 102,
               fields: { parentId: 100, colId: "Title", type: "Text" }
+            },
+            {
+              id: 103,
+              fields: { parentId: 100, colId: "ShareToken", type: "Text" }
             }
           ]
         };
@@ -259,4 +263,41 @@ test("ACL inspection fails before metadata reads when native owner proof is abse
     /owner access is required/i
   );
   assert.equal(metadataReads, 0);
+});
+
+
+test("ACL mutation accepts a typed LinkKey name without accepting a secret value", async () => {
+  const { service, writes } = harness();
+  const result = await service.changeAccessRuleGroup(
+    "doc-1",
+    { tableId: "Projects", columnIds: ["ShareToken"] },
+    "create",
+    [
+      {
+        condition: {
+          kind: "match_link_key",
+          operator: "equals",
+          columnId: "ShareToken",
+          linkKeyName: "StageToken"
+        },
+        permissions: { read: "allow", update: "unspecified" }
+      },
+      {
+        condition: { kind: "everyone" },
+        permissions: { read: "deny", update: "unspecified" }
+      }
+    ]
+  ) as any;
+
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0]?.rules[0]?.aclFormula, "rec.ShareToken == user.LinkKey.StageToken");
+  assert.deepEqual(result, {
+    documentId: "doc-1",
+    target: { tableId: "Projects", columnIds: ["ShareToken"] },
+    mode: "create",
+    changed: true,
+    ruleCount: 2,
+    persistedDefinitionVerified: true,
+    effectiveEnforcementVerified: false
+  });
 });
