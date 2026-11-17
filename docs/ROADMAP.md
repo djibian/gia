@@ -7,9 +7,9 @@ Public-directory publication remains inactive.
 
 **Status: ACTIVE**
 
-Concrete real-use evidence shows that Gia's current bounded access-rule subset
-cannot inspect and safely modify important native Grist application policies that
-depend on LinkKeys. The authorized evolution is tracked in
+Real-use evidence shows that simple LinkKey-to-record comparisons are not enough
+to inspect and safely modify important native composite Grist application policies.
+The authorized finite evolution is tracked in
 [issue #238](https://github.com/djibian/gia/issues/238).
 
 ### Goal
@@ -24,28 +24,9 @@ claim that persisted policy proves effective confidentiality.
 
 ### Finite work
 
-#### E1-A — typed LinkKey ACL semantics
-
-**Status: ACTIVE**
-
-Extend the existing bounded ACL condition model so ordinary table/column rule
-groups can inspect and mutate equality/inequality comparisons using a safe named
-`user.LinkKey.<name>` operand and stable record-column operands.
-
-Requirements:
-
-- expose only bounded LinkKey names as policy structure, never LinkKey values or
-  secret-bearing URLs;
-- keep raw ACL formula text out of editable model inputs and outputs;
-- preserve fresh native Owner proof, `doc.schema:write`, untargeted-policy
-  fingerprinting and non-retryable uncertain-effect behavior;
-- keep unsupported formulas protected and non-editable rather than guessing;
-- add focused parser/serializer, authorization, preservation and compatibility
-  regressions against supported Grist Community versions.
-
 #### E1-B — composable bounded condition AST
 
-**Status: BLOCKED by E1-A**
+**Status: ACTIVE**
 
 Generalize the condition model only as far as needed for important native
 application policies: bounded `all`/`any`/`not`, typed comparisons,
@@ -90,7 +71,7 @@ concrete generic evidence.
 
 ### Execution rules
 
-Work proceeds sequentially E1-A through E1-F. Each slice must be independently
+Remaining work proceeds sequentially E1-B through E1-F. Each slice must be independently
 bounded and reviewed on its exact head when required by [AGENTS.md](../AGENTS.md).
 Completed slice history belongs in issues, PRs, commits and CI; remove completed
 work from this Roadmap as it is absorbed into current normative docs and tests.
