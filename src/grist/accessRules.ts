@@ -359,6 +359,7 @@ function splitTopLevel(value: string, operator: " and " | " or "): string[] | un
 }
 
 function parseCondition(formula: string, table: TableInfo): AccessRuleCondition | undefined {
+  if (formula === "") return { kind: "everyone" };
   if (formula.length > MAX_ACCESS_RULE_FORMULA_LENGTH) return undefined;
   const budget = { nodes: 0 };
   function parse(source: string, depth: number): AccessRuleCondition | undefined {
@@ -366,7 +367,7 @@ function parseCondition(formula: string, table: TableInfo): AccessRuleCondition 
       return undefined;
     }
     const value = withoutOuterParens(source);
-    if (!value) return depth === 0 ? { kind: "everyone" } : undefined;
+    if (!value) return undefined;
     for (const [delimiter, kind] of [
       [" or ", "any"],
       [" and ", "all"]
