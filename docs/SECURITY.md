@@ -73,7 +73,10 @@ Both ACL inspection and mutation require fresh native document metadata proving
 local `doc.schema:write`; native Grist Owner enforcement remains mandatory.
 
 Only ordinary stable table/column groups and the contract's typed secret-safe
-conditions/permission subset are writable. A bounded LinkKey name may be exposed
+conditions/permission subset are writable. Explicit `record: "newRec"` is
+allowed on the existing typed user/LinkKey record matches only for proposed row
+creation/update; read/delete decisions with `newRec` remain protected and
+non-editable. An omitted record context always means `rec`. A bounded LinkKey name may be exposed
 as structural policy metadata only when it participates in a normalized supported
 record comparison; LinkKey values, secret-bearing URLs and literal-bearing opaque
 formulas remain excluded. Finite `all` / `any` / `not` trees over the existing
