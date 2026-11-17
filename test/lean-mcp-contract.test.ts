@@ -484,3 +484,38 @@ test("ACL MCP schema bounds finite composite conditions without free-form formul
   }
   assert.throws(() => parse(tooDeep));
 });
+
+
+test("ACL MCP schema accepts only explicit newRec on existing typed record matches", () => {
+  const registrations = capture({ changeAccessRuleGroup: async () => ({ ok: true }) });
+  const tool = registrations.find((entry) => entry.name === "grist_change_structure")!;
+  const base = {
+    action: "access_rule_group", documentId: "doc-1", mode: "create",
+    target: { tableId: "Projects" }
+  };
+  const parse = (condition: unknown) => tool.options.inputSchema!.parse({
+    ...base,
+    rules: [{ condition, permissions: { read: "unspecified", update: "allow" } }]
+  });
+  assert.ok(parse({
+    kind: "match_user", operator: "equals",
+    record: "newRec", columnId: "OwnerEmail", userProperty: "Email"
+  }));
+  assert.ok(parse({
+    kind: "match_link_key", operator: "equals",
+    record: "newRec", columnId: "ShareToken", linkKeyName: "StageToken"
+  }));
+  assert.throws(() => parse({
+    kind: "match_user", operator: "equals",
+    record: "rec", columnId: "OwnerEmail", userProperty: "Email"
+  }), /Invalid|literal|record/i);
+  assert.throws(() => parse({
+    kind: "match_link_key", operator: "equals",
+    record: "other", columnId: "ShareToken", linkKeyName: "StageToken"
+  }), /Invalid|literal|record/i);
+  assert.throws(() => parse({
+    kind: "match_link_key", operator: "equals",
+    record: "newRec", columnId: "ShareToken", linkKeyName: "StageToken",
+    value: "secret"
+  }), /Unrecognized key/i);
+});
