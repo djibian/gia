@@ -35,6 +35,11 @@ export type AccessRuleCondition =
       roles: AccessRuleRole[];
     }
   | {
+      kind: "user_login_status";
+      operator: AccessRuleOperator;
+      value: boolean;
+    }
+  | {
       kind: "match_user";
       operator: AccessRuleOperator;
       columnId: string;
@@ -320,6 +325,17 @@ function parseLeafCondition(
     };
   }
 
+  // This native boolean user property is non-secret and independent of row state.
+  // Accept both equivalent operand orders, never arbitrary user properties.
+  const loginMatch = /^user\.IsLoggedIn (==|!=) (True|False)$/.exec(formula);
+  const reverseLoginMatch = /^(True|False) (==|!=) user\.IsLoggedIn$/.exec(formula);
+  if (loginMatch || reverseLoginMatch) {
+    const operator = NATIVE_OP.get(loginMatch ? loginMatch[1]! : reverseLoginMatch![2]!);
+    if (!operator) return undefined;
+    const literal = loginMatch ? loginMatch[2]! : reverseLoginMatch![1]!;
+    return { kind: "user_login_status", operator, value: literal === "True" };
+  }
+
   const userMatch = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) user\.(Email|UserID|Name|UserRef|Origin|IsLoggedIn)$/.exec(
     formula
   );
@@ -513,6 +529,14 @@ function serializeLeafCondition(condition: AccessRuleLeafCondition, table: Table
       throw new Error("Role membership requires two or three distinct built-in Grist roles.");
     }
     return `user.Access ${condition.operator === "in" ? "in" : "not in"} [${roles.map((role) => ROLE_NATIVE[role]).join(", ")}]`;
+  }
+
+  if (condition.kind === "user_login_status") {
+    if ((condition.operator !== "equals" && condition.operator !== "not_equals") ||
+        typeof condition.value !== "boolean") {
+      throw new Error("User login ACL predicate requires a supported operator and a boolean value.");
+    }
+    return `user.IsLoggedIn ${OP_NATIVE[condition.operator]} ${condition.value ? "True" : "False"}`;
   }
 
   if (condition.kind === "match_boolean") {

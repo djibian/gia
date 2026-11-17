@@ -1363,6 +1363,53 @@ async function run(): Promise<void> {
     assert(membershipDeleted.persistedDefinitionVerified === true,
       "role_membership_access_rule_delete_not_verified");
 
+
+    // Boolean login status is a native non-secret user property. These two
+    // predicates are deliberately false for the signed-in document Owner:
+    // self-denying read rules would censor native metadata and rightly cause
+    // Gia to report an UNCERTAIN write rather than claim verification.
+    const loginCreated = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "create",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["Enabled"] },
+        rules: [
+          { condition: { kind: "user_login_status", operator: "equals", value: false },
+            permissions: { read: "deny", update: "unspecified" } },
+          { condition: { kind: "user_login_status", operator: "not_equals", value: true },
+            permissions: { read: "unspecified", update: "deny" } }
+        ]
+      }), "login_status_access_rule_create"
+    );
+    assert(loginCreated.persistedDefinitionVerified === true,
+      "login_status_access_rule_not_verified");
+    assert(loginCreated.effectiveEnforcementVerified === false,
+      "login_status_access_rule_overclaimed_enforcement");
+    const loginInspected = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "access_rules", documentId
+      }), "login_status_access_rule_inspect"
+    );
+    const loginGroup = (loginInspected.groups as Array<Record<string, unknown>>).find((group) => {
+      const target = group.target as Record<string, unknown> | undefined;
+      return target?.tableId === ACL_TABLE_ID && Array.isArray(target.columnIds) &&
+        target.columnIds.length === 1 && target.columnIds[0] === "Enabled";
+    });
+    assert(loginGroup?.editable === true, "login_status_access_rule_not_editable");
+    const loginRules = loginGroup.rules as Array<Record<string, unknown>>;
+    assert(loginRules.length === 2 &&
+      loginRules.every((rule) => (rule.condition as Record<string, unknown>).kind === "user_login_status") &&
+      (loginRules[0]!.condition as Record<string, unknown>).value === false &&
+      (loginRules[1]!.condition as Record<string, unknown>).value === true,
+      "login_status_access_rule_not_normalized");
+    const loginDeleted = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "delete",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["Enabled"] }
+      }), "login_status_access_rule_delete"
+    );
+    assert(loginDeleted.persistedDefinitionVerified === true,
+      "login_status_access_rule_delete_not_verified");
+
     const aclDeleted = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "access_rule_group",
