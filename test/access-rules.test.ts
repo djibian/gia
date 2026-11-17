@@ -436,7 +436,7 @@ test("normalizes and writes typed LinkKey ACL conditions without exposing values
     columnId: "ShareToken",
     linkKeyName: "StageToken"
   });
-  assert.doesNotMatch(JSON.stringify(projected), /secret|StageToken_/);
+  assert.doesNotMatch(JSON.stringify(projected), /aclFormula|StageToken_/);
 
   const clean = snapshot([], []);
   const plan = resolveAccessRuleMutation(
