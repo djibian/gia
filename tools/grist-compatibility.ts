@@ -1364,54 +1364,20 @@ async function run(): Promise<void> {
       "role_membership_access_rule_delete_not_verified");
 
 
-    // Boolean login status is a native, non-secret user property. Check
-    // persisted ACL interoperability only, never effective confidentiality.
+    // Boolean login status is a native non-secret user property. These two
+    // predicates are deliberately false for the signed-in document Owner:
+    // self-denying read rules would censor native metadata and rightly cause
+    // Gia to report an UNCERTAIN write rather than claim verification.
     const loginCreated = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "access_rule_group", documentId, mode: "create",
         target: { tableId: ACL_TABLE_ID, columnIds: ["Enabled"] },
         rules: [
-          { condition: { kind: "user_login_status", operator: "equals", value: true },
+          { condition: { kind: "user_login_status", operator: "equals", value: false },
             permissions: { read: "deny", update: "unspecified" } },
-          { condition: { kind: "user_login_status", operator: "not_equals", value: false },
+          { condition: { kind: "user_login_status", operator: "not_equals", value: true },
             permissions: { read: "unspecified", update: "deny" } }
         ]
-      }).catch(async (error) => {
-        // Temporary disposable-document diagnostic; NEVER print credentials or unrelated ACLs.
-        const url = `/api/docs/${encodeURIComponent(documentId)}`;
-        const resources = await gristApi(gristBaseUrl, apiKey,
-          `${url}/tables/_grist_ACLResources/records`) as
-          { records: Array<{ id: number; fields: Record<string, unknown> }> };
-        const rules = await gristApi(gristBaseUrl, apiKey,
-          `${url}/tables/_grist_ACLRules/records`) as
-          { records: Array<{ id: number; fields: Record<string, unknown> }> };
-        const matches = new Set(resources.records.filter((v) =>
-          v.fields.tableId === ACL_TABLE_ID && v.fields.colIds === "Enabled").map((v) => v.id));
-        const diagnostic = rules.records.filter((v) => matches.has(v.fields.resource as number))
-          .map((v) => ({
-            formula: String(v.fields.aclFormula).includes("IsLoggedIn") &&
-              !String(v.fields.aclFormula).includes("'")
-              ? v.fields.aclFormula : "<redacted>",
-            rulePos: v.fields.rulePos,
-            parsedPresent: Boolean(v.fields.aclFormulaParsed),
-            permissions: v.fields.permissionsText
-          }));
-        console.error("E1B6_DEBUG_TARGET_ONLY", JSON.stringify(diagnostic));
-        const view = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
-          action: "access_rules", documentId
-        }), "login_status_debug_view");
-        const group = (view.groups as Array<Record<string, unknown>>).find((g) => {
-          const target = g.target as Record<string, unknown> | undefined;
-          return target?.tableId === ACL_TABLE_ID &&
-            Array.isArray(target.columnIds) && target.columnIds.length === 1 &&
-            target.columnIds[0] === "Enabled";
-        });
-        console.error("E1B6_DEBUG_PROJECTED_TARGET", JSON.stringify({
-          editable: group?.editable,
-          rules: group?.rules,
-          supported: group !== undefined
-        }));
-        throw error;
       }), "login_status_access_rule_create"
     );
     assert(loginCreated.persistedDefinitionVerified === true,
@@ -1432,8 +1398,8 @@ async function run(): Promise<void> {
     const loginRules = loginGroup.rules as Array<Record<string, unknown>>;
     assert(loginRules.length === 2 &&
       loginRules.every((rule) => (rule.condition as Record<string, unknown>).kind === "user_login_status") &&
-      (loginRules[0]!.condition as Record<string, unknown>).value === true &&
-      (loginRules[1]!.condition as Record<string, unknown>).value === false,
+      (loginRules[0]!.condition as Record<string, unknown>).value === false &&
+      (loginRules[1]!.condition as Record<string, unknown>).value === true,
       "login_status_access_rule_not_normalized");
     const loginDeleted = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
