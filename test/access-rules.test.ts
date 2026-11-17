@@ -1013,3 +1013,68 @@ test("native not-in membership and bounded combinations protect unknown operands
     assert.doesNotMatch(JSON.stringify(projection), /private@example.com|aclFormula/);
   }
 });
+
+
+test("native login-status boolean predicates normalize both operand orders and avoid extra writes", () => {
+  const condition = { kind: "user_login_status" as const, operator: "equals" as const, value: true };
+  const plan = resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" }, "create",
+    [{ condition, permissions: { read: "deny", update: "unspecified" } }]);
+  assert.equal(plan.rules[0]?.aclFormula, "user.IsLoggedIn == True");
+
+  const persisted = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+    [{ id: 20, fields: { resource: 2, aclFormula: "True == user.IsLoggedIn",
+      aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+  );
+  const view = projectAccessRules(persisted) as any;
+  assert.equal(view.groups[0].editable, true);
+  assert.deepEqual(view.groups[0].rules[0].condition, condition);
+  assert.equal(resolveAccessRuleMutation(persisted, { tableId: "Projects" }, "replace",
+    [{ condition, permissions: { read: "deny", update: "unspecified" } }]).mode, "noop");
+  assert.equal(view.effectiveEnforcementVerified, false);
+
+  const composed = { kind: "all" as const, conditions: [
+    { kind: "user_access_membership" as const, operator: "not_in" as const,
+      roles: ["viewer", "editor"] as ("viewer" | "editor")[] },
+    { kind: "not" as const, condition: {
+      kind: "user_login_status" as const, operator: "not_equals" as const, value: false
+    } }
+  ] };
+  assert.equal(resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" }, "create",
+    [{ condition: composed, permissions: { read: "deny", update: "unspecified" } }]
+  ).rules[0]?.aclFormula,
+  "(user.Access not in [EDITOR, VIEWER]) and (not (user.IsLoggedIn != False))");
+});
+
+test("login status only accepts boolean constants, protects unsupported and secret-bearing formulas", () => {
+  const valid = { kind: "user_login_status" as const, operator: "not_equals" as const, value: false };
+  assert.equal(resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" }, "create",
+    [{ condition: valid, permissions: { read: "deny", update: "unspecified" } }]
+  ).rules[0]?.aclFormula, "user.IsLoggedIn != False");
+  for (const invalid of [
+    { ...valid, value: "False" as any },
+    { ...valid, value: "private-token" as any },
+    { ...valid, value: 0 as any },
+    { ...valid, operator: "in" as any }
+  ]) {
+    assert.throws(() => resolveAccessRuleMutation(snapshot([], []), { tableId: "Projects" },
+      "create", [{ condition: invalid, permissions: { read: "deny", update: "unspecified" } }]
+    ), /login|boolean|operator/i);
+  }
+  for (const native of [
+    "user.IsLoggedIn == 1",
+    "user.IsLoggedIn in [True, False]",
+    "user.SessionID == 'private-token'",
+    "user.Email == True"
+  ]) {
+    const persisted = snapshot(
+      [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
+      [{ id: 20, fields: { resource: 2, aclFormula: native,
+        aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+    );
+    const view = projectAccessRules(persisted) as any;
+    assert.equal(view.groups[0].editable, false);
+    assert.equal(view.groups[0].rules, undefined);
+    assert.doesNotMatch(JSON.stringify(view), /private-token|aclFormula/);
+  }
+});
