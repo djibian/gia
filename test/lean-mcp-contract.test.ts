@@ -519,3 +519,29 @@ test("ACL MCP schema accepts only explicit newRec on existing typed record match
     value: "secret"
   }), /Unrecognized key/i);
 });
+
+
+test("ACL MCP schema exposes a strict, finite column_change leaf without raw record operands", () => {
+  const registrations = capture({ changeAccessRuleGroup: async () => ({ ok: true }) });
+  const tool = registrations.find((entry) => entry.name === "grist_change_structure")!;
+  const base = {
+    action: "access_rule_group", documentId: "doc-1", mode: "create",
+    target: { tableId: "Projects" }
+  };
+  const parse = (condition: unknown) => tool.options.inputSchema!.parse({
+    ...base,
+    rules: [{
+      condition, permissions: { read: "unspecified", update: "allow" }
+    }]
+  });
+  const changed = { kind: "column_change", operator: "not_equals", columnId: "Status" };
+  assert.ok(parse(changed));
+  assert.ok(parse({ kind: "not", condition: changed }));
+  for (const rejected of [
+    { ...changed, record: "newRec" },
+    { ...changed, columnId: "Status", value: "secret" },
+    { ...changed, nativeFormula: "rec.Status != newRec.Status" },
+    { ...changed, operator: "greater_than" },
+    { ...changed, columnId: "Status.Value" }
+  ]) assert.throws(() => parse(rejected));
+});
