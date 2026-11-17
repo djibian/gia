@@ -138,7 +138,7 @@ same-table Text/Any stable record column; LinkKey values are never model inputs
 or outputs. The `match_user` and `match_link_key` leaves may instead target the
 proposed `newRec` row through `record: "newRec"`; such rules can only set create
 and/or update permissions, never read/delete, and remain unverified as to effective
-enforcement. Finite boolean condition trees allow `all` / `any` (2–6 children)
+enforcement. The typed `column_change` leaf tests equality/inequality of `rec.<stableColumnId>` and `newRec.<sameStableColumnId>` for update-only permissions. Text, Choice, Int, Numeric and Bool columns are supported; both native operand orders normalize to one typed condition. It accepts no arbitrary literal, operand or raw formula and cannot set read, create or delete permissions. Finite boolean condition trees allow `all` / `any` (2–6 children)
 and `not` over supported leaves, with at most 4 nesting levels, 20 total nodes
 and a serialized native formula of at most 2,048 characters. Nested `everyone`
 is invalid. Opaque or unsupported composite formulas remain protected.
