@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { nativeAclFixture } from "./fixtures/native-acl.js";
 
 import {
   normalizeAccessRulesSnapshot,
   projectAccessRules,
   projectAccessRuleSchemaImpact,
+  projectAccessRuleSimulation,
   resolveAccessRuleMutation,
   resolveUserAttributeMutation,
   verifyAccessRuleMutation,
@@ -41,6 +43,54 @@ function snapshot(
   );
 }
 
+test("native predicate metadata must agree before projecting, comparing or verifying a rule", () => {
+  const target = { tableId: "Projects" };
+  const resources = [{ id: 2, fields: { ...target, colIds: "*" } }];
+  const aclFormula = "rec.OwnerEmail == user.Email";
+  const parsed = nativeAclFixture(aclFormula);
+  const before = snapshot([], []);
+  const inputs = [{
+    condition: { kind: "match_user", operator: "equals", columnId: "OwnerEmail", userProperty: "Email" },
+    permissions: { read: "allow", update: "unspecified" }
+  }] as const;
+  const plan = resolveAccessRuleMutation(before, target, "create", inputs);
+  const persisted = (aclFormulaParsed: string) => snapshot(resources, [{
+    id: 20, fields: { resource: 2, rulePos: 1, aclFormula, aclFormulaParsed, permissionsText: "+R" }
+  }]);
+  const matching = persisted(parsed);
+  assert.equal((projectAccessRules(matching) as any).groups[0].editable, true);
+  assert.equal(resolveAccessRuleMutation(matching, target, "replace", inputs).mode, "noop");
+  assert.equal(verifyAccessRuleMutation(before, matching, plan).persistedDefinitionVerified, true);
+
+  const malformed = [
+    "", "null", "true", "42", '["Eq"]', '["Const",true]',
+    parsed.replace('"Eq"', '"NotEq"'),
+    parsed.replace('"OwnerEmail"', '"Title"'),
+    parsed.replace('"Email"', '"Name"'),
+    parsed.replace('"Email"', '"Email\\n"'),
+    parsed.replace('["Name","user"]', '["Name","user",false]'),
+    parsed.replace('["Attr",["Name","user"],"Email"]', '["Const","synthetic-private"]'),
+    `["Or",${parsed},["Eq"]]`,
+    '["Not",'.repeat(5000) + parsed + ']'.repeat(5000),
+    parsed + " ".repeat(65536)
+  ];
+  for (const value of malformed) {
+    const state = persisted(value);
+    const projection = projectAccessRules(state) as any;
+    const group = projection.groups[0];
+    assert.equal(group.editable, false);
+    assert.deepEqual(group.dependencies, { coverage: "unknown" });
+    assert.equal(group.diagnostics, null);
+    assert.equal(group.rules, undefined);
+    assert.doesNotMatch(JSON.stringify(projection), /synthetic-private|aclFormula/);
+    const simulation = projectAccessRuleSimulation(state, { target, context: {} }) as any;
+    assert.equal(simulation.status, "protected_group");
+    assert.equal(simulation.permissionDecisions, null);
+    assert.throws(() => resolveAccessRuleMutation(state, target, "replace", inputs), /cannot be modified/);
+    assert.throws(() => verifyAccessRuleMutation(before, state, plan), /verification failed/);
+  }
+});
+
 test("ACL resolution refuses duplicate row identities and stable table/column targets", () => {
   const meta = baseMetadata();
   const table = meta.tables.records[0]!;
@@ -71,7 +121,7 @@ test("normalizes only bounded secret-safe ordinary ACL groups", () => {
         fields: {
           resource: 1,
           aclFormula: "user.LinkKey.token == 'secret'",
-          aclFormulaParsed: '["Eq"]',
+          aclFormulaParsed: nativeAclFixture("user.LinkKey.token == 'secret'"),
           permissionsText: "-R",
           rulePos: 1,
           memo: "private memo"
@@ -92,7 +142,7 @@ test("normalizes only bounded secret-safe ordinary ACL groups", () => {
         fields: {
           resource: 2,
           aclFormula: "user.Access == EDITOR",
-          aclFormulaParsed: '["Eq"]',
+          aclFormulaParsed: nativeAclFixture("user.Access == EDITOR"),
           permissionsText: "+RU",
           rulePos: 1
         }
@@ -112,7 +162,7 @@ test("normalizes only bounded secret-safe ordinary ACL groups", () => {
         fields: {
           resource: 3,
           aclFormula: "rec.OwnerEmail == user.Email",
-          aclFormulaParsed: '["Eq"]',
+          aclFormulaParsed: nativeAclFixture("rec.OwnerEmail == user.Email"),
           permissionsText: "+R-U",
           rulePos: 1
         }
@@ -185,7 +235,7 @@ test("opaque literal conditions are redacted and not editable", () => {
         fields: {
           resource: 2,
           aclFormula: 'rec.Title == "sensitive-literal"',
-          aclFormulaParsed: '["Eq"]',
+          aclFormulaParsed: nativeAclFixture('rec.Title == "sensitive-literal"'),
           permissionsText: "-R",
           rulePos: 1
         }
@@ -304,7 +354,7 @@ test("creates bounded canonical ACL writes and verifies preservation", () => {
         fields: {
           resource: 3,
           aclFormula: "rec.OwnerEmail == user.Email",
-          aclFormulaParsed: '["Eq"]',
+          aclFormulaParsed: nativeAclFixture("rec.OwnerEmail == user.Email"),
           permissionsText: "+RU",
           rulePos: 1
         }
@@ -415,7 +465,7 @@ test("normalizes and writes typed LinkKey ACL conditions without exposing values
         fields: {
           resource: 2,
           aclFormula: "user.LinkKey.StageToken == rec.ShareToken",
-          aclFormulaParsed: '["Eq"]',
+          aclFormulaParsed: nativeAclFixture("user.LinkKey.StageToken == rec.ShareToken"),
           permissionsText: "+R",
           rulePos: 1
         }
@@ -529,7 +579,7 @@ test("LinkKey ACL conditions reject unsafe names, literals and incompatible colu
         fields: {
           resource: 2,
           aclFormula: "user.LinkKey.StageToken == 'sensitive-value'",
-          aclFormulaParsed: '["Eq"]',
+          aclFormulaParsed: nativeAclFixture("user.LinkKey.StageToken == 'sensitive-value'"),
           permissionsText: "+R",
           rulePos: 1
         }
@@ -576,7 +626,7 @@ test("composite ACL conditions round-trip with native boolean precedence and Lin
       fields: {
         resource: 2,
         aclFormula: "user.LinkKey.StageToken == rec.ShareToken or user.Access == OWNER and rec.OwnerEmail == user.Email",
-        aclFormulaParsed: '["Or"]',
+        aclFormulaParsed: nativeAclFixture("user.LinkKey.StageToken == rec.ShareToken or user.Access == OWNER and rec.OwnerEmail == user.Email"),
         permissionsText: "+R",
         rulePos: 1
       }
@@ -649,7 +699,7 @@ test("composite ACL conditions fail closed on ambiguity, depth, size and sensiti
       fields: {
         resource: 2,
         aclFormula: "user.LinkKey.StageToken == 'private-value' and user.Access == OWNER",
-        aclFormulaParsed: '["And"]',
+        aclFormulaParsed: nativeAclFixture("user.LinkKey.StageToken == 'private-value' and user.Access == OWNER"),
         permissionsText: "+R",
         rulePos: 1
       }
@@ -694,7 +744,7 @@ test("newRec typed matches round-trip with original rec shapes and protected Lin
     [{ id: 20, fields: {
       resource: 2,
       aclFormula: "user.LinkKey.StageToken == newRec.ShareToken and rec.OwnerEmail == user.Email",
-      aclFormulaParsed: '["And"]',
+      aclFormulaParsed: nativeAclFixture("user.LinkKey.StageToken == newRec.ShareToken and rec.OwnerEmail == user.Email"),
       permissionsText: "+U",
       rulePos: 1
     } }]
@@ -738,7 +788,7 @@ test("newRec matches reject read/delete decisions, arbitrary record contexts and
     [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
     [{ id: 20, fields: {
       resource: 2, aclFormula: "newRec.OwnerEmail == user.Email",
-      aclFormulaParsed: '["Eq"]', permissionsText: "+R", rulePos: 1
+      aclFormulaParsed: nativeAclFixture("newRec.OwnerEmail == user.Email"), permissionsText: "+R", rulePos: 1
     } }]
   );
   const projection = projectAccessRules(persisted) as any;
@@ -750,7 +800,7 @@ test("newRec matches reject read/delete decisions, arbitrary record contexts and
     [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
     [{ id: 20, fields: {
       resource: 2, aclFormula: "newRec.ShareToken == 'sensitive-value'",
-      aclFormulaParsed: '["Eq"]', permissionsText: "+U", rulePos: 1
+      aclFormulaParsed: nativeAclFixture("newRec.ShareToken == 'sensitive-value'"), permissionsText: "+U", rulePos: 1
     } }]
   );
   const protectedProjection = projectAccessRules(literal);
@@ -775,7 +825,7 @@ test("column_change preserves typed old/new intent and canonicalizes native oper
     [{ id: 2, fields: { tableId: "Projects", colIds: "OwnerEmail" } }],
     [{ id: 20, fields: {
       resource: 2, aclFormula: "newRec.OwnerEmail != rec.OwnerEmail",
-      aclFormulaParsed: '["NotEq"]', permissionsText: "-U", rulePos: 1
+      aclFormulaParsed: nativeAclFixture("newRec.OwnerEmail != rec.OwnerEmail"), permissionsText: "-U", rulePos: 1
     } }]
   );
   const projection = projectAccessRules(persisted) as any;
@@ -833,7 +883,7 @@ test("column_change is update-only even within composite conditions and rejects 
     [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
     [{ id: 20, fields: {
       resource: 2, aclFormula: "rec.OwnerEmail == rec.OwnerEmail",
-      aclFormulaParsed: '["Eq"]', permissionsText: "+U", rulePos: 1
+      aclFormulaParsed: nativeAclFixture("rec.OwnerEmail == rec.OwnerEmail"), permissionsText: "+U", rulePos: 1
     } }]
   );
   const invalidProjection = projectAccessRules(invalidNative) as any;
@@ -843,7 +893,7 @@ test("column_change is update-only even within composite conditions and rejects 
     [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
     [{ id: 20, fields: {
       resource: 2, aclFormula: "rec.OwnerEmail == newRec.OwnerEmail",
-      aclFormulaParsed: '["Eq"]', permissionsText: "+C", rulePos: 1
+      aclFormulaParsed: nativeAclFixture("rec.OwnerEmail == newRec.OwnerEmail"), permissionsText: "+C", rulePos: 1
     } }]
   );
   assert.equal((projectAccessRules(creationNative) as any).groups[0].editable, false);
@@ -866,7 +916,7 @@ test("bounded boolean literals round-trip and canonicalize reversed native opera
     [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
     [{ id: 20, fields: {
       resource: 2, aclFormula: "True == rec.Enabled",
-      aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1
+      aclFormulaParsed: nativeAclFixture("True == rec.Enabled"), permissionsText: "-R", rulePos: 1
     } }]
   );
   const view = projectAccessRules(persisted) as any;
@@ -926,7 +976,7 @@ test("bounded boolean literals admit proposed values but reject unsafe inputs an
     const persisted = snapshot(
       [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
       [{ id: 20, fields: {
-        resource: 2, aclFormula: native, aclFormulaParsed: '["Eq"]',
+        resource: 2, aclFormula: native, aclFormulaParsed: nativeAclFixture(native),
         permissionsText: "+R", rulePos: 1
       } }]
     );
@@ -955,7 +1005,7 @@ test("bounded role membership round-trips, normalizes order and is replace-noop"
   const persisted = snapshot(
     [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
     [{ id: 20, fields: { resource: 2, aclFormula: "user.Access in [VIEWER, EDITOR]",
-      aclFormulaParsed: '["In"]', permissionsText: "-R", rulePos: 1 } }]
+      aclFormulaParsed: nativeAclFixture("user.Access in [VIEWER, EDITOR]"), permissionsText: "-R", rulePos: 1 } }]
   );
   const view = projectAccessRules(persisted) as any;
   assert.equal(view.groups[0].editable, true);
@@ -981,7 +1031,7 @@ test("native not-in membership and bounded combinations protect unknown operands
   const native = snapshot(
     [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
     [{ id: 20, fields: { resource: 2, aclFormula: "user.Access not in [VIEWER, OWNER]",
-      aclFormulaParsed: '["NotIn"]', permissionsText: "-R", rulePos: 1 } }]
+      aclFormulaParsed: nativeAclFixture("user.Access not in [VIEWER, OWNER]"), permissionsText: "-R", rulePos: 1 } }]
   );
   assert.deepEqual((projectAccessRules(native) as any).groups[0].rules[0].condition, {
     kind: "user_access_membership", operator: "not_in", roles: ["owner", "viewer"]
@@ -1008,7 +1058,7 @@ test("native not-in membership and bounded combinations protect unknown operands
     const persisted = snapshot(
       [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
       [{ id: 20, fields: { resource: 2, aclFormula: formula,
-        aclFormulaParsed: '["In"]', permissionsText: "-R", rulePos: 1 } }]
+        aclFormulaParsed: nativeAclFixture(formula), permissionsText: "-R", rulePos: 1 } }]
     );
     const projection = projectAccessRules(persisted) as any;
     assert.equal(projection.groups[0].editable, false);
@@ -1027,7 +1077,7 @@ test("native login-status boolean predicates normalize both operand orders and a
   const persisted = snapshot(
     [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
     [{ id: 20, fields: { resource: 2, aclFormula: "True == user.IsLoggedIn",
-      aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+      aclFormulaParsed: nativeAclFixture("True == user.IsLoggedIn"), permissionsText: "-R", rulePos: 1 } }]
   );
   const view = projectAccessRules(persisted) as any;
   assert.equal(view.groups[0].editable, true);
@@ -1073,7 +1123,7 @@ test("login status only accepts boolean constants, protects unsupported and secr
     const persisted = snapshot(
       [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
       [{ id: 20, fields: { resource: 2, aclFormula: native,
-        aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+        aclFormulaParsed: nativeAclFixture(native), permissionsText: "-R", rulePos: 1 } }]
     );
     const view = projectAccessRules(persisted) as any;
     assert.equal(view.groups[0].editable, false);
@@ -1091,7 +1141,7 @@ test("bounded Int 0/1 ACL flags round-trip in either order without extra writes"
   const persisted = snapshot(
     [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
     [{ id: 20, fields: { resource: 2, aclFormula: "1 == rec.UserId",
-      aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+      aclFormulaParsed: nativeAclFixture("1 == rec.UserId"), permissionsText: "-R", rulePos: 1 } }]
   );
   const view = projectAccessRules(persisted) as any;
   assert.equal(view.groups[0].editable, true);
@@ -1147,7 +1197,7 @@ test("Int flags refuse arbitrary numbers, other column types and opaque secrets"
     const persisted = snapshot(
       [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
       [{ id: 20, fields: { resource: 2, aclFormula: formula,
-        aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+        aclFormulaParsed: nativeAclFixture(formula), permissionsText: "-R", rulePos: 1 } }]
     );
     const view = projectAccessRules(persisted) as any;
     assert.equal(view.groups[0].editable, false);
@@ -1166,7 +1216,7 @@ test("empty-text ACL predicates round-trip with both literal orders and exact no
     const persisted = snapshot(
       [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
       [{ id: 20, fields: { resource: 2, aclFormula: formula,
-        aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+        aclFormulaParsed: nativeAclFixture(formula), permissionsText: "-R", rulePos: 1 } }]
     );
     const view = projectAccessRules(persisted) as any;
     assert.equal(view.groups[0].editable, true);
@@ -1211,7 +1261,7 @@ test("empty-text ACL subset protects literal-bearing, unsupported and malformed 
     const persisted = snapshot(
       [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],
       [{ id: 20, fields: { resource: 2, aclFormula: formula,
-        aclFormulaParsed: '["Eq"]', permissionsText: "-R", rulePos: 1 } }]
+        aclFormulaParsed: nativeAclFixture(formula), permissionsText: "-R", rulePos: 1 } }]
     );
     const view = projectAccessRules(persisted) as any;
     assert.equal(view.groups[0].editable, false);
@@ -1246,7 +1296,7 @@ test("native user attributes inspect only safe structural identifiers without Li
       { id: 13, fields: { resource: 1, aclFormula: "", aclFormulaParsed: "",
         permissionsText: "", rulePos: 4, userAttributes: "private-token" } },
       { id: 20, fields: { resource: 2, aclFormula: "rec.OwnerEmail == user.Email",
-        aclFormulaParsed: '["Eq"]', permissionsText: "+R", rulePos: 1 } }
+        aclFormulaParsed: nativeAclFixture("rec.OwnerEmail == user.Email"), permissionsText: "+R", rulePos: 1 } }
     ]
   );
   const view = projectAccessRules(state) as any;
@@ -1288,7 +1338,7 @@ test("native default-resource NULL user-attribute fields remain inspectable and 
   };
   const ordinaryRule = {
     id: 20, fields: { resource: 2, rulePos: 1,
-      aclFormula: "user.Access == OWNER", aclFormulaParsed: '["Eq"]',
+      aclFormula: "user.Access == OWNER", aclFormulaParsed: nativeAclFixture("user.Access == OWNER"),
       permissionsText: "+RU" }
   };
   const before = snapshot(resources, [defaultRule, nativeDefinition, ordinaryRule]);
@@ -1372,7 +1422,7 @@ test("ambiguous or misplaced user attributes stay protected; unrelated ACL write
       { id: 11, fields: { resource: 1, aclFormula: "", aclFormulaParsed: "",
         permissionsText: "", rulePos: 2, userAttributes: JSON.stringify(common) } },
       { id: 12, fields: { resource: 2, aclFormula: "rec.OwnerEmail == user.Email",
-        aclFormulaParsed: '["Eq"]', permissionsText: "+R", rulePos: 3,
+        aclFormulaParsed: nativeAclFixture("rec.OwnerEmail == user.Email"), permissionsText: "+R", rulePos: 3,
         userAttributes: JSON.stringify({ ...common, name: "Misplaced" }) } }
     ]
   );
@@ -1642,13 +1692,13 @@ test("E1-D1 projects only verified typed ACL dependencies, including nested and 
       userAttributes: userAttribute, aclFormula: "", aclFormulaParsed: "", permissionsText: "" } },
     { id: 20, fields: { resource: 2, rulePos: 1,
       aclFormula: "rec.ShareToken == user.LinkKey.StageToken and (newRec.OwnerEmail == user.Mentor.OwnerEmail or user.IsLoggedIn == True)",
-      aclFormulaParsed: '["And"]', permissionsText: "+U" } },
+      aclFormulaParsed: nativeAclFixture("rec.ShareToken == user.LinkKey.StageToken and (newRec.OwnerEmail == user.Mentor.OwnerEmail or user.IsLoggedIn == True)"), permissionsText: "+U" } },
     { id: 21, fields: { resource: 2, rulePos: 2,
       aclFormula: "user.Access in [EDITOR, VIEWER]",
-      aclFormulaParsed: '["In"]', permissionsText: "+R" } },
+      aclFormulaParsed: nativeAclFixture("user.Access in [EDITOR, VIEWER]"), permissionsText: "+R" } },
     { id: 22, fields: { resource: 2, rulePos: 3,
       aclFormula: "rec.UserId != newRec.UserId",
-      aclFormulaParsed: '["NotEq"]', permissionsText: "-U" } }
+      aclFormulaParsed: nativeAclFixture("rec.UserId != newRec.UserId"), permissionsText: "-U" } }
   ]);
   const view = projectAccessRules(state) as any;
   const group = view.groups[0];
@@ -1678,7 +1728,7 @@ test("E1-D1 refuses to infer names from protected formulas or secret literals", 
     [{ id: 2, fields: { tableId: "Projects", colIds: "Title" } }],
     [{ id: 20, fields: { resource: 2, rulePos: 1,
       aclFormula: "rec.Title == 'private-secret'",
-      aclFormulaParsed: '["Eq"]', permissionsText: "-R" } }]
+      aclFormulaParsed: nativeAclFixture("rec.Title == 'private-secret'"), permissionsText: "-R" } }]
   );
   const view = projectAccessRules(state) as any;
   assert.deepEqual(view.groups[0].dependencies, { coverage: "unknown" });
@@ -1691,7 +1741,7 @@ test("E1-D1 refuses to infer names from protected formulas or secret literals", 
 test("E1-D2 flags only provable identical-condition shadowing, per permission and rule order", () => {
   const resources = [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }];
   const makeRule = (id: number, rulePos: number, aclFormula: string, permissionsText: string) => ({
-    id, fields: { resource: 2, rulePos, aclFormula, aclFormulaParsed: '["Eq"]', permissionsText }
+    id, fields: { resource: 2, rulePos, aclFormula, aclFormulaParsed: nativeAclFixture(aclFormula), permissionsText }
   });
   const formula = "rec.OwnerEmail == user.Email";
   const state = snapshot(resources, [
@@ -1726,13 +1776,13 @@ test("E1-D2 does not partially lint an opaque group or leak its literals", () =>
     [
       { id: 20, fields: { resource: 2, rulePos: 1,
         aclFormula: "rec.Title == user.Email",
-        aclFormulaParsed: '["Eq"]', permissionsText: "+R" } },
+        aclFormulaParsed: nativeAclFixture("rec.Title == user.Email"), permissionsText: "+R" } },
       { id: 21, fields: { resource: 2, rulePos: 2,
         aclFormula: "rec.Title == 'opaque-private'",
-        aclFormulaParsed: '["Eq"]', permissionsText: "-R" } },
+        aclFormulaParsed: nativeAclFixture("rec.Title == 'opaque-private'"), permissionsText: "-R" } },
       { id: 22, fields: { resource: 2, rulePos: 3,
         aclFormula: "rec.Title == user.Email",
-        aclFormulaParsed: '["Eq"]', permissionsText: "-R" } }
+        aclFormulaParsed: nativeAclFixture("rec.Title == user.Email"), permissionsText: "-R" } }
     ]
   );
   const group = (projectAccessRules(state) as any).groups[0];
@@ -1756,7 +1806,7 @@ test("E1-D2 warns about indirect web-only LinkKey via a verified user attribute"
       aclFormula: "", aclFormulaParsed: "", permissionsText: "" } },
     { id: 20, fields: { resource: 2, rulePos: 1,
       aclFormula: "rec.OwnerEmail == user.Mentor.OwnerEmail",
-      aclFormulaParsed: '["Eq"]', permissionsText: "+R" } }
+      aclFormulaParsed: nativeAclFixture("rec.OwnerEmail == user.Mentor.OwnerEmail"), permissionsText: "+R" } }
   ])) as any).groups[0];
   assert.equal(group.editable, true);
   assert.deepEqual(group.dependencies.linkKeyNames, []);
@@ -1784,10 +1834,10 @@ test("E1-D3 reports typed record and user-attribute schema dependencies", () => 
         aclFormula: "", aclFormulaParsed: "", permissionsText: "" } },
       { id: 20, fields: { resource: 2, rulePos: 1,
         aclFormula: "rec.OwnerEmail == user.Mentor.OwnerEmail",
-        aclFormulaParsed: '["Eq"]', permissionsText: "+R" } },
+        aclFormulaParsed: nativeAclFixture("rec.OwnerEmail == user.Mentor.OwnerEmail"), permissionsText: "+R" } },
       { id: 30, fields: { resource: 3, rulePos: 1,
         aclFormula: "newRec.OwnerEmail == user.Email",
-        aclFormulaParsed: '["Eq"]', permissionsText: "+U" } }
+        aclFormulaParsed: nativeAclFixture("newRec.OwnerEmail == user.Email"), permissionsText: "+U" } }
     ] }, meta.tables, meta.columns
   );
   const lookup = projectAccessRuleSchemaImpact(state,
@@ -1824,7 +1874,7 @@ test("E1-D3 retains unknown coverage for opaque ACL conditions, without leaked l
     [{ id: 2, fields: { tableId: "Projects", colIds: "Title" } }],
     [{ id: 20, fields: { resource: 2, rulePos: 1,
       aclFormula: "rec.Title == 'private-secret'",
-      aclFormulaParsed: '["Eq"]', permissionsText: "-R" } }]
+      aclFormulaParsed: nativeAclFixture("rec.Title == 'private-secret'"), permissionsText: "-R" } }]
   );
   const result = projectAccessRuleSchemaImpact(state,
     { kind: "column", tableId: "Projects", columnId: "Title" }) as any;

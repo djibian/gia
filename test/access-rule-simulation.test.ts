@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { nativeAclFixture } from "./fixtures/native-acl.js";
 import {
   normalizeAccessRulesSnapshot,
   projectAccessRuleSimulation,
@@ -19,7 +20,7 @@ function state(formulas: Array<[string, string]>) {
   return normalizeAccessRulesSnapshot(resources, {
     records: formulas.map(([aclFormula, permissionsText], i) => ({
       id: i + 20, fields: {
-        resource: 2, rulePos: i + 1, aclFormula, aclFormulaParsed: aclFormula ? '["Eq"]' : "", permissionsText
+        resource: 2, rulePos: i + 1, aclFormula, aclFormulaParsed: nativeAclFixture(aclFormula), permissionsText
       }
     }))
   }, tables, columns);
@@ -143,7 +144,7 @@ test("E1-E user-attribute values are supplied synthetically; no native lookup oc
       aclFormula: "", aclFormulaParsed: "", permissionsText: "" } },
     { id: 2, fields: { resource: 2, rulePos: 1,
       aclFormula: "rec.OwnerEmail == user.Mentor.OwnerEmail",
-      aclFormulaParsed: '["Eq"]', permissionsText: "+R" } }
+      aclFormulaParsed: nativeAclFixture("rec.OwnerEmail == user.Mentor.OwnerEmail"), permissionsText: "+R" } }
   ] }, tables, columns);
   const result = projectAccessRuleSimulation(snap, {
     target: { tableId: "Projects" },

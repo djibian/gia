@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { nativeAclFixture } from "./fixtures/native-acl.js";
 
 import type { AuditLogger } from "../src/audit/auditLogger.js";
 import type { AuthorizationService } from "../src/auth/authorizationService.js";
@@ -24,7 +25,7 @@ const principal: Principal = {
   ]
 };
 
-function harness(options: { applyWrite?: boolean } = {}) {
+function harness(options: { applyWrite?: boolean; persistedPredicate?: string } = {}) {
   const resources: Array<{ id: number; fields: Record<string, unknown> }> = [
     { id: 1, fields: { tableId: "*", colIds: "*" } }
   ];
@@ -34,7 +35,7 @@ function harness(options: { applyWrite?: boolean } = {}) {
       fields: {
         resource: 1,
         aclFormula: "user.LinkKey.token == 'do-not-expose'",
-        aclFormulaParsed: '["Eq"]',
+        aclFormulaParsed: nativeAclFixture("user.LinkKey.token == 'do-not-expose'"),
         permissionsText: "-R",
         rulePos: 1,
         memo: "sensitive memo"
@@ -122,7 +123,7 @@ function harness(options: { applyWrite?: boolean } = {}) {
             fields: {
               resource: resourceId,
               aclFormula: write.aclFormula,
-              aclFormulaParsed: write.aclFormula ? '["parsed"]' : "",
+              aclFormulaParsed: options.persistedPredicate ?? nativeAclFixture(write.aclFormula),
               permissionsText: write.permissionsText,
               rulePos: write.rulePos
             }
@@ -227,6 +228,21 @@ test("ACL post-write divergence becomes explicit non-blind-retry uncertainty", a
   assert.equal(writes.length, 1);
 });
 
+
+test("ACL metadata disagreement makes the first write uncertain and refuses replacement before writing", async () => {
+  const { service, writes } = harness({ persistedPredicate: '["Const",true]' });
+  const rules = [{
+    condition: { kind: "match_user", operator: "equals", columnId: "OwnerEmail", userProperty: "Email" },
+    permissions: { read: "allow", update: "unspecified" }
+  }] as const;
+  const target = { tableId: "Projects" };
+  await assert.rejects(() => service.changeAccessRuleGroup("doc-1", target, "create", [...rules]),
+    AccessRuleWriteVerificationError);
+  assert.equal(writes.length, 1);
+  await assert.rejects(() => service.changeAccessRuleGroup("doc-1", target, "replace", [...rules]),
+    /cannot be modified/);
+  assert.equal(writes.length, 1);
+});
 
 test("ACL inspection fails before metadata reads when native owner proof is absent", async () => {
   let metadataReads = 0;

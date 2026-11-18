@@ -7,6 +7,7 @@ export const MAX_ACCESS_RULE_CONDITION_NODES = 20;
 export const MAX_ACCESS_RULE_CONDITION_DEPTH = 4;
 export const MAX_ACCESS_RULE_CONDITION_WIDTH = 6;
 export const MAX_ACCESS_RULE_FORMULA_LENGTH = 2048;
+const MAX_NATIVE_ACL_AST_LENGTH = 65536;
 
 export const ACCESS_RULE_USER_PROPERTIES = [
   "Email",
@@ -670,10 +671,11 @@ function splitTopLevel(value: string, operator: " and " | " or "): string[] | un
 function parseCondition(
   formula: string,
   table: TableInfo,
-  attributes?: UserAttributeReferenceContext
+  attributes?: UserAttributeReferenceContext,
+  maxLength = MAX_ACCESS_RULE_FORMULA_LENGTH
 ): AccessRuleCondition | undefined {
   if (formula === "") return { kind: "everyone" };
-  if (formula.length > MAX_ACCESS_RULE_FORMULA_LENGTH) return undefined;
+  if (formula.length > maxLength) return undefined;
   const budget = { nodes: 0 };
   function parse(source: string, depth: number): AccessRuleCondition | undefined {
     if (++budget.nodes > MAX_ACCESS_RULE_CONDITION_NODES || depth > MAX_ACCESS_RULE_CONDITION_DEPTH) {
@@ -974,15 +976,89 @@ function serializePermissions(
   };
 }
 
-function isParsedFormulaAvailable(rule: PersistedRule): boolean {
-  if (rule.aclFormula === "") return rule.aclFormulaParsed === "";
-  if (!rule.aclFormulaParsed) return false;
+// Render only typed operands of the closed Gia subset. Bound attribute chains
+// independently of the predicate tree and never interpolate arbitrary literals.
+function nativeAclOperand(node: unknown, remainingAttributes = 2): string | undefined {
+  if (!Array.isArray(node)) return undefined;
+  const [kind, value, field] = node;
+  if (node.length === 2 && kind === "Name" &&
+      typeof value === "string" &&
+      (value === "user" || value === "rec" || value === "newRec" || NATIVE_ROLE.has(value))) {
+    return value;
+  }
+  if (node.length === 2 && kind === "Const" && remainingAttributes === 2) {
+    if (value === true) return "True";
+    if (value === false) return "False";
+    if (value === 0 || value === 1) return String(value);
+    if (value === "") return "''";
+  }
+  if (node.length === 3 && kind === "Attr" && remainingAttributes > 0 &&
+      typeof field === "string" && SAFE_IDENTIFIER.test(field) && field === field.trim()) {
+    const owner = nativeAclOperand(value, remainingAttributes - 1);
+    if (owner !== undefined) return `${owner}.${field}`;
+  }
+  return undefined;
+}
+
+function nativeAclRoleList(node: unknown): string | undefined {
+  if (!Array.isArray(node) || node[0] !== "List" || node.length < 3 || node.length > 4) {
+    return undefined;
+  }
+  const roles = node.slice(1).map((role) => nativeAclOperand(role));
+  if (roles.some((role) => role === undefined || !NATIVE_ROLE.has(role))) return undefined;
+  return `[${roles.join(", ")}]`;
+}
+
+function matchesNativeAclCondition(
+  raw: string,
+  condition: AccessRuleCondition,
+  table: TableInfo,
+  attributes: UserAttributeReferenceContext
+): boolean {
+  if (condition.kind === "everyone") return raw === "";
+  if (!raw || raw.length > MAX_NATIVE_ACL_AST_LENGTH) return false;
+
+  let nodes = 0;
+  function render(node: unknown, depth: number): string | undefined {
+    if (++nodes > MAX_ACCESS_RULE_CONDITION_NODES || depth > MAX_ACCESS_RULE_CONDITION_DEPTH ||
+        !Array.isArray(node)) return undefined;
+    const kind: unknown = node[0];
+    if (kind === "Not" && node.length === 2) {
+      const child = render(node[1], depth + 1);
+      if (child !== undefined) return `not (${child})`;
+    }
+    if ((kind === "And" || kind === "Or") && node.length >= 3 &&
+        node.length <= MAX_ACCESS_RULE_CONDITION_WIDTH + 1) {
+      const children = node.slice(1).map((child) => render(child, depth + 1));
+      if (children.every((child) => child !== undefined)) {
+        // Keep native composition and evaluation order, including same-kind nesting.
+        return children.map((child) => `(${child})`).join(kind === "And" ? " and " : " or ");
+      }
+    }
+    if (node.length === 3 && (kind === "Eq" || kind === "NotEq" || kind === "In" || kind === "NotIn")) {
+      const left = nativeAclOperand(node[1]);
+      const right = kind === "In" || kind === "NotIn"
+        ? nativeAclRoleList(node[2]) : nativeAclOperand(node[2]);
+      if (left !== undefined && right !== undefined) {
+        const operator = { Eq: "==", NotEq: "!=", In: "in", NotIn: "not in" }[kind];
+        return `${left} ${operator} ${right}`;
+      }
+    }
+    return undefined;
+  }
+
+  let parsed: unknown;
   try {
-    JSON.parse(rule.aclFormulaParsed);
-    return true;
+    parsed = JSON.parse(raw);
   } catch {
     return false;
   }
+  const formula = render(parsed, 0);
+  if (formula === undefined) return false;
+  // Parentheses introduced by rendering are bounded by the native node count.
+  const native = parseCondition(formula, table, attributes,
+    MAX_ACCESS_RULE_FORMULA_LENGTH + 2 * MAX_ACCESS_RULE_CONDITION_NODES);
+  return native !== undefined && stableJson(native) === stableJson(condition);
 }
 
 function unsupportedLegacyFields(fields: JsonRecord): boolean {
@@ -1049,7 +1125,8 @@ function buildGroupState(
     }
     const condition = parseCondition(rule.aclFormula, table, attributes);
     const permissions = parsePermissions(rule.permissionsText, target.columnIds.length > 0);
-    if (!condition || !permissions || !isParsedFormulaAvailable(rule)) {
+    if (!condition || !permissions ||
+        !matchesNativeAclCondition(rule.aclFormulaParsed, condition, table, attributes)) {
       return {
         target,
         resourceRecordId: resource.id,
@@ -2044,7 +2121,7 @@ function nativeUserAttributeReferences(rule: PersistedRule, targetName: string):
     }
     return new Set();
   }
-  if (!rule.aclFormulaParsed || rule.aclFormulaParsed.length > 65536) {
+  if (!rule.aclFormulaParsed || rule.aclFormulaParsed.length > MAX_NATIVE_ACL_AST_LENGTH) {
     throw new Error("Native ACL predicate metadata is missing or oversized; refusing user-attribute deletion.");
   }
   let parsed: unknown;
