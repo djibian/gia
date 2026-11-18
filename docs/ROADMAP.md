@@ -33,6 +33,12 @@ record/new-record columns, built-in user properties, LinkKey names and user
 attributes. Add deterministic diagnostics only where correctness can be proven or
 clearly classified as a warning; do not implement a second authorization engine.
 
+The bounded read-only structural dependency projection for fully normalized
+ordinary groups is selected as E1-D1. Once reviewed and integrated, the next
+remaining work is deterministic diagnostics with an explicit certainty level
+and safe handling of protected/unknown policy. Never infer effective
+authorization or leak opaque predicate contents.
+
 #### E1-E — bounded explanatory simulation
 
 **Status: BLOCKED by E1-D**
