@@ -132,8 +132,8 @@ that an **identical normalized condition** earlier in the same ordered group
 already decides that permission. Under Grist's first-applicable-decision rule,
 the later decision cannot take effect. It does not infer equivalence between
 different formulas. `link_key_web_acceptance_unverified` is a `warning` for
-supported groups referencing a LinkKey; native API inspection does not test
-web-only LinkKey enforcement. Protected/opaque groups have `diagnostics:null`:
+supported groups using a direct LinkKey comparison or an attribute whose
+source is a LinkKey; native API inspection does not test web-only LinkKey enforcement. Protected/opaque groups have `diagnostics:null`:
 unassessed, never a clean lint result. These findings do not prove confidentiality.
 
 Opaque formulas, memos, unsupported user-attribute definitions, default/special/schema-edit policy and other unsupported persisted semantics are preserved but not copied into editable model content. Before reading ACL metadata, the bridge performs a fresh native document metadata read and requires `access === "owners"`; this prevents censored non-owner metadata from being mistaken for an empty policy. The bridge also refuses incomplete/censored/truncated ACL metadata, duplicate or overlapping stable targets, and any selected group it cannot normalize without loss.

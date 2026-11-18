@@ -1497,11 +1497,15 @@ function projectGroupDiagnostics(
 }
 
 export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
+  const userAttributes = projectUserAttributes(snapshot);
+  const linkKeyDrivenAttributes = new Set(userAttributes.definitions
+    .filter((attribute) => attribute.source.kind === "link_key")
+    .map((attribute) => attribute.name));
   return {
     policyState: "persisted",
     effectiveEnforcementVerified: false,
     protectedPersistedGroupCount: snapshot.protectedPersistedGroupCount,
-    userAttributes: projectUserAttributes(snapshot),
+    userAttributes,
     groups: snapshot.groups.map((group) => {
       const dependencies = group.normalizedRules
         ? projectGroupDependencies(group.normalizedRules)
@@ -1516,7 +1520,10 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
         // null means unknown coverage, never a positive lint result.
         diagnostics: group.normalizedRules
           ? projectGroupDiagnostics(group.normalizedRules,
-            dependencies.coverage === "supported_rules" && dependencies.linkKeyNames.length > 0)
+            dependencies.coverage === "supported_rules" &&
+              (dependencies.linkKeyNames.length > 0 ||
+                dependencies.userAttributeFields.some((field) =>
+                  linkKeyDrivenAttributes.has(field.attributeName))))
           : null,
         ...(group.normalizedRules
           ? { rules: group.normalizedRules }

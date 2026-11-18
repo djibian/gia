@@ -118,7 +118,8 @@ native policy validity or effective confidentiality. Read-only lint reports
 only first-applicable-decision shadowing for the **same normalized condition
 and permission** as `proven`; it never tries to compare arbitrary formulas or
 reconstruct native authorization. Presence of LinkKey conditions produces an
-explicit web-acceptance `warning`. Protected/opaque groups return
+explicit web-acceptance `warning`, including when a referenced user attribute
+is sourced from a LinkKey. Protected/opaque groups return
 `diagnostics:null` to avoid a false all-clear. No secrets, private values or
 raw formulas enter model outputs; explanatory simulation is separate.
 

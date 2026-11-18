@@ -1648,3 +1648,27 @@ test("E1-D2 does not partially lint an opaque group or leak its literals", () =>
   assert.equal(group.rules, undefined);
   assert.doesNotMatch(JSON.stringify(group), /opaque-private|aclFormula|shadowed_same_condition_permission/);
 });
+
+test("E1-D2 warns about indirect web-only LinkKey via a verified user attribute", () => {
+  const resources = [
+    { id: 1, fields: { tableId: "*", colIds: "*" } },
+    { id: 2, fields: { tableId: "Projects", colIds: "*" } }
+  ];
+  const userAttribute = JSON.stringify({
+    name: "Mentor", tableId: "Projects", lookupColId: "OwnerEmail",
+    charId: "LinkKey.StageToken"
+  });
+  const group = (projectAccessRules(snapshot(resources, [
+    { id: 10, fields: { resource: 1, rulePos: 1, userAttributes: userAttribute,
+      aclFormula: "", aclFormulaParsed: "", permissionsText: "" } },
+    { id: 20, fields: { resource: 2, rulePos: 1,
+      aclFormula: "rec.OwnerEmail == user.Mentor.OwnerEmail",
+      aclFormulaParsed: '["Eq"]', permissionsText: "+R" } }
+  ])) as any).groups[0];
+  assert.equal(group.editable, true);
+  assert.deepEqual(group.dependencies.linkKeyNames, []);
+  assert.deepEqual(group.diagnostics, [
+    { code: "link_key_web_acceptance_unverified", certainty: "warning" }
+  ]);
+  assert.doesNotMatch(JSON.stringify(group), /LinkKey\.StageToken|charId|aclFormula/);
+});
