@@ -26,7 +26,7 @@ claim that persisted policy proves effective confidentiality.
 
 #### E1-F — LinkKey web acceptance and completeness review
 
-**Status: BLOCKED by E1-E**
+**Status: ACTIVE**
 
 Because native `user.LinkKey` context exists in the Grist web client but not the
 API, add or adapt a non-MCP qualification path only if needed for end-to-end
