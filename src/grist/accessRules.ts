@@ -58,6 +58,14 @@ export type AccessRuleCondition =
       record?: "newRec" | undefined;
     }
   | {
+      kind: "match_user_attribute";
+      operator: AccessRuleOperator;
+      columnId: string;
+      attributeName: string;
+      attributeColumnId: string;
+      record?: "newRec" | undefined;
+    }
+  | {
       kind: "match_boolean";
       operator: AccessRuleOperator;
       columnId: string;
@@ -165,6 +173,11 @@ interface TableInfo {
   id: string;
   recordId: number;
   columns: Map<string, TableColumn>;
+}
+
+interface UserAttributeReferenceContext {
+  readonly tables: Map<string, TableInfo>;
+  readonly names: ReadonlyMap<string, string>;
 }
 
 export interface NormalizedAccessRule {
@@ -338,9 +351,43 @@ function validLinkKeyName(value: string): boolean {
   );
 }
 
+// Only verified unambiguous native definitions may enter editable ACL formulas.
+function userAttributeReferenceContext(snapshot: AccessRulesSnapshot): UserAttributeReferenceContext {
+  const view = projectUserAttributes(snapshot);
+  return {
+    tables: snapshot.tables,
+    names: new Map(view.protectedDefinitionCount === 0
+      ? view.definitions.filter(d => d.editable).map(d => [d.name, d.tableId] as const)
+      : [])
+  };
+}
+
+// No opaque values or loose cross-type coercions; native Ref values are row IDs.
+function comparableUserAttributeField(
+  table: TableInfo,
+  columnId: string,
+  attributeName: string,
+  attributeColumnId: string,
+  context?: UserAttributeReferenceContext
+): boolean {
+  const lookupTableId = context?.names.get(attributeName);
+  const recordType = table.columns.get(columnId)?.type;
+  if (!lookupTableId || !recordType) return false;
+  if (attributeColumnId === "id") return recordType === `Ref:${lookupTableId}`;
+  const attributeType = context?.tables.get(lookupTableId)?.columns.get(attributeColumnId)?.type;
+  if (!attributeType) return false;
+  if (["Text", "Choice"].includes(recordType) &&
+      ["Text", "Choice"].includes(attributeType)) return true;
+  if (recordType.startsWith("Ref:") || attributeType.startsWith("Ref:")) {
+    return recordType.startsWith("Ref:") && recordType === attributeType;
+  }
+  return recordType === attributeType && ["Int", "Numeric", "Bool"].includes(recordType);
+}
+
 function parseLeafCondition(
   formula: string,
-  table: TableInfo
+  table: TableInfo,
+  attributes?: UserAttributeReferenceContext
 ): AccessRuleCondition | undefined {
   if (formula === "") return { kind: "everyone" };
 
@@ -390,6 +437,29 @@ function parseLeafCondition(
     }
     return {
       kind: "match_user", operator, columnId, userProperty,
+      ...(recordScope === "newRec" ? { record: "newRec" as const } : {})
+    };
+  }
+
+  // A native user attribute is a lookup row: user.<attribute>.<field> or .id.
+  // Reverse operand order is normalized to the same closed condition.
+  const attributeMatch =
+    /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) user\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(formula);
+  const reverseAttributeMatch =
+    /^user\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) (rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(formula);
+  if (attributeMatch || reverseAttributeMatch) {
+    const recordScope = attributeMatch ? attributeMatch[1]! : reverseAttributeMatch![4]!;
+    const columnId = attributeMatch ? attributeMatch[2]! : reverseAttributeMatch![5]!;
+    const operator = NATIVE_OP.get(attributeMatch ? attributeMatch[3]! : reverseAttributeMatch![3]!);
+    const attributeName = attributeMatch ? attributeMatch[4]! : reverseAttributeMatch![1]!;
+    const attributeColumnId = attributeMatch ? attributeMatch[5]! : reverseAttributeMatch![2]!;
+    if (!operator || !validLinkKeyName(attributeName) ||
+        !SAFE_IDENTIFIER.test(attributeColumnId) ||
+        !comparableUserAttributeField(table, columnId, attributeName, attributeColumnId, attributes)) {
+      return undefined;
+    }
+    return {
+      kind: "match_user_attribute", operator, columnId, attributeName, attributeColumnId,
       ...(recordScope === "newRec" ? { record: "newRec" as const } : {})
     };
   }
@@ -528,7 +598,11 @@ function splitTopLevel(value: string, operator: " and " | " or "): string[] | un
   return parts;
 }
 
-function parseCondition(formula: string, table: TableInfo): AccessRuleCondition | undefined {
+function parseCondition(
+  formula: string,
+  table: TableInfo,
+  attributes?: UserAttributeReferenceContext
+): AccessRuleCondition | undefined {
   if (formula === "") return { kind: "everyone" };
   if (formula.length > MAX_ACCESS_RULE_FORMULA_LENGTH) return undefined;
   const budget = { nodes: 0 };
@@ -555,7 +629,7 @@ function parseCondition(formula: string, table: TableInfo): AccessRuleCondition 
       if (!condition || condition.kind === "everyone") return undefined;
       return { kind: "not", condition };
     }
-    return parseLeafCondition(value, table);
+    return parseLeafCondition(value, table, attributes);
   }
   return parse(formula, 0);
 }
@@ -582,6 +656,7 @@ function usesNewRec(condition: AccessRuleCondition): boolean {
   if (condition.kind === "not") return usesNewRec(condition.condition);
   if (condition.kind === "column_change") return true;
   return (condition.kind === "match_user" || condition.kind === "match_link_key" ||
+    condition.kind === "match_user_attribute" ||
     condition.kind === "match_boolean" || condition.kind === "match_integer_flag" ||
     condition.kind === "match_empty_text") &&
     condition.record === "newRec";
