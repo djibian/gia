@@ -1208,7 +1208,6 @@ function projectUserAttributes(snapshot: AccessRulesSnapshot): {
     tableId: string;
     lookupColId: string;
     source: { kind: "user_property"; property: string } | { kind: "link_key"; name: string };
-    editable: boolean;
     position: number;
     id: number;
   }> = [];
@@ -1262,7 +1261,7 @@ function projectUserAttributes(snapshot: AccessRulesSnapshot): {
       continue;
     }
     entries.push({
-      name, tableId, lookupColId, source, editable: false,
+      name, tableId, lookupColId, source,
       position: rule.rulePos, id: rule.id
     });
   }
@@ -1517,8 +1516,8 @@ function nativeUserAttributeReferences(rule: PersistedRule, targetName: string):
       inspect(args[1]);
       return;
     }
-    if ((kind === "And" || kind === "Or") && args.length >= 2 ||
-        kind === "List" && args.length >= 0) {
+    if (((kind === "And" || kind === "Or") && args.length >= 2) ||
+        kind === "List") {
       args.forEach(inspect);
       return;
     }
