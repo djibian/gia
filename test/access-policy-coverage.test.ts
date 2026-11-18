@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   normalizeAccessRulesSnapshot,
   projectAccessPolicyCoverage,
+  resolveUserAttributeMutation,
   type AccessPolicyCoverageRequest
 } from "../src/grist/accessRules.js";
 import { nativeAclFixture } from "./fixtures/native-acl.js";
@@ -34,16 +35,20 @@ const attribute = { id: 40, fields: {
   })
 } };
 
-function coverage(request: AccessPolicyCoverageRequest, {
+function snapshot({
   rules = [...ordinaryRules, attribute], aclResources = resources
 } = {}) {
-  return projectAccessPolicyCoverage(normalizeAccessRulesSnapshot(
+  return normalizeAccessRulesSnapshot(
     { records: aclResources }, { records: rules },
     { records: [{ id: 1, fields: { tableId: "Projects" } }] },
-    { records: ["OwnerEmail", "Title"].map((colId, index) => ({
+    { records: ["OwnerEmail", "Title", "gristHelper_Display"].map((colId, index) => ({
       id: 10 + index, fields: { parentId: 1, colId, type: "Text" }
     })) }
-  ), request) as any;
+  );
+}
+
+function coverage(request: AccessPolicyCoverageRequest, fixture?: Parameters<typeof snapshot>[0]) {
+  return projectAccessPolicyCoverage(snapshot(fixture), request) as any;
 }
 
 test("coverage limits column groups and supported attribute references to the requested operation", () => {
@@ -97,4 +102,29 @@ test("coverage exposes uncertainty for protected default, special and opaque att
 test("coverage rejects nonexistent or private schema targets", () => {
   assert.throws(() => coverage({ target: { ...column, columnId: "Missing" }, operation: "read" }), /does not exist/);
   assert.throws(() => coverage({ target: { ...table, tableId: "_grist_ACLRules" }, operation: "read" }), /ordinary/);
+});
+
+test("native ACL user fields and methods cannot be mistaken for supported attributes", () => {
+  for (const name of ["ShareRef", "Type", "toJSON", "hasOwnProperty"]) {
+    const colliding = { ...attribute, fields: {
+      ...attribute.fields,
+      userAttributes: JSON.stringify({
+        name, tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
+      })
+    } };
+    const result = coverage({ target: table, operation: "read" }, {
+      rules: [...ordinaryRules, colliding]
+    });
+    assert.equal(result.persistedStatus, "UNKNOWN");
+    assert.deepEqual(result.userAttributes, { supportedReferences: [], protectedDefinitionCount: 1 });
+    assert.throws(() => resolveUserAttributeMutation(snapshot(), { userAttributeName: name }, "create", {
+      tableId: "Projects", lookupColId: "OwnerEmail", source: { kind: "user_property", property: "Email" }
+    }), /non-reserved/);
+  }
+});
+
+test("coverage excludes helper columns with native inherited rules", () => {
+  assert.equal(coverage({
+    target: { ...column, columnId: "gristHelper_Display" }, operation: "read"
+  }).persistedStatus, "UNSUPPORTED");
 });
