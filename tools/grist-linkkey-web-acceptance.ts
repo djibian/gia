@@ -120,10 +120,12 @@ async function selectTablePage(sessionId: string): Promise<string> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const selected = await driverRequest("POST",
       "/session/" + sessionId + "/execute/sync", {
-        script: `const link = [...document.querySelectorAll('a,[role="link"],.test-treeview-item')]
-          .find(el => el.textContent?.trim() === arguments[0]);
-          if (!link) return false;
-          link.click();
+        script: `const labels = [...document.querySelectorAll('*')]
+          .filter(el => el.childElementCount === 0 &&
+            el.textContent?.trim() === arguments[0]);
+          const label = labels[0];
+          if (!label) return false;
+          label.dispatchEvent(new MouseEvent('click', {bubbles:true, cancelable:true}));
           return true;`,
         args: [tableId]
       }) as boolean;
@@ -135,7 +137,8 @@ async function selectTablePage(sessionId: string): Promise<string> {
     }
     await delay(500);
   }
-  throw new Error("linkkey_table_page_not_found");
+  const page = await inspectPage(sessionId);
+  throw new Error("linkkey_table_page_not_found:" + page.url + ":" + page.text.slice(0, 900));
 }
 
 async function assertPage(
