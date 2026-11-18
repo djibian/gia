@@ -1336,7 +1336,7 @@ test("native user-attribute replacement preserves identity and unrelated policy 
       aclFormula: "", aclFormulaParsed: "", permissionsText: "", userAttributes: existingRaw } },
     { id: 20, fields: { resource: 2, rulePos: 1,
       aclFormula: "rec.OwnerEmail == user.Email",
-      aclFormulaParsed: '["Eq"]', permissionsText: "+R" } }
+      aclFormulaParsed: '["Eq",["Attr",["Name","rec"],"OwnerEmail"],["Attr",["Name","user"],"Email"]]', permissionsText: "+R" } }
   ];
   const before = snapshot(resource, original);
   const target = { userAttributeName: "Mentor" };
@@ -1428,4 +1428,110 @@ test("native user-attribute deletion refuses referenced or opaque definitions", 
     { userAttributeName: "Email" }, "create", { tableId: "Projects",
       lookupColId: "OwnerEmail", source: { kind: "user_property", property: "Email" } }),
     /non-reserved/);
+});
+
+
+test("typed user-attribute row matches normalize native operands and protect dependencies", () => {
+  const definition = JSON.stringify({
+    name: "Mentor", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
+  });
+  const resources = [
+    { id: 1, fields: { tableId: "*", colIds: "*" } },
+    { id: 2, fields: { tableId: "Projects", colIds: "*" } }
+  ];
+  const before = snapshot(resources, [
+    { id: 10, fields: { resource: 1, rulePos: 1, userAttributes: definition,
+      aclFormula: "", aclFormulaParsed: "", permissionsText: "" } },
+    { id: 20, fields: { resource: 2, rulePos: 1,
+      aclFormula: "user.Mentor.OwnerEmail == rec.OwnerEmail",
+      aclFormulaParsed: '["Eq",["Attr",["Attr",["Name","user"],"Mentor"],"OwnerEmail"],["Attr",["Name","rec"],"OwnerEmail"]]',
+      permissionsText: "+R" } }
+  ]);
+  const view = projectAccessRules(before) as any;
+  const condition = { kind: "match_user_attribute" as const,
+    operator: "equals" as const, columnId: "OwnerEmail",
+    attributeName: "Mentor", attributeColumnId: "OwnerEmail" };
+  assert.equal(view.groups[0].editable, true);
+  assert.deepEqual(view.groups[0].rules[0].condition, condition);
+  const noop = resolveAccessRuleMutation(before, { tableId: "Projects" }, "replace",
+    [{ condition, permissions: { read: "allow", update: "unspecified" } }]);
+  assert.equal(noop.mode, "noop");
+  assert.equal(noop.rules[0]?.aclFormula, "rec.OwnerEmail == user.Mentor.OwnerEmail");
+  assert.throws(() => resolveUserAttributeMutation(before,
+    { userAttributeName: "Mentor" }, "delete"), /references this attribute/);
+  assert.throws(() => resolveUserAttributeMutation(before,
+    { userAttributeName: "Mentor" }, "replace",
+    { tableId: "Projects", lookupColId: "ShareToken",
+      source: { kind: "link_key", name: "StageToken" } }), /reference this user attribute/);
+
+  const requested = resolveAccessRuleMutation(before,
+    { tableId: "Projects", columnIds: ["OwnerEmail"] }, "create",
+    [{ condition: { ...condition, record: "newRec" },
+      permissions: { read: "unspecified", update: "allow" } }]);
+  assert.equal(requested.rules[0]?.aclFormula,
+    "newRec.OwnerEmail == user.Mentor.OwnerEmail");
+  assert.throws(() => resolveAccessRuleMutation(before,
+    { tableId: "Projects", columnIds: ["OwnerEmail"] }, "create",
+    [{ condition: { ...condition, record: "newRec" },
+      permissions: { read: "allow", update: "unspecified" } }]), /newRec/);
+  assert.throws(() => resolveAccessRuleMutation(before,
+    { tableId: "Projects", columnIds: ["OwnerEmail"] }, "create",
+    [{ condition: { ...condition, attributeColumnId: "Missing" },
+      permissions: { read: "allow", update: "unspecified" } }]), /verified definition/);
+  assert.throws(() => resolveAccessRuleMutation(before,
+    { tableId: "Projects", columnIds: ["OwnerEmail"] }, "create",
+    [{ condition: { ...condition, attributeName: "Unknown" },
+      permissions: { read: "allow", update: "unspecified" } }]), /verified definition/);
+  assert.throws(() => resolveAccessRuleMutation(before,
+    { tableId: "Projects", columnIds: ["OwnerEmail"] }, "create",
+    [{ condition: { ...condition, columnId: "Enabled" },
+      permissions: { read: "allow", update: "unspecified" } }]), /comparable stable fields/);
+});
+
+test("user-attribute ACL references require compatible Ref IDs and unambiguous definitions", () => {
+  const meta = baseMetadata();
+  meta.columns.records.push({
+    id: 17, fields: { parentId: 1, colId: "MentorRef", type: "Ref:Projects" }
+  });
+  const definition = JSON.stringify({
+    name: "Mentor", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
+  });
+  const resources = [
+    { id: 1, fields: { tableId: "*", colIds: "*" } },
+    { id: 2, fields: { tableId: "Projects", colIds: "*" } }
+  ];
+  const rules = [
+    { id: 10, fields: { resource: 1, rulePos: 1, userAttributes: definition,
+      aclFormula: "", aclFormulaParsed: "", permissionsText: "" } },
+    { id: 20, fields: { resource: 2, rulePos: 1,
+      aclFormula: "rec.MentorRef == user.Mentor.id",
+      aclFormulaParsed: '["Eq",["Attr",["Name","rec"],"MentorRef"],["Attr",["Attr",["Name","user"],"Mentor"],"id"]]',
+      permissionsText: "+R" } }
+  ];
+  const state = normalizeAccessRulesSnapshot(
+    { records: resources }, { records: rules }, meta.tables, meta.columns
+  );
+  const group = (projectAccessRules(state) as any).groups[0];
+  assert.equal(group.editable, true);
+  assert.equal(group.rules[0].condition.attributeColumnId, "id");
+  const requested = resolveAccessRuleMutation(state,
+    { tableId: "Projects", columnIds: ["MentorRef"] }, "create",
+    [{ condition: { kind: "match_user_attribute", operator: "equals",
+      columnId: "MentorRef", attributeName: "Mentor", attributeColumnId: "id" },
+      permissions: { read: "allow", update: "unspecified" } }]);
+  assert.equal(requested.rules[0]?.aclFormula, "rec.MentorRef == user.Mentor.id");
+
+  const protectedState = snapshot(resources, [
+    ...rules, { id: 11, fields: { resource: 1, rulePos: 2,
+      aclFormula: "", aclFormulaParsed: "", permissionsText: "",
+      userAttributes: "private-sensitive-opaque-definition" } }
+  ]);
+  const projected = projectAccessRules(protectedState) as any;
+  assert.equal(projected.groups[0].editable, false);
+  assert.doesNotMatch(JSON.stringify(projected), /private-sensitive-opaque-definition|aclFormula/);
+  assert.throws(() => resolveAccessRuleMutation(protectedState,
+    { tableId: "Projects" }, "replace",
+    [{ condition: { kind: "match_user_attribute", operator: "equals",
+      columnId: "OwnerEmail", attributeName: "Mentor", attributeColumnId: "OwnerEmail" },
+      permissions: { read: "allow", update: "unspecified" } }]), /unsupported or sensitive/);
 });

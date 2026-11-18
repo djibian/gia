@@ -24,27 +24,9 @@ claim that persisted policy proves effective confidentiality.
 
 ### Finite work
 
-#### E1-C — native user attributes
-
-**Status: ACTIVE**
-
-E1-B's finite, additive closed AST has been absorbed into the current
-contract and tests. No further literal/operand variants are selected without
-new important generic evidence.
-
-Read-only structural inspection and typed create/replace/delete of native
-user-attribute definitions have been absorbed into current normative
-documentation and tests. All operations use the existing access-rule MCP
-entry points, preserve native Owner enforcement and untargeted persisted
-policy, and do not accept values or raw expressions.
-
-Next: add separately bounded safe typed references from ACL conditions to
-existing user-attribute names, with native compatibility and dependency
-preservation. No account/share administration.
-
 #### E1-D — policy inspection and deterministic lint
 
-**Status: BLOCKED by E1-C**
+**Status: ACTIVE**
 
 Enrich access-rule inspection with compact dependency information for targets,
 record/new-record columns, built-in user properties, LinkKey names and user
@@ -71,7 +53,7 @@ concrete generic evidence.
 
 ### Execution rules
 
-Remaining work proceeds sequentially E1-C through E1-F. Each slice must be independently
+Remaining work proceeds sequentially E1-D through E1-F. Each slice must be independently
 bounded and reviewed on its exact head when required by [AGENTS.md](../AGENTS.md).
 Completed slice history belongs in issues, PRs, commits and CI; remove completed
 work from this Roadmap as it is absorbed into current normative docs and tests.

@@ -97,7 +97,12 @@ target in the existing access_rule_group action requires fresh Owner proof and
 local doc.schema:write, refuses all native user-attribute writes whenever any
 definition is opaque/ambiguous, rejects reserved names and missing stable
 lookup columns, and never accepts raw JSON or arbitrary user properties.
-Deletion refuses known references from ACL conditions. Writes preserve all
+Deletion and non-noop replacement refuse existing native ACL dependencies,
+including opaque or noncanonical predicate forms. Typed `match_user_attribute`
+ACL leaves accept only existing structurally verified attribute/field names
+and comparable native primitive or Ref/id types; they expose no lookup values,
+LinkKey tokens, identities or arbitrary Python. Unknown definitions and
+unverifiable predicate dependencies fail closed. Writes preserve all
 untargeted native ACL rows/resources, verify selected post-state and native
 identity, and return uncertain/non-retryable effect on failed re-read.
 Ordinary ACL writes still fingerprint and preserve user-attribute rows.

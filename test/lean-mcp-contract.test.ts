@@ -696,3 +696,44 @@ test("user-attribute mutations reuse the typed access_rule_group entry point", a
     ...base, mode: "delete", definition: undefined
   }));
 });
+
+
+test("typed ACL user-attribute references carry identifiers only, never row values or formulas", async () => {
+  const recorded: unknown[] = [];
+  const registrations = capture({
+    changeAccessRuleGroup: async (...args: unknown[]) => {
+      recorded.push(args);
+      return { persistedDefinitionVerified: true, effectiveEnforcementVerified: false };
+    }
+  });
+  const tool = registrations.find(item => item.name === "grist_change_structure")!;
+  const condition = { kind: "match_user_attribute", operator: "equals",
+    columnId: "OwnerEmail", attributeName: "Mentor", attributeColumnId: "OwnerEmail" };
+  const base = {
+    action: "access_rule_group", documentId: "doc-1", mode: "create",
+    target: { tableId: "Projects" },
+    rules: [{ condition, permissions: { read: "allow", update: "unspecified" } }]
+  };
+  const parsed = tool.options.inputSchema!.parse(base);
+  await tool.callback(parsed);
+  assert.equal(recorded.length, 1);
+  assert.deepEqual((recorded[0] as any[])[3], base.rules);
+  for (const forbidden of [
+    { ...condition, attributeName: "Mentor.Name/Secret" },
+    { ...condition, attributeColumnId: "Role.Email" },
+    { ...condition, linkKeyValue: "PRIVATE" },
+    { ...condition, attributeValue: "PRIVATE" },
+    { ...condition, rawFormula: "user.Mentor.Role == 'PRIVATE'" },
+    { ...condition, record: "oldRec" },
+    { ...condition, operator: "contains" },
+    { ...condition, attributeName: "x".repeat(101) }
+  ]) {
+    assert.throws(() => tool.options.inputSchema!.parse({
+      ...base, rules: [{ ...base.rules[0], condition: forbidden }]
+    }));
+  }
+  assert.ok(tool.options.inputSchema!.parse({
+    ...base, rules: [{ ...base.rules[0],
+      condition: { ...condition, record: "newRec" } }]
+  }));
+});

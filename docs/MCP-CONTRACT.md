@@ -98,8 +98,19 @@ Replacing preserves native rule identity; deletion refuses known references in
 persisted ACL conditions. Untargeted resources/rules must be unchanged and
 post-write definition/identity is re-read and verified. Unknown effects forbid
 blind replay. The operation does **not** verify effective enforcement.
-Safe typed references to user attributes inside editable ACL conditions remain
-a separate unfinished E1-C slice.
+Editable ordinary ACL conditions additionally admit one closed
+`match_user_attribute` leaf: `{kind:"match_user_attribute",operator:"equals"|"not_equals",columnId:<stable record column>,attributeName:<defined safe name>,attributeColumnId:<stable lookup-table field or "id">,record?:"newRec"}`.
+It maps only to `rec|newRec.<column> ==|!= user.<attribute>.<field>`, with the
+reverse native operand order normalized identically. The user attribute must
+already be structurally verified and unambiguous on the native default ACL
+resource. Target and source fields must be comparable: native Text/Choice,
+matching Int/Numeric/Bool, same-target Ref, or the native `id` field compared
+to `Ref:<lookup table>`. No literal values, arbitrary attr traversal, raw
+formulas, unknown fields or unrestricted coercions are supported. Optional
+`newRec` is create/update-only, consistent with existing typed leaves.
+Deleting **or rebinding** a user-attribute definition refuses existing ACL
+predicate dependencies, including opaque or noncanonical native formula syntax.
+This structural validation is not proof of effective Grist enforcement.
 
 Opaque formulas, memos, unsupported user-attribute definitions, default/special/schema-edit policy and other unsupported persisted semantics are preserved but not copied into editable model content. Before reading ACL metadata, the bridge performs a fresh native document metadata read and requires `access === "owners"`; this prevents censored non-owner metadata from being mistaken for an empty policy. The bridge also refuses incomplete/censored/truncated ACL metadata, duplicate or overlapping stable targets, and any selected group it cannot normalize without loss.
 
