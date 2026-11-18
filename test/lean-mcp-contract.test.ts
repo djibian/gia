@@ -76,7 +76,8 @@ test("ACL inspection dispatches only an explicit closed policy-coverage request"
   const schema = registration.options.inputSchema!;
   const input = { action: "access_rules", documentId: "doc-1" };
   const policyCoverage = {
-    target: { kind: "column", tableId: "Items", columnId: "Name" }, operation: "read"
+    target: { kind: "column", tableId: "Items", columnId: "Name" }, operation: "read",
+    context: { role: "editor", linkKeys: [{ name: "Token", value: { kind: "symbol", symbol: "A" } }] }
   };
   await registration.callback(schema.parse(input));
   await registration.callback(schema.parse({ ...input, policyCoverage }));
@@ -86,6 +87,9 @@ test("ACL inspection dispatches only an explicit closed policy-coverage request"
   ]);
   assert.throws(() => schema.parse({ ...input, policyCoverage: { ...policyCoverage, operation: "schema" } }));
   assert.throws(() => schema.parse({ ...input, policyCoverage: { ...policyCoverage, formula: "opaque" } }));
+  assert.throws(() => schema.parse({ ...input, policyCoverage: {
+    ...policyCoverage, context: { linkKeys: [{ name: "Token", value: "literal-not-accepted" }] }
+  } }));
 });
 
 test("registered dictionary schemas reject raw own __proto__ keys without dispatch or silent loss", async () => {

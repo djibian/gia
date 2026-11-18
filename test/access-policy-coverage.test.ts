@@ -59,7 +59,7 @@ test("coverage limits column groups and supported attribute references to the re
     { target: { tableId: "Projects", columnIds: ["OwnerEmail"] }, status: "SUPPORTED" }
   ]);
   assert.deepEqual(read.userAttributes, { supportedReferences: ["Mentor"], protectedDefinitionCount: 0 });
-  assert.deepEqual(read.defaultPolicy, { persisted: "ABSENT", builtInFallback: "UNSUPPORTED" });
+  assert.deepEqual(read.defaultPolicy, { persisted: "ABSENT", builtInFallback: "SUPPORTED" });
   assert.equal(read.nativeQualification, "NOT_TESTED");
   assert.deepEqual(coverage({ target: column, operation: "update" }).userAttributes.supportedReferences, []);
 
@@ -127,4 +127,70 @@ test("coverage excludes helper columns with native inherited rules", () => {
   assert.equal(coverage({
     target: { ...column, columnId: "gristHelper_Display" }, operation: "read"
   }).persistedStatus, "UNSUPPORTED");
+});
+
+test("expected decisions follow column then table and distinguish mixed columns", () => {
+  const fixture = { aclResources: resources.filter(({ id }) => id !== 4),
+    rules: [rule(2, "", "-U"), rule(3, "", "+U")] };
+  const context = { role: "editor" } as const;
+  const columnResult = coverage({ target: column, operation: "update", context }, fixture);
+  assert.deepEqual(columnResult.expectedDecision, {
+    decision: "allow",
+    trace: [{ source: "column", target: { tableId: "Projects", columnIds: ["OwnerEmail"] },
+      decision: "allow", ruleIndex: 1 }]
+  });
+  assert.equal(columnResult.nativeQualification, "NOT_TESTED");
+  const tableResult = coverage({ target: table, operation: "update", context }, fixture);
+  assert.equal(tableResult.expectedDecision.decision, "UNKNOWN");
+  assert.equal(tableResult.expectedDecision.reason, "mixed_columns");
+  assert.deepEqual(tableResult.expectedDecision.trace.map(({ source }: { source: string }) => source),
+    ["table", "column"]);
+
+  const noRules = { aclResources: [], rules: [] };
+  assert.deepEqual(coverage({ target: table, operation: "read", context }, noRules).expectedDecision,
+    { decision: "allow", trace: [{ source: "built_in_default", decision: "allow" }] });
+  assert.deepEqual(coverage({ target: table, operation: "update", context: { role: "viewer" } }, noRules).expectedDecision,
+    { decision: "deny", trace: [{ source: "nominal_document_role" }] });
+});
+
+test("expected row decisions use the proposed record for creation and prior record for deletion", () => {
+  const fixture = { aclResources: resources.slice(0, 1), rules: [
+    rule(2, "rec.OwnerEmail == ''", "+CD"),
+    { id: 22, fields: { ...rule(2, "", "-CD").fields, rulePos: 2 } }
+  ] };
+  const emptyEmail = { name: "OwnerEmail", value: { kind: "empty_text" } } as const;
+  const filledEmail = { name: "OwnerEmail", value: { kind: "symbol", symbol: "B" } } as const;
+  const create = coverage({ target: table, operation: "create",
+    context: { role: "editor", newRec: [emptyEmail] } }, fixture);
+  const remove = coverage({ target: table, operation: "delete",
+    context: { role: "editor", rec: [filledEmail] } }, fixture);
+  assert.equal(create.expectedDecision.decision, "allow");
+  assert.equal(create.expectedDecision.trace[0].ruleIndex, 1);
+  assert.equal(remove.expectedDecision.decision, "deny");
+  assert.equal(remove.expectedDecision.trace[0].ruleIndex, 2);
+  assert.doesNotMatch(JSON.stringify([create.expectedDecision, remove.expectedDecision]), /empty_text|symbol|OwnerEmail/);
+  assert.equal(coverage({ target: table, operation: "create",
+    context: { role: "editor", rec: [filledEmail], newRec: [emptyEmail] } }, fixture).expectedDecision.decision,
+  "UNKNOWN");
+});
+
+test("expected decisions do not fall through opaque rules or unknown operands", () => {
+  const incomplete = coverage({ target: table, operation: "read", context: { role: "editor" } });
+  assert.deepEqual(incomplete.expectedDecision, { decision: "UNKNOWN", reason: "protected_policy" });
+  const unknown = coverage({ target: column, operation: "read", context: { role: "editor" } });
+  assert.equal(unknown.expectedDecision.decision, "UNKNOWN");
+  assert.equal(unknown.expectedDecision.reason, "missing_synthetic_operand");
+  assert.equal(unknown.expectedDecision.trace[0].ruleIndex, 1);
+  assert.equal(coverage({ target: column, operation: "create", context: { role: "editor" } }).expectedDecision.decision,
+    "UNSUPPORTED");
+});
+
+test("native legacy blank resource does not obscure the ordinary built-in fallback", () => {
+  const legacy = { id: 90, fields: { tableId: "", colIds: "" } };
+  const result = coverage({ target: table, operation: "read", context: { role: "viewer" } },
+    { aclResources: [legacy], rules: [] });
+  assert.equal(result.ignoredLegacyResourceCount, 1);
+  assert.equal(result.otherProtectedResourceCount, 0);
+  assert.equal(result.persistedStatus, "SUPPORTED");
+  assert.equal(result.expectedDecision.decision, "allow");
 });

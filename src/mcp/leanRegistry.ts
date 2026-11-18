@@ -188,13 +188,13 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     actions: ["document", "pages", "page_widgets", "access_rules"],
     request: [
       "document/pages: {action,documentId}; page_widgets: {action,documentId,pageId:positiveInteger}",
-      "access_rules: {action,documentId,schemaImpact?:{kind:'table',tableId}|{kind:'column',tableId,columnId},simulation?:{target:{tableId,columnIds?:string[]},context:{role?:'owner'|'editor'|'viewer',user?:field[],rec?:field[],newRec?:field[],linkKeys?:field[],userAttributes?:{name,fields:field[]}[]}},policyCoverage?:{target:{kind:'table',tableId}|{kind:'column',tableId,columnId},operation:'read'|'create'|'update'|'delete'}}",
+      "access_rules: {action,documentId,schemaImpact?:{kind:'table',tableId}|{kind:'column',tableId,columnId},simulation?:{target:{tableId,columnIds?:string[]},context:{role?:'owner'|'editor'|'viewer',user?:field[],rec?:field[],newRec?:field[],linkKeys?:field[],userAttributes?:{name,fields:field[]}[]}},policyCoverage?:{target:{kind:'table',tableId}|{kind:'column',tableId,columnId},operation:'read'|'create'|'update'|'delete',context?:<same invented context as simulation>}}",
       "symbolic field: {name,value:{kind:'symbol',symbol:'A'|'B'|'C'|'D'}|{kind:'boolean',value:boolean}|{kind:'flag',value:0|1}|{kind:'empty_text'}}; linkKeys allow symbols only"
     ],
     constraints: [
       "ACL inspection requires native Owner proof; optional schemaImpact identifies references, not effective security.",
       "Simulation evaluates one persisted group on invented symbolic context, not actual Grist enforcement or row confidentiality.",
-      "Policy coverage classifies persisted components for the requested operation. Native qualification is untested."
+      "Policy coverage classifies persisted components. An optional invented context asks for a bounded expected decision. Native qualification is untested."
     ],
     examples: [
       { purpose: "Inspect affected references for a column", arguments: {

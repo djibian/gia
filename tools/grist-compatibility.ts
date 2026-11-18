@@ -1705,6 +1705,70 @@ async function run(): Promise<void> {
       "access_rule_deleted_group_still_present"
     );
 
+    // Compare a bounded synthetic decision with actual native ordinary
+    // R/C/U/D behavior in the compatibility document.
+    const compatibilityPolicy = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "create", target: { tableId: ACL_TABLE_ID },
+      rules: [
+        {
+          condition: { kind: "match_boolean", columnId: "Enabled", operator: "equals", value: true },
+          permissions: { read: "allow", update: "allow", create: "allow", delete: "allow" }
+        },
+        {
+          condition: { kind: "everyone" },
+          permissions: { read: "deny", update: "deny", create: "deny", delete: "deny" }
+        }
+      ]
+    }), "expected_decision_setup");
+    assert(compatibilityPolicy.persistedDefinitionVerified === true, "expected_policy_not_persisted");
+
+    const syntheticFields = [{ name: "Enabled", value: { kind: "boolean", value: true } }];
+    for (const operation of ["read", "create", "update", "delete"] as const) {
+      const expectedInspection = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "access_rules", documentId,
+        policyCoverage: {
+          target: { kind: "table", tableId: ACL_TABLE_ID }, operation,
+          context: { role: "owner",
+            ...(operation !== "create" ? { rec: syntheticFields } : {}),
+            ...(operation === "create" || operation === "update" ? { newRec: syntheticFields } : {})
+          }
+        }
+      }), "bounded_expected_decision");
+      const expectedCoverage = expectedInspection.policyCoverage as Record<string, unknown> | undefined;
+      const decision = expectedCoverage?.expectedDecision as Record<string, unknown> | undefined;
+      assert(decision?.decision === "allow" && expectedCoverage?.nativeQualification === "NOT_TESTED",
+        `expected_decision_not_bounded_${operation}`);
+    }
+
+    const nativeRecordPath = `/api/docs/${encodeURIComponent(documentId)}/tables/${ACL_TABLE_ID}/records`;
+    const createdRecord = await gristApi(gristBaseUrl, apiKey, nativeRecordPath, {
+      method: "POST", body: JSON.stringify({ records: [{ fields: { Enabled: true } }] })
+    }) as { records?: Array<{ id: number }> };
+    const expectedRecordId = positiveResultId(createdRecord.records?.[0]?.id, "native_expected_create");
+    const readRecord = async () => {
+      const response = await gristApi(gristBaseUrl, apiKey, nativeRecordPath) as {
+        records: Array<{ id: number; fields: Record<string, unknown> }>
+      };
+      return response.records.find(({ id }) => id === expectedRecordId);
+    };
+    assert((await readRecord())?.fields.Enabled === true, "native_expected_read");
+    await gristApi(gristBaseUrl, apiKey, nativeRecordPath, {
+      method: "PATCH", body: JSON.stringify({
+        records: [{ id: expectedRecordId, fields: { RequiredText: "ordinary-update" } }]
+      })
+    });
+    assert((await readRecord())?.fields.RequiredText === "ordinary-update", "native_expected_update");
+    await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/${ACL_TABLE_ID}/records/delete`, {
+        method: "POST", body: JSON.stringify([expectedRecordId])
+      });
+    assert(!(await readRecord()), "native_expected_delete");
+
+    const expectedPolicyRemoved = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "delete", target: { tableId: ACL_TABLE_ID }
+    }), "expected_decision_cleanup");
+    assert(expectedPolicyRemoved.persistedDefinitionVerified === true, "expected_policy_not_removed");
+
     // Qualify the actual Grist user-attribute metadata shape using a disposable
     // document. Native UserActions are test-only; Gia never exposes raw /apply.
     const nativeAclResources = await gristApi(gristBaseUrl, apiKey,
