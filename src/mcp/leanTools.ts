@@ -233,11 +233,14 @@ const accessRuleLeafConditionVariants = [
   }).strict()
 ] as const;
 
-// A finite-depth schema keeps tool JSON Schema acyclic and prevents unbounded
-// recursive validation before the service's independent node/formula checks.
+// Preserve the existing finite Zod validators and give each depth a named,
+// shared JSON Schema definition. Without these local $defs, the SDK inlines
+// the same child under all/any/not at every level (exponential tools/list).
+// The names are metadata for schema serialization, not extra runtime actions.
 function boundedAccessRuleConditionSchema(depth: number): z.ZodType<AccessRuleCondition> {
+  const metadata = { id: `GiaAccessRuleConditionDepth${depth}` };
   if (depth === 0) {
-    return z.discriminatedUnion("kind", accessRuleLeafConditionVariants);
+    return z.discriminatedUnion("kind", accessRuleLeafConditionVariants).meta(metadata);
   }
   const child = boundedAccessRuleConditionSchema(depth - 1);
   return z.discriminatedUnion("kind", [
@@ -254,7 +257,7 @@ function boundedAccessRuleConditionSchema(depth: number): z.ZodType<AccessRuleCo
       kind: z.literal("not"),
       condition: child
     }).strict()
-  ]);
+  ]).meta(metadata);
 }
 
 const accessRuleConditionSchema = boundedAccessRuleConditionSchema(MAX_ACCESS_RULE_CONDITION_DEPTH);
