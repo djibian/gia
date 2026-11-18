@@ -101,7 +101,7 @@ export async function waitForUrl(url: string, attempts = 120): Promise<void> {
   throw new Error(`service_not_ready:${url}`);
 }
 
-async function freePort(): Promise<number> {
+export async function freePort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);

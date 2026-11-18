@@ -83,12 +83,14 @@ jobs:
         run: node --import tsx tools/authorization-qualification.ts
 
       - name: Qualify native web-client LinkKey policy (disposable browser)
+        id: linkkey
         env:
-          GRIST_COMPAT_BASE_URL: http://127.0.0.1:8484
+          GIA_QUALIFICATION_CONTAINER: ${{ steps.grist.outputs.container-id }}
+          GRIST_COMPAT_VERSION: ${{ matrix.grist_version }}
         run: node --import tsx tools/grist-linkkey-web-acceptance.ts
 
-      - name: Grist logs on failure
-        if: failure()
+      - name: Grist startup and API logs on failure
+        if: failure() && steps.linkkey.outcome == 'skipped'
         run: docker logs test-grist || true
 
       - name: Remove disposable Grist container
