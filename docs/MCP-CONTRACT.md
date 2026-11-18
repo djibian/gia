@@ -4,6 +4,8 @@ Current contract: **Gia MCP v2**
 
 The contract version describes the model-facing MCP tool surface. It is intentionally independent from the package/server implementation version.
 
+The current HTTP transport supports MCP protocol `2026-07-28` via `server/discover`. Versions `2025-03-26`, `2025-06-18` and `2025-11-25` are refused, and legacy `initialize` is unavailable. A client's transport and JSON Schema dialect support are separate from its knowledge of Gia MCP v2.
+
 ## Tool surface
 
 A v2 server exposes exactly these ten tools:
