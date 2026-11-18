@@ -1,11 +1,15 @@
 import { isDeepStrictEqual } from "node:util";
-import { LEAN_TOOL_REGISTRY } from "../src/mcp/leanRegistry.js";
-import { oauthSecuritySchemesForTool } from "../src/mcp/oauthToolSecurity.js";
+import { LEAN_TOOL_REGISTRY, leanToolHelp } from "../src/mcp/leanRegistry.js";
+import type { LeanToolLimits } from "../src/mcp/leanTools.js";
+import { actionScopeRequirementsForTool, oauthSecuritySchemesForTool } from "../src/mcp/oauthToolSecurity.js";
+import { VERSION } from "../src/version.js";
+import { jsonObject, makeReadinessRequest, matchReadinessSchemas, READINESS_PROTOCOL_VERSION } from "./mcp-readiness-schema.js";
 
-const PROTOCOL_VERSION = "2026-07-28";
 const REQUIRED_SCOPES = ["doc:read", "doc:write", "doc.schema:write"] as const;
 const PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource";
 const CHATGPT_STABLE_CIMD_URL = "https://chatgpt.com/oauth/client.json";
+const PREVIOUS_PROTOCOLS = ["2025-03-26", "2025-06-18", "2025-11-25"];
+const SELECTED_GUIDES = ["grist_inspect", "grist_change_structure"];
 
 type JsonObject = Record<string, unknown>;
 
@@ -79,55 +83,18 @@ async function fetchAuthorizationMetadata(issuer: string): Promise<JsonObject> {
   throw new Error("authorization_metadata_fetch_failed");
 }
 
-function requestMeta(): JsonObject {
-  return {
-    "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
-    "io.modelcontextprotocol/clientInfo": {
-      name: "gia-oauth-v2-readiness-probe",
-      version: "2.0.0"
-    },
-    "io.modelcontextprotocol/clientCapabilities": {}
-  };
-}
-
-async function postMcp(options: {
-  resourceUri: string;
-  bearer?: string;
-  method: string;
-  params?: JsonObject;
-}): Promise<{ status: number; wwwAuthenticate: string; body: unknown }> {
-  const headers: Record<string, string> = {
-    accept: "application/json, text/event-stream",
-    "content-type": "application/json",
-    "MCP-Protocol-Version": PROTOCOL_VERSION,
-    "Mcp-Method": options.method
-  };
-  if (options.bearer) headers.authorization = `Bearer ${options.bearer}`;
-
+async function postMcp(options: Parameters<typeof makeReadinessRequest>[0]) {
   let response: Response;
   try {
-    response = await fetch(options.resourceUri, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: options.method,
-        params: {
-          ...(options.params ?? {}),
-          _meta: requestMeta()
-        }
-      }),
-      signal: AbortSignal.timeout(10_000)
-    });
+    response = await fetch(makeReadinessRequest(options));
   } catch {
     throw new Error("mcp_request_failed");
   }
 
-  const text = await response.text();
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
   let body: unknown;
   try {
-    body = text ? JSON.parse(text) : undefined;
+    if (contentType === "application/json") body = await response.json();
   } catch {
     body = undefined;
   }
@@ -135,35 +102,11 @@ async function postMcp(options: {
   return {
     status: response.status,
     wwwAuthenticate: response.headers.get("www-authenticate") ?? "",
-    body
+    envelope: jsonObject(body)
   };
 }
 
-function inspectToolSecurity(body: unknown): {
-  toolsListAccepted: boolean;
-  exactLeanToolSet: boolean;
-  rootSecuritySchemesMatch: boolean;
-  compatibilityMirrorMatches: boolean;
-} {
-  if (!isObject(body) || !isObject(body.result)) {
-    return {
-      toolsListAccepted: false,
-      exactLeanToolSet: false,
-      rootSecuritySchemesMatch: false,
-      compatibilityMirrorMatches: false
-    };
-  }
-
-  const tools = body.result.tools;
-  if (!Array.isArray(tools)) {
-    return {
-      toolsListAccepted: false,
-      exactLeanToolSet: false,
-      rootSecuritySchemesMatch: false,
-      compatibilityMirrorMatches: false
-    };
-  }
-
+function inspectToolSecurity(tools: unknown[]) {
   const byName = new Map<string, JsonObject>();
   for (const tool of tools) {
     if (isObject(tool) && typeof tool.name === "string") byName.set(tool.name, tool);
@@ -175,6 +118,7 @@ function inspectToolSecurity(body: unknown): {
     byName.size === tools.length && isDeepStrictEqual(actualNames, expectedNames);
   let rootSecuritySchemesMatch = exactLeanToolSet;
   let compatibilityMirrorMatches = exactLeanToolSet;
+  let actionScopeRequirementsMatch = exactLeanToolSet;
 
   for (const definition of LEAN_TOOL_REGISTRY) {
     const tool = byName.get(definition.name);
@@ -187,17 +131,103 @@ function inspectToolSecurity(body: unknown): {
     if (!meta || !expected || !isDeepStrictEqual(meta.securitySchemes, expected)) {
       compatibilityMirrorMatches = false;
     }
+    if (!isDeepStrictEqual(meta?.["gia/actionScopeRequirements"], actionScopeRequirementsForTool(definition.name))) {
+      actionScopeRequirementsMatch = false;
+    }
   }
 
   return {
-    toolsListAccepted: true,
     exactLeanToolSet,
     rootSecuritySchemesMatch,
-    compatibilityMirrorMatches
+    compatibilityMirrorMatches,
+    actionScopeRequirementsMatch
   };
 }
 
-async function run(): Promise<boolean> {
+function rpcResult(response: Awaited<ReturnType<typeof postMcp>>): JsonObject | undefined {
+  const envelope = response.envelope;
+  const result = jsonObject(envelope?.result);
+  if (response.status === 200 && envelope?.jsonrpc === "2.0" && envelope.id === 1 &&
+      envelope.error === undefined && result?.resultType === "complete") return result;
+  return undefined;
+}
+
+function rpcError(response: Awaited<ReturnType<typeof postMcp>>): JsonObject | undefined {
+  const envelope = response.envelope;
+  return envelope?.jsonrpc === "2.0" && envelope.id === 1 && envelope.result === undefined
+    ? jsonObject(envelope.error) : undefined;
+}
+
+function parseSelectedHelp(result: JsonObject | undefined): JsonObject | undefined {
+  if (result?.isError === true || !Array.isArray(result?.content) || result.content.length !== 1) return undefined;
+  const content = jsonObject(result.content[0]);
+  if (content?.type !== "text" || typeof content.text !== "string") return undefined;
+  try {
+    return jsonObject(JSON.parse(content.text));
+  } catch {
+    return undefined;
+  }
+}
+
+function configuredToolLimits(raw: unknown): LeanToolLimits | undefined {
+  const { maxReadRecords, maxWriteRecords, maxSchemaItems } = jsonObject(raw) ?? {};
+  const valid = (value: unknown): value is number =>
+    typeof value === "number" && Number.isInteger(value) && value >= 0;
+  if (valid(maxReadRecords) && valid(maxWriteRecords) && valid(maxSchemaItems)) {
+    return { maxReadRecords, maxWriteRecords, maxSchemaItems };
+  }
+  return undefined;
+}
+
+async function qualifyAuthenticated(resourceUri: string, bearer: string): Promise<boolean> {
+  const endpoint = { resourceUri, bearer };
+  const discover = rpcResult(await postMcp({ ...endpoint, method: "server/discover" }));
+  const capabilities = jsonObject(discover?.capabilities);
+  const supportsCurrent = isDeepStrictEqual(discover?.supportedVersions, [READINESS_PROTOCOL_VERSION]) &&
+    discover?.cacheScope === "private" && discover.ttlMs === 0 &&
+    jsonObject(capabilities?.tools)?.listChanged === true;
+  const server = jsonObject(jsonObject(discover?._meta)?.["io.modelcontextprotocol/serverInfo"]);
+  const serverIdentity = server?.name === "gia" && server.version === VERSION;
+  const unsupported: boolean[] = [];
+  for (const protocol of PREVIOUS_PROTOCOLS) {
+    const response = await postMcp({ ...endpoint, method: "server/discover", protocol });
+    const error = rpcError(response);
+    const data = jsonObject(error?.data);
+    unsupported.push(response.status === 400 && error?.code === -32022 && data?.requested === protocol &&
+      isDeepStrictEqual(data.supported, [READINESS_PROTOCOL_VERSION]));
+  }
+  const legacy = await postMcp({ ...endpoint, method: "initialize" });
+  const transportOk = supportsCurrent && unsupported.every(Boolean) &&
+    legacy.status === 404 && rpcError(legacy)?.code === -32601;
+  printPass("MCP transport supports 2026-07-28 and refuses tested legacy variants", transportOk);
+  printPass("Gia server name and release version match this checkout", serverIdentity);
+
+  const result = rpcResult(await postMcp({ ...endpoint, method: "tools/list" }));
+  const toolsList = Array.isArray(result?.tools) && result.cacheScope === "private" &&
+    result.ttlMs === 0 && result.nextCursor === undefined ? result.tools : undefined;
+  const tools = toolsList ?? [];
+  const security = inspectToolSecurity(tools);
+  const help = parseSelectedHelp(rpcResult(await postMcp({
+    ...endpoint, method: "tools/call", toolName: "grist_help",
+    params: { name: "grist_help", arguments: { tools: SELECTED_GUIDES } }
+  })));
+  const limits = configuredToolLimits(help?.configuredLimits);
+  const helpMatches = limits !== undefined && isDeepStrictEqual(help, leanToolHelp(SELECTED_GUIDES, limits));
+  const schemaMatches = limits !== undefined && security.exactLeanToolSet && await matchReadinessSchemas(tools, limits);
+  printPass("Authenticated tools/list is complete, private and unpaginated", toolsList !== undefined);
+  printPass("Live tools/list is exactly the ten-tool MCP v2 contract", security.exactLeanToolSet);
+  printPass("Root OAuth securitySchemes match lean tool capabilities", security.rootSecuritySchemesMatch);
+  printPass("Compatibility _meta securitySchemes mirror matches", security.compatibilityMirrorMatches);
+  printPass("Template action declares additional source read scope", security.actionScopeRequirementsMatch);
+  printPass("Live input schemas match current Gia wire shapes and configured limits", schemaMatches);
+  printPass("Selected help exposes the current MCP contract and guides", helpMatches);
+  const qualified = schemaMatches && helpMatches && security.rootSecuritySchemesMatch &&
+    security.compatibilityMirrorMatches && security.actionScopeRequirementsMatch;
+  printPass("Authenticated schema qualification", qualified);
+  return transportOk && serverIdentity && qualified;
+}
+
+async function run(): Promise<"PASS" | "FAIL" | "NOT QUALIFIED"> {
   const resourceUri = required("MCP_RESOURCE_URI");
   const accessToken = optional("OAUTH_ACCESS_TOKEN");
   const resourceUrl = new URL(resourceUri);
@@ -221,7 +251,10 @@ async function run(): Promise<boolean> {
   printPass("Authorization server advertised", authorizationServerPresent);
   printPass("Protected-resource metadata exposes exactly the fixed bridge scopes", scopesMatch);
 
-  if (!authorizationServerPresent) return false;
+  if (!authorizationServerPresent) {
+    printPass("Public OAuth metadata and challenge", false);
+    return "FAIL";
+  }
   const issuer = authorizationServers[0]!;
   const authorizationMetadata = await fetchAuthorizationMetadata(issuer);
   const tokenAuthMethods = stringArray(
@@ -291,31 +324,7 @@ async function run(): Promise<boolean> {
     unauthenticated.wwwAuthenticate.includes(`resource_metadata="${metadataUrl}"`);
   printPass("Unauthenticated /mcp challenge advertises resource metadata", challengeOk);
 
-  let authenticatedChecks = true;
-  if (accessToken) {
-    const toolList = await postMcp({
-      resourceUri,
-      bearer: accessToken,
-      method: "tools/list"
-    });
-    const toolSecurity = inspectToolSecurity(toolList.body);
-    const authenticated = toolList.status === 200 && toolSecurity.toolsListAccepted;
-
-    printPass("Authenticated tools/list succeeds", authenticated);
-    printPass("Live tools/list is exactly the ten-tool MCP v2 contract", toolSecurity.exactLeanToolSet);
-    printPass("Root OAuth securitySchemes match lean tool capabilities", toolSecurity.rootSecuritySchemesMatch);
-    printPass("Compatibility _meta securitySchemes mirror matches", toolSecurity.compatibilityMirrorMatches);
-
-    authenticatedChecks =
-      authenticated &&
-      toolSecurity.exactLeanToolSet &&
-      toolSecurity.rootSecuritySchemesMatch &&
-      toolSecurity.compatibilityMirrorMatches;
-  } else {
-    console.log("Authenticated tools/list probe: SKIPPED (no OAUTH_ACCESS_TOKEN)");
-  }
-
-  return (
+  const publicChecks = (
     resourceMatches &&
     authorizationServerPresent &&
     scopesMatch &&
@@ -326,15 +335,23 @@ async function run(): Promise<boolean> {
     refresh &&
     issuerIdentification &&
     chatGptCimdChecks &&
-    challengeOk &&
-    authenticatedChecks
+    challengeOk
   );
+  printPass("Public OAuth metadata and challenge", publicChecks);
+  if (!accessToken) {
+    console.log("MCP transport compatibility: SKIPPED (no OAUTH_ACCESS_TOKEN)");
+    console.log("Authenticated schema qualification: SKIPPED (no OAUTH_ACCESS_TOKEN)");
+    return publicChecks ? "NOT QUALIFIED" : "FAIL";
+  }
+  return await qualifyAuthenticated(resourceUri, accessToken) && publicChecks ? "PASS" : "FAIL";
 }
 
+console.log("Running build revision: NOT QUALIFIED (requires trusted deployment evidence)");
+console.log("Principal isolation and client catalog refresh: NOT QUALIFIED (outside this probe)");
 try {
-  const ok = await run();
-  console.log(`ChatGPT OAuth readiness: ${ok ? "PASS" : "FAIL"}`);
-  process.exitCode = ok ? 0 : 1;
+  const result = await run();
+  console.log(`ChatGPT OAuth readiness: ${result}`);
+  process.exitCode = result === "FAIL" ? 1 : 0;
 } catch (error) {
   const code = error instanceof Error && /^[a-z0-9_]+$/.test(error.message)
     ? error.message

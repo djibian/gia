@@ -64,8 +64,7 @@ credentials, runtime logs or private Grist data belong in published source.
 OAuth URLs reject credentials and fragments, including an empty `#` delimiter.
 Deployment probes require the `/mcp` resource without any query or fragment,
 including empty `?`/`#` delimiters, exactly one HTTPS authorization server,
-and exactly the three fixed scopes. Authenticated readiness validation requires
-ten distinct valid tool entries. Encoded delimiters inside URL paths remain valid
+and exactly the three fixed scopes. Encoded delimiters inside URL paths remain valid
 where those paths are supported; a JWKS query remains permitted.
 
 Zero disables the configurable read/write/schema count ceiling; use finite positive
@@ -138,9 +137,15 @@ The offline preflight prints fixed PASS/FAIL identifiers, performs no network/wr
 and rejects static upstream credentials as production multi-principal isolation.
 It does not parse the mapping file; startup does.
 Public smoke/readiness perform non-mutating metadata, health and challenge checks.
-The optional authenticated readiness extension takes `OAUTH_ACCESS_TOKEN` through
-protected environment state and only calls `tools/list` to check the ten tools and
-OAuth schemes. It never prints the token or writes Grist.
+The readiness probe separates public metadata and challenge from authenticated
+MCP transport and schema qualification. Without `OAUTH_ACCESS_TOKEN`, a passing
+public phase exits successfully with the authenticated phase skipped and overall
+readiness not qualified. Use a token in protected environment state to check
+transport negotiation, Gia release version, all ten wire schemas and OAuth
+scope declarations, and selected `grist_help`. The probe uses the same release
+checkout as the intended deployment and cross-checks the wire schemas against
+the configurable caps reported by selected help. It never prints the token or writes Grist. Running build revision,
+principal isolation and client catalog refresh require separate observations.
 
 Before release/deployment, require exact-head review and CI, run relevant native
 regressions, build the reviewed tree, and retain the previous deployable version.

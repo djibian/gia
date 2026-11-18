@@ -1,11 +1,14 @@
 import { createServer } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
+import { isDeepStrictEqual } from "node:util";
+import { leanToolHelp } from "../src/mcp/leanRegistry.js";
+import { makeReadinessRequest, matchReadinessSchemas, READINESS_PROTOCOL_VERSION } from "./mcp-readiness-schema.js";
 
-const PROTOCOL_VERSION = "2026-07-28";
 const STATIC_BEARER = "test-static-bearer-0123456789abcdef0123456789abcdef0123456789abcdef";
 const TABLE_ID = "Compat_Items";
 const ACL_TABLE_ID = "Compat_Acl";
 const PAGE_NAME = "Compatibility";
+const COMPAT_TOOL_LIMITS = { maxReadRecords: 100, maxWriteRecords: 50, maxSchemaItems: 50 };
 
 interface McpResponse {
   status: number;
@@ -248,10 +251,10 @@ function bridgeEnvironment(options: {
     GRIST_API_KEY: options.apiKey,
     GRIST_ALLOWED_DOCUMENT_IDS: options.documentId,
     GRIST_ALLOWED_WORKSPACE_IDS: String(options.workspaceId),
-    GRIST_MAX_READ_RECORDS: "100",
-    GRIST_MAX_WRITE_RECORDS: "50",
+    GRIST_MAX_READ_RECORDS: String(COMPAT_TOOL_LIMITS.maxReadRecords),
+    GRIST_MAX_WRITE_RECORDS: String(COMPAT_TOOL_LIMITS.maxWriteRecords),
     GRIST_WRITE_BATCH_RECORDS: "25",
-    GRIST_MAX_SCHEMA_ITEMS: "50",
+    GRIST_MAX_SCHEMA_ITEMS: String(COMPAT_TOOL_LIMITS.maxSchemaItems),
     MCP_AUTH_MODE: "static",
     MCP_BEARER_TOKEN: STATIC_BEARER,
     MCP_ALLOWED_HOSTS: "127.0.0.1,localhost",
@@ -280,7 +283,7 @@ async function stopBridge(child: ChildProcess): Promise<void> {
 
 function requestMeta(): Record<string, unknown> {
   return {
-    "io.modelcontextprotocol/protocolVersion": PROTOCOL_VERSION,
+    "io.modelcontextprotocol/protocolVersion": READINESS_PROTOCOL_VERSION,
     "io.modelcontextprotocol/clientInfo": {
       name: "gia-test-compatibility",
       version: "1.0.0"
@@ -299,7 +302,7 @@ async function postMcp(options: {
     accept: "application/json, text/event-stream",
     authorization: `Bearer ${STATIC_BEARER}`,
     "content-type": "application/json",
-    "MCP-Protocol-Version": PROTOCOL_VERSION,
+    "MCP-Protocol-Version": READINESS_PROTOCOL_VERSION,
     "Mcp-Method": options.method
   };
   if (options.name) headers["Mcp-Name"] = options.name;
@@ -440,25 +443,15 @@ async function run(): Promise<void> {
       await postMcp({ baseUrl: bridgeBaseUrl, method: "tools/list" })
     );
     assert(Array.isArray(tools.tools), "tools_list_invalid");
-    const names = (tools.tools as Array<{ name?: unknown }>)
-      .map((tool) => tool.name)
-      .filter((name): name is string => typeof name === "string")
-      .sort();
-    assert(names.length === 10, `unexpected_tool_count:${names.length}`);
-    for (const expected of [
-      "grist_discover",
-      "grist_inspect",
-      "grist_query",
-      "grist_add_records",
-      "grist_change_records",
-      "grist_add_structure",
-      "grist_change_structure",
-      "grist_add_ui",
-      "grist_change_ui",
-      "grist_help"
-    ]) {
-      assert(names.includes(expected), `missing_tool:${expected}`);
-    }
+    assert(await matchReadinessSchemas(tools.tools, COMPAT_TOOL_LIMITS), "current_wire_schemas_mismatch");
+    const discover = jsonRpcResult(await postMcp({ baseUrl: bridgeBaseUrl, method: "server/discover" }));
+    assert(JSON.stringify(discover.supportedVersions) === JSON.stringify([READINESS_PROTOCOL_VERSION]),
+      "current_transport_version_mismatch");
+    const legacy = await fetch(makeReadinessRequest({
+      resourceUri: `${bridgeBaseUrl}/mcp`, method: "server/discover", protocol: "2025-11-25", bearer: STATIC_BEARER
+    }));
+    assert(legacy.status === 400 && (await legacy.json()).error?.code === -32022,
+      "legacy_transport_not_refused");
 
     // Measure what the actual MCP HTTP server advertises, not a mocked
     // registerTool call. A compact ACL schema still declares every finite
@@ -499,6 +492,8 @@ async function run(): Promise<void> {
         tools: ["grist_inspect", "grist_change_structure"]
       }), "selected_help"
     );
+    assert(isDeepStrictEqual(selectedHelp, leanToolHelp(["grist_inspect", "grist_change_structure"], COMPAT_TOOL_LIMITS)),
+      "selected_help_current_wire_mismatch");
     const guides = selectedHelp.tools as Array<{
       name: string;
       guide?: { request?: string[]; examples?: Array<{ arguments: Record<string, unknown> }> };

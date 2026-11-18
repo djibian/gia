@@ -13,7 +13,6 @@ anchored to its audited SHA, not an assumption that main has stayed unchanged.
 
 | Work | Bounded result | Dependencies |
 | --- | --- | --- |
-| [#266](https://github.com/djibian/gia/issues/266) Readiness | Qualify actual schemas and separate public, authenticated and transport compatibility results | Qualification on corrected runtime, contract and help |
 | [#267](https://github.com/djibian/gia/issues/267) Release and refresh | Qualify a new immutable release, deployed revision, canary/promotion, rollback and client tool refresh | Final rollout after correction and review gates; deployment reconstruction can begin read-only |
 | [#234](https://github.com/djibian/gia/issues/234) Operational isolation | Finish the scoped current authenticated authorization evidence | Coordinate #266 and #267; never widen production grants for a test |
 
