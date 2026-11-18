@@ -1265,6 +1265,98 @@ test("native user attributes inspect only safe structural identifiers without Li
   assert.doesNotMatch(JSON.stringify(view), /private-token|aclFormula|LinkKey\.Token/);
 });
 
+test("native default-resource NULL user-attribute fields remain inspectable and preserved", () => {
+  // Reproduces the native metadata shape of the data-free suivi des stages dev2.grist:
+  // ordinary permission rows use strings, while the Personnel attribute row uses SQL NULLs.
+  const resources = [
+    { id: 1, fields: { tableId: "*", colIds: "*" } },
+    { id: 2, fields: { tableId: "Projects", colIds: "*" } }
+  ];
+  const nativeDefinition = {
+    id: 9, fields: {
+      resource: 1, rulePos: 9, aclFormula: null, aclFormulaParsed: "",
+      permissionsText: null,
+      userAttributes: JSON.stringify({
+        name: "Personnel", tableId: "Projects", lookupColId: "ShareToken",
+        charId: "LinkKey.Token"
+      })
+    }
+  };
+  const defaultRule = {
+    id: 8, fields: { resource: 1, rulePos: 8, aclFormula: "",
+      aclFormulaParsed: "", permissionsText: "+R" }
+  };
+  const ordinaryRule = {
+    id: 20, fields: { resource: 2, rulePos: 1,
+      aclFormula: "user.Access == OWNER", aclFormulaParsed: '["Eq"]',
+      permissionsText: "+RU" }
+  };
+  const before = snapshot(resources, [defaultRule, nativeDefinition, ordinaryRule]);
+  const view = projectAccessRules(before) as any;
+  assert.equal(view.protectedPersistedGroupCount, 1);
+  assert.equal(view.groups.length, 1);
+  assert.equal(view.groups[0].editable, true);
+  assert.deepEqual(view.userAttributes, {
+    definitions: [{
+      name: "Personnel", tableId: "Projects", lookupColId: "ShareToken",
+      source: { kind: "link_key", name: "Token" }, editable: true
+    }],
+    protectedDefinitionCount: 0
+  });
+  // Semantic inspection may see empty strings, but the original SQL NULLs
+  // must stay untouched for the preservation fingerprint used by writes.
+  assert.equal(before.rules.find((rule) => rule.id === 9)?.aclFormula, "");
+  assert.equal(before.rules.find((rule) => rule.id === 9)?.fields.aclFormula, null);
+  assert.equal(before.rules.find((rule) => rule.id === 9)?.fields.permissionsText, null);
+  assert.doesNotMatch(JSON.stringify(view), /aclFormula|permissionsText|LinkKey\\.Token/);
+
+  const plan = resolveAccessRuleMutation(before, { tableId: "Projects" }, "replace", [
+    { condition: { kind: "user_access", operator: "equals", role: "owner" },
+      permissions: { read: "allow", update: "allow" } }
+  ]);
+  assert.equal(verifyAccessRuleMutation(before, before, plan).persistedDefinitionVerified, true);
+
+  // Never silently rewrite native NULL metadata to empty text during an unrelated ACL write.
+  const changed = snapshot(resources, [
+    defaultRule, { ...nativeDefinition, fields: {
+      ...nativeDefinition.fields, aclFormula: "", permissionsText: ""
+    } }, ordinaryRule
+  ]);
+  assert.throws(() => verifyAccessRuleMutation(before, changed, plan),
+    /Untargeted persisted access-rule state changed/);
+});
+
+test("SQL NULL permission fields remain rejected outside native user-attribute definitions", () => {
+  const resource = { id: 1, fields: { tableId: "*", colIds: "*" } };
+  const ordinary = { id: 2, fields: { tableId: "Projects", colIds: "*" } };
+  const definition = JSON.stringify({
+    name: "Personnel", tableId: "Projects", lookupColId: "ShareToken",
+    charId: "LinkKey.Token"
+  });
+  const nativeFields = {
+    resource: 1, rulePos: 9, aclFormula: null,
+    aclFormulaParsed: "", permissionsText: null, userAttributes: definition
+  };
+  const cases = [
+    { resources: [resource, ordinary], fields: { ...nativeFields, resource: 2 } },
+    { resources: [resource], fields: { ...nativeFields, permissionsText: "" } },
+    { resources: [resource], fields: { ...nativeFields, aclFormula: "" } },
+    { resources: [resource], fields: { ...nativeFields, userAttributes: "" } },
+    { resources: [resource], fields: { ...nativeFields, userAttributes: "invalid-json" } },
+    { resources: [resource], fields: { ...nativeFields,
+      userAttributes: JSON.stringify({ name: "Personnel", extra: "unsupported" }) } },
+    { resources: [resource], fields: { ...nativeFields, aclFormulaParsed: '["Eq"]' } },
+    { resources: [resource], fields: { ...nativeFields, rulePos: null } },
+    { resources: [resource, { ...resource, id: 3 }], fields: nativeFields },
+    { resources: [resource], fields: { resource: 1, rulePos: 9,
+      aclFormulaParsed: "", userAttributes: definition } }
+  ];
+  for (const item of cases) {
+    assert.throws(() => snapshot(item.resources, [{ id: 9, fields: item.fields }]),
+      /ACL rule metadata is incomplete or censored: aclFormula is unavailable|permissionsText is unavailable/);
+  }
+});
+
 test("ambiguous or misplaced user attributes stay protected; unrelated ACL writes preserve them", () => {
   const common = {
     name: "Teacher", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
