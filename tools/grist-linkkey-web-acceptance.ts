@@ -230,7 +230,11 @@ async function run({ baseUrl, version }: DisposableGrist): Promise<void> {
           permissions: { read: "allow", update: "allow", create: "allow", delete: "allow" }
         },
         {
-          condition: { kind: "match_boolean", columnId: "PublicControl", operator: "equals", value: true },
+          condition: { kind: "all", conditions: [
+            { kind: "match_boolean", columnId: "PublicControl", operator: "equals", value: true },
+            { kind: "user_access", operator: "equals", role: "viewer" },
+            { kind: "user_login_status", operator: "equals", value: true }
+          ] },
           permissions: { read: "allow", update: "unspecified", create: "unspecified", delete: "unspecified" }
         },
         {

@@ -126,9 +126,9 @@ credentials, document IDs, URLs and native response bodies.
 The LinkKey web probe uses the same disposable-container guard and flags.
 It drives a disposable headless Chrome via ChromeDriver/WebDriver and prints
 separate evidence for a matching key for each synthetic row, and for missing
-and wrong keys. A separate visible control row and the expected page route
-establish that the authenticated viewer reached the target before a missing
-row counts as evidence. The probe omits key values, URLs and browser response
+and wrong keys. A separate control row is visible to logged-in viewers.
+Its presence and the expected page route establish the tested browser context
+before a missing row counts as evidence. The probe omits key values, URLs and browser response
 bodies. This scope covers native web row visibility for the tested viewer.
 API, widgets, anonymous visitors and published forms have their own scope.
 
