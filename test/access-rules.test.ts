@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   normalizeAccessRulesSnapshot,
   projectAccessRules,
+  projectAccessRuleSchemaImpact,
   resolveAccessRuleMutation,
   resolveUserAttributeMutation,
   verifyAccessRuleMutation,
@@ -1671,4 +1672,74 @@ test("E1-D2 warns about indirect web-only LinkKey via a verified user attribute"
     { code: "link_key_web_acceptance_unverified", certainty: "warning" }
   ]);
   assert.doesNotMatch(JSON.stringify(group), /LinkKey\.StageToken|charId|aclFormula/);
+});
+
+test("E1-D3 reports typed record and user-attribute schema dependencies", () => {
+  const meta = baseMetadata();
+  meta.tables.records.push({ id: 2, fields: { tableId: "Tasks" } });
+  meta.columns.records.push({ id: 21, fields: { parentId: 2, colId: "OwnerEmail", type: "Text" } });
+  const attribute = JSON.stringify({
+    name: "Mentor", tableId: "Projects", lookupColId: "ShareToken", charId: "LinkKey.StageToken"
+  });
+  const state = normalizeAccessRulesSnapshot(
+    { records: [
+      { id: 1, fields: { tableId: "*", colIds: "*" } },
+      { id: 2, fields: { tableId: "Tasks", colIds: "*" } },
+      { id: 3, fields: { tableId: "Projects", colIds: "OwnerEmail" } }
+    ] },
+    { records: [
+      { id: 10, fields: { resource: 1, rulePos: 1, userAttributes: attribute,
+        aclFormula: "", aclFormulaParsed: "", permissionsText: "" } },
+      { id: 20, fields: { resource: 2, rulePos: 1,
+        aclFormula: "rec.OwnerEmail == user.Mentor.OwnerEmail",
+        aclFormulaParsed: '["Eq"]', permissionsText: "+R" } },
+      { id: 30, fields: { resource: 3, rulePos: 1,
+        aclFormula: "newRec.OwnerEmail == user.Email",
+        aclFormulaParsed: '["Eq"]', permissionsText: "+U" } }
+    ] }, meta.tables, meta.columns
+  );
+  const lookup = projectAccessRuleSchemaImpact(state,
+    { kind: "column", tableId: "Projects", columnId: "ShareToken" }) as any;
+  assert.deepEqual(lookup.affectedUserAttributes, [{ name: "Mentor", reason: "lookup_column" }]);
+  assert.deepEqual(lookup.affectedGroups.map((g: any) => [g.target, g.reasons]), [
+    [{ tableId: "Tasks" }, ["user_attribute_reference"]]
+  ]);
+  assert.deepEqual(lookup.unknownCoverage, {
+    protectedOrdinaryGroupCount: 0, protectedOtherPolicyResourceCount: 1,
+    protectedUserAttributeDefinitionCount: 0
+  });
+  const field = projectAccessRuleSchemaImpact(state,
+    { kind: "column", tableId: "Projects", columnId: "OwnerEmail" }) as any;
+  assert.deepEqual(field.affectedGroups.map((g: any) => [g.target, g.reasons]), [
+    [{ tableId: "Projects", columnIds: ["OwnerEmail"] }, ["resource_target", "record_condition"]],
+    [{ tableId: "Tasks" }, ["user_attribute_reference"]]
+  ]);
+  const table = projectAccessRuleSchemaImpact(state,
+    { kind: "table", tableId: "Projects" }) as any;
+  assert.deepEqual(table.affectedUserAttributes, [{ name: "Mentor", reason: "source_table" }]);
+  assert.equal(table.affectedGroups.length, 2);
+  assert.deepEqual((projectAccessRuleSchemaImpact(state,
+    { kind: "column", tableId: "Projects", columnId: "Title" }) as any).affectedGroups, []);
+  assert.throws(() => projectAccessRuleSchemaImpact(state,
+    { kind: "column", tableId: "Projects", columnId: "Missing" }), /does not exist/);
+  assert.throws(() => projectAccessRuleSchemaImpact(state,
+    { kind: "table", tableId: "Missing" }), /existing ordinary table/);
+  assert.doesNotMatch(JSON.stringify(lookup), /StageToken|charId|aclFormula/);
+});
+
+test("E1-D3 retains unknown coverage for opaque ACL conditions, without leaked literals", () => {
+  const state = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "Title" } }],
+    [{ id: 20, fields: { resource: 2, rulePos: 1,
+      aclFormula: "rec.Title == 'private-secret'",
+      aclFormulaParsed: '["Eq"]', permissionsText: "-R" } }]
+  );
+  const result = projectAccessRuleSchemaImpact(state,
+    { kind: "column", tableId: "Projects", columnId: "Title" }) as any;
+  assert.equal(result.unknownCoverage.protectedOrdinaryGroupCount, 1);
+  assert.deepEqual(result.affectedGroups, [{
+    target: { tableId: "Projects", columnIds: ["Title"] },
+    reasons: ["resource_target"], conditionCoverage: "unknown"
+  }]);
+  assert.doesNotMatch(JSON.stringify(result), /private-secret|aclFormula/);
 });
