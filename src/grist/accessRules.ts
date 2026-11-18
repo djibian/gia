@@ -1682,6 +1682,56 @@ function syntheticComparison(
   return (operator === "equals" ? equal : !equal) ? "true" : "false";
 }
 
+// Synthetic equivalence classes still represent native typed values. Reject
+// impossible scenarios by treating mismatched operands as absent/unknown.
+function compatibleSyntheticValue(value: AccessRuleSyntheticValue, nativeType: string | undefined): boolean {
+  if (nativeType === "Text" || nativeType === "Choice" || nativeType === "Any") {
+    return value.kind === "symbol" || value.kind === "empty_text";
+  }
+  if (nativeType === "Bool") return value.kind === "boolean";
+  if (nativeType === "Int" || nativeType === "Numeric") return value.kind === "flag";
+  if (nativeType?.startsWith("Ref:")) return value.kind === "symbol";
+  return false;
+}
+
+function compatibleSyntheticFields(
+  fields: readonly AccessRuleSyntheticField[] | undefined,
+  nativeTypeFor: (name: string) => string | undefined
+): readonly AccessRuleSyntheticField[] | undefined {
+  return fields?.filter((field) => compatibleSyntheticValue(field.value, nativeTypeFor(field.name)));
+}
+
+function typedSyntheticContext(
+  snapshot: AccessRulesSnapshot,
+  tableId: string,
+  context: AccessRuleSyntheticContext
+): AccessRuleSyntheticContext {
+  const table = snapshot.tables.get(tableId);
+  const attributes = new Map(projectUserAttributes(snapshot).definitions
+    .filter((definition) => definition.editable)
+    .map((definition) => [definition.name, definition.tableId] as const));
+  const recordType = (name: string) => table?.columns.get(name)?.type;
+  return {
+    ...context,
+    rec: compatibleSyntheticFields(context.rec, recordType),
+    newRec: compatibleSyntheticFields(context.newRec, recordType),
+    user: compatibleSyntheticFields(context.user, (name) =>
+      name === "IsLoggedIn" ? "Bool" : name === "UserID" ? "Int" :
+        ACCESS_RULE_USER_PROPERTIES.includes(name as AccessRuleUserProperty) ? "Text" : undefined),
+    userAttributes: context.userAttributes?.map((attribute) => {
+      const sourceTableId = attributes.get(attribute.name);
+      return {
+        name: attribute.name,
+        fields: compatibleSyntheticFields(attribute.fields, (name) => {
+          if (!sourceTableId) return undefined;
+          return name === "id" ? `Ref:${sourceTableId}` :
+            snapshot.tables.get(sourceTableId)?.columns.get(name)?.type;
+        }) ?? []
+      };
+    })
+  };
+}
+
 function syntheticCondition(
   condition: AccessRuleCondition,
   context: AccessRuleSyntheticContext
@@ -1772,9 +1822,10 @@ export function projectAccessRuleSimulation(
       note: disclaimer
     };
   }
+  const context = typedSyntheticContext(snapshot, target.tableId, request.context);
   const ruleMatches = group.normalizedRules.map((rule, index) => ({
     ruleIndex: index + 1,
-    match: syntheticCondition(rule.condition, request.context)
+    match: syntheticCondition(rule.condition, context)
   }));
   const permissionDecisions = Object.fromEntries(
     (["read", "update", "create", "delete"] as const).map((permission) => {
