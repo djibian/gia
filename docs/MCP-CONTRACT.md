@@ -136,6 +136,15 @@ supported groups using a direct LinkKey comparison or an attribute whose
 source is a LinkKey; native API inspection does not test web-only LinkKey enforcement. Protected/opaque groups have `diagnostics:null`:
 unassessed, never a clean lint result. These findings do not prove confidentiality.
 
+An optional `schemaImpact` on `grist_inspect(action="access_rules")`
+accepts one existing table or column stable identity (`kind:"table"` or
+`kind:"column"`). The additive `schemaChangeImpact` result identifies
+known references in ordinary ACL targets, typed `rec`/`newRec` predicates
+and verified user-attribute lookups/fields. It explicitly counts opaque
+ordinary groups, other policy resources and protected user attributes as
+unknown. It is read-only structural context before a possible rename/delete,
+not a forecast of Grist's native schema rewrite, authorization or confidentiality.
+
 Opaque formulas, memos, unsupported user-attribute definitions, default/special/schema-edit policy and other unsupported persisted semantics are preserved but not copied into editable model content. Before reading ACL metadata, the bridge performs a fresh native document metadata read and requires `access === "owners"`; this prevents censored non-owner metadata from being mistaken for an empty policy. The bridge also refuses incomplete/censored/truncated ACL metadata, duplicate or overlapping stable targets, and any selected group it cannot normalize without loss.
 
 Mutations require local `doc.schema:write` and remain subject to Grist's native Owner enforcement. The bridge verifies the requested persisted definition and an internal fingerprint of all untargeted persisted ACL state after re-read. A successful result explicitly does **not** claim effective enforcement verification; persisted rule rows alone are not treated as a confidentiality proof. Native `user.LinkKey` context exists in the Grist web client but not in API calls, so Gia's persisted LinkKey-rule verification is deliberately not presented as an end-to-end LinkKey authorization test. If post-write persisted verification fails, the MCP result preserves the operation's `UNCERTAIN` effect knowledge with `retryWholeOperation: false` rather than collapsing it into a generic failure.
