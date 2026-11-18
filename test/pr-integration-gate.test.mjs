@@ -55,6 +55,29 @@ test("native-sensitive changes need both exact-head compatibility and preservati
   assert.match(integrationGateErrors(inputs({ files: changed, runs: staleGreen })).join(" "), /Grist compatibility/);
 });
 
+test("native authorization probes and shared fixtures require compatibility at their exact head", () => {
+  const compatibility = { name: "Grist compatibility", head_sha: head,
+    status: "completed", conclusion: "success" };
+  const preservation = { ...compatibility, name: "Application preservation" };
+  const cases = [
+    { filename: "tools/authorization-qualification.ts", shared: false },
+    { filename: "tools/authorization-lock-qualification.ts", shared: false },
+    { filename: "tools/grist-harness.ts", shared: true },
+    { filename: "tools/application-fixtures.ts", shared: true }
+  ];
+  for (const { filename, shared } of cases) {
+    const files = [{ filename }];
+    assert.match(integrationGateErrors(inputs({ files })).join(" "), /Grist compatibility/);
+    const stale = { ...compatibility, head_sha: base };
+    assert.match(integrationGateErrors(inputs({ files, runs: [stale, preservation] })).join(" "),
+      /Grist compatibility/);
+    const withoutPreservation = integrationGateErrors(inputs({ files, runs: [compatibility] }));
+    if (shared) assert.match(withoutPreservation.join(" "), /Application preservation/);
+    else assert.deepEqual(withoutPreservation, []);
+    assert.deepEqual(integrationGateErrors(inputs({ files, runs: [compatibility, preservation] })), []);
+  }
+});
+
 test("small factual docs change may omit independent PASS if reasoned", () => {
   const original = inputs();
   const pr = {...original.pr, body: original.pr.body.replace("REQUIRED — governance update", "NOT REQUIRED — factual documentation link fix")};
