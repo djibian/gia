@@ -55,6 +55,7 @@ or run these mutating probes against a real user deployment.
 | Workflow / tool | Current purpose |
 | --- | --- |
 | Grist compatibility / `tools/grist-compatibility.ts` | MCP transport plus native document metadata, relation display, calendar, schema/UI/ACL/template boundaries across Grist Community 1.7.16–1.7.20 |
+| Grist compatibility / `tools/grist-linkkey-web-acceptance.ts` | independent headless-Chrome web-client qualification of native `user.LinkKey` row filtering, absent/wrong LinkKeys and positive matches on disposable documents across the Grist Community matrix |
 | Application preservation / `tools/application-validation.ts` | existing human configuration/data, differing native grants, a second application shape and repeat execution on Grist Community 1.7.19 |
 
 Workflows run for relevant runtime/test/tool/dependency/workflow changes and can
@@ -68,14 +69,24 @@ To run against a disposable local Grist with test login enabled:
 ```sh
 GRIST_COMPAT_BASE_URL=http://127.0.0.1:8484 GRIST_COMPAT_VERSION=1.7.20 \
   node --import tsx tools/grist-compatibility.ts
+GRIST_COMPAT_BASE_URL=http://127.0.0.1:8484 \
+  node --import tsx tools/grist-linkkey-web-acceptance.ts
 GRIST_TEST_BASE_URL=http://127.0.0.1:8484 GRIST_TEST_VERSION=1.7.19 \
   node --import tsx tools/application-validation.ts
 ```
 
 The probes start a local Gia process, provision synthetic native state, perform
 bounded tools and independently inspect native postconditions. The application
-probe uses `application-fixtures.ts` and `grist-harness.ts`. No browser/planner,
-generic model-facing command or committed proof platform is added.
+probe uses `application-fixtures.ts` and `grist-harness.ts`. The LinkKey
+web probe additionally drives a disposable headless Chrome via the runner's
+ChromeDriver/WebDriver protocol (or local `CHROMEDRIVER_BIN`) to exercise the
+native Grist web-client context: an owner persists a bounded rule, a separate
+viewer visits synthetic URL parameters, and visible rows are checked against
+positive, missing and mismatched keys. Only test-owned Grist instances with
+`GRIST_TEST_LOGIN=1` are permitted; browser acceptance never proves security
+of an arbitrary production deployment or cross-group policy precedence.
+No production browser/planner, model-facing command, new dependency or
+committed proof platform is added.
 
 ## Licensing
 
