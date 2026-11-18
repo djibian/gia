@@ -1216,3 +1216,75 @@ test("empty-text ACL subset protects literal-bearing, unsupported and malformed 
     assert.doesNotMatch(JSON.stringify(view), /private-token|aclFormula/);
   }
 });
+
+test("native user attributes inspect only safe structural identifiers without LinkKey values", () => {
+  const rawOwner = JSON.stringify({
+    name: "Teacher", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
+  });
+  const rawLinkKey = JSON.stringify({
+    name: "StageAccess", tableId: "Projects", lookupColId: "ShareToken",
+    charId: "LinkKey.AccessCode"
+  });
+  const state = snapshot(
+    [
+      { id: 1, fields: { tableId: "*", colIds: "*" } },
+      { id: 2, fields: { tableId: "Projects", colIds: "*" } }
+    ],
+    [
+      { id: 10, fields: { resource: 1, aclFormula: "", aclFormulaParsed: "",
+        permissionsText: "", rulePos: 1, userAttributes: rawOwner } },
+      { id: 11, fields: { resource: 1, aclFormula: "", aclFormulaParsed: "",
+        permissionsText: "", rulePos: 2, userAttributes: rawLinkKey } },
+      { id: 12, fields: { resource: 1, aclFormula: "", aclFormulaParsed: "",
+        permissionsText: "", rulePos: 3, userAttributes: JSON.stringify({
+          name: "Secret", tableId: "Projects", lookupColId: "OwnerEmail",
+          charId: "LinkKey.Token", value: "private-token"
+        }) } },
+      { id: 13, fields: { resource: 1, aclFormula: "", aclFormulaParsed: "",
+        permissionsText: "", rulePos: 4, userAttributes: "private-token" } },
+      { id: 20, fields: { resource: 2, aclFormula: "rec.OwnerEmail == user.Email",
+        aclFormulaParsed: '["Eq"]', permissionsText: "+R", rulePos: 1 } }
+    ]
+  );
+  const view = projectAccessRules(state) as any;
+  assert.deepEqual(view.userAttributes, {
+    definitions: [
+      { name: "Teacher", tableId: "Projects", lookupColId: "OwnerEmail",
+        source: { kind: "user_property", property: "Email" }, editable: false },
+      { name: "StageAccess", tableId: "Projects", lookupColId: "ShareToken",
+        source: { kind: "link_key", name: "AccessCode" }, editable: false }
+    ],
+    protectedDefinitionCount: 2
+  });
+  assert.equal(view.protectedPersistedGroupCount, 1);
+  assert.equal(view.groups.length, 1);
+  assert.equal(view.groups[0].editable, true);
+  assert.doesNotMatch(JSON.stringify(view), /private-token|aclFormula|LinkKey\.Token/);
+});
+
+test("ambiguous or misplaced user attributes stay protected; unrelated ACL writes preserve them", () => {
+  const common = {
+    name: "Teacher", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
+  };
+  const state = snapshot(
+    [
+      { id: 1, fields: { tableId: "*", colIds: "*" } },
+      { id: 2, fields: { tableId: "Projects", colIds: "*" } }
+    ],
+    [
+      { id: 10, fields: { resource: 1, aclFormula: "", aclFormulaParsed: "",
+        permissionsText: "", rulePos: 1, userAttributes: JSON.stringify(common) } },
+      { id: 11, fields: { resource: 1, aclFormula: "", aclFormulaParsed: "",
+        permissionsText: "", rulePos: 2, userAttributes: JSON.stringify(common) } },
+      { id: 12, fields: { resource: 2, aclFormula: "rec.OwnerEmail == user.Email",
+        aclFormulaParsed: '["Eq"]', permissionsText: "+R", rulePos: 3,
+        userAttributes: JSON.stringify({ ...common, name: "Misplaced" }) } }
+    ]
+  );
+  const view = projectAccessRules(state) as any;
+  assert.deepEqual(view.userAttributes, { definitions: [], protectedDefinitionCount: 3 });
+  assert.equal(view.groups[0].editable, false);
+  assert.throws(() => resolveAccessRuleMutation(state, { tableId: "Projects" }, "replace",
+    [{ condition: { kind: "everyone" }, permissions: { read: "allow", update: "unspecified" } }]),
+  /unsupported or sensitive/);
+});
