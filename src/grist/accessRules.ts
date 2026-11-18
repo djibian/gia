@@ -447,7 +447,9 @@ function parseLeafCondition(
     /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) user\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(formula);
   const reverseAttributeMatch =
     /^user\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) (rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(formula);
-  if (attributeMatch || reverseAttributeMatch) {
+  // Native LinkKey.<name> is a distinct built-in branch, never a user attribute.
+  if ((attributeMatch && attributeMatch[4] !== "LinkKey") ||
+      (reverseAttributeMatch && reverseAttributeMatch[1] !== "LinkKey")) {
     const recordScope = attributeMatch ? attributeMatch[1]! : reverseAttributeMatch![4]!;
     const columnId = attributeMatch ? attributeMatch[2]! : reverseAttributeMatch![5]!;
     const operator = NATIVE_OP.get(attributeMatch ? attributeMatch[3]! : reverseAttributeMatch![3]!);
