@@ -156,4 +156,76 @@ test("E1-E user-attribute values are supplied synthetically; no native lookup oc
   }) as any;
   assert.deepEqual(result.permissionDecisions.read, { decision: "allow", ruleIndex: 1 });
   assert.doesNotMatch(JSON.stringify(result), /Mentor|OwnerEmail|userAttributes|aclFormula/);
+
+  // A Boolean marker cannot stand in for two native Text fields.
+  const incompatible = projectAccessRuleSimulation(snap, {
+    target: { tableId: "Projects" },
+    context: {
+      rec: [{ name: "OwnerEmail", value: { kind: "boolean", value: true } }],
+      userAttributes: [{ name: "Mentor", fields: [
+        { name: "OwnerEmail", value: { kind: "boolean", value: true } }
+      ] }]
+    }
+  }) as any;
+  assert.equal(incompatible.ruleMatches[0].match, "unknown");
+  assert.deepEqual(incompatible.permissionDecisions.read, { decision: "unknown", ruleIndex: 1 });
+});
+
+test("E1-E validates native operand kinds before reporting a definite ACL match", () => {
+  const invalidText = simulate([
+    ["rec.OwnerEmail == user.Email", "+R"]
+  ], {
+    rec: [{ name: "OwnerEmail", value: { kind: "boolean", value: true } }],
+    user: [{ name: "Email", value: { kind: "boolean", value: true } }]
+  });
+  assert.equal(invalidText.ruleMatches[0].match, "unknown");
+  assert.deepEqual(invalidText.permissionDecisions.read, { decision: "unknown", ruleIndex: 1 });
+
+  const validText = simulate([
+    ["rec.OwnerEmail == user.Email", "+R"]
+  ], {
+    rec: [{ name: "OwnerEmail", value: { kind: "symbol", symbol: "A" } }],
+    user: [{ name: "Email", value: { kind: "symbol", symbol: "A" } }]
+  });
+  assert.equal(validText.ruleMatches[0].match, "true");
+  assert.equal(validText.permissionDecisions.read.decision, "allow");
+
+  const invalidFlag = simulate([
+    ["rec.Flag == 1", "+U"],
+    ["rec.Enabled == True", "+R"],
+    ["user.IsLoggedIn == True", "+C"]
+  ], {
+    rec: [
+      { name: "Flag", value: { kind: "boolean", value: true } },
+      { name: "Enabled", value: { kind: "flag", value: 1 } }
+    ],
+    user: [{ name: "IsLoggedIn", value: { kind: "symbol", symbol: "A" } }]
+  });
+  assert.deepEqual(invalidFlag.ruleMatches.map((r: any) => r.match),
+    ["unknown", "unknown", "unknown"]);
+  for (const permission of ["update", "read", "create"]) {
+    assert.equal(invalidFlag.permissionDecisions[permission].decision, "unknown");
+  }
+});
+
+test("E1-E propagates invalid native kinds through newRec and NOT", () => {
+  const incompatible = simulate([
+    ["not rec.Title == newRec.Title", "+U"],
+    ["", "-U"]
+  ], {
+    rec: [{ name: "Title", value: { kind: "boolean", value: true } }],
+    newRec: [{ name: "Title", value: { kind: "boolean", value: false } }]
+  });
+  assert.equal(incompatible.ruleMatches[0].match, "unknown");
+  assert.deepEqual(incompatible.permissionDecisions.update, { decision: "unknown", ruleIndex: 1 });
+
+  const compatible = simulate([
+    ["not rec.Title == newRec.Title", "+U"],
+    ["", "-U"]
+  ], {
+    rec: [{ name: "Title", value: { kind: "symbol", symbol: "A" } }],
+    newRec: [{ name: "Title", value: { kind: "symbol", symbol: "B" } }]
+  });
+  assert.equal(compatible.ruleMatches[0].match, "true");
+  assert.deepEqual(compatible.permissionDecisions.update, { decision: "allow", ruleIndex: 1 });
 });
