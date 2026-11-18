@@ -1161,11 +1161,108 @@ export function normalizeAccessRulesSnapshot(
   return { resources, rules, tables, groups, protectedPersistedGroupCount };
 }
 
+// Native Grist stores user-attribute definitions in _grist_ACLRules on the
+// default (*, *) resource. This read-only projection deliberately exposes
+// structural identifiers, never attribute values, raw JSON or ACL formulas.
+function projectUserAttributes(snapshot: AccessRulesSnapshot): {
+  definitions: Array<{
+    name: string;
+    tableId: string;
+    lookupColId: string;
+    source: { kind: "user_property"; property: string } | { kind: "link_key"; name: string };
+    editable: false;
+  }>;
+  protectedDefinitionCount: number;
+} {
+  const defaults = snapshot.resources.filter((r) => r.tableId === "*" && r.colIds === "*");
+  const defaultId = defaults.length === 1 ? defaults[0]!.id : undefined;
+  const entries: Array<{
+    name: string;
+    tableId: string;
+    lookupColId: string;
+    source: { kind: "user_property"; property: string } | { kind: "link_key"; name: string };
+    editable: false;
+    position: number;
+    id: number;
+  }> = [];
+  let protectedDefinitionCount = 0;
+  const builtIns = new Set<string>([...ACCESS_RULE_USER_PROPERTIES, "Access", "SessionID"]);
+
+  for (const rule of snapshot.rules) {
+    const raw = rule.fields.userAttributes;
+    if (raw === undefined || raw === null || raw === "") continue;
+    if (typeof raw !== "string" || raw.length > 4096 ||
+        rule.resourceId !== defaultId || !rule.rulePos ||
+        rule.aclFormula !== "" || rule.aclFormulaParsed !== "" ||
+        rule.permissionsText !== "") {
+      protectedDefinitionCount++;
+      continue;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      protectedDefinitionCount++;
+      continue;
+    }
+    const definition = record(parsed);
+    if (!definition ||
+        Object.keys(definition).some((key) =>
+          !["name", "tableId", "lookupColId", "charId"].includes(key))) {
+      protectedDefinitionCount++;
+      continue;
+    }
+    const { name, tableId, lookupColId, charId } = definition;
+    if (typeof name !== "string" || name.length > MAX_ACCESS_RULE_LINK_KEY_NAME_LENGTH ||
+        !SAFE_IDENTIFIER.test(name) ||
+        typeof tableId !== "string" || !SAFE_IDENTIFIER.test(tableId) ||
+        tableId.startsWith("_grist_") ||
+        typeof lookupColId !== "string" || !SAFE_IDENTIFIER.test(lookupColId) ||
+        !snapshot.tables.get(tableId)?.columns.has(lookupColId) ||
+        typeof charId !== "string") {
+      protectedDefinitionCount++;
+      continue;
+    }
+    let source: { kind: "user_property"; property: string } |
+      { kind: "link_key"; name: string };
+    if (builtIns.has(charId)) {
+      source = { kind: "user_property", property: charId };
+    } else if (charId.startsWith("LinkKey.") &&
+        validLinkKeyName(charId.slice("LinkKey.".length))) {
+      source = { kind: "link_key", name: charId.slice("LinkKey.".length) };
+    } else {
+      protectedDefinitionCount++;
+      continue;
+    }
+    entries.push({
+      name, tableId, lookupColId, source, editable: false,
+      position: rule.rulePos, id: rule.id
+    });
+  }
+
+  // Duplicate user-attribute names are ambiguous even if their native row IDs
+  // differ. Protect all occurrences rather than choosing an arbitrary winner.
+  const counts = new Map<string, number>();
+  for (const entry of entries) counts.set(entry.name, (counts.get(entry.name) ?? 0) + 1);
+  const unique = entries.filter((entry) => {
+    if (counts.get(entry.name) === 1) return true;
+    protectedDefinitionCount++;
+    return false;
+  });
+  unique.sort((a, b) => a.position - b.position || a.id - b.id);
+  return {
+    definitions: unique.map(({ name, tableId, lookupColId, source, editable }) =>
+      ({ name, tableId, lookupColId, source, editable })),
+    protectedDefinitionCount
+  };
+}
+
 export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
   return {
     policyState: "persisted",
     effectiveEnforcementVerified: false,
     protectedPersistedGroupCount: snapshot.protectedPersistedGroupCount,
+    userAttributes: projectUserAttributes(snapshot),
     groups: snapshot.groups.map((group) => ({
       target:
         group.target.columnIds.length === 0
@@ -1177,7 +1274,7 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
         : { unsupportedReason: group.unsupportedReason ?? "Unsupported persisted ACL semantics." })
     })),
     note:
-      "Gia exposes only persisted ordinary table/column groups that fit its bounded secret-safe subset. Defaults, special rules, schema-edit policy, memos, user attributes and opaque formulas are preserved but not exposed as editable content. Grist remains authoritative for effective enforcement."
+      "Gia exposes only bounded persisted ordinary table/column groups and structurally verified read-only user-attribute definitions. Defaults, special rules, schema-edit policy, memos, unsupported user attributes and opaque formulas remain protected. Grist remains authoritative for effective enforcement."
   };
 }
 
