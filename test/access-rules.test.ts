@@ -1336,7 +1336,7 @@ test("native user-attribute replacement preserves identity and unrelated policy 
       aclFormula: "", aclFormulaParsed: "", permissionsText: "", userAttributes: existingRaw } },
     { id: 20, fields: { resource: 2, rulePos: 1,
       aclFormula: "rec.OwnerEmail == user.Email",
-      aclFormulaParsed: '["Eq"]', permissionsText: "+R" } }
+      aclFormulaParsed: '["Eq",["Attr",["Name","rec"],"OwnerEmail"],["Attr",["Name","user"],"Email"]]', permissionsText: "+R" } }
   ];
   const before = snapshot(resource, original);
   const target = { userAttributeName: "Mentor" };
