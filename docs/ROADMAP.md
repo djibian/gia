@@ -28,12 +28,11 @@ claim that persisted policy proves effective confidentiality.
 
 **Status: ACTIVE**
 
-Add bounded deterministic diagnostics to the existing structural ACL dependency
-view, distinguishing provable findings from explicitly classified warnings.
-Cover supported target and condition references, ordered decisions and
-schema-change impact without a second authorization engine. Protected or
-opaque policy remains unknown; never infer effective authorization or expose
-raw formulas or secret values.
+Complete bounded schema-change impact inspection for existing supported
+policy dependencies, distinguishing provably affected references from unknown
+protected/opaque policy. Keep diagnostics to structural facts and documented
+first-match cases; do not infer equivalent arbitrary conditions, effective
+authorization or confidentiality. No arbitrary formulas or second policy engine.
 
 #### E1-E — bounded explanatory simulation
 

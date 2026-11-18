@@ -1457,25 +1457,79 @@ function projectGroupDependencies(rules: readonly NormalizedAccessRule[]): {
   };
 }
 
+
+type AccessRuleLintDiagnostic =
+  | { code: "shadowed_same_condition_permission"; certainty: "proven";
+      ruleIndex: number; earlierRuleIndex: number;
+      permission: "read" | "update" | "create" | "delete" }
+  | { code: "link_key_web_acceptance_unverified"; certainty: "warning" };
+
+// Grist uses the first applicable rule for each permission within a group.
+// An earlier identical typed condition deciding the same permission therefore
+// masks that permission in a later rule; unrelated predicates are not compared.
+function projectGroupDiagnostics(
+  rules: readonly NormalizedAccessRule[],
+  containsLinkKey: boolean
+): AccessRuleLintDiagnostic[] {
+  const diagnostics: AccessRuleLintDiagnostic[] = [];
+  const firstDecision = new Map<string, number>();
+  const permissions = ["read", "update", "create", "delete"] as const;
+  rules.forEach((rule, index) => {
+    const condition = stableJson(rule.condition);
+    for (const permission of permissions) {
+      if (rule.permissions[permission] === "unspecified") continue;
+      const key = JSON.stringify([condition, permission]);
+      const earlierRuleIndex = firstDecision.get(key);
+      if (earlierRuleIndex !== undefined) {
+        diagnostics.push({
+          code: "shadowed_same_condition_permission", certainty: "proven",
+          ruleIndex: index + 1, earlierRuleIndex, permission
+        });
+      } else {
+        firstDecision.set(key, index + 1);
+      }
+    }
+  });
+  if (containsLinkKey) {
+    diagnostics.push({ code: "link_key_web_acceptance_unverified", certainty: "warning" });
+  }
+  return diagnostics;
+}
+
 export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
+  const userAttributes = projectUserAttributes(snapshot);
+  const linkKeyDrivenAttributes = new Set(userAttributes.definitions
+    .filter((attribute) => attribute.source.kind === "link_key")
+    .map((attribute) => attribute.name));
   return {
     policyState: "persisted",
     effectiveEnforcementVerified: false,
     protectedPersistedGroupCount: snapshot.protectedPersistedGroupCount,
-    userAttributes: projectUserAttributes(snapshot),
-    groups: snapshot.groups.map((group) => ({
-      target:
-        group.target.columnIds.length === 0
-          ? { tableId: group.target.tableId }
-          : { tableId: group.target.tableId, columnIds: [...group.target.columnIds] },
-      editable: Boolean(group.normalizedRules),
-      dependencies: group.normalizedRules
+    userAttributes,
+    groups: snapshot.groups.map((group) => {
+      const dependencies = group.normalizedRules
         ? projectGroupDependencies(group.normalizedRules)
-        : { coverage: "unknown" },
-      ...(group.normalizedRules
-        ? { rules: group.normalizedRules }
-        : { unsupportedReason: group.unsupportedReason ?? "Unsupported persisted ACL semantics." })
-    })),
+        : { coverage: "unknown" as const };
+      return {
+        target:
+          group.target.columnIds.length === 0
+            ? { tableId: group.target.tableId }
+            : { tableId: group.target.tableId, columnIds: [...group.target.columnIds] },
+        editable: Boolean(group.normalizedRules),
+        dependencies,
+        // null means unknown coverage, never a positive lint result.
+        diagnostics: group.normalizedRules
+          ? projectGroupDiagnostics(group.normalizedRules,
+            dependencies.coverage === "supported_rules" &&
+              (dependencies.linkKeyNames.length > 0 ||
+                dependencies.userAttributeFields.some((field) =>
+                  linkKeyDrivenAttributes.has(field.attributeName))))
+          : null,
+        ...(group.normalizedRules
+          ? { rules: group.normalizedRules }
+          : { unsupportedReason: group.unsupportedReason ?? "Unsupported persisted ACL semantics." })
+      };
+    }),
     note:
       "Gia exposes only bounded persisted ordinary table/column groups and structurally verified user-attribute definitions (writable only through the separate bounded access-rule mutation target when supported). Defaults, special rules, schema-edit policy, memos, unsupported user attributes and opaque formulas remain protected. Grist remains authoritative for effective enforcement."
   };
