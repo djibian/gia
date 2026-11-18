@@ -324,6 +324,43 @@ function requiredString(fields: JsonRecord, key: string, label: string): string 
   return value;
 }
 
+/**
+ * Grist may persist a native user-attribute definition with SQL NULL for both
+ * aclFormula and permissionsText. Only the unique default (*, *) resource may
+ * use this representation. Keep the original field values for preservation
+ * fingerprints; the empty strings below are for semantic inspection only.
+ *
+ * Never apply this normalization to ordinary permission rules or to missing,
+ * malformed or partially populated ACL metadata.
+ */
+function isNativeNullUserAttributeRule(
+  fields: JsonRecord,
+  resourceId: number,
+  defaultResourceId: number | undefined
+): boolean {
+  if (defaultResourceId === undefined || resourceId !== defaultResourceId ||
+      fields.aclFormula !== null || fields.permissionsText !== null ||
+      fields.aclFormulaParsed !== "" ||
+      typeof fields.rulePos !== "number" || !Number.isFinite(fields.rulePos) ||
+      fields.rulePos <= 0 ||
+      typeof fields.userAttributes !== "string" ||
+      fields.userAttributes.length === 0 || fields.userAttributes.length > 4096) {
+    return false;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fields.userAttributes);
+  } catch {
+    return false;
+  }
+  const definition = record(parsed);
+  return Boolean(definition &&
+    Object.keys(definition).every((key) =>
+      ["name", "tableId", "lookupColId", "charId"].includes(key)) &&
+    ["name", "tableId", "lookupColId", "charId"].every((key) =>
+      typeof definition[key] === "string"));
+}
+
 function canonicalColumnIds(columnIds: readonly string[]): string[] {
   if (columnIds.length === 0) throw new Error("Access-rule columnIds must not be empty.");
   if (columnIds.length > MAX_ACCESS_RULE_COLUMNS) {
@@ -1240,6 +1277,9 @@ export function normalizeAccessRulesSnapshot(
     })
   );
   const resourceIds = new Set(resources.map((resource) => resource.id));
+  const defaults = resources.filter((resource) =>
+    resource.tableId === "*" && resource.colIds === "*");
+  const defaultResourceId = defaults.length === 1 ? defaults[0]!.id : undefined;
 
   const rules: PersistedRule[] = metadataRecords(rulesResponse, "ACL rule").map((entry) => {
     const resourceId = positiveInteger(entry.fields.resource);
@@ -1250,12 +1290,15 @@ export function normalizeAccessRulesSnapshot(
       typeof entry.fields.rulePos === "number" && Number.isFinite(entry.fields.rulePos)
         ? entry.fields.rulePos
         : undefined;
+    const nativeNullAttribute = isNativeNullUserAttributeRule(
+      entry.fields, resourceId, defaultResourceId
+    );
     return {
       ...entry,
       resourceId,
-      aclFormula: requiredString(entry.fields, "aclFormula", "ACL rule"),
+      aclFormula: nativeNullAttribute ? "" : requiredString(entry.fields, "aclFormula", "ACL rule"),
       aclFormulaParsed: requiredString(entry.fields, "aclFormulaParsed", "ACL rule"),
-      permissionsText: requiredString(entry.fields, "permissionsText", "ACL rule"),
+      permissionsText: nativeNullAttribute ? "" : requiredString(entry.fields, "permissionsText", "ACL rule"),
       ...(rulePos !== undefined ? { rulePos } : {})
     };
   });
