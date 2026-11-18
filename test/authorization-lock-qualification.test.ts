@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { runLockInterleaving } from "../tools/authorization-lock-qualification.js";
+import { lockFailureEvidence, ObservedLockFailure, runLockInterleaving } from "../tools/authorization-lock-qualification.js";
 
 test("contending and migrating writes both start after acknowledged lock", async () => {
   const timeline: string[] = [];
@@ -37,4 +37,25 @@ test("lock error or timeout cannot release the contender or migration", async ()
     }, 20), /interleaving_incomplete/);
     assert.deepEqual(writes, []);
   }
+});
+
+test("an observed post-release mismatch aborts the other lane and remains FAIL", async () => {
+  const failure = new ObservedLockFailure("operator_migration_unobserved");
+  let contenderSignal: AbortSignal | undefined;
+  const result = runLockInterleaving({
+    lock: async () => {},
+    contend: async (signal) => {
+      contenderSignal = signal;
+      await delay(1000, undefined, { signal });
+    },
+    migrate: async () => { throw failure; }
+  });
+  await assert.rejects(result, (error) => error === failure);
+  assert.equal(contenderSignal?.aborted, true);
+  assert.deepEqual(lockFailureEvidence(failure), {
+    stage: "operator_migration_unobserved", status: "FAIL"
+  });
+  assert.deepEqual(lockFailureEvidence(new Error("timeout")), {
+    stage: "lock_interleaving_or_postcondition", status: "UNKNOWN"
+  });
 });

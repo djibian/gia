@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { pathToFileURL } from "node:url";
 import { createDoc, createWorkspace } from "./application-fixtures.js";
-import { applyActions, assertThat, createTestApiKey, gristApi, recordsFrom } from "./grist-harness.js";
+import { applyActions, createTestApiKey, gristApi, recordsFrom } from "./grist-harness.js";
 import {
   mutationObservation, openDisposableGrist, qualificationStatus,
   type DisposableGrist
@@ -11,6 +11,18 @@ import {
 const surface = "api";
 const scope = "disposable_synthetic_locked_reference_interleaving";
 type WriteOperation = "create" | "update" | "delete";
+
+export class ObservedLockFailure extends Error {}
+
+function requireObserved(condition: unknown, stage: string): asserts condition {
+  if (!condition) throw new ObservedLockFailure(stage);
+}
+
+export function lockFailureEvidence(error: unknown) {
+  return error instanceof ObservedLockFailure
+    ? { stage: error.message, status: "FAIL" as const }
+    : { stage: "lock_interleaving_or_postcondition", status: "UNKNOWN" as const };
+}
 
 /** Both lanes participate. Lock acknowledgement precedes both competing writes. */
 export async function runLockInterleaving<T>(stages: {
@@ -46,6 +58,8 @@ export async function runLockInterleaving<T>(stages: {
       operator().catch((error) => { controller.abort(); throw error; }),
       contender().catch((error) => { controller.abort(); throw error; })
     ]);
+    if (a.status === "rejected" && a.reason instanceof ObservedLockFailure) throw a.reason;
+    if (b.status === "rejected" && b.reason instanceof ObservedLockFailure) throw b.reason;
     if (a.status !== "fulfilled" || b.status !== "fulfilled" || signal.aborted) {
       throw new Error("qualification_interleaving_incomplete");
     }
@@ -102,9 +116,10 @@ async function setup({ baseUrl }: DisposableGrist) {
   return { owner, editor, document };
 }
 
-async function run(target: DisposableGrist): Promise<void> {
-  const { baseUrl, version } = target;
-  const { owner, editor, document } = await setup(target);
+async function run(
+  { baseUrl, version }: DisposableGrist,
+  { owner, editor, document }: Awaited<ReturnType<typeof setup>>
+): Promise<void> {
   const records = (table: string) => `/api/docs/${encodeURIComponent(document)}/tables/${table}/records`;
   const read = async (table: string, signal?: AbortSignal) =>
     recordsFrom(await gristApi(baseUrl, owner, records(table), signal ? { signal } : undefined));
@@ -118,7 +133,8 @@ async function run(target: DisposableGrist): Promise<void> {
   const acknowledge = async (result: Promise<Response>, stage: string) => {
     const response = await result;
     await response.arrayBuffer();
-    assertThat(response.ok, stage);
+    requireObserved(response.status !== 403, stage);
+    if (!response.ok) throw new Error("native_response_inconclusive");
   };
   const patch = (id: number, fields: Record<string, unknown>) => ({ records: [{ id, fields }] });
 
@@ -128,25 +144,25 @@ async function run(target: DisposableGrist): Promise<void> {
     records: [{ fields: { Target: 1, Label: "Unlocked control" } }]
   }), "editor_create_control_denied");
   const unlocked = (await read("References")).find(({ fields }) => fields.Label === "Unlocked control");
-  assertThat(unlocked?.fields.Target === 1, "editor_create_control_missing");
+  requireObserved(unlocked?.fields.Target === 1, "editor_create_control_missing");
   await acknowledge(write(editor, "References", "delete", [unlocked.id]), "editor_delete_control_denied");
-  assertThat((await read("References")).every(({ id }) => id !== unlocked.id), "editor_delete_control_missing");
+  requireObserved((await read("References")).every(({ id }) => id !== unlocked.id), "editor_delete_control_missing");
   await acknowledge(write(editor, "References", "update", patch(2, { Target: 1 })),
     "editor_update_control_denied");
-  assertThat((await read("References")).find(({ id }) => id === 2)?.fields.Target === 1,
+  requireObserved((await read("References")).find(({ id }) => id === 2)?.fields.Target === 1,
     "editor_update_control_missing");
   await acknowledge(write(editor, "References", "update", patch(2, { Target: 2, Label: "Preserve control" })),
     "editor_control_reset_denied");
   const originalRefs = await read("References");
   const originalControl = originalRefs.find(({ id }) => id === 2);
-  assertThat(originalControl?.fields.Target === 2 && originalControl.fields.Label === "Preserve control",
+  requireObserved(originalControl?.fields.Target === 2 && originalControl.fields.Label === "Preserve control",
     "editor_control_reset_missing");
   console.log(JSON.stringify({ version, surface, scope, stage: "unlocked_editor_control", status: "PASS" }));
   const refused = await runLockInterleaving({
     lock: async (signal) => {
       await acknowledge(write(owner, "Gate", "update", patch(1, { Locked: true }), signal),
         "operator_lock_rejected");
-      assertThat((await read("Gate", signal))[0]?.fields.Locked === true, "operator_lock_unobserved");
+      requireObserved((await read("Gate", signal))[0]?.fields.Locked === true, "operator_lock_unobserved");
     },
     contend: (signal) => Promise.all(([
       ["create", { records: [{ fields: { Target: 1, Label: "Rejected new reference" } }] }],
@@ -215,9 +231,15 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  await run(target).catch(() => {
+  const fixture = await setup(target).catch(() => undefined);
+  if (!fixture) {
     console.log(JSON.stringify({ version: target.version, surface, scope,
-      stage: "lock_interleaving_or_postcondition", status: "UNKNOWN" }));
+      stage: "synthetic_fixture", status: "NOT_TESTED" }));
+    process.exitCode = 1;
+    return;
+  }
+  await run(target, fixture).catch((error: unknown) => {
+    console.log(JSON.stringify({ version: target.version, surface, scope, ...lockFailureEvidence(error) }));
     process.exitCode = 1;
   });
 }
