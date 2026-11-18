@@ -564,6 +564,57 @@ async function run(): Promise<void> {
       ]
     });
 
+    // Omitted MCP columns are adapted to native columns: [] instead of
+    // forwarding undefined; validate on every supported disposable Grist.
+    const emptyTableResult = resultJson(
+      await callTool(bridgeBaseUrl, "grist_add_structure", {
+        action: "create_tables",
+        documentId,
+        tables: [{ id: "Compat_EmptyTable" }]
+      }),
+      "create_columnless_table"
+    );
+    assert(
+      Array.isArray(emptyTableResult.tables) &&
+        (emptyTableResult.tables as Array<{ id?: unknown }>).some(
+          (table) => table.id === "Compat_EmptyTable"
+        ),
+      "columnless_table_not_reported"
+    );
+    const nativeEmptyColumns = await gristApi(
+      gristBaseUrl,
+      apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/Compat_EmptyTable/columns`
+    );
+    assert(
+      nativeEmptyColumns !== null &&
+        typeof nativeEmptyColumns === "object" &&
+        !Array.isArray(nativeEmptyColumns) &&
+        Array.isArray((nativeEmptyColumns as Record<string, unknown>).columns),
+      "columnless_table_not_persisted_natively"
+    );
+    await callTool(bridgeBaseUrl, "grist_add_structure", {
+      action: "create_columns",
+      documentId,
+      tableId: "Compat_EmptyTable",
+      columns: [{ id: "AddedLater", fields: { type: "Text" } }]
+    });
+    const nativeAddedColumns = await gristApi(
+      gristBaseUrl,
+      apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/Compat_EmptyTable/columns`
+    );
+    assert(
+      nativeAddedColumns !== null &&
+        typeof nativeAddedColumns === "object" &&
+        !Array.isArray(nativeAddedColumns) &&
+        Array.isArray((nativeAddedColumns as Record<string, unknown>).columns) &&
+        ((nativeAddedColumns as Record<string, unknown>).columns as Array<{ id?: unknown }>).some(
+          (column) => column.id === "AddedLater"
+        ),
+      "columnless_table_cannot_add_columns_later"
+    );
+
     await callTool(bridgeBaseUrl, "grist_add_records", {
       documentId,
       tableId: TABLE_ID,
