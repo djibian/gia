@@ -68,6 +68,26 @@ function capture(grist: any = {}, limits = {
   return registrations;
 }
 
+test("ACL inspection dispatches only an explicit closed policy-coverage request", async () => {
+  const calls: unknown[] = [];
+  const registration = capture({
+    inspectAccessRules: async (...args: unknown[]) => { calls.push(args); return {}; }
+  }).find((entry) => entry.name === "grist_inspect")!;
+  const schema = registration.options.inputSchema!;
+  const input = { action: "access_rules", documentId: "doc-1" };
+  const policyCoverage = {
+    target: { kind: "column", tableId: "Items", columnId: "Name" }, operation: "read"
+  };
+  await registration.callback(schema.parse(input));
+  await registration.callback(schema.parse({ ...input, policyCoverage }));
+  assert.deepEqual(calls, [
+    ["doc-1", undefined, undefined, undefined],
+    ["doc-1", undefined, undefined, policyCoverage]
+  ]);
+  assert.throws(() => schema.parse({ ...input, policyCoverage: { ...policyCoverage, operation: "schema" } }));
+  assert.throws(() => schema.parse({ ...input, policyCoverage: { ...policyCoverage, formula: "opaque" } }));
+});
+
 test("registered dictionary schemas reject raw own __proto__ keys without dispatch or silent loss", async () => {
   const calls: unknown[] = [];
   const registrations = capture(new Proxy({}, { get: () => async (...args: unknown[]) => { calls.push(args); return {}; } }));

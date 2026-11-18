@@ -9,12 +9,14 @@ import {
   AccessRuleWriteVerificationError,
   normalizeAccessRulesSnapshot,
   projectAccessRules,
+  projectAccessPolicyCoverage,
   projectAccessRuleSchemaImpact,
   projectAccessRuleSimulation,
   resolveAccessRuleMutation,
   resolveUserAttributeMutation,
   verifyAccessRuleMutation,
   verifyUserAttributeMutation,
+  type AccessPolicyCoverageRequest,
   type AccessRuleInput,
   type AccessRuleTarget,
   type AccessRuleSchemaImpactTarget,
@@ -324,7 +326,8 @@ export class AuthorizedGristService {
   async inspectAccessRules(
     documentIdOrUrl: string,
     schemaImpact?: AccessRuleSchemaImpactTarget,
-    simulation?: AccessRuleSimulationRequest
+    simulation?: AccessRuleSimulationRequest,
+    policyCoverage?: AccessPolicyCoverageRequest
   ): Promise<unknown> {
     return this.execute("inspect_access_rules", documentIdOrUrl, undefined, async (id) => {
       await this.inner.assertDocumentOwner(id);
@@ -333,7 +336,8 @@ export class AuthorizedGristService {
         documentId: id,
         ...(projectAccessRules(snapshot) as Record<string, unknown>),
         ...(schemaImpact ? { schemaChangeImpact: projectAccessRuleSchemaImpact(snapshot, schemaImpact) } : {}),
-        ...(simulation ? { simulatedPolicyGroup: projectAccessRuleSimulation(snapshot, simulation) } : {})
+        ...(simulation ? { simulatedPolicyGroup: projectAccessRuleSimulation(snapshot, simulation) } : {}),
+        ...(policyCoverage ? { policyCoverage: projectAccessPolicyCoverage(snapshot, policyCoverage) } : {})
       };
     });
   }

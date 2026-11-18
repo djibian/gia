@@ -160,6 +160,19 @@ test("ACL inspection uses doc:read and redacts protected persisted content", asy
   assert.doesNotMatch(JSON.stringify(result), /do-not-expose|sensitive memo|LinkKey/);
 });
 
+test("ACL policy coverage uses the same read and Owner boundary without writing", async () => {
+  const { service, capabilities, ownerChecks, writes } = harness();
+  const result = await service.inspectAccessRules("doc-1", undefined, undefined, {
+    target: { kind: "table", tableId: "Projects" }, operation: "read"
+  }) as any;
+  assert.deepEqual(capabilities, ["doc:read"]);
+  assert.deepEqual(ownerChecks, ["doc-1"]);
+  assert.deepEqual(writes, []);
+  assert.equal(result.policyCoverage.persistedStatus, "UNKNOWN");
+  assert.equal(result.policyCoverage.defaultPolicy.persisted, "PROTECTED");
+  assert.doesNotMatch(JSON.stringify(result), /do-not-expose|sensitive memo|LinkKey/);
+});
+
 test("ACL mutation requires doc.schema:write and verifies exact persisted target state", async () => {
   const { service, capabilities, ownerChecks, writes } = harness();
   const result = await service.changeAccessRuleGroup(

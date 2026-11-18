@@ -109,6 +109,12 @@ export interface ResolvedAccessRulePermissions {
   delete: AccessPermissionValue;
 }
 
+export const ACCESS_POLICY_OPERATIONS = ["read", "create", "update", "delete"] as const;
+export interface AccessPolicyCoverageRequest {
+  target: AccessRuleSchemaImpactTarget;
+  operation: (typeof ACCESS_POLICY_OPERATIONS)[number];
+}
+
 export interface AccessRuleInput {
   condition: AccessRuleCondition;
   permissions: AccessRulePermissions;
@@ -1444,6 +1450,13 @@ export function normalizeAccessRulesSnapshot(
 // Native Grist stores user-attribute definitions in _grist_ACLRules on the
 // default (*, *) resource. This read-only projection deliberately exposes
 // structural identifiers, never attribute values, raw JSON or ACL formulas.
+function reservedUserAttributeName(name: string): boolean {
+  // Grist ignores definitions whose name is already present on its ACL User.
+  return ACCESS_USER_ATTRIBUTE_PROPERTIES.some((property) => property === name) ||
+    ["LinkKey", "ShareRef", "Type", "toJSON", "toUserInfo", "_toObject"].includes(name) ||
+    name in Object.prototype;
+}
+
 function projectUserAttributes(snapshot: AccessRulesSnapshot): {
   definitions: Array<{
     name: string;
@@ -1465,7 +1478,7 @@ function projectUserAttributes(snapshot: AccessRulesSnapshot): {
     id: number;
   }> = [];
   let protectedDefinitionCount = 0;
-  const builtIns = new Set<string>([...ACCESS_RULE_USER_PROPERTIES, "Access", "SessionID"]);
+  const builtInSources = new Set<string>(ACCESS_USER_ATTRIBUTE_PROPERTIES);
 
   for (const rule of snapshot.rules) {
     const raw = rule.fields.userAttributes;
@@ -1493,7 +1506,7 @@ function projectUserAttributes(snapshot: AccessRulesSnapshot): {
     }
     const { name, tableId, lookupColId, charId } = definition;
     if (typeof name !== "string" || name.length > MAX_ACCESS_RULE_LINK_KEY_NAME_LENGTH ||
-        !SAFE_IDENTIFIER.test(name) ||
+        !SAFE_IDENTIFIER.test(name) || reservedUserAttributeName(name) ||
         typeof tableId !== "string" || !SAFE_IDENTIFIER.test(tableId) ||
         tableId.startsWith("_grist_") ||
         typeof lookupColId !== "string" || !SAFE_IDENTIFIER.test(lookupColId) ||
@@ -1504,7 +1517,7 @@ function projectUserAttributes(snapshot: AccessRulesSnapshot): {
     }
     let source: { kind: "user_property"; property: string } |
       { kind: "link_key"; name: string };
-    if (builtIns.has(charId)) {
+    if (builtInSources.has(charId)) {
       source = { kind: "user_property", property: charId };
     } else if (charId.startsWith("LinkKey.") &&
         validLinkKeyName(charId.slice("LinkKey.".length))) {
@@ -1534,9 +1547,7 @@ function projectUserAttributes(snapshot: AccessRulesSnapshot): {
     // fresh native Owner authority to use the separate mutation action.
     definitions: unique.map(({ name, tableId, lookupColId, source }) => ({
       name, tableId, lookupColId, source,
-      editable: protectedDefinitionCount === 0 &&
-        defaults.length === 1 &&
-        name !== "LinkKey" && !builtIns.has(name)
+      editable: protectedDefinitionCount === 0 && defaults.length === 1
     })),
     protectedDefinitionCount
   };
@@ -1767,6 +1778,66 @@ export function projectAccessRuleSchemaImpact(
   };
 }
 
+
+/** Classify persisted policy components for an ordinary data operation. */
+export function projectAccessPolicyCoverage(
+  snapshot: AccessRulesSnapshot,
+  { target, operation }: AccessPolicyCoverageRequest
+): unknown {
+  const { tableId, columnIds } = normalizeRequestedTarget(snapshot, {
+    tableId: target.tableId,
+    ...(target.kind === "column" ? { columnIds: [target.columnId] } : {})
+  });
+  const rowOperation = operation === "create" || operation === "delete";
+  if (target.kind === "column" && (rowOperation || target.columnId.startsWith("gristHelper_"))) {
+    return { target, operation, persistedStatus: "UNSUPPORTED", nativeQualification: "NOT_TESTED" };
+  }
+
+  const groups = snapshot.groups.filter((group) =>
+    group.target.tableId === tableId &&
+    (group.target.columnIds.length === 0 ||
+      (!rowOperation && (columnIds.length === 0 ||
+        group.target.columnIds.includes(columnIds[0]!)))));
+  const ordinaryGroups = groups.map((group) => ({
+    target: group.target,
+    status: group.normalizedRules ? "SUPPORTED" : "PROTECTED"
+  }));
+  const references = new Set(groups.flatMap((group) => {
+    const rules = group.normalizedRules?.filter((rule) => rule.permissions[operation] !== "unspecified") ?? [];
+    return projectGroupDependencies(rules).userAttributeFields.map((field) => field.attributeName);
+  }));
+  const attributes = projectUserAttributes(snapshot);
+  const defaults = snapshot.resources.filter((resource) =>
+    resource.tableId === "*" && resource.colIds === "*");
+  const defaultIds = new Set(defaults.map((resource) => resource.id));
+  // Structurally validated attribute rows share the default resource but do
+  // not define default permissions. Opaque definitions are counted separately.
+  const protectedDefaults = defaults.length > 1 || snapshot.rules.some((rule) =>
+    defaultIds.has(rule.resourceId) &&
+    (!rule.fields.userAttributes || rule.aclFormula !== "" || rule.aclFormulaParsed !== "" ||
+      rule.permissionsText !== "" || rule.fields.permissions || rule.fields.principals || rule.fields.aclColumn));
+  const otherProtectedResourceCount = snapshot.protectedPersistedGroupCount - defaults.length;
+
+  return {
+    target,
+    operation,
+    persistedStatus: protectedDefaults || otherProtectedResourceCount > 0 ||
+      attributes.protectedDefinitionCount > 0 || ordinaryGroups.some((group) => group.status === "PROTECTED")
+      ? "UNKNOWN" : "SUPPORTED",
+    ordinaryGroups,
+    userAttributes: {
+      supportedReferences: attributes.definitions.filter((item) => item.editable && references.has(item.name))
+        .map((item) => item.name).sort(),
+      protectedDefinitionCount: attributes.protectedDefinitionCount
+    },
+    defaultPolicy: {
+      persisted: protectedDefaults ? "PROTECTED" : "ABSENT",
+      builtInFallback: "UNSUPPORTED"
+    },
+    otherProtectedResourceCount,
+    nativeQualification: "NOT_TESTED"
+  };
+}
 
 type SyntheticTruth = "true" | "false" | "unknown";
 
@@ -2212,8 +2283,7 @@ export function resolveUserAttributeMutation(
 ): AccessUserAttributeMutationPlan {
   const name = target.userAttributeName;
   if (typeof name !== "string" || name.length > MAX_ACCESS_RULE_LINK_KEY_NAME_LENGTH ||
-      !SAFE_IDENTIFIER.test(name) || ACCESS_USER_ATTRIBUTE_PROPERTIES.some(p => p === name) ||
-      name === "LinkKey") {
+      !SAFE_IDENTIFIER.test(name) || reservedUserAttributeName(name)) {
     throw new Error("User attribute name must be a bounded, non-reserved stable identifier.");
   }
   // A selected name must not collide with any opaque/ambiguous native definition.

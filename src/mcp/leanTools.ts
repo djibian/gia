@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
 
 import {
+  ACCESS_POLICY_OPERATIONS,
   ACCESS_RULE_USER_PROPERTIES,
   ACCESS_USER_ATTRIBUTE_PROPERTIES,
   MAX_ACCESS_RULE_COLUMNS,
@@ -140,6 +141,15 @@ const syntheticScenarioSchema = z.object({
     fields: syntheticFields(syntheticIdentifierSchema, syntheticValueSchema)
   }).strict()).max(8).refine(uniqueSyntheticFields, "Synthetic attribute names must be unique.").optional()
 }).strict();
+const accessRuleSchemaIdentity = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("table"), tableId: tableIdSchema }).strict(),
+  z.object({ kind: z.literal("column"), tableId: tableIdSchema, columnId: columnIdSchema }).strict()
+]);
+const accessPolicyCoverageSchema = z.object({
+  target: accessRuleSchemaIdentity,
+  operation: z.enum(ACCESS_POLICY_OPERATIONS)
+}).strict();
+
 const accessRuleSimulationSchema = z.object({
   target: accessRuleTargetSchema,
   context: syntheticScenarioSchema
@@ -735,13 +745,9 @@ export function registerLeanTools(
           .object({
             action: z.literal("access_rules"),
             documentId: documentIdSchema,
-            schemaImpact: z.discriminatedUnion("kind", [
-              z.object({ kind: z.literal("table"), tableId: tableIdSchema }).strict(),
-              z.object({
-                kind: z.literal("column"), tableId: tableIdSchema, columnId: columnIdSchema
-              }).strict()
-            ]).optional(),
-            simulation: accessRuleSimulationSchema.optional()
+            schemaImpact: accessRuleSchemaIdentity.optional(),
+            simulation: accessRuleSimulationSchema.optional(),
+            policyCoverage: accessPolicyCoverageSchema.optional()
           })
           .strict()
       ])
@@ -758,7 +764,9 @@ export function registerLeanTools(
               await grist.getPageWidgets(input.documentId, input.pageId)
             );
           case "access_rules":
-            return textResult(await grist.inspectAccessRules(input.documentId, input.schemaImpact, input.simulation));
+            return textResult(await grist.inspectAccessRules(
+              input.documentId, input.schemaImpact, input.simulation, input.policyCoverage
+            ));
         }
       } catch (error) {
         return errorResult(error);
