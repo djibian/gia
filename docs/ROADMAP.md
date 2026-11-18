@@ -15,7 +15,6 @@ anchored to its audited SHA, not an assumption that main has stayed unchanged.
 | --- | --- | --- |
 | [#262](https://github.com/djibian/gia/issues/262) ACL consistency | Protect malformed or contradictory native predicate metadata before editable projection, analysis and persisted verification | Independent runtime slice |
 | [#263](https://github.com/djibian/gia/issues/263) Compact schemas | Remove exponential advertised ACL schema duplication while retaining the bounded accepted input language | Coordinate overlapping schema edits |
-| [#265](https://github.com/djibian/gia/issues/265) Creation contract | Align required table columns and accepted column-creation fields with native persisted effects | Finish each bounded creation slice before overlapping work |
 | [#264](https://github.com/djibian/gia/issues/264) Progressive help | Make selected-tool help describe usable current actions, shapes, limits and synthetic examples | Reconcile final schema and creation corrections |
 | [#266](https://github.com/djibian/gia/issues/266) Readiness | Qualify actual schemas and separate public, authenticated and transport compatibility results | Final qualification after #262, #263, #264 and #265 |
 | [#267](https://github.com/djibian/gia/issues/267) Release and refresh | Qualify a new immutable release, deployed revision, canary/promotion, rollback and client tool refresh | Final rollout after correction and review gates; deployment reconstruction can begin read-only |
