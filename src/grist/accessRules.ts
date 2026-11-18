@@ -118,6 +118,10 @@ export interface AccessRuleTarget {
   columnIds?: readonly string[] | undefined;
 }
 
+export type AccessRuleSchemaImpactTarget =
+  | { kind: "table"; tableId: string }
+  | { kind: "column"; tableId: string; columnId: string };
+
 /** Closed structural mutation of a native Grist user-attribute definition. */
 export interface AccessUserAttributeTarget {
   userAttributeName: string;
@@ -1532,6 +1536,88 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
     }),
     note:
       "Gia exposes only bounded persisted ordinary table/column groups and structurally verified user-attribute definitions (writable only through the separate bounded access-rule mutation target when supported). Defaults, special rules, schema-edit policy, memos, unsupported user attributes and opaque formulas remain protected. Grist remains authoritative for effective enforcement."
+  };
+}
+
+
+/** Read-only structural dependency probe, not a prediction of native schema rewrites. */
+export function projectAccessRuleSchemaImpact(
+  snapshot: AccessRulesSnapshot,
+  target: AccessRuleSchemaImpactTarget
+): unknown {
+  if (!target.tableId || target.tableId.startsWith("_grist_") ||
+      !snapshot.tables.has(target.tableId)) {
+    throw new Error("Schema-impact target must be an existing ordinary table.");
+  }
+  if (target.kind === "column" &&
+      !snapshot.tables.get(target.tableId)!.columns.has(target.columnId)) {
+    throw new Error("Schema-impact target column does not exist in the selected table.");
+  }
+
+  const attributes = projectUserAttributes(snapshot);
+  const definitions = new Map(attributes.definitions.map((item) => [item.name, item]));
+  const affectedUserAttributes = attributes.definitions
+    .filter((item) => item.tableId === target.tableId &&
+      (target.kind === "table" || item.lookupColId === target.columnId))
+    .map((item) => ({
+      name: item.name,
+      reason: target.kind === "table" ? "source_table" : "lookup_column"
+    }));
+  const affectedGroups: Array<{
+    target: { tableId: string; columnIds?: string[] };
+    reasons: Array<"resource_target" | "record_condition" | "user_attribute_reference">;
+    conditionCoverage: "supported_rules" | "unknown";
+  }> = [];
+  let protectedOrdinaryGroupCount = 0;
+
+  for (const group of snapshot.groups) {
+    const reasons: Array<"resource_target" | "record_condition" | "user_attribute_reference"> = [];
+    if (group.target.tableId === target.tableId &&
+        (target.kind === "table" || group.target.columnIds.includes(target.columnId))) {
+      reasons.push("resource_target");
+    }
+    if (!group.normalizedRules) {
+      protectedOrdinaryGroupCount++;
+    } else {
+      const dependencies = projectGroupDependencies(group.normalizedRules);
+      if (group.target.tableId === target.tableId &&
+          (target.kind === "table"
+            ? dependencies.recordColumnIds.length > 0 || dependencies.newRecordColumnIds.length > 0
+            : dependencies.recordColumnIds.includes(target.columnId) ||
+              dependencies.newRecordColumnIds.includes(target.columnId))) {
+        reasons.push("record_condition");
+      }
+      if (dependencies.userAttributeFields.some((field) => {
+        const definition = definitions.get(field.attributeName);
+        return definition?.tableId === target.tableId &&
+          (target.kind === "table" || definition.lookupColId === target.columnId ||
+            field.attributeColumnId === target.columnId);
+      })) {
+        reasons.push("user_attribute_reference");
+      }
+    }
+    if (reasons.length) {
+      affectedGroups.push({
+        target: group.target.columnIds.length === 0
+          ? { tableId: group.target.tableId }
+          : { tableId: group.target.tableId, columnIds: [...group.target.columnIds] },
+        reasons,
+        conditionCoverage: group.normalizedRules ? "supported_rules" : "unknown"
+      });
+    }
+  }
+
+  return {
+    target,
+    referenceOnly: true,
+    affectedGroups,
+    affectedUserAttributes,
+    unknownCoverage: {
+      protectedOrdinaryGroupCount,
+      protectedOtherPolicyResourceCount: snapshot.protectedPersistedGroupCount,
+      protectedUserAttributeDefinitionCount: attributes.protectedDefinitionCount
+    },
+    note: "Only known structural references are reported. Protected or opaque policy may also depend on this schema identity. Native rename/delete effects, effective enforcement and confidentiality are not predicted or verified."
   };
 }
 

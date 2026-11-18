@@ -24,19 +24,9 @@ claim that persisted policy proves effective confidentiality.
 
 ### Finite work
 
-#### E1-D — policy inspection and deterministic lint
-
-**Status: ACTIVE**
-
-Complete bounded schema-change impact inspection for existing supported
-policy dependencies, distinguishing provably affected references from unknown
-protected/opaque policy. Keep diagnostics to structural facts and documented
-first-match cases; do not infer equivalent arbitrary conditions, effective
-authorization or confidentiality. No arbitrary formulas or second policy engine.
-
 #### E1-E — bounded explanatory simulation
 
-**Status: BLOCKED by E1-D**
+**Status: ACTIVE**
 
 Evaluate only Gia's normalized supported subset against an explicit synthetic
 context for explanation/debugging. Results must state that they are simulated and
@@ -54,7 +44,7 @@ concrete generic evidence.
 
 ### Execution rules
 
-Remaining work proceeds sequentially E1-D through E1-F. Each slice must be independently
+Remaining work proceeds sequentially E1-E through E1-F. Each slice must be independently
 bounded and reviewed on its exact head when required by [AGENTS.md](../AGENTS.md).
 Completed slice history belongs in issues, PRs, commits and CI; remove completed
 work from this Roadmap as it is absorbed into current normative docs and tests.

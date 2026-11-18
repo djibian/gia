@@ -693,7 +693,13 @@ export function registerLeanTools(
         z
           .object({
             action: z.literal("access_rules"),
-            documentId: documentIdSchema
+            documentId: documentIdSchema,
+            schemaImpact: z.discriminatedUnion("kind", [
+              z.object({ kind: z.literal("table"), tableId: tableIdSchema }).strict(),
+              z.object({
+                kind: z.literal("column"), tableId: tableIdSchema, columnId: columnIdSchema
+              }).strict()
+            ]).optional()
           })
           .strict()
       ])
@@ -710,7 +716,7 @@ export function registerLeanTools(
               await grist.getPageWidgets(input.documentId, input.pageId)
             );
           case "access_rules":
-            return textResult(await grist.inspectAccessRules(input.documentId));
+            return textResult(await grist.inspectAccessRules(input.documentId, input.schemaImpact));
         }
       } catch (error) {
         return errorResult(error);
