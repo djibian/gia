@@ -111,3 +111,49 @@ test("E1-E absent group or opaque group has no simulated permission decision", (
   assert.equal(opaque.ruleMatches, null);
   assert.doesNotMatch(JSON.stringify(opaque), /private-secret|aclFormula/);
 });
+
+
+test("E1-E compares old and proposed values without inventing a native write", () => {
+  const result = simulate([
+    ["rec.Title != newRec.Title", "+U"],
+    ["newRec.Enabled == True", "-U"]
+  ], {
+    rec: [{ name: "Title", value: { kind: "symbol", symbol: "A" } }],
+    newRec: [
+      { name: "Title", value: { kind: "symbol", symbol: "B" } },
+      { name: "Enabled", value: { kind: "boolean", value: true } }
+    ]
+  });
+  assert.deepEqual(result.ruleMatches.map((r: any) => r.match), ["true", "true"]);
+  assert.deepEqual(result.permissionDecisions.update, { decision: "allow", ruleIndex: 1 });
+  assert.deepEqual(result.permissionDecisions.read, { decision: "unspecified" });
+});
+
+test("E1-E user-attribute values are supplied synthetically; no native lookup occurs", () => {
+  const attribute = JSON.stringify({
+    name: "Mentor", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
+  });
+  const snap = normalizeAccessRulesSnapshot({
+    records: [
+      { id: 1, fields: { tableId: "*", colIds: "*" } },
+      { id: 2, fields: { tableId: "Projects", colIds: "*" } }
+    ]
+  }, { records: [
+    { id: 1, fields: { resource: 1, rulePos: 1, userAttributes: attribute,
+      aclFormula: "", aclFormulaParsed: "", permissionsText: "" } },
+    { id: 2, fields: { resource: 2, rulePos: 1,
+      aclFormula: "rec.OwnerEmail == user.Mentor.OwnerEmail",
+      aclFormulaParsed: '["Eq"]', permissionsText: "+R" } }
+  ] }, tables, columns);
+  const result = projectAccessRuleSimulation(snap, {
+    target: { tableId: "Projects" },
+    context: {
+      rec: [{ name: "OwnerEmail", value: { kind: "symbol", symbol: "C" } }],
+      userAttributes: [{ name: "Mentor", fields: [
+        { name: "OwnerEmail", value: { kind: "symbol", symbol: "C" } }
+      ] }]
+    }
+  }) as any;
+  assert.deepEqual(result.permissionDecisions.read, { decision: "allow", ruleIndex: 1 });
+  assert.doesNotMatch(JSON.stringify(result), /Mentor|OwnerEmail|userAttributes|aclFormula/);
+});
