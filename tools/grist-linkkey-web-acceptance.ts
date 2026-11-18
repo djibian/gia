@@ -115,6 +115,29 @@ async function delay(ms: number): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
+/** Select the actual native table page; a newly created doc starts on Table1. */
+async function selectTablePage(sessionId: string): Promise<string> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const selected = await driverRequest("POST",
+      "/session/" + sessionId + "/execute/sync", {
+        script: `const link = [...document.querySelectorAll('a,[role="link"],.test-treeview-item')]
+          .find(el => el.textContent?.trim() === arguments[0]);
+          if (!link) return false;
+          link.click();
+          return true;`,
+        args: [tableId]
+      }) as boolean;
+    if (selected) {
+      await delay(900);
+      const page = await inspectPage(sessionId);
+      assertThat(page.url.includes("/doc/"), "linkkey_page_navigation_invalid");
+      return page.url;
+    }
+    await delay(500);
+  }
+  throw new Error("linkkey_table_page_not_found");
+}
+
 async function assertPage(
   sessionId: string,
   url: string,
@@ -124,18 +147,18 @@ async function assertPage(
   let last: DriverState = { text: "", url: "" };
   for (let attempt = 0; attempt < 60; attempt += 1) {
     last = await inspectPage(sessionId);
-    const appLoaded = last.text.includes(tableId);
     const a = last.text.includes(visibleA);
     const b = last.text.includes(visibleB);
-    if (appLoaded && (expected === "alpha" ? a && !b :
-                      expected === "beta" ? b && !a : !a && !b)) {
-      // An empty/denied grid must settle before it counts as negative evidence.
-      if (expected !== "none") return;
-      await delay(1400);
+    if (expected !== "none" && last.text.includes(tableId) &&
+        (expected === "alpha" ? a && !b : b && !a)) return;
+    if (expected === "none" && attempt >= 8 && !a && !b &&
+        last.url.includes("/doc/") && last.text.length > 50) {
+      // A denied table can disappear from the native navigation altogether.
+      // Confirm absence again after a settle interval, not on a blank page.
+      await delay(1500);
       const settled = await inspectPage(sessionId);
-      assertThat(!settled.text.includes(visibleA) && !settled.text.includes(visibleB),
-        "linkkey_denied_rows_visible_after_settle");
-      return;
+      if (!settled.text.includes(visibleA) && !settled.text.includes(visibleB) &&
+          settled.url.includes("/doc/") && settled.text.length > 50) return;
     }
     await delay(500);
   }
@@ -218,11 +241,18 @@ async function run(): Promise<void> {
       login.searchParams.set("username", viewerEmail);
       login.searchParams.set("name", "LinkKey Viewer");
       await navigate(sessionId, login.toString());
-      await assertPage(sessionId, webUrl(orgDomain, documentId, tokenA), "alpha");
-      await assertPage(sessionId, webUrl(orgDomain, documentId, tokenB), "beta");
-      await assertPage(sessionId, webUrl(orgDomain, documentId), "none");
-      await assertPage(sessionId, webUrl(orgDomain, documentId,
-        "synthetic-unrecognized-token"), "none");
+      await navigate(sessionId, webUrl(orgDomain, documentId, tokenA));
+      const pageUrl = new URL(await selectTablePage(sessionId));
+      const urlFor = (token?: string): string => {
+        const url = new URL(pageUrl);
+        url.searchParams.delete("Gate_");
+        if (token !== undefined) url.searchParams.set("Gate_", token);
+        return url.toString();
+      };
+      await assertPage(sessionId, urlFor(tokenA), "alpha");
+      await assertPage(sessionId, urlFor(tokenB), "beta");
+      await assertPage(sessionId, urlFor(), "none");
+      await assertPage(sessionId, urlFor("synthetic-unrecognized-token"), "none");
       console.log("LinkKey web acceptance: PASS (two allowed rows, absent/wrong keys denied)");
     } finally {
       await driverRequest("DELETE", "/session/" + sessionId).catch(() => {});
