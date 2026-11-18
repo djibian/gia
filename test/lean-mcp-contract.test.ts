@@ -32,7 +32,7 @@ test("registered mutation schemas reject unsupported wrapper keys before dispatc
   const cases = [
     ["grist_add_records", { documentId: "doc-1", tableId: "Tasks", records: [{ id: 12345, fields: { Name: "test" } }] }],
     ["grist_change_records", { action: "update", documentId: "doc-1", tableId: "Tasks", records: [{ id: 1, fields: {}, extra: true }] }],
-    ["grist_add_structure", { action: "create_tables", documentId: "doc-1", tables: [{ id: "Tasks", extra: true }] }],
+    ["grist_add_structure", { action: "create_tables", documentId: "doc-1", tables: [{ id: "Tasks", columns: [{ id: "Name" }], extra: true }] }],
     ["grist_add_structure", { action: "create_tables", documentId: "doc-1", tables: [{ id: "Tasks", columns: [{ id: "Name", extra: true }] }] }],
     ["grist_add_structure", { action: "create_columns", documentId: "doc-1", tableId: "Tasks", columns: [{ id: "Name", extra: true }] }],
     ["grist_change_structure", { action: "update_columns", documentId: "doc-1", tableId: "Tasks", columns: [{ id: "Name", fields: { label: "Name" }, extra: true }] }],
@@ -736,4 +736,14 @@ test("typed ACL user-attribute references carry identifiers only, never row valu
     ...base, rules: [{ ...base.rules[0],
       condition: { ...condition, record: "newRec" } }]
   }));
+});
+
+test("create_tables schema refuses missing or empty column arrays", () => {
+  const registration = capture().find((entry) => entry.name === "grist_add_structure")!;
+  const input = { action: "create_tables", documentId: "doc-1" };
+  assert.throws(() => registration.options.inputSchema!.parse({ ...input, tables: [{ id: "Missing" }] }));
+  assert.throws(() => registration.options.inputSchema!.parse({ ...input, tables: [{ id: "Empty", columns: [] }] }));
+  assert.deepEqual(registration.options.inputSchema!.parse({
+    ...input, tables: [{ id: "Valid", columns: [{ id: "Name" }] }]
+  }).tables, [{ id: "Valid", columns: [{ id: "Name" }] }]);
 });

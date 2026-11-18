@@ -564,6 +564,35 @@ async function run(): Promise<void> {
       ]
     });
 
+    // Missing/empty columns are invalid and must not create native tables.
+    for (const tables of [
+      [{ id: "Compat_MissingColumns" }],
+      [{ id: "Compat_EmptyColumns", columns: [] }]
+    ]) {
+      let refused = false;
+      try {
+        await callTool(bridgeBaseUrl, "grist_add_structure", {
+          action: "create_tables", documentId, tables
+        });
+      } catch {
+        refused = true;
+      }
+      assert(refused, "invalid_table_columns_not_refused");
+    }
+    const nativeTablesAfterRefusal = await gristApi(
+      gristBaseUrl, apiKey, `/api/docs/${encodeURIComponent(documentId)}/tables`
+    );
+    assert(
+      nativeTablesAfterRefusal !== null &&
+        typeof nativeTablesAfterRefusal === "object" &&
+        !Array.isArray(nativeTablesAfterRefusal) &&
+        Array.isArray((nativeTablesAfterRefusal as Record<string, unknown>).tables) &&
+        !((nativeTablesAfterRefusal as Record<string, unknown>).tables as Array<{ id?: unknown }>).some(
+          (table) => table.id === "Compat_MissingColumns" || table.id === "Compat_EmptyColumns"
+        ),
+      "invalid_table_creation_mutated_native_state"
+    );
+
     await callTool(bridgeBaseUrl, "grist_add_records", {
       documentId,
       tableId: TABLE_ID,

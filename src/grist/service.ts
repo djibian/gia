@@ -394,11 +394,12 @@ export class GristService {
     this.assertUniqueStrings(tables.map((table) => table.id), "Table IDs");
     for (const table of tables) {
       this.assertIdentifier(table.id, "Table ID");
-      if (table.columns) {
-        this.assertUniqueStrings(table.columns.map((column) => column.id), "Column IDs");
-        for (const column of table.columns) {
-          this.assertIdentifier(column.id, "Column ID");
-        }
+      if (!Array.isArray(table.columns) || table.columns.length === 0) {
+        throw new Error("Each new table requires at least one column.");
+      }
+      this.assertUniqueStrings(table.columns.map((column) => column.id), "Column IDs");
+      for (const column of table.columns) {
+        this.assertIdentifier(column.id, "Column ID");
       }
     }
     const result = await this.client.createTables(documentId, tables);

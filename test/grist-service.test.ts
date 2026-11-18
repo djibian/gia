@@ -262,3 +262,17 @@ test("zero limits mean unlimited bridge-side guardrails", async () => {
     Array.from({ length: 500 }, (_, i) => ({ id: `C${i}` }))
   );
 });
+
+
+test("table creation refuses missing or empty columns before any native write", async () => {
+  const { grist, observed } = service();
+  await assert.rejects(() => grist.createTables("doc", [{ id: "Missing" }]), /at least one column/);
+  await assert.rejects(() => grist.createTables("doc", [{ id: "Empty", columns: [] }]), /at least one column/);
+  await assert.rejects(() => grist.createTables("doc", [
+    { id: "Valid", columns: [{ id: "Name" }] }, { id: "Invalid" }
+  ]), /at least one column/);
+  assert.deepEqual(observed, []);
+  await grist.createTables("doc", [{ id: "Valid", columns: [{ id: "Name", fields: { type: "Text" } }] }]);
+  assert.deepEqual(observed, [{ action: "createTables", documentId: "doc",
+    tables: [{ id: "Valid", columns: [{ id: "Name", fields: { type: "Text" } }] }] }]);
+});

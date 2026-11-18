@@ -49,8 +49,8 @@ test("create results retain only documented functional IDs", async () => {
 
   assert.deepEqual(
     await grist.createTables("doc", [
-      { id: "People" },
-      { id: "Places" }
+      { id: "People", columns: [{ id: "Name" }] },
+      { id: "Places", columns: [{ id: "Name" }] }
     ]),
     {
       tables: [{ id: "People" }, { id: "Places" }]
@@ -92,8 +92,8 @@ test("unexpected successful create responses are marked incomplete instead of th
 
   assert.deepEqual(
     await grist.createTables("doc", [
-      { id: "People" },
-      { id: "Places" }
+      { id: "People", columns: [{ id: "Name" }] },
+      { id: "Places", columns: [{ id: "Name" }] }
     ]),
     {
       tables: [{ id: "People" }],
@@ -124,7 +124,7 @@ test("unexpected successful create responses are marked incomplete instead of th
   );
 
   const serialized = JSON.stringify([
-    await grist.createTables("doc", [{ id: "People" }, { id: "Places" }]),
+    await grist.createTables("doc", [{ id: "People", columns: [{ id: "Name" }] }, { id: "Places", columns: [{ id: "Name" }] }]),
     await grist.createColumns("doc", "People", [{ id: "Name" }, { id: "Age" }])
   ]);
   assert.equal(serialized.includes("engine"), false);
