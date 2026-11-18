@@ -122,7 +122,7 @@ const syntheticIdentifierSchema = z.string().min(1).max(100)
   .regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
 const uniqueSyntheticFields = <T extends { name: string }>(entries: T[]) =>
   new Set(entries.map((entry) => entry.name)).size === entries.length;
-function syntheticFields<Name extends z.ZodType, Value extends z.ZodType>(name: Name, value: Value) {
+function syntheticFields<Name extends z.ZodType<string>, Value extends z.ZodType>(name: Name, value: Value) {
   return z.array(z.object({ name, value }).strict()).max(20)
     .refine((entries) => new Set(entries.map((entry) => String(entry.name))).size === entries.length,
       "Synthetic field names must be unique.");
