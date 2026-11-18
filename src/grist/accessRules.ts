@@ -664,7 +664,11 @@ function usesNewRec(condition: AccessRuleCondition): boolean {
 
 type AccessRuleLeafCondition = Exclude<AccessRuleCondition, { kind: "all" | "any" } | { kind: "not" }>;
 
-function serializeLeafCondition(condition: AccessRuleLeafCondition, table: TableInfo): string {
+function serializeLeafCondition(
+  condition: AccessRuleLeafCondition,
+  table: TableInfo,
+  attributes?: UserAttributeReferenceContext
+): string {
   if (condition.kind === "everyone") return "";
 
   if (condition.kind === "user_access") {
@@ -725,6 +729,19 @@ function serializeLeafCondition(condition: AccessRuleLeafCondition, table: Table
     return `rec.${condition.columnId} ${OP_NATIVE[condition.operator]} newRec.${condition.columnId}`;
   }
 
+  if (condition.kind === "match_user_attribute") {
+    if (!validLinkKeyName(condition.attributeName) ||
+        !SAFE_IDENTIFIER.test(condition.attributeColumnId) ||
+        !SAFE_IDENTIFIER.test(condition.columnId) ||
+        (condition.operator !== "equals" && condition.operator !== "not_equals") ||
+        !comparableUserAttributeField(
+          table, condition.columnId, condition.attributeName, condition.attributeColumnId, attributes
+        )) {
+      throw new Error("User-attribute ACL match requires a verified definition and comparable stable fields.");
+    }
+    return `${recordExpression(condition)} ${OP_NATIVE[condition.operator]} user.${condition.attributeName}.${condition.attributeColumnId}`;
+  }
+
   if (condition.kind === "match_link_key") {
     if (!validLinkKeyName(condition.linkKeyName)) {
       throw new Error(
@@ -769,7 +786,11 @@ function serializeLeafCondition(condition: AccessRuleLeafCondition, table: Table
   return `${recordExpression(condition)} ${OP_NATIVE[condition.operator]} user.${condition.userProperty}`;
 }
 
-function serializeCondition(condition: AccessRuleCondition, table: TableInfo): string {
+function serializeCondition(
+  condition: AccessRuleCondition,
+  table: TableInfo,
+  attributes?: UserAttributeReferenceContext
+): string {
   const budget = { nodes: 0 };
   function serialize(node: AccessRuleCondition, depth: number): string {
     if (++budget.nodes > MAX_ACCESS_RULE_CONDITION_NODES || depth > MAX_ACCESS_RULE_CONDITION_DEPTH) {
@@ -794,7 +815,7 @@ function serializeCondition(condition: AccessRuleCondition, table: TableInfo): s
       }
       return "not (" + serialize(node.condition, depth + 1) + ")";
     }
-    return serializeLeafCondition(node, table);
+    return serializeLeafCondition(node, table, attributes);
   }
   const native = serialize(condition, 0);
   if (native.length > MAX_ACCESS_RULE_FORMULA_LENGTH) {
@@ -913,7 +934,8 @@ function unsupportedLegacyFields(fields: JsonRecord): boolean {
 function buildGroupState(
   resource: PersistedResource,
   rules: PersistedRule[],
-  table: TableInfo
+  table: TableInfo,
+  attributes: UserAttributeReferenceContext
 ): AccessRuleGroupState {
   const target = normalizeResourceTarget(resource);
   if (!target) {
@@ -956,7 +978,7 @@ function buildGroupState(
           "This group contains memo, user-attribute, legacy, schema-edit or other unsupported persisted semantics."
       };
     }
-    const condition = parseCondition(rule.aclFormula, table);
+    const condition = parseCondition(rule.aclFormula, table, attributes);
     const permissions = parsePermissions(rule.permissionsText, target.columnIds.length > 0);
     if (!condition || !permissions || !isParsedFormulaAvailable(rule)) {
       return {
@@ -1090,7 +1112,8 @@ function assertNoColumnOverlap(
 function normalizeRequestedRules(
   rules: readonly AccessRuleInput[],
   target: ResolvedAccessRuleTarget,
-  table: TableInfo
+  table: TableInfo,
+  attributes: UserAttributeReferenceContext
 ): { writes: AccessRulePersistedWrite[]; normalized: NormalizedAccessRule[] } {
   if (rules.length < 1 || rules.length > MAX_ACCESS_RULES_PER_GROUP) {
     throw new Error(
@@ -1102,8 +1125,8 @@ function normalizeRequestedRules(
   const normalized: NormalizedAccessRule[] = [];
   const seen = new Set<string>();
   for (const [index, rule] of rules.entries()) {
-    const aclFormula = serializeCondition(rule.condition, table);
-    const canonicalCondition = parseCondition(aclFormula, table);
+    const aclFormula = serializeCondition(rule.condition, table, attributes);
+    const canonicalCondition = parseCondition(aclFormula, table, attributes);
     if (!canonicalCondition) {
       throw new Error("Access-rule condition cannot be normalized into the bounded native subset.");
     }
@@ -1212,6 +1235,9 @@ export function normalizeAccessRulesSnapshot(
     rulesByResource.set(rule.resourceId, values);
   }
 
+  const attributes = userAttributeReferenceContext({
+    resources, rules, tables, groups: [], protectedPersistedGroupCount: 0
+  });
   const groups: AccessRuleGroupState[] = [];
   let protectedPersistedGroupCount = 0;
   const seenTargets = new Set<string>();
@@ -1256,7 +1282,7 @@ export function normalizeAccessRulesSnapshot(
       columnClaims.set(target.tableId, claimed);
     }
 
-    groups.push(buildGroupState(resource, rulesByResource.get(resource.id) ?? [], table));
+    groups.push(buildGroupState(resource, rulesByResource.get(resource.id) ?? [], table, attributes));
   }
 
   groups.sort((a, b) => targetKey(a.target).localeCompare(targetKey(b.target)));
@@ -1426,7 +1452,9 @@ export function resolveAccessRuleMutation(
   }
 
   if (!rulesInput) throw new Error("Create and replace access-rule mutations require rules.");
-  const requested = normalizeRequestedRules(rulesInput, target, table);
+  const requested = normalizeRequestedRules(
+    rulesInput, target, table, userAttributeReferenceContext(snapshot)
+  );
 
   if (
     mode === "replace" &&
@@ -1702,6 +1730,15 @@ export function resolveUserAttributeMutation(
   const selectedRuleId = selected[0]?.id;
   const existingNative = selected[0]?.fields.userAttributes;
   const unchanged = mode === "replace" && existingNative === nativeDefinition;
+  // An ACL dependency may rely on the lookup table/field. Do not silently
+  // rebind an attribute with dependent policies, even when the target is typed.
+  if (mode === "replace" && !unchanged) {
+    for (const rule of snapshot.rules) {
+      if (nativeUserAttributeReferences(rule, name).has(name)) {
+        throw new Error("ACL conditions reference this user attribute; remove dependencies before replacing it.");
+      }
+    }
+  }
   return {
     mode: unchanged ? "noop" : mode,
     requestedMode: mode,
