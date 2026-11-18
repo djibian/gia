@@ -67,3 +67,20 @@ test("test-only native ACL fixture cannot quietly declare NOT REQUIRED", () => {
   const files = [{ filename: "test/access-rules.test.ts" }];
   assert.match(integrationGateErrors(inputs({ pr, files })).join(" "), /Risk-sensitive/);
 });
+
+
+test("governance and integration-gate artifacts cannot bypass independent review", () => {
+  const original = inputs();
+  const pr = {...original.pr, body: original.pr.body.replace("REQUIRED — governance update", "NOT REQUIRED — claimed factual documentation edit")};
+  for (const filename of ["docs/DEVELOPMENT.md", ".github/pull_request_template.md", "test/pr-integration-gate.test.mjs"]) {
+    assert.match(integrationGateErrors(inputs({pr, files: [{filename}], comments: []})).join(" "), /Risk-sensitive/);
+  }
+});
+
+test("unfilled PR-template review reasons are not accepted", () => {
+  const original = inputs();
+  for (const placeholder of ["<why independent exact-head review is needed>", "<specific reason>"]) {
+    const pr = {...original.pr, body: original.pr.body.replace("governance update", placeholder)};
+    assert.match(integrationGateErrors(inputs({pr})).join(" "), /substantive reason/);
+  }
+});
