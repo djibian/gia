@@ -106,8 +106,6 @@ To run against a disposable local Grist with test login enabled:
 ```sh
 GRIST_COMPAT_BASE_URL=http://127.0.0.1:8484 GRIST_COMPAT_VERSION=1.7.20 \
   node --import tsx tools/grist-compatibility.ts
-GRIST_COMPAT_BASE_URL=http://127.0.0.1:8484 \
-  node --import tsx tools/grist-linkkey-web-acceptance.ts
 GRIST_TEST_BASE_URL=http://127.0.0.1:8484 GRIST_TEST_VERSION=1.7.19 \
   node --import tsx tools/application-validation.ts
 ```
@@ -125,16 +123,19 @@ expected outcome and `PASS`, `FAIL`, `UNKNOWN`, `NOT_TESTED` or
 `UNSUPPORTED`. Case failures leave the run unsuccessful. Output omits
 credentials, document IDs, URLs and native response bodies.
 
-The probes start a local Gia process, provision synthetic native state, perform
-bounded tools and independently inspect native postconditions. The application
-probe uses `application-fixtures.ts` and `grist-harness.ts`. The LinkKey
-web probe additionally drives a disposable headless Chrome via the runner's
-ChromeDriver/WebDriver protocol (or local `CHROMEDRIVER_BIN`) to exercise the
-native Grist web-client context: an owner persists a bounded rule, a separate
-viewer visits synthetic URL parameters, and visible rows are checked against
-positive, missing and mismatched keys. Only test-owned Grist instances with
-`GRIST_TEST_LOGIN=1` are permitted; browser acceptance never proves security
-of an arbitrary production deployment or cross-group policy precedence.
+The LinkKey web probe uses the same disposable-container guard and flags.
+It drives a disposable headless Chrome via ChromeDriver/WebDriver and prints
+separate evidence for a matching key for each synthetic row, and for missing
+and wrong keys. A separate visible control row and the expected page route
+establish that the authenticated viewer reached the target before a missing
+row counts as evidence. The probe omits key values, URLs and browser response
+bodies. This scope covers native web row visibility for the tested viewer.
+API, widgets, anonymous visitors and published forms have their own scope.
+
+The compatibility and preservation probes start a local Gia process, provision
+synthetic native state, perform bounded tools and independently inspect native
+postconditions. The application probe uses `application-fixtures.ts` and
+`grist-harness.ts`.
 No production browser/planner, model-facing command, new dependency or
 committed proof platform is added.
 

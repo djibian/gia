@@ -1,9 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
+import { openDisposableGrist, type DisposableGrist, type QualificationStatus } from "./authorization-qualification.js";
 import {
   applyActions,
   assertThat,
   callTool,
   createTestApiKey,
+  freePort,
   gristApi,
   startBridge,
   stopBridge,
@@ -12,16 +16,12 @@ import {
 
 // Independent browser acceptance of native web-only user.LinkKey context.
 // Disposable GRIST_TEST_LOGIN instance only. No real URL, token or record data.
-const baseUrl = process.env.GRIST_COMPAT_BASE_URL?.trim();
 const ownerEmail = "linkkey-acceptance-owner@getgrist.com";
 const viewerEmail = "linkkey-acceptance-viewer@getgrist.com";
 const visibleA = "LINKKEY_VISIBLE_ALPHA_ONLY";
 const visibleB = "LINKKEY_VISIBLE_BETA_ONLY";
-const tokenA = "synthetic-compat-alpha-001";
-const tokenB = "synthetic-compat-beta-002";
+const visibleControl = "LINKKEY_CONTROL_ROW";
 const tableId = "LinkKeyRows";
-const driverPort = 9515;
-const driverBase = "http://127.0.0.1:" + driverPort;
 
 interface OrgInfo { id: number | string; domain?: string }
 interface DriverState { text: string; url: string }
@@ -36,8 +36,7 @@ function docIdFrom(value: unknown): string {
   return String(candidate);
 }
 
-function webUrl(orgDomain: string, documentId: string, token?: string): string {
-  assertThat(baseUrl, "missing_grist_compat_base_url");
+function webUrl(baseUrl: string, orgDomain: string, documentId: string, token?: string): string {
   const url = new URL("/o/" + encodeURIComponent(orgDomain) +
     "/doc/" + encodeURIComponent(documentId), baseUrl);
   if (token !== undefined) url.searchParams.set("Gate_", token);
@@ -50,7 +49,7 @@ function driverBinary(): string {
   return "chromedriver";
 }
 
-async function driverRequest(method: string, path: string, payload?: unknown): Promise<unknown> {
+async function driverRequest(driverBase: string, method: string, path: string, payload?: unknown): Promise<unknown> {
   const response = await fetch(driverBase + path, {
     method,
     ...(payload === undefined ? {} : {
@@ -65,43 +64,48 @@ async function driverRequest(method: string, path: string, payload?: unknown): P
   const value = message.value;
   if (!response.ok ||
       (value && typeof value === "object" && "error" in value)) {
-    throw new Error("webdriver_" + method + "_" + path + ":" +
-      JSON.stringify(value).slice(0, 800));
+    throw new Error("webdriver_request_failed");
   }
   return value;
 }
 
-async function startBrowser(): Promise<{ driver: ChildProcess; sessionId: string }> {
+async function startBrowser(): Promise<{ driver: ChildProcess; driverBase: string; sessionId: string }> {
+  const driverPort = await freePort();
+  const driverBase = "http://127.0.0.1:" + driverPort;
   const driver = spawn(driverBinary(), ["--port=" + driverPort], {
-    stdio: ["ignore", "inherit", "inherit"]
+    stdio: "ignore"
   });
   try {
+    await new Promise<void>((resolve, reject) => {
+      driver.once("spawn", resolve);
+      driver.once("error", reject);
+    });
     await waitForUrl(driverBase + "/status", 50);
-    const session = await driverRequest("POST", "/session", {
+    const session = await driverRequest(driverBase, "POST", "/session", {
       capabilities: {
         alwaysMatch: {
           browserName: "chrome",
           "goog:chromeOptions": {
             args: ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage",
-              "--window-size=1440,900"]
+              "--window-size=1440,900", "--no-proxy-server"]
           }
         }
       }
     }) as { sessionId?: unknown };
     assertThat(typeof session?.sessionId === "string", "webdriver_session_missing");
-    return { driver, sessionId: session.sessionId };
+    return { driver, driverBase, sessionId: session.sessionId };
   } catch (error) {
     driver.kill("SIGTERM");
     throw error;
   }
 }
 
-async function navigate(sessionId: string, url: string): Promise<void> {
-  await driverRequest("POST", "/session/" + sessionId + "/url", { url });
+async function navigate(driverBase: string, sessionId: string, url: string): Promise<void> {
+  await driverRequest(driverBase, "POST", "/session/" + sessionId + "/url", { url });
 }
 
-async function inspectPage(sessionId: string): Promise<DriverState> {
-  const value = await driverRequest("POST",
+async function inspectPage(driverBase: string, sessionId: string): Promise<DriverState> {
+  const value = await driverRequest(driverBase, "POST",
     "/session/" + sessionId + "/execute/sync", {
       script: "return {text: document.body ? document.body.innerText : '', url: location.href};",
       args: []
@@ -116,9 +120,9 @@ async function delay(ms: number): Promise<void> {
 }
 
 /** Select the actual native table page; a newly created doc starts on Table1. */
-async function selectTablePage(sessionId: string): Promise<string> {
+async function selectTablePage(driverBase: string, sessionId: string, baseUrl: string): Promise<string> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const selected = await driverRequest("POST",
+    const selected = await driverRequest(driverBase, "POST",
       "/session/" + sessionId + "/execute/sync", {
         script: `const labels = [...document.querySelectorAll('*')]
           .filter(el => el.childElementCount === 0 &&
@@ -131,46 +135,54 @@ async function selectTablePage(sessionId: string): Promise<string> {
       }) as boolean;
     if (selected) {
       await delay(900);
-      const page = await inspectPage(sessionId);
-      assertThat(new URL(page.url).origin === new URL(baseUrl!).origin, "linkkey_page_navigation_invalid");
+      const page = await inspectPage(driverBase, sessionId);
+      assertThat(new URL(page.url).origin === new URL(baseUrl).origin, "linkkey_page_navigation_invalid");
       return page.url;
     }
     await delay(500);
   }
-  const page = await inspectPage(sessionId);
-  throw new Error("linkkey_table_page_not_found:" + page.url + ":" + page.text.slice(0, 900));
+  throw new Error("linkkey_table_page_not_found");
 }
 
-async function assertPage(
-  sessionId: string,
-  url: string,
-  expected: "alpha" | "beta" | "none"
-): Promise<void> {
-  await navigate(sessionId, url);
-  let last: DriverState = { text: "", url: "" };
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    last = await inspectPage(sessionId);
-    const a = last.text.includes(visibleA);
-    const b = last.text.includes(visibleB);
-    if (expected !== "none" && last.text.includes(tableId) &&
-        (expected === "alpha" ? a && !b : b && !a)) return;
-    if (expected === "none" && attempt >= 8 && !a && !b &&
-        new URL(last.url).origin === new URL(baseUrl!).origin && last.text.length > 50) {
-      // A denied table can disappear from the native navigation altogether.
-      // Confirm absence again after a settle interval, not on a blank page.
-      await delay(1500);
-      const settled = await inspectPage(sessionId);
-      if (!settled.text.includes(visibleA) && !settled.text.includes(visibleB) &&
-          new URL(settled.url).origin === new URL(baseUrl!).origin && settled.text.length > 50) return;
+type VisibleRows = "alpha" | "beta" | "both" | "none";
+const surface = "web";
+const scope = "authenticated_viewer_link_key_row_visibility";
+
+export function linkKeyVisibilityStatus(
+  expected: Exclude<VisibleRows, "both">,
+  observed?: VisibleRows
+): QualificationStatus {
+  if (observed === undefined) return "UNKNOWN";
+  return observed === expected ? "PASS" : "FAIL";
+}
+
+async function observePage(driverBase: string, sessionId: string, url: string): Promise<VisibleRows | undefined> {
+  await navigate(driverBase, sessionId, url);
+  const intended = new URL(url);
+  let previous: VisibleRows | undefined;
+  for (let attempt = 0; attempt < 45; attempt += 1) {
+    const page = await inspectPage(driverBase, sessionId);
+    const current = new URL(page.url);
+    const confirmedTarget = current.origin === intended.origin &&
+      current.pathname === intended.pathname &&
+      current.searchParams.get("Gate_") === intended.searchParams.get("Gate_") &&
+      page.text.includes(tableId) && page.text.includes(visibleControl);
+    if (confirmedTarget) {
+      const alpha = page.text.includes(visibleA);
+      const beta = page.text.includes(visibleB);
+      const observed = alpha ? (beta ? "both" : "alpha") : (beta ? "beta" : "none");
+      if (previous === observed) return observed;
+      previous = observed;
+    } else {
+      previous = undefined;
     }
-    await delay(500);
+    await delay(750);
   }
-  throw new Error("linkkey_web_" + expected + "_not_observed:" +
-    last.url + ":" + last.text.slice(0, 800));
 }
 
-async function run(): Promise<void> {
-  assertThat(baseUrl, "missing_grist_compat_base_url");
+async function run({ baseUrl, version }: DisposableGrist): Promise<void> {
+  const tokenA = randomUUID();
+  const tokenB = randomUUID();
   const ownerKey = await createTestApiKey(baseUrl, ownerEmail, "LinkKey Owner");
   await createTestApiKey(baseUrl, viewerEmail, "LinkKey Viewer");
   const orgs = await gristApi(baseUrl, ownerKey, "/api/orgs") as OrgInfo[];
@@ -195,10 +207,12 @@ async function run(): Promise<void> {
   await applyActions(baseUrl, ownerKey, documentId, [
     ["AddTable", tableId, [
       { id: "Gate", type: "Text" },
-      { id: "Label", type: "Text" }
+      { id: "Label", type: "Text" },
+      { id: "PublicControl", type: "Bool" }
     ]],
     ["AddRecord", tableId, 1, { Gate: tokenA, Label: visibleA }],
-    ["AddRecord", tableId, 2, { Gate: tokenB, Label: visibleB }]
+    ["AddRecord", tableId, 2, { Gate: tokenB, Label: visibleB }],
+    ["AddRecord", tableId, 3, { Label: visibleControl, PublicControl: true }]
   ]);
 
   const bridge = await startBridge({
@@ -214,6 +228,10 @@ async function run(): Promise<void> {
         {
           condition: { kind: "user_access", operator: "equals", role: "owner" },
           permissions: { read: "allow", update: "allow", create: "allow", delete: "allow" }
+        },
+        {
+          condition: { kind: "match_boolean", columnId: "PublicControl", operator: "equals", value: true },
+          permissions: { read: "allow", update: "unspecified", create: "unspecified", delete: "unspecified" }
         },
         {
           condition: {
@@ -238,27 +256,35 @@ async function run(): Promise<void> {
         body: JSON.stringify({ delta: { users: { [viewerEmail]: "viewers" } } })
       });
 
-    const { driver, sessionId } = await startBrowser();
+    const { driver, driverBase, sessionId } = await startBrowser();
     try {
       const login = new URL("/test/login", baseUrl);
       login.searchParams.set("username", viewerEmail);
       login.searchParams.set("name", "LinkKey Viewer");
-      await navigate(sessionId, login.toString());
-      await navigate(sessionId, webUrl(orgDomain, documentId, tokenA));
-      const pageUrl = new URL(await selectTablePage(sessionId));
+      await navigate(driverBase, sessionId, login.toString());
+      await navigate(driverBase, sessionId, webUrl(baseUrl, orgDomain, documentId, tokenA));
+      const pageUrl = new URL(await selectTablePage(driverBase, sessionId, baseUrl));
       const urlFor = (token?: string): string => {
         const url = new URL(pageUrl);
         url.searchParams.delete("Gate_");
         if (token !== undefined) url.searchParams.set("Gate_", token);
         return url.toString();
       };
-      await assertPage(sessionId, urlFor(tokenA), "alpha");
-      await assertPage(sessionId, urlFor(tokenB), "beta");
-      await assertPage(sessionId, urlFor(), "none");
-      await assertPage(sessionId, urlFor("synthetic-unrecognized-token"), "none");
-      console.log("LinkKey web acceptance: PASS (two allowed rows, absent/wrong keys denied)");
+      const cases = [
+        { id: "correct-key-first-row", expected: "alpha", token: tokenA },
+        { id: "correct-key-second-row", expected: "beta", token: tokenB },
+        { id: "missing-key", expected: "none", token: undefined },
+        { id: "wrong-key", expected: "none", token: randomUUID() }
+      ] as const;
+      for (const { id, expected, token } of cases) {
+        const observed = await observePage(driverBase, sessionId, urlFor(token)).catch(() => undefined);
+        const status = linkKeyVisibilityStatus(expected, observed);
+        console.log(JSON.stringify({ version, surface, scope, id, expected,
+          observed: observed ?? "UNKNOWN", status }));
+        if (status !== "PASS") process.exitCode = 1;
+      }
     } finally {
-      await driverRequest("DELETE", "/session/" + sessionId).catch(() => {});
+      await driverRequest(driverBase, "DELETE", "/session/" + sessionId).catch(() => {});
       driver.kill("SIGTERM");
     }
   } finally {
@@ -266,7 +292,24 @@ async function run(): Promise<void> {
   }
 }
 
-run().catch((error) => {
-  console.error(error instanceof Error ? error.stack ?? error.message : error);
-  process.exitCode = 1;
-});
+async function main(): Promise<void> {
+  let target: DisposableGrist;
+  try {
+    target = await openDisposableGrist(
+      process.env.GIA_QUALIFICATION_CONTAINER ?? "", process.env.GRIST_COMPAT_VERSION ?? ""
+    );
+  } catch {
+    console.log(JSON.stringify({ surface, scope, stage: "disposable_provenance", status: "NOT_TESTED" }));
+    process.exitCode = 1;
+    return;
+  }
+  await run(target).catch(() => {
+    console.log(JSON.stringify({ version: target.version, surface, scope,
+      stage: "synthetic_browser_setup", status: "NOT_TESTED" }));
+    process.exitCode = 1;
+  });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}
