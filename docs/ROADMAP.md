@@ -36,7 +36,7 @@ concrete generic evidence.
 
 ### Execution rules
 
-Remaining work proceeds sequentially E1-E through E1-F. Each slice must be independently
+Remaining work is the finite E1-F LinkKey web-acceptance and completeness review. Each slice must be independently
 bounded and reviewed on its exact head when required by [AGENTS.md](../AGENTS.md).
 Completed slice history belongs in issues, PRs, commits and CI; remove completed
 work from this Roadmap as it is absorbed into current normative docs and tests.
