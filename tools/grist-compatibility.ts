@@ -564,55 +564,33 @@ async function run(): Promise<void> {
       ]
     });
 
-    // Omitted MCP columns are adapted to native columns: [] instead of
-    // forwarding undefined; validate on every supported disposable Grist.
-    const emptyTableResult = resultJson(
-      await callTool(bridgeBaseUrl, "grist_add_structure", {
-        action: "create_tables",
-        documentId,
-        tables: [{ id: "Compat_EmptyTable" }]
-      }),
-      "create_columnless_table"
+    // Missing/empty columns are invalid and must not create native tables.
+    for (const tables of [
+      [{ id: "Compat_MissingColumns" }],
+      [{ id: "Compat_EmptyColumns", columns: [] }]
+    ]) {
+      let refused = false;
+      try {
+        await callTool(bridgeBaseUrl, "grist_add_structure", {
+          action: "create_tables", documentId, tables
+        });
+      } catch {
+        refused = true;
+      }
+      assert(refused, "invalid_table_columns_not_refused");
+    }
+    const nativeTablesAfterRefusal = await gristApi(
+      gristBaseUrl, apiKey, `/api/docs/${encodeURIComponent(documentId)}/tables`
     );
     assert(
-      Array.isArray(emptyTableResult.tables) &&
-        (emptyTableResult.tables as Array<{ id?: unknown }>).some(
-          (table) => table.id === "Compat_EmptyTable"
+      nativeTablesAfterRefusal !== null &&
+        typeof nativeTablesAfterRefusal === "object" &&
+        !Array.isArray(nativeTablesAfterRefusal) &&
+        Array.isArray((nativeTablesAfterRefusal as Record<string, unknown>).tables) &&
+        !((nativeTablesAfterRefusal as Record<string, unknown>).tables as Array<{ id?: unknown }>).some(
+          (table) => table.id === "Compat_MissingColumns" || table.id === "Compat_EmptyColumns"
         ),
-      "columnless_table_not_reported"
-    );
-    const nativeEmptyColumns = await gristApi(
-      gristBaseUrl,
-      apiKey,
-      `/api/docs/${encodeURIComponent(documentId)}/tables/Compat_EmptyTable/columns`
-    );
-    assert(
-      nativeEmptyColumns !== null &&
-        typeof nativeEmptyColumns === "object" &&
-        !Array.isArray(nativeEmptyColumns) &&
-        Array.isArray((nativeEmptyColumns as Record<string, unknown>).columns),
-      "columnless_table_not_persisted_natively"
-    );
-    await callTool(bridgeBaseUrl, "grist_add_structure", {
-      action: "create_columns",
-      documentId,
-      tableId: "Compat_EmptyTable",
-      columns: [{ id: "AddedLater", fields: { type: "Text" } }]
-    });
-    const nativeAddedColumns = await gristApi(
-      gristBaseUrl,
-      apiKey,
-      `/api/docs/${encodeURIComponent(documentId)}/tables/Compat_EmptyTable/columns`
-    );
-    assert(
-      nativeAddedColumns !== null &&
-        typeof nativeAddedColumns === "object" &&
-        !Array.isArray(nativeAddedColumns) &&
-        Array.isArray((nativeAddedColumns as Record<string, unknown>).columns) &&
-        ((nativeAddedColumns as Record<string, unknown>).columns as Array<{ id?: unknown }>).some(
-          (column) => column.id === "AddedLater"
-        ),
-      "columnless_table_cannot_add_columns_later"
+      "invalid_table_creation_mutated_native_state"
     );
 
     await callTool(bridgeBaseUrl, "grist_add_records", {
