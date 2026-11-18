@@ -25,6 +25,8 @@ A v2 server exposes exactly these ten tools:
 
 `grist_add_structure(action="create_tables")` requires a nonempty `columns` array per new table, matching native Grist TablePost. Missing or empty arrays are refused before any native write; Gia does not invent application columns.
 
+Both `grist_add_structure(create_tables)` and `grist_add_structure(create_columns)` accept only creation metadata actually persisted by the supported native Grist operations: optional `label`, `type`, `isFormula`, `formula` and `widgetOptions`. Native `AddTable` and `AddVisibleColumn` do not persist `description` and do not resolve the public stable-ID alias `visibleColumnId` at creation time. These two update-only fields therefore fail validation **before any create write**, including mixed batches, rather than producing a misleading success. To set them, first create the column with supported fields, then call `grist_change_structure(action="update_columns")` on the resulting stable IDs; update verification and uncertain-write handling remain authoritative. This narrows previously advertised but ineffective create inputs, not a functioning native creation workflow.
+
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
 ## Versioning rule
