@@ -8,6 +8,7 @@ on:
       - "tools/application-fixtures.ts"
       - "tools/application-validation.ts"
       - "docs/SECURITY.md"
+      - "docs/MCP-CONTRACT.md"
       - "src/**"
       - "test/**"
       - "package*.json"
