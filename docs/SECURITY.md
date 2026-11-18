@@ -108,6 +108,15 @@ identity, and return uncertain/non-retryable effect on failed re-read.
 Ordinary ACL writes still fingerprint and preserve user-attribute rows.
 The lookup's effective results and confidentiality are not asserted.
 
+The read-only ACL dependency projection traverses only already-normalized
+closed typed conditions. It reports stable record/new-record column IDs,
+built-in user-property names, LinkKey names and user-attribute name/field
+pairs, deduplicated within each supported group. A protected or opaque group
+reports unknown coverage without inspecting its raw formula or attempting a
+partial dependency guess. Dependency lists do not imply rule reachability,
+native policy validity or effective confidentiality; deterministic lint and
+explanatory simulation are separate, bounded roadmap work.
+
 Persisted rule verification is **not** proof of effective enforcement or
 confidentiality. Native defaults, structure/schema-edit permissions and formulas
 remain decisive. Hidden fields and saved filters are presentation state.

@@ -1392,6 +1392,71 @@ function projectUserAttributes(snapshot: AccessRulesSnapshot): {
   };
 }
 
+// Only extract names from the closed normalized AST. Never inspect an opaque
+// persisted formula or infer effective permissions from these references.
+function projectGroupDependencies(rules: readonly NormalizedAccessRule[]): {
+  coverage: "supported_rules";
+  recordColumnIds: string[];
+  newRecordColumnIds: string[];
+  userProperties: string[];
+  linkKeyNames: string[];
+  userAttributeFields: Array<{ attributeName: string; attributeColumnId: string }>;
+} {
+  const recordColumnIds = new Set<string>();
+  const newRecordColumnIds = new Set<string>();
+  const userProperties = new Set<string>();
+  const linkKeyNames = new Set<string>();
+  const userAttributeFields = new Map<string, { attributeName: string; attributeColumnId: string }>();
+  function visit(condition: AccessRuleCondition): void {
+    if (condition.kind === "all" || condition.kind === "any") {
+      condition.conditions.forEach(visit);
+      return;
+    }
+    if (condition.kind === "not") {
+      visit(condition.condition);
+      return;
+    }
+    switch (condition.kind) {
+      case "everyone":
+        return;
+      case "user_access":
+      case "user_access_membership":
+        userProperties.add("Access");
+        return;
+      case "user_login_status":
+        userProperties.add("IsLoggedIn");
+        return;
+      case "column_change":
+        recordColumnIds.add(condition.columnId);
+        newRecordColumnIds.add(condition.columnId);
+        return;
+      default:
+        (condition.record === "newRec" ? newRecordColumnIds : recordColumnIds)
+          .add(condition.columnId);
+        if (condition.kind === "match_user") {
+          userProperties.add(condition.userProperty);
+        } else if (condition.kind === "match_link_key") {
+          linkKeyNames.add(condition.linkKeyName);
+        } else if (condition.kind === "match_user_attribute") {
+          const field = { attributeName: condition.attributeName,
+            attributeColumnId: condition.attributeColumnId };
+          userAttributeFields.set(JSON.stringify([field.attributeName, field.attributeColumnId]), field);
+        }
+    }
+  }
+  rules.forEach(rule => visit(rule.condition));
+  return {
+    coverage: "supported_rules",
+    recordColumnIds: [...recordColumnIds].sort(),
+    newRecordColumnIds: [...newRecordColumnIds].sort(),
+    userProperties: [...userProperties].sort(),
+    linkKeyNames: [...linkKeyNames].sort(),
+    userAttributeFields: [...userAttributeFields.values()].sort((a, b) =>
+      a.attributeName.localeCompare(b.attributeName) ||
+      a.attributeColumnId.localeCompare(b.attributeColumnId))
+  };
+}
+
 export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
   return {
     policyState: "persisted",
@@ -1404,6 +1469,9 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
           ? { tableId: group.target.tableId }
           : { tableId: group.target.tableId, columnIds: [...group.target.columnIds] },
       editable: Boolean(group.normalizedRules),
+      dependencies: group.normalizedRules
+        ? projectGroupDependencies(group.normalizedRules)
+        : { coverage: "unknown" },
       ...(group.normalizedRules
         ? { rules: group.normalizedRules }
         : { unsupportedReason: group.unsupportedReason ?? "Unsupported persisted ACL semantics." })

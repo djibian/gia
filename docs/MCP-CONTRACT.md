@@ -112,6 +112,19 @@ Deleting **or rebinding** a user-attribute definition refuses existing ACL
 predicate dependencies, including opaque or noncanonical native formula syntax.
 This structural validation is not proof of effective Grist enforcement.
 
+E1-D1 adds a read-only `dependencies` object to each ordinary persisted ACL
+group returned by `grist_inspect(action="access_rules")`. For groups whose
+entire ordered rule list belongs to Gia's closed normalized subset, it reports
+`coverage:"supported_rules"` and sorted, deduplicated `recordColumnIds`,
+`newRecordColumnIds`, `userProperties`, `linkKeyNames`, and
+`userAttributeFields` (pairs of attribute name and stable lookup-field ID,
+including `id`). The original ordered `rules` remain the only source of
+condition/permission order. For a protected or otherwise unnormalizable
+group, `dependencies:{coverage:"unknown"}` contains no inferred identifiers.
+These are syntactic references only: no raw ACL formulas, lookup values or
+LinkKey values are inspected or exposed; neither effective permissions nor
+native dependency completeness outside this subset are asserted.
+
 Opaque formulas, memos, unsupported user-attribute definitions, default/special/schema-edit policy and other unsupported persisted semantics are preserved but not copied into editable model content. Before reading ACL metadata, the bridge performs a fresh native document metadata read and requires `access === "owners"`; this prevents censored non-owner metadata from being mistaken for an empty policy. The bridge also refuses incomplete/censored/truncated ACL metadata, duplicate or overlapping stable targets, and any selected group it cannot normalize without loss.
 
 Mutations require local `doc.schema:write` and remain subject to Grist's native Owner enforcement. The bridge verifies the requested persisted definition and an internal fingerprint of all untargeted persisted ACL state after re-read. A successful result explicitly does **not** claim effective enforcement verification; persisted rule rows alone are not treated as a confidentiality proof. Native `user.LinkKey` context exists in the Grist web client but not in API calls, so Gia's persisted LinkKey-rule verification is deliberately not presented as an end-to-end LinkKey authorization test. If post-write persisted verification fails, the MCP result preserves the operation's `UNCERTAIN` effect knowledge with `retryWholeOperation: false` rather than collapsing it into a generic failure.
