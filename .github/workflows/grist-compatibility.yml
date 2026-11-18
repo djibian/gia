@@ -6,6 +6,7 @@ on:
       - ".github/workflows/grist-compatibility.yml"
       - "tools/grist-compatibility.ts"
       - "tools/authorization-qualification.ts"
+      - "tools/authorization-lock-qualification.ts"
       - "tools/grist-linkkey-web-acceptance.ts"
       - "docs/MCP-CONTRACT.md"
       - "docs/SECURITY.md"
@@ -81,6 +82,12 @@ jobs:
           GIA_QUALIFICATION_CONTAINER: ${{ steps.grist.outputs.container-id }}
           GRIST_COMPAT_VERSION: ${{ matrix.grist_version }}
         run: node --import tsx tools/authorization-qualification.ts
+
+      - name: Qualify bounded native reference locking
+        env:
+          GIA_QUALIFICATION_CONTAINER: ${{ steps.grist.outputs.container-id }}
+          GRIST_COMPAT_VERSION: ${{ matrix.grist_version }}
+        run: node --import tsx tools/authorization-lock-qualification.ts
 
       - name: Qualify native web-client LinkKey policy (disposable browser)
         id: linkkey

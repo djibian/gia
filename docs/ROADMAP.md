@@ -15,8 +15,7 @@ security claims.
 
 | Work | Bounded result | Dependencies |
 | --- | --- | --- |
-| [#284](https://github.com/djibian/gia/issues/284) E2-E | Bounded concurrent authorization and locking qualification | Native API qualification |
-| [#285](https://github.com/djibian/gia/issues/285) E2-F | Integrated effective-policy gap review and convergence | preceding selected E2 slices |
+| [#285](https://github.com/djibian/gia/issues/285) E2-F | Integrated effective-policy gap review and convergence | Integrated policy inspection and native qualification |
 
 Controllers pull the smallest useful complete eligible slice and re-resolve current
 main, PR heads and dependencies before work. Keep exactly ten MCP v2 tools unless
