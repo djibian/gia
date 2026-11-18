@@ -32,17 +32,15 @@ E1-B's finite, additive closed AST has been absorbed into the current
 contract and tests. No further literal/operand variants are selected without
 new important generic evidence.
 
-E1-C begins with read-only, strictly structural inspection of native
-user-attribute definitions in the existing access-rules inspection path.
-The first tranche exposes only validated user-attribute names, existing table
-and lookup-column IDs, and bounded built-in user-property or LinkKey **names**;
-it never returns source values, credentials or raw formulas, and it does not
-permit editing. Unsupported/ambiguous definitions remain protected.
+Read-only structural inspection and typed create/replace/delete of native
+user-attribute definitions have been absorbed into current normative
+documentation and tests. All operations use the existing access-rule MCP
+entry points, preserve native Owner enforcement and untargeted persisted
+policy, and do not accept values or raw expressions.
 
-Next: recheck current native mutation actions, implement separately bounded
-create/replace/delete of user-attribute definitions and safe typed references
-from ACL conditions. Preserve native Owner authority, untargeted state,
-postconditions and uncertainty semantics. No account/share administration.
+Next: add separately bounded safe typed references from ACL conditions to
+existing user-attribute names, with native compatibility and dependency
+preservation. No account/share administration.
 
 #### E1-D — policy inspection and deterministic lint
 
