@@ -1593,7 +1593,90 @@ async function run(): Promise<void> {
     assert(nativeAttrsInspected.effectiveEnforcementVerified === false,
       "native_user_attribute_overclaimed_enforcement");
 
-    const attrCreate = resultJson(await callTool(bridgeBaseUrl,
+    // Regression for native Grist imports whose default-resource user-attribute
+    // rows persist SQL NULL, not empty strings, for both ACL permission fields.
+    // This uses only the disposable compatibility document. Verify native
+    // readback before claiming this is a genuine end-to-end NULL fixture.
+    const nullDefinition = JSON.stringify({
+      name: "CompatNullMember", tableId: ACL_TABLE_ID,
+      lookupColId: "ShareToken", charId: "Email"
+    });
+    await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/apply`, {
+        method: "POST",
+        body: JSON.stringify([["AddRecord", "_grist_ACLRules", null, {
+          resource: defaultAclResource.id, rulePos: 51,
+          aclFormula: null, aclFormulaParsed: "", permissionsText: null,
+          userAttributes: nullDefinition
+        }]])
+      });
+    const readNativeAcl = async (): Promise<Array<{
+      id: number; fields: Record<string, unknown>
+    }>> => {
+      const data = await gristApi(gristBaseUrl, apiKey,
+        `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_ACLRules/records`);
+      return (data as { records?: Array<{
+        id: number; fields: Record<string, unknown>
+      }> }).records ?? [];
+    };
+    const originalNullRows = await readNativeAcl();
+    const nativeNullRow = originalNullRows.find(
+      row => row.fields.userAttributes === nullDefinition);
+    assert(nativeNullRow && nativeNullRow.fields.aclFormula === null &&
+      nativeNullRow.fields.permissionsText === null &&
+      nativeNullRow.fields.aclFormulaParsed === "",
+      "native_null_user_attribute_fixture_not_persisted");
+
+    const nullInspected = resultJson(await callTool(bridgeBaseUrl,
+      "grist_inspect", { action: "access_rules", documentId }),
+      "native_null_user_attribute_inspect");
+    assert((nullInspected.userAttributes as { definitions: Array<{
+      name: string; editable: boolean; source: { kind: string; property?: string }
+    }> }).definitions.some(def => def.name === "CompatNullMember" &&
+      def.editable === true && def.source.kind === "user_property" &&
+      def.source.property === "Email"), "native_null_user_attribute_not_normalized");
+
+    const nullReplaced = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "replace",
+        target: { userAttributeName: "CompatNullMember" },
+        definition: { tableId: ACL_TABLE_ID, lookupColId: "ShareToken",
+          source: { kind: "link_key", name: "Token" } }
+      }), "native_null_user_attribute_replace");
+    assert(nullReplaced.changed === true &&
+      nullReplaced.persistedDefinitionVerified === true &&
+      nullReplaced.effectiveEnforcementVerified === false,
+      "native_null_user_attribute_replace_not_verified");
+
+    const replacedNullRows = await readNativeAcl();
+    const replacedNullRow = replacedNullRows.find(row => row.id === nativeNullRow.id);
+    assert(replacedNullRow &&
+      replacedNullRow.fields.aclFormula === null &&
+      replacedNullRow.fields.permissionsText === null &&
+      replacedNullRow.fields.aclFormulaParsed === "" &&
+      JSON.stringify(JSON.parse(String(replacedNullRow.fields.userAttributes))) ===
+        JSON.stringify({ name: "CompatNullMember", tableId: ACL_TABLE_ID,
+          lookupColId: "ShareToken", charId: "LinkKey.Token" }),
+      "native_null_user_attribute_rewrite_or_loss");
+    assert(originalNullRows.length === replacedNullRows.length &&
+      originalNullRows.filter(row => row.id !== nativeNullRow.id)
+        .every(row => JSON.stringify(row) === JSON.stringify(
+          replacedNullRows.find(candidate => candidate.id === row.id))),
+      "native_null_user_attribute_replacement_changed_untargeted_rule");
+
+    const afterNullInspection = resultJson(await callTool(bridgeBaseUrl,
+      "grist_inspect", { action: "access_rules", documentId }),
+      "native_null_user_attribute_inspect_after_replace");
+    assert((afterNullInspection.userAttributes as { definitions: Array<{
+      name: string; source: { kind: string; name?: string }
+    }> }).definitions.some(def => def.name === "CompatNullMember" &&
+      def.source.kind === "link_key" && def.source.name === "Token"),
+      "native_null_user_attribute_link_key_not_projected");
+    assert(!JSON.stringify(afterNullInspection).includes("aclFormula") &&
+      !JSON.stringify(afterNullInspection).includes("LinkKey.Token"),
+      "native_null_user_attribute_raw_metadata_leaked");
+
+        const attrCreate = resultJson(await callTool(bridgeBaseUrl,
       "grist_change_structure", {
         action: "access_rule_group", documentId, mode: "create",
         target: { userAttributeName: "CompatCreated" },
