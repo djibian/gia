@@ -124,7 +124,7 @@ const uniqueSyntheticFields = <T extends { name: string }>(entries: T[]) =>
   new Set(entries.map((entry) => entry.name)).size === entries.length;
 function syntheticFields<Name extends z.ZodType<string>, Value extends z.ZodType>(name: Name, value: Value) {
   return z.array(z.object({ name, value }).strict()).max(20)
-    .refine((entries) => new Set(entries.map((entry) => String(entry.name))).size === entries.length,
+    .refine((entries) => new Set(entries.map((entry) => (entry as unknown as { name: string }).name)).size === entries.length,
       "Synthetic field names must be unique.");
 }
 const syntheticScenarioSchema = z.object({
