@@ -1589,7 +1589,7 @@ async function run(): Promise<void> {
         def.tableId === ACL_TABLE_ID && def.lookupColId === "ShareToken" &&
         (def.source as Record<string, unknown>)?.kind === "user_property" &&
         (def.source as Record<string, unknown>)?.property === "Email" &&
-        def.editable === false), "native_user_attribute_not_normalized");
+        def.editable === true), "native_user_attribute_not_normalized");
     assert(nativeAttrsInspected.effectiveEnforcementVerified === false,
       "native_user_attribute_overclaimed_enforcement");
 
@@ -1620,6 +1620,51 @@ async function run(): Promise<void> {
         (def.source as Record<string, unknown>).kind === "link_key" &&
         (def.source as Record<string, unknown>).name === "StageToken"),
       "native_user_attribute_link_key_source_not_preserved");
+    // Native Grist accepts spaces around Python attribute access. Regress
+    // deletion against its actual persisted parsed AST, not only Gia's mocks.
+    await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/apply`, {
+        method: "POST",
+        body: JSON.stringify([
+          ["AddRecord", "_grist_ACLResources", -31, {
+            tableId: ACL_TABLE_ID, colIds: "*"
+          }],
+          ["AddRecord", "_grist_ACLRules", null, {
+            resource: -31, rulePos: 1,
+            aclFormula: "user . CompatCreated.ShareToken == rec.ShareToken",
+            permissionsText: "+R"
+          }]
+        ])
+      });
+    const beforeRejectedDelete = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_ACLRules/records`);
+    const dependentRows = (beforeRejectedDelete as { records?: Array<{
+      id: number; fields: Record<string, unknown>
+    }> }).records ?? [];
+    const dependent = dependentRows.find(row =>
+      row.fields.aclFormula === "user . CompatCreated.ShareToken == rec.ShareToken");
+    assert(dependent &&
+      String(dependent.fields.aclFormulaParsed).includes('"CompatCreated"'),
+      "native_user_attribute_spaced_predicate_not_parsed");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "delete",
+      target: { userAttributeName: "CompatCreated" }
+    });
+    const afterRejectedDelete = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_ACLRules/records`);
+    assert(JSON.stringify(afterRejectedDelete) === JSON.stringify(beforeRejectedDelete),
+      "native_user_attribute_rejected_delete_changed_state");
+    const dependentResourceId = dependent.fields.resource;
+    assert(typeof dependentResourceId === "number" && dependentResourceId > 0,
+      "native_user_attribute_dependency_resource_missing");
+    await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/apply`, {
+        method: "POST",
+        body: JSON.stringify([
+          ["RemoveRecord", "_grist_ACLRules", dependent.id],
+          ["RemoveRecord", "_grist_ACLResources", dependentResourceId]
+        ])
+      });
     const attrDelete = resultJson(await callTool(bridgeBaseUrl,
       "grist_change_structure", {
         action: "access_rule_group", documentId, mode: "delete",
