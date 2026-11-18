@@ -747,3 +747,26 @@ test("create_tables schema refuses missing or empty column arrays", () => {
     ...input, tables: [{ id: "Valid", columns: [{ id: "Name" }] }]
   }).tables, [{ id: "Valid", columns: [{ id: "Name" }] }]);
 });
+
+test("create_tables and create_columns reject ignored metadata before dispatch", () => {
+  const add = capture().find((entry) => entry.name === "grist_add_structure")!;
+  const change = capture().find((entry) => entry.name === "grist_change_structure")!;
+  const effective = { type: "Text", label: "Short name", isFormula: false, formula: "", widgetOptions: "{}" };
+  const valid = { id: "Name", fields: effective };
+  const common = { documentId: "doc-1" };
+  const table = (column: unknown) => ({ ...common, action: "create_tables", tables: [{ id: "People", columns: [column] }] });
+  const column = (item: unknown) => ({ ...common, action: "create_columns", tableId: "People", columns: [item] });
+  assert.deepEqual(add.options.inputSchema!.parse(table(valid)).tables[0].columns[0], valid);
+  assert.deepEqual(add.options.inputSchema!.parse(column(valid)).columns[0], valid);
+  for (const metadata of [{ description: "Ignored" }, { visibleColumnId: "Display" }]) {
+    for (const request of [table({ ...valid, fields: { ...effective, ...metadata } }),
+      column({ ...valid, fields: { ...effective, ...metadata } })]) {
+      assert.throws(() => add.options.inputSchema!.parse(request));
+    }
+  }
+  const update = {
+    ...common, action: "update_columns", tableId: "People",
+    columns: [{ id: "Name", fields: { description: "Updated", visibleColumnId: "Display" } }]
+  };
+  assert.deepEqual(change.options.inputSchema!.parse(update).columns, update.columns);
+});
