@@ -593,6 +593,86 @@ async function run(): Promise<void> {
       "invalid_table_creation_mutated_native_state"
     );
 
+    // Creation fields are independently read back from native Grist: no advertised
+    // creation metadata may silently disappear. Use a disposable dedicated table.
+    const creationTableId = "Compat_CreationFields";
+    const creationFields = {
+      type: "Text", label: "Readable label",
+      isFormula: false, formula: "", widgetOptions: "{}"
+    };
+    await callTool(bridgeBaseUrl, "grist_add_structure", {
+      action: "create_tables", documentId,
+      tables: [{ id: creationTableId, columns: [
+        { id: "Declared", fields: creationFields }
+      ] }]
+    });
+    await callTool(bridgeBaseUrl, "grist_add_structure", {
+      action: "create_columns", documentId, tableId: creationTableId,
+      columns: [{ id: "Added", fields: creationFields }]
+    });
+    const creationColumnUrl =
+      `/api/docs/${encodeURIComponent(documentId)}/tables/${creationTableId}/columns?hidden=true`;
+    const creationColumns = await gristApi(gristBaseUrl, apiKey, creationColumnUrl) as {
+      columns: Array<{ id: string; fields: Record<string, unknown> }>;
+    };
+    for (const name of ["Declared", "Added"]) {
+      const actual = creationColumns.columns.find((entry) => entry.id === name);
+      assert(actual !== undefined, "created_column_not_persisted");
+      for (const [field, expected] of Object.entries(creationFields)) {
+        assert(actual.fields[field] === expected, "creation_field_not_persisted:" + field);
+      }
+    }
+
+    // Both previously accepted-but-ignored fields must fail before *any*
+    // table/column in a mixed request is created.
+    for (const [suffix, ignored] of [
+      ["Description", { description: "ignored by native Grist creation" }],
+      ["Display", { visibleColumnId: "Declared" }]
+    ] as const) {
+      let tableRejected = false;
+      try {
+        await callTool(bridgeBaseUrl, "grist_add_structure", {
+          action: "create_tables", documentId, tables: [
+            { id: "Compat_Good_" + suffix, columns: [{ id: "Name", fields: { type: "Text" } }] },
+            { id: "Compat_Bad_" + suffix, columns: [
+              { id: "Bad", fields: { type: "Text", ...ignored } }
+            ] }
+          ]
+        });
+      } catch {
+        tableRejected = true;
+      }
+      assert(tableRejected, "ignored_creation_field_was_accepted:" + suffix);
+      let columnRejected = false;
+      try {
+        await callTool(bridgeBaseUrl, "grist_add_structure", {
+          action: "create_columns", documentId, tableId: creationTableId,
+          columns: [
+            { id: "Compat_Good_" + suffix, fields: { type: "Text" } },
+            { id: "Compat_Bad_" + suffix, fields: { type: "Text", ...ignored } }
+          ]
+        });
+      } catch {
+        columnRejected = true;
+      }
+      assert(columnRejected, "ignored_column_creation_field_was_accepted:" + suffix);
+    }
+    const afterRefusedTables = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables`) as {
+        tables: Array<{ id: string }>;
+      };
+    const afterRefusedColumns = await gristApi(gristBaseUrl, apiKey,
+      creationColumnUrl) as { columns: Array<{ id: string }> };
+    for (const suffix of ["Description", "Display"]) {
+      for (const prefix of ["Compat_Good_", "Compat_Bad_"]) {
+        const unexpectedId = prefix + suffix;
+        assert(!afterRefusedTables.tables.some((entry) => entry.id === unexpectedId),
+          "ignored_creation_field_partially_created_table");
+        assert(!afterRefusedColumns.columns.some((entry) => entry.id === unexpectedId),
+          "ignored_creation_field_partially_created_column");
+      }
+    }
+
     await callTool(bridgeBaseUrl, "grist_add_records", {
       documentId,
       tableId: TABLE_ID,
