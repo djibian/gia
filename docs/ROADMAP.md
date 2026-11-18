@@ -13,8 +13,7 @@ anchored to its audited SHA, not an assumption that main has stayed unchanged.
 
 | Work | Bounded result | Dependencies |
 | --- | --- | --- |
-| [#267](https://github.com/djibian/gia/issues/267) Release and refresh | Qualify a new immutable release, deployed revision, canary/promotion, rollback and client tool refresh | Final rollout after correction and review gates; deployment reconstruction can begin read-only |
-| [#234](https://github.com/djibian/gia/issues/234) Operational isolation | Finish the scoped current authenticated authorization evidence | Coordinate #266 and #267; never widen production grants for a test |
+| [#234](https://github.com/djibian/gia/issues/234) Operational isolation | Finish the scoped current authenticated authorization evidence | Never widen production grants for a test |
 
 [#235](https://github.com/djibian/gia/issues/235) remains an evidence-first
 JWKS cost/reliability investigation. It does not authorize a speculative cache
