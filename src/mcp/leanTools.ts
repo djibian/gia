@@ -46,6 +46,7 @@ import {
   MAX_WIDGET_FILTER_VALUES
 } from "../grist/widgetFilters.js";
 import {
+  columnCreationFieldsSchema,
   columnMutationFieldsSchema,
   tableMutationFieldsSchema
 } from "../operations/schemaMutationContract.js";
@@ -627,7 +628,7 @@ export function registerLeanTools(
   }).strict();
   const columnSpecSchema = z.object({
     id: columnIdSchema,
-    fields: columnMutationFieldsSchema.optional()
+    fields: columnCreationFieldsSchema.optional()
   }).strict();
   const columnUpdateSchema = z.object({
     id: columnIdSchema,
