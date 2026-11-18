@@ -1,6 +1,6 @@
 # Roadmap
 
-Gia 0.10.0 is the current product, implementing Gia MCP contract major 2.
+Gia 0.10.1 is the current product, implementing Gia MCP contract major 2.
 Public-directory publication remains inactive. No new product capability is selected.
 
 ## Selected integration corrections
