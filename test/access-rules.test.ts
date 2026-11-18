@@ -1311,7 +1311,7 @@ test("native user-attribute create plans a single default resource and verifies 
   assert.deepEqual(verifyUserAttributeMutation(before, after, plan), {
     changed: true, persistedDefinitionVerified: true, effectiveEnforcementVerified: false
   });
-  assert.equal((projectAccessRules(after) as any).userAttributes.definitions[0].editable, false);
+  assert.equal((projectAccessRules(after) as any).userAttributes.definitions[0].editable, true);
   assert.throws(() => resolveUserAttributeMutation(after, target, "create", definition),
     /already exists/);
   const altered = snapshot([{ id: 1, fields: { tableId: "*", colIds: "*" } }], [
@@ -1381,9 +1381,42 @@ test("native user-attribute deletion refuses referenced or opaque definitions", 
     ...resources, { id: 2, fields: { tableId: "Projects", colIds: "*" } }
   ], [rule, { id: 20, fields: { resource: 2, rulePos: 1,
     aclFormula: "user.Mentor == rec.OwnerEmail",
-    aclFormulaParsed: '["Eq"]', permissionsText: "+R" } }]);
+    aclFormulaParsed: '["Eq",["Attr",["Name","user"],"Mentor"],["Attr",["Name","rec"],"OwnerEmail"]]',
+    permissionsText: "+R" } }]);
   assert.throws(() => resolveUserAttributeMutation(referenced,
     { userAttributeName: "Mentor" }, "delete"), /references this attribute/);
+  const aclResource = { id: 2, fields: { tableId: "Projects", colIds: "*" } };
+  for (const [formula, parsed] of [
+    ["user . Mentor == rec.OwnerEmail",
+      '["Eq",["Attr",["Name","user"],"Mentor"],["Attr",["Name","rec"],"OwnerEmail"]]'],
+    ["user . Mentor.OwnerEmail == rec.OwnerEmail",
+      '["Eq",["Attr",["Attr",["Name","user"],"Mentor"],"OwnerEmail"],["Attr",["Name","rec"],"OwnerEmail"]]']
+  ]) {
+    const dependent = snapshot([...resources, aclResource], [rule, {
+      id: 20, fields: { resource: 2, rulePos: 1, aclFormula: formula,
+        aclFormulaParsed: parsed, permissionsText: "+R" }
+    }]);
+    assert.throws(() => resolveUserAttributeMutation(dependent,
+      { userAttributeName: "Mentor" }, "delete"), /references this attribute/);
+  }
+  for (const parsed of ["", "not JSON", '["Eq"]',
+    '["Call",["Name","getattr"],["Name","user"],["Const","Mentor"]]']) {
+    const uncertain = snapshot([...resources, aclResource], [rule, {
+      id: 20, fields: { resource: 2, rulePos: 1,
+        aclFormula: "user . Mentor == rec.OwnerEmail",
+        aclFormulaParsed: parsed, permissionsText: "+R" }
+    }]);
+    assert.throws(() => resolveUserAttributeMutation(uncertain,
+      { userAttributeName: "Mentor" }, "delete"), /refusing|ambiguous|outside/);
+  }
+  const independent = snapshot([...resources, aclResource], [rule, {
+    id: 20, fields: { resource: 2, rulePos: 1,
+      aclFormula: "user.Email == rec.OwnerEmail",
+      aclFormulaParsed: '["Eq",["Attr",["Name","user"],"Email"],["Attr",["Name","rec"],"OwnerEmail"]]',
+      permissionsText: "+R" }
+  }]);
+  assert.equal(resolveUserAttributeMutation(independent,
+    { userAttributeName: "Mentor" }, "delete").mode, "delete");
   const opaque = snapshot(resources, [rule, { id: 11, fields: {
     resource: 1, rulePos: 2, aclFormula: "", aclFormulaParsed: "",
     permissionsText: "", userAttributes: "PRIVATE" } }]);
