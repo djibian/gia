@@ -8,6 +8,8 @@ on:
       - "tools/authorization-qualification.ts"
       - "tools/authorization-lock-qualification.ts"
       - "tools/grist-linkkey-web-acceptance.ts"
+      - "tools/grist-harness.ts"
+      - "tools/application-fixtures.ts"
       - "docs/MCP-CONTRACT.md"
       - "docs/SECURITY.md"
       - "src/**"

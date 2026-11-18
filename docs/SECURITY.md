@@ -131,21 +131,26 @@ unknown; absence of a reported reference is not a safety guarantee. The
 same fresh native Owner proof is required. It neither writes nor simulates
 native schema rewrites, effective access or confidentiality.
 
-Bounded ACL explanation accepts a *synthetic* symbolic context through the
-existing Owner-only inspection action. Its LinkKey operands are enum symbols
-`A`–`D`, not token strings; real tokens/URLs and arbitrary literal
-data are not accepted. Absent or type-incompatible inputs are unknown.
-An earlier unknown rule with a specified permission blocks a definitive
-later simulated verdict. No live data, native authorization, browser or
-secret-bearing URL is used for the simulation, and only one supported
-ordinary rule group is evaluated. The returned decisions are not document
-permissions, effective enforcement or a confidentiality guarantee.
+Owner-only inspection has distinct evidence levels. The optional
+`policyCoverage` classifies persisted ordinary components for the requested
+operation, including protected/unknown influence. Its optional invented
+context can yield a bounded expected decision for ordinary document access.
+The separate `simulation` explains rule order and decisions in a single
+ordinary group. Both use closed synthetic inputs. LinkKey operands are enum
+symbols `A`–`D`; real values and secret-bearing URLs stay outside the tool
+contract. Unknown inputs and unresolved required policy remain unknown.
+The [MCP Contract](MCP-CONTRACT.md) defines the supported scope and trace.
 
-Persisted rule verification is **not** proof of effective enforcement or
-confidentiality. Native defaults, structure/schema-edit permissions and formulas
-remain decisive. Hidden fields and saved filters are presentation state.
-A generated summary table has its own native policy; source ACL inheritance is
-not asserted. Gia does not evaluate permissions or administer identities/shares.
+Grist decides live access. Inspection and persisted-write verification expose
+structural or theoretical evidence. Native qualification runs separately on
+synthetic disposable Grist and identifies the version, surface and property
+actually exercised. A native API result applies to that API case. A LinkKey
+browser result applies to the tested web-client context. Native production
+qualification is read-only, and any unexercised case remains unqualified.
+
+Hidden fields and saved filters are presentation state. A generated summary
+table has its own native policy. Native roles, sharing and credential
+administration remain in Grist and its deployment.
 
 ## Document bootstrap
 

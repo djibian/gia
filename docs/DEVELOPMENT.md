@@ -97,7 +97,9 @@ or run these mutating probes against a real user deployment.
 | Application preservation / `tools/application-validation.ts` | existing human configuration/data, differing native grants, a second application shape and repeat execution on Grist Community 1.7.19 |
 
 Workflows run for relevant runtime/test/tool/dependency/workflow changes and can
-also be dispatched for release verification. Results belong to their exact CI
+also be dispatched for release verification. Native authorization probe changes
+require exact-head Grist compatibility. Edits to the shared harness or fixtures
+require both compatibility and application preservation. Results belong to their exact CI
 head; passing a listed version is not a blanket guarantee for every Grist behavior
 or an untested server version. Compatibility follows the executable probes.
 The domain-shaped fixtures are test consumers, never product requirements.

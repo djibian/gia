@@ -16,6 +16,8 @@ const nativeCompatibility = path => path.startsWith("src/") ||
   path === "docs/SECURITY.md" || path.startsWith("package") ||
   path.startsWith("tsconfig") ||
   ["tools/grist-compatibility.ts", "tools/grist-linkkey-web-acceptance.ts",
+    "tools/authorization-qualification.ts", "tools/authorization-lock-qualification.ts",
+    "tools/grist-harness.ts", "tools/application-fixtures.ts",
     ".github/workflows/grist-compatibility.yml"].includes(path);
 
 const nativeApplications = path => path.startsWith("src/") ||
