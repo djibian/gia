@@ -1,5 +1,5 @@
 import type { GristClient } from "./client.js";
-import type { AccessRuleMutationPlan } from "./accessRules.js";
+import type { AccessRuleMutationPlan, AccessUserAttributeMutationPlan } from "./accessRules.js";
 import { GRIST_CHART_TYPES, type GristChartType } from "./chartTypes.js";
 import {
   MAX_PAGE_ORDER_PAGES,
@@ -191,6 +191,42 @@ export class GristUiActionsAdapter {
       );
     });
     return legacyCalendarAvailable ? "custom.calendar" : "calendar";
+  }
+
+  async mutateUserAttribute(
+    documentId: string,
+    plan: AccessUserAttributeMutationPlan
+  ): Promise<void> {
+    if (plan.mode === "noop") return;
+    const actions: unknown[][] = [];
+    if (plan.mode === "create") {
+      let resourceId = plan.defaultResourceId;
+      if (plan.createDefaultResource) {
+        resourceId = -1;
+        actions.push(["AddRecord", "_grist_ACLResources", -1, { tableId: "*", colIds: "*" }]);
+      }
+      if (resourceId === undefined || plan.nativeDefinition === undefined) {
+        throw new Error("Native user-attribute create plan is incomplete.");
+      }
+      actions.push(["AddRecord", "_grist_ACLRules", null, {
+        resource: resourceId,
+        rulePos: plan.rulePos,
+        userAttributes: plan.nativeDefinition
+      }]);
+    } else if (plan.mode === "replace") {
+      if (plan.targetRuleId === undefined || plan.nativeDefinition === undefined) {
+        throw new Error("Native user-attribute replace plan is incomplete.");
+      }
+      actions.push(["UpdateRecord", "_grist_ACLRules", plan.targetRuleId, {
+        userAttributes: plan.nativeDefinition
+      }]);
+    } else {
+      if (plan.targetRuleId === undefined) {
+        throw new Error("Native user-attribute delete plan is incomplete.");
+      }
+      actions.push(["RemoveRecord", "_grist_ACLRules", plan.targetRuleId]);
+    }
+    await this.client.applyUserActions(documentId, actions);
   }
 
   async mutateAccessRuleGroup(
