@@ -109,6 +109,12 @@ export interface ResolvedAccessRulePermissions {
   delete: AccessPermissionValue;
 }
 
+export const ACCESS_POLICY_OPERATIONS = ["read", "create", "update", "delete"] as const;
+export interface AccessPolicyCoverageRequest {
+  target: AccessRuleSchemaImpactTarget;
+  operation: (typeof ACCESS_POLICY_OPERATIONS)[number];
+}
+
 export interface AccessRuleInput {
   condition: AccessRuleCondition;
   permissions: AccessRulePermissions;
@@ -1767,6 +1773,66 @@ export function projectAccessRuleSchemaImpact(
   };
 }
 
+
+/** Classify persisted policy components for an ordinary data operation. */
+export function projectAccessPolicyCoverage(
+  snapshot: AccessRulesSnapshot,
+  { target, operation }: AccessPolicyCoverageRequest
+): unknown {
+  const { tableId, columnIds } = normalizeRequestedTarget(snapshot, {
+    tableId: target.tableId,
+    ...(target.kind === "column" ? { columnIds: [target.columnId] } : {})
+  });
+  const rowOperation = operation === "create" || operation === "delete";
+  if (rowOperation && target.kind === "column") {
+    return { target, operation, persistedStatus: "UNSUPPORTED", nativeQualification: "NOT_TESTED" };
+  }
+
+  const groups = snapshot.groups.filter((group) =>
+    group.target.tableId === tableId &&
+    (group.target.columnIds.length === 0 ||
+      (!rowOperation && (columnIds.length === 0 ||
+        group.target.columnIds.includes(columnIds[0]!)))));
+  const ordinaryGroups = groups.map((group) => ({
+    target: group.target,
+    status: group.normalizedRules ? "SUPPORTED" : "PROTECTED"
+  }));
+  const references = new Set(groups.flatMap((group) => {
+    const rules = group.normalizedRules?.filter((rule) => rule.permissions[operation] !== "unspecified") ?? [];
+    return projectGroupDependencies(rules).userAttributeFields.map((field) => field.attributeName);
+  }));
+  const attributes = projectUserAttributes(snapshot);
+  const defaults = snapshot.resources.filter((resource) =>
+    resource.tableId === "*" && resource.colIds === "*");
+  const defaultIds = new Set(defaults.map((resource) => resource.id));
+  // Structurally validated attribute rows share the default resource but do
+  // not define default permissions. Opaque definitions are counted separately.
+  const protectedDefaults = defaults.length > 1 || snapshot.rules.some((rule) =>
+    defaultIds.has(rule.resourceId) &&
+    (!rule.fields.userAttributes || rule.aclFormula !== "" || rule.aclFormulaParsed !== "" ||
+      rule.permissionsText !== "" || rule.fields.permissions || rule.fields.principals || rule.fields.aclColumn));
+  const otherProtectedResourceCount = snapshot.protectedPersistedGroupCount - defaults.length;
+
+  return {
+    target,
+    operation,
+    persistedStatus: protectedDefaults || otherProtectedResourceCount > 0 ||
+      attributes.protectedDefinitionCount > 0 || ordinaryGroups.some((group) => group.status === "PROTECTED")
+      ? "UNKNOWN" : "SUPPORTED",
+    ordinaryGroups,
+    userAttributes: {
+      supportedReferences: attributes.definitions.filter((item) => item.editable && references.has(item.name))
+        .map((item) => item.name).sort(),
+      protectedDefinitionCount: attributes.protectedDefinitionCount
+    },
+    defaultPolicy: {
+      persisted: protectedDefaults ? "PROTECTED" : "ABSENT",
+      builtInFallback: "UNSUPPORTED"
+    },
+    otherProtectedResourceCount,
+    nativeQualification: "NOT_TESTED"
+  };
+}
 
 type SyntheticTruth = "true" | "false" | "unknown";
 

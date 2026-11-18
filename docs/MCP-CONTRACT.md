@@ -155,6 +155,22 @@ ordinary groups, other policy resources and protected user attributes as
 unknown. It is read-only structural context before a possible rename/delete,
 not a forecast of Grist's native schema rewrite, authorization or confidentiality.
 
+An optional `policyCoverage: {target, operation}` on the same action classifies
+persisted policy for one existing ordinary table or column using the
+`schemaImpact` target shape and `operation: "read"|"create"|"update"|"delete"`.
+The additive `policyCoverage` result lists relevant ordinary groups as
+`SUPPORTED` or `PROTECTED`, structurally verified user-attribute references and
+the count of protected definitions. Read and update include the table-wide
+group and the applicable column groups. Create and delete target rows, so a
+column target for either returns `UNSUPPORTED`.
+
+Explicit document defaults and other protected resources, including special
+and schema policy, are reported separately and conservatively may leave
+`persistedStatus: "UNKNOWN"`. `SUPPORTED` covers the persisted structural
+classification only. The built-in fallback is outside this inspection's
+scope. `nativeQualification` is always `NOT_TESTED`. Coverage provides no
+permission decision, native evidence, raw metadata or secret values.
+
 An optional `simulation` on `grist_inspect(action="access_rules")`
 selects exactly one existing ordinary ACL group by stable table/column target
 and supplies an **invented** closed `context`: optional built-in role,

@@ -1262,6 +1262,17 @@ async function run(): Promise<void> {
     assert(aclCreated.persistedDefinitionVerified === true, "access_rule_create_not_verified");
     assert(aclCreated.effectiveEnforcementVerified === false, "access_rule_create_overclaimed_enforcement");
 
+    const coverageInspection = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+      action: "access_rules", documentId,
+      policyCoverage: { target: { kind: "column", tableId: ACL_TABLE_ID, columnId: "ShareToken" }, operation: "read" }
+    }), "policy_coverage");
+    const coverage = coverageInspection.policyCoverage as Record<string, unknown> | undefined;
+    assert(coverage?.nativeQualification === "NOT_TESTED", "coverage_overclaims_native_evidence");
+    assert(JSON.stringify(coverage?.ordinaryGroups) === JSON.stringify([{
+      target: { tableId: ACL_TABLE_ID, columnIds: [] }, status: "SUPPORTED"
+    }]), "coverage_native_rule_group_not_recognized");
+    assert(!JSON.stringify(coverage).includes("CompatToken"), "coverage_exposed_unrequested_key_name");
+
     const accessRulesAfterCreate = resultJson(
       await callTool(bridgeBaseUrl, "grist_inspect", {
         action: "access_rules",
