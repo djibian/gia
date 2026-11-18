@@ -1620,6 +1620,52 @@ async function run(): Promise<void> {
         (def.source as Record<string, unknown>).kind === "link_key" &&
         (def.source as Record<string, unknown>).name === "StageToken"),
       "native_user_attribute_link_key_source_not_preserved");
+    // E1-C3: exercise native Grist's user.<attribute>.<column> references
+    // through the typed MCP ACL interface, including post-write inspection,
+    // idempotence and dependency-preserving definition replacement refusal.
+    const attributed = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "create",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["ShareToken"] },
+        rules: [{
+          condition: { kind: "match_user_attribute", operator: "equals",
+            columnId: "ShareToken", attributeName: "CompatCreated",
+            attributeColumnId: "ShareToken" },
+          permissions: { read: "allow", update: "unspecified" }
+        }]
+      }), "native_typed_user_attribute_rule_create");
+    assert(attributed.changed === true && attributed.persistedDefinitionVerified === true &&
+      attributed.effectiveEnforcementVerified === false,
+      "native_typed_user_attribute_rule_not_verified");
+    const attributedInspection = resultJson(await callTool(bridgeBaseUrl,
+      "grist_inspect", { action: "access_rules", documentId }),
+      "native_typed_user_attribute_rule_inspect");
+    const attributedGroup = (attributedInspection.groups as Array<Record<string, unknown>>).find(group => {
+      const target = group.target as { tableId?: unknown; columnIds?: unknown };
+      return target?.tableId === ACL_TABLE_ID &&
+        Array.isArray(target.columnIds) && target.columnIds.length === 1 &&
+        target.columnIds[0] === "ShareToken";
+    });
+    assert(attributedGroup?.editable === true &&
+      (attributedGroup.rules as Array<{condition?:{kind?:string; attributeName?:string}}>)
+        [0]?.condition?.kind === "match_user_attribute" &&
+      (attributedGroup.rules as Array<{condition?:{kind?:string; attributeName?:string}}>)
+        [0]?.condition?.attributeName === "CompatCreated",
+      "native_typed_user_attribute_rule_not_normalized");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "replace",
+      target: { userAttributeName: "CompatCreated" },
+      definition: { tableId: ACL_TABLE_ID, lookupColId: "ShareToken",
+        source: { kind: "user_property", property: "Email" } }
+    });
+    const attributedRemoved = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "delete",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["ShareToken"] }
+      }), "native_typed_user_attribute_rule_delete");
+    assert(attributedRemoved.persistedDefinitionVerified === true,
+      "native_typed_user_attribute_rule_delete_not_verified");
+
     // Native Grist accepts spaces around Python attribute access. Regress
     // deletion against its actual persisted parsed AST, not only Gia's mocks.
     await gristApi(gristBaseUrl, apiKey,
