@@ -92,6 +92,7 @@ or run these mutating probes against a real user deployment.
 | --- | --- |
 | Grist compatibility / `tools/grist-compatibility.ts` | MCP transport plus native document metadata, relation display, calendar, schema/UI/ACL/template boundaries across Grist Community 1.7.16–1.7.20 |
 | Grist compatibility / `tools/authorization-qualification.ts` | Native API allow/deny and independently re-read effects for R/C/U/D across synthetic row-policy cases |
+| Grist compatibility / `tools/authorization-lock-qualification.ts` | Native API locking interleaving and stable-reference preservation on disposable Grist |
 | Grist compatibility / `tools/grist-linkkey-web-acceptance.ts` | independent headless-Chrome web-client qualification of native `user.LinkKey` row filtering, absent/wrong LinkKeys and positive matches on disposable documents across the Grist Community matrix |
 | Application preservation / `tools/application-validation.ts` | existing human configuration/data, differing native grants, a second application shape and repeat execution on Grist Community 1.7.19 |
 
@@ -122,6 +123,16 @@ re-reads their effects. Each output row identifies version, surface, scope,
 expected outcome and `PASS`, `FAIL`, `UNKNOWN`, `NOT_TESTED` or
 `UNSUPPORTED`. Case failures leave the run unsuccessful. Output omits
 credentials, document IDs, URLs and native response bodies.
+
+The native reference-locking step uses the same container guard and evidence
+states. A synthetic editor first proves permitted C/U/D operations while
+unlocked. After the owner independently confirms the lock, the editor's
+attempts and the owner's reference migration run in a bounded interleaving.
+The old target is removed only after observed native refusals and independent
+checks of the migrated and untouched rows. The final read confirms reference
+integrity and retention of the lock. Scope is limited to the tested API
+interleaving and fixture. It yields no general transaction or isolation
+guarantee.
 
 The LinkKey web probe uses the same disposable-container guard and flags.
 It drives a disposable headless Chrome via ChromeDriver/WebDriver and prints

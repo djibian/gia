@@ -59,7 +59,9 @@ export async function gristApi(
     ...init,
     headers,
     redirect: "error",
-    signal: AbortSignal.timeout(20_000)
+    signal: init.signal
+      ? AbortSignal.any([init.signal, AbortSignal.timeout(20_000)])
+      : AbortSignal.timeout(20_000)
   });
   return readJson(response);
 }
