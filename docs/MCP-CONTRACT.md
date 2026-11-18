@@ -69,10 +69,15 @@ Targets use stable table/column IDs; private ACL resource/rule row IDs remain br
 
 The same Owner-gated `grist_inspect(action="access_rules")` additionally
 returns `userAttributes: {definitions, protectedDefinitionCount}`.
-This is **inspection only**. Each definition reports `name`, stable `tableId`
-and `lookupColId`, a closed `source` of either
+The inspection operation itself is read-only. Each definition reports
+`name`, stable `tableId` and `lookupColId`, a closed `source` of either
 `{kind:"user_property",property:<built-in property>}` or
-`{kind:"link_key",name:<safe LinkKey name>}`, and `editable:false`.
+`{kind:"link_key",name:<safe LinkKey name>}`, and an `editable` boolean.
+`editable:true` reports only structural support for the bounded mutation
+target described below; it neither grants the caller write authority nor
+asserts native enforcement. Actual changes require the separate
+`grist_change_structure` action with fresh native Owner proof and
+`doc.schema:write`.
 Definitions must belong to the native default ACL resource, have a valid
 closed structural JSON shape, and reference an existing ordinary table/column.
 Malformed, duplicate, ambiguous or unsupported definitions count as protected
