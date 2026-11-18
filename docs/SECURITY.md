@@ -114,8 +114,13 @@ built-in user-property names, LinkKey names and user-attribute name/field
 pairs, deduplicated within each supported group. A protected or opaque group
 reports unknown coverage without inspecting its raw formula or attempting a
 partial dependency guess. Dependency lists do not imply rule reachability,
-native policy validity or effective confidentiality; deterministic lint and
-explanatory simulation are separate, bounded roadmap work.
+native policy validity or effective confidentiality. Read-only lint reports
+only first-applicable-decision shadowing for the **same normalized condition
+and permission** as `proven`; it never tries to compare arbitrary formulas or
+reconstruct native authorization. Presence of LinkKey conditions produces an
+explicit web-acceptance `warning`. Protected/opaque groups return
+`diagnostics:null` to avoid a false all-clear. No secrets, private values or
+raw formulas enter model outputs; explanatory simulation is separate.
 
 Persisted rule verification is **not** proof of effective enforcement or
 confidentiality. Native defaults, structure/schema-edit permissions and formulas

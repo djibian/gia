@@ -122,7 +122,7 @@ test("normalizes only bounded secret-safe ordinary ACL groups", () => {
   const projected = projectAccessRules(state) as any;
   assert.equal(projected.protectedPersistedGroupCount, 2);
   assert.equal(projected.effectiveEnforcementVerified, false);
-  assert.deepEqual(projected.groups.map(({ dependencies, ...group }: any) => group), [
+  assert.deepEqual(projected.groups.map(({ dependencies, diagnostics, ...group }: any) => group), [
     {
       target: { tableId: "Projects" },
       editable: true,
@@ -1574,6 +1574,9 @@ test("E1-D1 projects only verified typed ACL dependencies, including nested and 
     { read: "unspecified", update: "deny", create: "unspecified", delete: "unspecified" }
   ]);
   assert.equal(view.effectiveEnforcementVerified, false);
+  assert.deepEqual(group.diagnostics, [
+    { code: "link_key_web_acceptance_unverified", certainty: "warning" }
+  ]);
   assert.doesNotMatch(JSON.stringify(view), /userAttributes.*charId|aclFormula|private-secret/);
 });
 
@@ -1586,7 +1589,62 @@ test("E1-D1 refuses to infer names from protected formulas or secret literals", 
   );
   const view = projectAccessRules(state) as any;
   assert.deepEqual(view.groups[0].dependencies, { coverage: "unknown" });
+  assert.equal(view.groups[0].diagnostics, null);
   assert.equal(view.groups[0].editable, false);
   assert.equal(view.groups[0].rules, undefined);
   assert.doesNotMatch(JSON.stringify(view), /private-secret|aclFormula|recordColumnIds/);
+});
+
+test("E1-D2 flags only provable identical-condition shadowing, per permission and rule order", () => {
+  const resources = [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }];
+  const makeRule = (id: number, rulePos: number, aclFormula: string, permissionsText: string) => ({
+    id, fields: { resource: 2, rulePos, aclFormula, aclFormulaParsed: '["Eq"]', permissionsText }
+  });
+  const formula = "rec.OwnerEmail == user.Email";
+  const state = snapshot(resources, [
+    makeRule(20, 1, formula, "+RU"),
+    makeRule(21, 2, "rec.Enabled == True", "-R"),
+    makeRule(22, 3, formula, "-R+U"),
+    makeRule(23, 4, "newRec.OwnerEmail == user.Email", "+U"),
+    makeRule(24, 5, formula, "+C"),
+    makeRule(25, 6, formula, "-C"),
+    makeRule(26, 7, "user.Access == EDITOR", "-R")
+  ]);
+  const group = (projectAccessRules(state) as any).groups[0];
+  assert.equal(group.editable, true);
+  assert.deepEqual(group.diagnostics, [
+    { code: "shadowed_same_condition_permission", certainty: "proven",
+      ruleIndex: 3, earlierRuleIndex: 1, permission: "read" },
+    { code: "shadowed_same_condition_permission", certainty: "proven",
+      ruleIndex: 3, earlierRuleIndex: 1, permission: "update" },
+    { code: "shadowed_same_condition_permission", certainty: "proven",
+      ruleIndex: 6, earlierRuleIndex: 5, permission: "create" }
+  ]);
+  assert.equal(group.rules.length, 7);
+  assert.equal(group.dependencies.coverage, "supported_rules");
+  assert.deepEqual((projectAccessRules(snapshot(resources, [
+    makeRule(30, 1, formula, "+R")
+  ])) as any).groups[0].diagnostics, []);
+});
+
+test("E1-D2 does not partially lint an opaque group or leak its literals", () => {
+  const state = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "Title" } }],
+    [
+      { id: 20, fields: { resource: 2, rulePos: 1,
+        aclFormula: "rec.Title == user.Email",
+        aclFormulaParsed: '["Eq"]', permissionsText: "+R" } },
+      { id: 21, fields: { resource: 2, rulePos: 2,
+        aclFormula: "rec.Title == 'opaque-private'",
+        aclFormulaParsed: '["Eq"]', permissionsText: "-R" } },
+      { id: 22, fields: { resource: 2, rulePos: 3,
+        aclFormula: "rec.Title == user.Email",
+        aclFormulaParsed: '["Eq"]', permissionsText: "-R" } }
+    ]
+  );
+  const group = (projectAccessRules(state) as any).groups[0];
+  assert.deepEqual(group.dependencies, { coverage: "unknown" });
+  assert.equal(group.diagnostics, null);
+  assert.equal(group.rules, undefined);
+  assert.doesNotMatch(JSON.stringify(group), /opaque-private|aclFormula|shadowed_same_condition_permission/);
 });
