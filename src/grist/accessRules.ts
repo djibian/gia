@@ -113,6 +113,7 @@ export const ACCESS_POLICY_OPERATIONS = ["read", "create", "update", "delete"] a
 export interface AccessPolicyCoverageRequest {
   target: AccessRuleSchemaImpactTarget;
   operation: (typeof ACCESS_POLICY_OPERATIONS)[number];
+  context?: AccessRuleSyntheticContext | undefined;
 }
 
 export interface AccessRuleInput {
@@ -1782,7 +1783,7 @@ export function projectAccessRuleSchemaImpact(
 /** Classify persisted policy components for an ordinary data operation. */
 export function projectAccessPolicyCoverage(
   snapshot: AccessRulesSnapshot,
-  { target, operation }: AccessPolicyCoverageRequest
+  { target, operation, context }: AccessPolicyCoverageRequest
 ): unknown {
   const { tableId, columnIds } = normalizeRequestedTarget(snapshot, {
     tableId: target.tableId,
@@ -1790,7 +1791,10 @@ export function projectAccessPolicyCoverage(
   });
   const rowOperation = operation === "create" || operation === "delete";
   if (target.kind === "column" && (rowOperation || target.columnId.startsWith("gristHelper_"))) {
-    return { target, operation, persistedStatus: "UNSUPPORTED", nativeQualification: "NOT_TESTED" };
+    return {
+      target, operation, persistedStatus: "UNSUPPORTED", nativeQualification: "NOT_TESTED",
+      ...(context ? { expectedDecision: { decision: "UNSUPPORTED" } } : {})
+    };
   }
 
   const groups = snapshot.groups.filter((group) =>
@@ -1816,14 +1820,23 @@ export function projectAccessPolicyCoverage(
     defaultIds.has(rule.resourceId) &&
     (!rule.fields.userAttributes || rule.aclFormula !== "" || rule.aclFormulaParsed !== "" ||
       rule.permissionsText !== "" || rule.fields.permissions || rule.fields.principals || rule.fields.aclColumn));
-  const otherProtectedResourceCount = snapshot.protectedPersistedGroupCount - defaults.length;
+  // Grist deliberately skips the old blank resource seeded by its initial
+  // document schema. Preserve it but do not count it as ordinary policy.
+  const ignoredLegacyResourceCount = snapshot.resources.filter((resource) =>
+    resource.tableId === "" && resource.colIds === "").length;
+  const otherProtectedResourceCount =
+    snapshot.protectedPersistedGroupCount - defaults.length - ignoredLegacyResourceCount;
+
+  const incomplete = protectedDefaults || otherProtectedResourceCount > 0 ||
+    attributes.protectedDefinitionCount > 0 || ordinaryGroups.some((group) => group.status === "PROTECTED");
+  const expectedDecision = context && (incomplete
+    ? { decision: "UNKNOWN", reason: "protected_policy" }
+    : expectedAccessDecision(snapshot, tableId, target.kind, operation, groups, context));
 
   return {
     target,
     operation,
-    persistedStatus: protectedDefaults || otherProtectedResourceCount > 0 ||
-      attributes.protectedDefinitionCount > 0 || ordinaryGroups.some((group) => group.status === "PROTECTED")
-      ? "UNKNOWN" : "SUPPORTED",
+    persistedStatus: incomplete ? "UNKNOWN" : "SUPPORTED",
     ordinaryGroups,
     userAttributes: {
       supportedReferences: attributes.definitions.filter((item) => item.editable && references.has(item.name))
@@ -1832,10 +1845,12 @@ export function projectAccessPolicyCoverage(
     },
     defaultPolicy: {
       persisted: protectedDefaults ? "PROTECTED" : "ABSENT",
-      builtInFallback: "UNSUPPORTED"
+      builtInFallback: "SUPPORTED"
     },
     otherProtectedResourceCount,
-    nativeQualification: "NOT_TESTED"
+    ignoredLegacyResourceCount,
+    nativeQualification: "NOT_TESTED",
+    ...(expectedDecision ? { expectedDecision } : {})
   };
 }
 
@@ -1989,6 +2004,84 @@ function syntheticCondition(
     syntheticFieldValue(fields, condition.attributeColumnId), condition.operator);
 }
 
+type PolicyOperation = AccessPolicyCoverageRequest["operation"];
+
+function firstSimulatedPermission(
+  rules: readonly NormalizedAccessRule[],
+  matches: readonly SyntheticTruth[],
+  operation: PolicyOperation
+): { decision: AccessPermissionValue | "unknown"; ruleIndex?: number } {
+  for (const [index, rule] of rules.entries()) {
+    const permission = rule.permissions[operation];
+    const match = matches[index]!;
+    if (permission === "unspecified" || match === "false") continue;
+    return { decision: match === "unknown" ? "unknown" : permission, ruleIndex: index + 1 };
+  }
+  return { decision: "unspecified" };
+}
+
+/** Theoretical evaluation of ordinary policy for an explicit synthetic scenario. */
+function expectedAccessDecision(
+  snapshot: AccessRulesSnapshot,
+  tableId: string,
+  targetKind: AccessRuleSchemaImpactTarget["kind"],
+  operation: PolicyOperation,
+  groups: readonly AccessRuleGroupState[],
+  context: AccessRuleSyntheticContext
+): unknown {
+  if (!context.role || (operation === "create" && context.rec !== undefined) ||
+      (operation === "delete" && context.newRec !== undefined)) {
+    return { decision: "UNKNOWN", reason: "incomplete_or_inapplicable_context" };
+  }
+  // Native C/D evaluates both row operands against the same proposed/current row.
+  const inputs = typedSyntheticContext(snapshot, tableId, {
+    ...context,
+    ...(operation === "create" ? { rec: context.newRec } : {}),
+    ...(operation === "delete" ? { newRec: context.rec } : {})
+  });
+  const trace = [];
+  // Ordinary Grist viewers cannot send row writes, regardless of the ACL bits.
+  if (operation !== "read" && context.role === "viewer") {
+    return { decision: "deny", trace: [{ source: "nominal_document_role" }] };
+  }
+
+  const evaluatedGroups = groups.map((group) => {
+    const rules = group.normalizedRules!;
+    const outcome = firstSimulatedPermission(rules, rules.map((rule) =>
+      rule.permissions[operation] === "unspecified" ? "false" : syntheticCondition(rule.condition, inputs)),
+    operation);
+    return { target: group.target, ...outcome };
+  });
+  const tableRule = evaluatedGroups.find((group) => group.target.columnIds.length === 0);
+  const columnRules = evaluatedGroups.filter((group) => group.target.columnIds.length > 0);
+  const tableDecision = tableRule && tableRule.decision !== "unspecified" ? tableRule.decision : "allow";
+  const tableTrace = tableRule && tableRule.decision !== "unspecified"
+    ? { source: "table", ...tableRule }
+    : { source: "built_in_default", decision: "allow" };
+
+  if (targetKind === "column") {
+    const columnRule = columnRules[0];
+    const result = columnRule && columnRule.decision !== "unspecified"
+      ? { source: "column", ...columnRule }
+      : tableTrace;
+    return result.decision === "unknown"
+      ? { decision: "UNKNOWN", reason: "missing_synthetic_operand", trace: [result] }
+      : { decision: result.decision, trace: [result] };
+  }
+
+  trace.push(tableTrace);
+  for (const columnRule of columnRules) {
+    if (columnRule.decision !== "unspecified") trace.push({ source: "column", ...columnRule });
+  }
+  if (trace.some((step) => step.decision === "unknown")) {
+    return { decision: "UNKNOWN", reason: "missing_synthetic_operand", trace };
+  }
+  if (trace.some((step) => step.decision !== tableDecision)) {
+    return { decision: "UNKNOWN", reason: "mixed_columns", trace };
+  }
+  return { decision: tableDecision, trace };
+}
+
 /**
  * Explain exactly one supported ordinary group under invented, closed values.
  * Unknown inputs and opaque policy stay unknown. Never infer native authority.
@@ -2018,23 +2111,11 @@ export function projectAccessRuleSimulation(
     ruleIndex: index + 1,
     match: syntheticCondition(rule.condition, context)
   }));
+  const matches = ruleMatches.map((rule) => rule.match);
   const permissionDecisions = Object.fromEntries(
-    (["read", "update", "create", "delete"] as const).map((permission) => {
-      let decision: AccessPermissionValue | "unknown" = "unspecified";
-      let ruleIndex: number | undefined;
-      for (const [index, rule] of group.normalizedRules!.entries()) {
-        const selected = rule.permissions[permission];
-        if (selected === "unspecified" || ruleMatches[index]!.match === "false") continue;
-        ruleIndex = index + 1;
-        if (ruleMatches[index]!.match === "unknown") {
-          decision = "unknown";
-        } else {
-          decision = selected;
-        }
-        break; // Native group ordering: first applicable decision per permission.
-      }
-      return [permission, { decision, ...(ruleIndex === undefined ? {} : { ruleIndex }) }];
-    })
+    ACCESS_POLICY_OPERATIONS.map((permission) => [
+      permission, firstSimulatedPermission(group.normalizedRules!, matches, permission)
+    ])
   );
   return {
     target: target.columnIds.length ? target : { tableId: target.tableId },

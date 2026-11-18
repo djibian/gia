@@ -147,7 +147,8 @@ const accessRuleSchemaIdentity = z.discriminatedUnion("kind", [
 ]);
 const accessPolicyCoverageSchema = z.object({
   target: accessRuleSchemaIdentity,
-  operation: z.enum(ACCESS_POLICY_OPERATIONS)
+  operation: z.enum(ACCESS_POLICY_OPERATIONS),
+  context: syntheticScenarioSchema.optional()
 }).strict();
 
 const accessRuleSimulationSchema = z.object({
