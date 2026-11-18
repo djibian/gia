@@ -321,12 +321,13 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "Reordering needs the exact eligible navigationPageIds from fresh page inspection; preserve page hierarchy.",
       "A page layout accounts for each current widget exactly once in root or collapsedWidgetIds. A Card/Card List layout places every current visible field exactly once. Update visibleFields and cardLayout separately (visible fields first). Hidden fields/filters are UI, not ACLs.",
       "calendarConfig applies to a calendar widget and uses stable IDs on its table: Date/DateTime start/end, Bool all-day, Text/Any title, Choice/ChoiceList/Any type.",
-      "Widget config uses stable column IDs and preserves untargeted settings."
+      "calendarConfig replaces the mapping set. Omitting endDateColumnId, allDayColumnId or typeColumnId clears that mapping. Carry forward each optional mapping you want to keep. Other widget settings are preserved."
     ],
     examples: [
-      { purpose: "Configure a calendar with Name (Text) and Start (Date)", arguments: {
+      { purpose: "Set all mappings for a calendar with text, date, Boolean and choice columns", arguments: {
         action: "update_widget", documentId: "synthetic-doc", pageId: 1, widgetId: 2,
-        update: { calendarConfig: { titleColumnId: "Name", startDateColumnId: "Start" } }
+        update: { calendarConfig: { titleColumnId: "Name", startDateColumnId: "Start",
+          endDateColumnId: "End", allDayColumnId: "AllDay", typeColumnId: "Category" } }
       } },
       { purpose: "Arrange a Card whose visible fields are Name and Status", arguments: {
         action: "update_widget", documentId: "synthetic-doc", pageId: 1, widgetId: 2,

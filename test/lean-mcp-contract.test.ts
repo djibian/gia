@@ -416,6 +416,14 @@ test("selected help exposes usable current guides and real-schema-valid syntheti
   const add = payload.tools.find((entry: any) => entry.name === "grist_add_structure");
   assert(add.guide.request.some((value: string) => value.includes("create_columns")));
   assert(add.guide.examples.some((example: any) => example.arguments.action === "copy_document_as_template"));
+  const ui = payload.tools.find((entry: any) => entry.name === "grist_change_ui");
+  assert(ui.guide.constraints.some((value: string) =>
+    /Omitting endDateColumnId, allDayColumnId or typeColumnId clears/.test(value)));
+  const calendar = ui.guide.examples.find((example: any) => example.arguments.update?.calendarConfig);
+  assert.deepEqual(calendar.arguments.update.calendarConfig, {
+    titleColumnId: "Name", startDateColumnId: "Start", endDateColumnId: "End",
+    allDayColumnId: "AllDay", typeColumnId: "Category"
+  });
   const unknown = await help.callback({ tools: ["nonexistent_mcp_tool"] });
   assert.equal(unknown.isError, true);
   assert.doesNotMatch(JSON.stringify(payload), /private-token|example\\.com|sk-proj/i);
