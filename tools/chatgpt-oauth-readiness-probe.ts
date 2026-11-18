@@ -3,7 +3,7 @@ import { LEAN_TOOL_REGISTRY, leanToolHelp } from "../src/mcp/leanRegistry.js";
 import type { LeanToolLimits } from "../src/mcp/leanTools.js";
 import { actionScopeRequirementsForTool, oauthSecuritySchemesForTool } from "../src/mcp/oauthToolSecurity.js";
 import { VERSION } from "../src/version.js";
-import { jsonObject, makeReadinessRequest, qualifyReadinessSchemas, READINESS_PROTOCOL_VERSION } from "./mcp-readiness-schema.js";
+import { jsonObject, makeReadinessRequest, matchReadinessSchemas, READINESS_PROTOCOL_VERSION } from "./mcp-readiness-schema.js";
 
 const REQUIRED_SCOPES = ["doc:read", "doc:write", "doc.schema:write"] as const;
 const PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource";
@@ -91,10 +91,10 @@ async function postMcp(options: Parameters<typeof makeReadinessRequest>[0]) {
     throw new Error("mcp_request_failed");
   }
 
-  const contentType = response.headers.get("content-type") ?? "";
+  const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
   let body: unknown;
   try {
-    if (contentType.toLowerCase().includes("application/json")) body = await response.json();
+    if (contentType === "application/json") body = await response.json();
   } catch {
     body = undefined;
   }
@@ -146,8 +146,10 @@ function inspectToolSecurity(tools: unknown[]) {
 
 function rpcResult(response: Awaited<ReturnType<typeof postMcp>>): JsonObject | undefined {
   const envelope = response.envelope;
-  return response.status === 200 && envelope?.jsonrpc === "2.0" && envelope.id === 1 &&
-    envelope.error === undefined ? jsonObject(envelope.result) : undefined;
+  const result = jsonObject(envelope?.result);
+  if (response.status === 200 && envelope?.jsonrpc === "2.0" && envelope.id === 1 &&
+      envelope.error === undefined && result?.resultType === "complete") return result;
+  return undefined;
 }
 
 function rpcError(response: Awaited<ReturnType<typeof postMcp>>): JsonObject | undefined {
@@ -156,21 +158,34 @@ function rpcError(response: Awaited<ReturnType<typeof postMcp>>): JsonObject | u
     ? jsonObject(envelope.error) : undefined;
 }
 
-function selectedHelpIsCurrent(result: JsonObject | undefined, limits: LeanToolLimits): boolean {
-  if (result?.isError === true || !Array.isArray(result?.content) || result.content.length !== 1) return false;
+function parseSelectedHelp(result: JsonObject | undefined): JsonObject | undefined {
+  if (result?.isError === true || !Array.isArray(result?.content) || result.content.length !== 1) return undefined;
   const content = jsonObject(result.content[0]);
-  if (content?.type !== "text" || typeof content.text !== "string") return false;
+  if (content?.type !== "text" || typeof content.text !== "string") return undefined;
   try {
-    return isDeepStrictEqual(JSON.parse(content.text), leanToolHelp(SELECTED_GUIDES, limits));
+    return jsonObject(JSON.parse(content.text));
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+function configuredToolLimits(raw: unknown): LeanToolLimits | undefined {
+  const { maxReadRecords, maxWriteRecords, maxSchemaItems } = jsonObject(raw) ?? {};
+  const valid = (value: unknown): value is number =>
+    typeof value === "number" && Number.isInteger(value) && value >= 0;
+  if (valid(maxReadRecords) && valid(maxWriteRecords) && valid(maxSchemaItems)) {
+    return { maxReadRecords, maxWriteRecords, maxSchemaItems };
+  }
+  return undefined;
 }
 
 async function qualifyAuthenticated(resourceUri: string, bearer: string): Promise<boolean> {
   const endpoint = { resourceUri, bearer };
   const discover = rpcResult(await postMcp({ ...endpoint, method: "server/discover" }));
-  const supportsCurrent = isDeepStrictEqual(discover?.supportedVersions, [READINESS_PROTOCOL_VERSION]);
+  const capabilities = jsonObject(discover?.capabilities);
+  const supportsCurrent = isDeepStrictEqual(discover?.supportedVersions, [READINESS_PROTOCOL_VERSION]) &&
+    discover?.cacheScope === "private" && discover.ttlMs === 0 &&
+    jsonObject(capabilities?.tools)?.listChanged === true;
   const server = jsonObject(jsonObject(discover?._meta)?.["io.modelcontextprotocol/serverInfo"]);
   const serverIdentity = server?.name === "gia" && server.version === VERSION;
   const unsupported: boolean[] = [];
@@ -188,21 +203,25 @@ async function qualifyAuthenticated(resourceUri: string, bearer: string): Promis
   printPass("Gia server name and release version match this checkout", serverIdentity);
 
   const result = rpcResult(await postMcp({ ...endpoint, method: "tools/list" }));
-  const tools = Array.isArray(result?.tools) ? result.tools : [];
+  const toolsList = Array.isArray(result?.tools) && result.cacheScope === "private" &&
+    result.ttlMs === 0 && result.nextCursor === undefined ? result.tools : undefined;
+  const tools = toolsList ?? [];
   const security = inspectToolSecurity(tools);
-  const limits = security.exactLeanToolSet ? await qualifyReadinessSchemas(tools) : undefined;
-  const help = limits !== undefined && selectedHelpIsCurrent(rpcResult(await postMcp({
+  const help = parseSelectedHelp(rpcResult(await postMcp({
     ...endpoint, method: "tools/call", toolName: "grist_help",
     params: { name: "grist_help", arguments: { tools: SELECTED_GUIDES } }
-  })), limits);
-  printPass("Authenticated tools/list succeeds", Array.isArray(result?.tools));
+  })));
+  const limits = configuredToolLimits(help?.configuredLimits);
+  const helpMatches = limits !== undefined && isDeepStrictEqual(help, leanToolHelp(SELECTED_GUIDES, limits));
+  const schemaMatches = limits !== undefined && security.exactLeanToolSet && await matchReadinessSchemas(tools, limits);
+  printPass("Authenticated tools/list is complete, private and unpaginated", toolsList !== undefined);
   printPass("Live tools/list is exactly the ten-tool MCP v2 contract", security.exactLeanToolSet);
   printPass("Root OAuth securitySchemes match lean tool capabilities", security.rootSecuritySchemesMatch);
   printPass("Compatibility _meta securitySchemes mirror matches", security.compatibilityMirrorMatches);
   printPass("Template action declares additional source read scope", security.actionScopeRequirementsMatch);
-  printPass("Live input schemas match current Gia wire shapes and configured limits", limits !== undefined);
-  printPass("Selected help exposes the current MCP contract and guides", help);
-  const qualified = help && security.rootSecuritySchemesMatch &&
+  printPass("Live input schemas match current Gia wire shapes and configured limits", schemaMatches);
+  printPass("Selected help exposes the current MCP contract and guides", helpMatches);
+  const qualified = schemaMatches && helpMatches && security.rootSecuritySchemesMatch &&
     security.compatibilityMirrorMatches && security.actionScopeRequirementsMatch;
   printPass("Authenticated schema qualification", qualified);
   return transportOk && serverIdentity && qualified;

@@ -35,25 +35,37 @@ test("readiness CLI distinguishes public metadata and qualifies the authenticate
           const protocol = input.headers.get('MCP-Protocol-Version');
           const current = '${READINESS_PROTOCOL_VERSION}';
           const envelope = { jsonrpc: '2.0', id: 1 };
+          const cache = { resultType: 'complete', cacheScope: 'private', ttlMs: 0 };
           const error = (status, value) => Response.json({ ...envelope, error: value }, { status });
           if (protocol !== current && !process.env.TEST_ACCEPT_OLD) {
             return error(400, { code: -32022, data: { supported: [current], requested: protocol } });
           }
           if (message.method === 'initialize') return error(404, { code: -32601 });
           if (message.method === 'server/discover') body = { ...envelope, result: {
-            supportedVersions: [current], _meta: { 'io.modelcontextprotocol/serverInfo': {
+            ...cache, supportedVersions: [current],
+            capabilities: process.env.TEST_MISSING_CAPABILITIES ? undefined : { tools: { listChanged: true } },
+            _meta: { 'io.modelcontextprotocol/serverInfo': {
               name: 'gia', version: process.env.TEST_VERSION || '${VERSION}'
             } }
           } };
-          if (message.method === 'tools/list') body = { ...envelope, result: { tools: JSON.parse(process.env.TEST_TOOLS) } };
+          if (message.method === 'tools/list') body = { ...envelope, result: {
+            ...cache, tools: JSON.parse(process.env.TEST_TOOLS),
+            cacheScope: process.env.TEST_MISSING_LIST_CACHE ? undefined : 'private',
+            nextCursor: process.env.TEST_PAGINATED_LIST || undefined,
+            resultType: process.env.TEST_INCOMPLETE_LIST ? 'input_required' : 'complete'
+          } };
           if (message.method === 'tools/call' && message.params.name === 'grist_help') {
             if (input.headers.get('Mcp-Name') !== 'grist_help') return error(400, { code: -32603 });
             const help = JSON.parse(process.env.TEST_HELP);
             if (process.env.TEST_STALE_HELP) help.tools[0].guide.examples = [];
-            body = { ...envelope, result: { content: [{ type: 'text', text: JSON.stringify(help) }] } };
+            if (process.env.TEST_INCONSISTENT_CAP) help.configuredLimits.maxReadRecords = 1;
+            if (process.env.TEST_INVALID_CAP) help.configuredLimits.maxReadRecords = 'unlimited';
+            body = { ...envelope, result: { resultType: 'complete',
+              content: [{ type: 'text', text: JSON.stringify(help) }] } };
           }
         } else return new Response('{}', {status:401, headers:{'www-authenticate':'Bearer resource_metadata="https://bridge.example.org/.well-known/oauth-protected-resource"'}});
-        return new Response(JSON.stringify(body), {status:200, headers:{'content-type':'application/json'}});
+        const wrongMediaType = process.env.TEST_WRONG_MEDIA_TYPE && input instanceof Request && input.headers.has('authorization');
+        return new Response(JSON.stringify(body), {status:200, headers:{'content-type':wrongMediaType ? 'application/jsonp' : 'application/json'}});
       };
     `);
     const run = (extra: Record<string, string> = {}) => spawnSync(process.execPath,
@@ -67,16 +79,22 @@ test("readiness CLI distinguishes public metadata and qualifies the authenticate
     assert.match(valid.stdout, /Public OAuth metadata and challenge: PASS/);
     assert.match(valid.stdout, /Authenticated schema qualification: SKIPPED/);
     assert.match(valid.stdout, /ChatGPT OAuth readiness: NOT QUALIFIED/);
-    const limits = { maxReadRecords: 7, maxWriteRecords: 0, maxSchemaItems: 11 };
-    const wire = await referenceReadinessTools(limits);
-    const tools = (addRootOAuthSecuritySchemesToToolList({ result: { tools: wire } }).value as any).result.tools;
-    const authenticated = { OAUTH_ACCESS_TOKEN: "synthetic-readiness-token", TEST_TOOLS: JSON.stringify(tools),
-      TEST_HELP: JSON.stringify(leanToolHelp(["grist_inspect", "grist_change_structure"], limits)) };
+    const fixture = async (limits: Parameters<typeof referenceReadinessTools>[0]) => {
+      const wire = await referenceReadinessTools(limits);
+      const tools = (addRootOAuthSecuritySchemesToToolList({ result: { tools: wire } }).value as any).result.tools;
+      return { tools, authenticated: { OAUTH_ACCESS_TOKEN: "synthetic-readiness-token", TEST_TOOLS: JSON.stringify(tools),
+        TEST_HELP: JSON.stringify(leanToolHelp(["grist_inspect", "grist_change_structure"], limits)) } };
+    };
+    const { tools, authenticated } = await fixture({ maxReadRecords: 7, maxWriteRecords: 0, maxSchemaItems: 11 });
     const validAuthenticated = run(authenticated);
     assert.equal(validAuthenticated.status, 0, validAuthenticated.stdout + validAuthenticated.stderr);
     assert.match(validAuthenticated.stdout, /Live tools\/list is exactly the ten-tool MCP v2 contract: PASS/);
     assert.match(validAuthenticated.stdout, /Authenticated schema qualification: PASS/);
     assert.match(validAuthenticated.stdout, /Principal isolation and client catalog refresh: NOT QUALIFIED/);
+    const unlimited = await fixture({ maxReadRecords: 0, maxWriteRecords: 0, maxSchemaItems: 0 });
+    const validUnlimited = run(unlimited.authenticated);
+    assert.equal(validUnlimited.status, 0, validUnlimited.stdout + validUnlimited.stderr);
+    assert.match(validUnlimited.stdout, /Authenticated schema qualification: PASS/);
     const reordered = tools.map((tool: any) => {
       const schemes = tool.securitySchemes.map(({type, scopes}: any) => ({scopes, type}));
       return { ...tool, securitySchemes: schemes, _meta: { ...tool._meta, securitySchemes: schemes } };
@@ -106,6 +124,8 @@ test("readiness CLI distinguishes public metadata and qualifies the authenticate
       corrupt("grist_help", (t) => { t.inputSchema = true; }),
       corrupt("grist_help", (t) => { t.inputSchema.$schema = "http://json-schema.org/draft-07/schema#"; }),
       corrupt("grist_help", (t) => { t.description = ""; }),
+      corrupt("grist_help", (t) => { t.annotations.readOnlyHint = false; }),
+      corrupt("grist_help", (t) => { t.outputSchema = true; }),
       corrupt("grist_add_structure", (t) => { t.inputSchema.oneOf.pop(); }),
       corrupt("grist_add_structure", (t) => { delete t._meta["gia/actionScopeRequirements"]; }),
       corrupt("grist_change_structure", (t) => { delete t.inputSchema.$defs; }),
@@ -119,7 +139,14 @@ test("readiness CLI distinguishes public metadata and qualifies the authenticate
       }),
       { ...authenticated, TEST_ACCEPT_OLD: "yes" },
       { ...authenticated, TEST_VERSION: "stale-identity" },
-      { ...authenticated, TEST_STALE_HELP: "yes" }
+      { ...authenticated, TEST_STALE_HELP: "yes" },
+      { ...authenticated, TEST_INCONSISTENT_CAP: "yes" },
+      { ...authenticated, TEST_INVALID_CAP: "yes" },
+      { ...authenticated, TEST_MISSING_CAPABILITIES: "yes" },
+      { ...authenticated, TEST_MISSING_LIST_CACHE: "yes" },
+      { ...authenticated, TEST_PAGINATED_LIST: "next-page" },
+      { ...authenticated, TEST_INCOMPLETE_LIST: "yes" },
+      { ...authenticated, TEST_WRONG_MEDIA_TYPE: "yes" }
     ]) {
       const result = run(extra);
       assert.equal(result.status, 1, result.stdout + result.stderr);

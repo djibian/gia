@@ -59,43 +59,21 @@ export async function referenceReadinessTools(limits: LeanToolLimits): Promise<J
   return tools as JsonObject[];
 }
 
-function property(schema: unknown, key: string): JsonObject | undefined {
-  return jsonObject(jsonObject(jsonObject(schema)?.properties)?.[key]);
-}
-
-function limit(schema: JsonObject | undefined, key: string): number | undefined {
-  if (!schema) return undefined;
-  if (!Object.hasOwn(schema, key)) return 0;
-  const value = schema[key];
-  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
-}
-
-export async function qualifyReadinessSchemas(tools: readonly unknown[]): Promise<LeanToolLimits | undefined> {
+export async function matchReadinessSchemas(tools: readonly unknown[], limits: LeanToolLimits): Promise<boolean> {
   const byName = new Map<unknown, JsonObject>();
   for (const value of tools) {
     const tool = jsonObject(value);
-    if (!tool || byName.has(tool.name)) return undefined;
+    if (!tool || byName.has(tool.name)) return false;
     byName.set(tool.name, tool);
   }
-  if (byName.size !== LEAN_TOOL_REGISTRY.length) return undefined;
+  if (byName.size !== LEAN_TOOL_REGISTRY.length) return false;
 
-  // The three caps may legitimately differ per deployment. Infer them from
-  // representatives and require all other occurrences/defaults to agree.
-  const tableBranches = jsonObject(byName.get("grist_add_structure")?.inputSchema)?.oneOf;
-  const createTables = Array.isArray(tableBranches)
-    ? tableBranches.find((branch) => property(branch, "action")?.const === "create_tables")
-    : undefined;
-  const maxReadRecords = limit(property(byName.get("grist_query")?.inputSchema, "limit"), "maximum");
-  const maxWriteRecords = limit(property(byName.get("grist_add_records")?.inputSchema, "records"), "maxItems");
-  const maxSchemaItems = limit(property(createTables, "tables"), "maxItems");
-  if (maxReadRecords === undefined || maxWriteRecords === undefined || maxSchemaItems === undefined) return undefined;
-
-  const limits = { maxReadRecords, maxWriteRecords, maxSchemaItems };
   const reference = await referenceReadinessTools(limits);
-  const matches = reference.every((expected) => {
+  return reference.every((expected) => {
     const actual = byName.get(expected.name);
     return actual?.title === expected.title && actual?.description === expected.description &&
+      isDeepStrictEqual(actual?.annotations, expected.annotations) &&
+      isDeepStrictEqual(actual?.outputSchema, expected.outputSchema) &&
       isDeepStrictEqual(actual?.inputSchema, expected.inputSchema);
   });
-  return matches ? limits : undefined;
 }

@@ -143,8 +143,8 @@ public phase exits successfully with the authenticated phase skipped and overall
 readiness not qualified. Use a token in protected environment state to check
 transport negotiation, Gia release version, all ten wire schemas and OAuth
 scope declarations, and selected `grist_help`. The probe uses the same release
-checkout as the intended deployment and derives the configurable caps from the
-wire schema. It never prints the token or writes Grist. Running build revision,
+checkout as the intended deployment and cross-checks the wire schemas against
+the configurable caps reported by selected help. It never prints the token or writes Grist. Running build revision,
 principal isolation and client catalog refresh require separate observations.
 
 Before release/deployment, require exact-head review and CI, run relevant native

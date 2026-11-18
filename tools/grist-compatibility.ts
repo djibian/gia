@@ -2,12 +2,13 @@ import { createServer } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 import { leanToolHelp } from "../src/mcp/leanRegistry.js";
-import { makeReadinessRequest, qualifyReadinessSchemas, READINESS_PROTOCOL_VERSION } from "./mcp-readiness-schema.js";
+import { makeReadinessRequest, matchReadinessSchemas, READINESS_PROTOCOL_VERSION } from "./mcp-readiness-schema.js";
 
 const STATIC_BEARER = "test-static-bearer-0123456789abcdef0123456789abcdef0123456789abcdef";
 const TABLE_ID = "Compat_Items";
 const ACL_TABLE_ID = "Compat_Acl";
 const PAGE_NAME = "Compatibility";
+const COMPAT_TOOL_LIMITS = { maxReadRecords: 100, maxWriteRecords: 50, maxSchemaItems: 50 };
 
 interface McpResponse {
   status: number;
@@ -250,10 +251,10 @@ function bridgeEnvironment(options: {
     GRIST_API_KEY: options.apiKey,
     GRIST_ALLOWED_DOCUMENT_IDS: options.documentId,
     GRIST_ALLOWED_WORKSPACE_IDS: String(options.workspaceId),
-    GRIST_MAX_READ_RECORDS: "100",
-    GRIST_MAX_WRITE_RECORDS: "50",
+    GRIST_MAX_READ_RECORDS: String(COMPAT_TOOL_LIMITS.maxReadRecords),
+    GRIST_MAX_WRITE_RECORDS: String(COMPAT_TOOL_LIMITS.maxWriteRecords),
     GRIST_WRITE_BATCH_RECORDS: "25",
-    GRIST_MAX_SCHEMA_ITEMS: "50",
+    GRIST_MAX_SCHEMA_ITEMS: String(COMPAT_TOOL_LIMITS.maxSchemaItems),
     MCP_AUTH_MODE: "static",
     MCP_BEARER_TOKEN: STATIC_BEARER,
     MCP_ALLOWED_HOSTS: "127.0.0.1,localhost",
@@ -442,8 +443,7 @@ async function run(): Promise<void> {
       await postMcp({ baseUrl: bridgeBaseUrl, method: "tools/list" })
     );
     assert(Array.isArray(tools.tools), "tools_list_invalid");
-    const schemaLimits = await qualifyReadinessSchemas(tools.tools);
-    assert(schemaLimits, "current_wire_schemas_mismatch");
+    assert(await matchReadinessSchemas(tools.tools, COMPAT_TOOL_LIMITS), "current_wire_schemas_mismatch");
     const discover = jsonRpcResult(await postMcp({ baseUrl: bridgeBaseUrl, method: "server/discover" }));
     assert(JSON.stringify(discover.supportedVersions) === JSON.stringify([READINESS_PROTOCOL_VERSION]),
       "current_transport_version_mismatch");
@@ -492,7 +492,7 @@ async function run(): Promise<void> {
         tools: ["grist_inspect", "grist_change_structure"]
       }), "selected_help"
     );
-    assert(isDeepStrictEqual(selectedHelp, leanToolHelp(["grist_inspect", "grist_change_structure"], schemaLimits)),
+    assert(isDeepStrictEqual(selectedHelp, leanToolHelp(["grist_inspect", "grist_change_structure"], COMPAT_TOOL_LIMITS)),
       "selected_help_current_wire_mismatch");
     const guides = selectedHelp.tools as Array<{
       name: string;
