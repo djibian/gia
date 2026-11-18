@@ -19,7 +19,7 @@ function state(formulas: Array<[string, string]>) {
   return normalizeAccessRulesSnapshot(resources, {
     records: formulas.map(([aclFormula, permissionsText], i) => ({
       id: i + 20, fields: {
-        resource: 2, rulePos: i + 1, aclFormula, aclFormulaParsed: '["Eq"]', permissionsText
+        resource: 2, rulePos: i + 1, aclFormula, aclFormulaParsed: aclFormula ? '["Eq"]' : "", permissionsText
       }
     }))
   }, tables, columns);
