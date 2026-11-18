@@ -23,7 +23,7 @@ A v2 server exposes exactly these ten tools:
 
 `grist_help` returns `contractVersion: "2"` so a client can identify the contract without relying on implementation version strings.
 
-`grist_add_structure(action="create_tables")` keeps `columns` optional for each table. An omitted array is adapted internally to native `columns: []` so Grist can create a table without requested initial user columns; Gia does not invent application columns.
+`grist_add_structure(action="create_tables")` requires a nonempty `columns` array per new table, matching native Grist TablePost. Missing or empty arrays are refused before any native write; Gia does not invent application columns.
 
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
