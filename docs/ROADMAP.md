@@ -28,16 +28,12 @@ claim that persisted policy proves effective confidentiality.
 
 **Status: ACTIVE**
 
-Enrich access-rule inspection with compact dependency information for targets,
-record/new-record columns, built-in user properties, LinkKey names and user
-attributes. Add deterministic diagnostics only where correctness can be proven or
-clearly classified as a warning; do not implement a second authorization engine.
-
-The bounded read-only structural dependency projection for fully normalized
-ordinary groups is selected as E1-D1. Once reviewed and integrated, the next
-remaining work is deterministic diagnostics with an explicit certainty level
-and safe handling of protected/unknown policy. Never infer effective
-authorization or leak opaque predicate contents.
+Add bounded deterministic diagnostics to the existing structural ACL dependency
+view, distinguishing provable findings from explicitly classified warnings.
+Cover supported target and condition references, ordered decisions and
+schema-change impact without a second authorization engine. Protected or
+opaque policy remains unknown; never infer effective authorization or expose
+raw formulas or secret values.
 
 #### E1-E — bounded explanatory simulation
 
