@@ -15,7 +15,7 @@ layouts, configured calendars, native summaries, hierarchy-preserving page
 ordering, bounded application access-rule groups including typed LinkKey-to-record
 comparisons, bounded `newRec` matches, same-column old/new comparisons, Bool-literal predicates for proposed row changes, closed role memberships, boolean user-login tests, bounded Int 0/1 flags and empty-Text comparisons, finite boolean
 combinations of supported ACL leaves, read-only bounded structural inspection
-of native user-attribute definitions, and empty-document/template bootstrap.
+and bounded create/replace/delete of native user-attribute definitions,\nand empty-document/template bootstrap.
 The supported subset and its limits are defined by the contract and executable tests.
 
 Business applications such as teaching, stage tracking, CRM or inventory are
