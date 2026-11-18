@@ -44,7 +44,18 @@ export function disposableGristFromInspection(raw: string, expectedVersion: stri
   return { baseUrl: `http://127.0.0.1:${ports[0].HostPort}`, version: expectedVersion };
 }
 
+export function requireDirectNodeHttp(
+  options: readonly string[] = process.execArgv,
+  env: NodeJS.ProcessEnv = process.env
+): void {
+  if (env.NODE_USE_ENV_PROXY === "1" ||
+      [...options, env.NODE_OPTIONS ?? ""].some((option) => /--use[-_]env[-_]proxy\b/.test(option))) {
+    throw new Error("disposable_grist_direct_http_required");
+  }
+}
+
 export async function openDisposableGrist(containerId: string, expectedVersion: string): Promise<DisposableGrist> {
+  requireDirectNodeHttp();
   if (!containerIdPattern.test(containerId) || !supportedVersion.test(expectedVersion)) {
     throw new Error("disposable_grist_container_required");
   }

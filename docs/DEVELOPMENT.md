@@ -115,7 +115,8 @@ GRIST_TEST_BASE_URL=http://127.0.0.1:8484 GRIST_TEST_VERSION=1.7.19 \
 The native API qualification step derives its target from the job-owned local
 Docker container ID. It verifies the selected image version, explicit disposable
 label, test login, absence of persistent mounts and a loopback-only binding
-before opening any Grist session. Run it with the compatibility workflow or
+before opening any Grist session. Node's environment-proxy mode is refused
+so the HTTP destination stays at that binding. Run it with the compatibility workflow or
 with `GIA_QUALIFICATION_CONTAINER` and `GRIST_COMPAT_VERSION` for a local
 container created using that workflow's settings. The fixed synthetic R/C/U/D
 cases use ordinary native API calls with two editors and a separate owner who

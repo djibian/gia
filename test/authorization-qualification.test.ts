@@ -4,7 +4,8 @@ import {
   disposableGristFromInspection,
   mutationObservation,
   openDisposableGrist,
-  qualificationStatus
+  qualificationStatus,
+  requireDirectNodeHttp
 } from "../tools/authorization-qualification.js";
 
 const validContainer = [
@@ -43,4 +44,13 @@ test("only operation-specific native ACL denial with unchanged state qualifies a
     mutationObservation("delete", 403, "Blocked by row delete access rules", false, false)), "FAIL");
   assert.equal(qualificationStatus("allow", mutationObservation("create", 201, undefined, false, true)), "FAIL");
   assert.equal(qualificationStatus("allow", mutationObservation("delete", 200, undefined, true, false)), "PASS");
+});
+
+test("disposable qualification refuses Node environment-proxy routing before HTTP", () => {
+  assert.doesNotThrow(() => requireDirectNodeHttp([], { HTTP_PROXY: "http://proxy.example.invalid" }));
+  assert.throws(() => requireDirectNodeHttp([], { NODE_USE_ENV_PROXY: "1" }), /direct_http_required/);
+  assert.throws(() => requireDirectNodeHttp(["--use-env-proxy"], {}), /direct_http_required/);
+  assert.throws(() => requireDirectNodeHttp([], {
+    NODE_OPTIONS: "--no-warnings --use_env_proxy"
+  }), /direct_http_required/);
 });
