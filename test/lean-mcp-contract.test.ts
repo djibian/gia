@@ -378,6 +378,47 @@ test("lean help discloses only the lean public contract", async () => {
 });
 
 
+test("selected help exposes usable current guides and real-schema-valid synthetic examples", async () => {
+  const registrations = capture();
+  const help = registrations.find((entry) => entry.name === "grist_help")!;
+  const index = JSON.parse((await help.callback({})).content[0].text);
+  assert.equal(index.contractVersion, "2");
+  assert.equal(index.tools.length, 10);
+  assert(index.tools.every((entry: any) => entry.guide === undefined));
+  assert.equal(index.configuredLimits, undefined);
+
+  const payload = JSON.parse((await help.callback({ tools: registrations.map((entry) => entry.name) }))
+    .content[0].text);
+  assert.deepEqual(payload.configuredLimits, {
+    maxReadRecords: 200, maxWriteRecords: 50, maxSchemaItems: 100
+  });
+  assert.equal(payload.tools.length, 10);
+  for (const entry of payload.tools) {
+    assert(entry.guide?.request?.length > 0, `missing request for ${entry.name}`);
+    assert(entry.guide?.constraints?.length > 0, `missing constraints for ${entry.name}`);
+    assert(entry.guide?.examples?.length > 0, `missing examples for ${entry.name}`);
+    const registered = registrations.find((tool) => tool.name === entry.name)!;
+    for (const example of entry.guide.examples) {
+      assert.equal(typeof example.purpose, "string");
+      assert.deepEqual(registered.options.inputSchema!.parse(example.arguments), example.arguments,
+        `stale advertised example in ${entry.name}: ${example.purpose}`);
+    }
+  }
+  const inspect = payload.tools.find((entry: any) => entry.name === "grist_inspect");
+  assert(inspect.guide.request.some((value: string) => value.includes("schemaImpact")));
+  assert(inspect.guide.examples.some((example: any) => example.arguments.simulation));
+  const change = payload.tools.find((entry: any) => entry.name === "grist_change_structure");
+  assert(change.guide.actions.includes("access_rule_group"));
+  assert(change.guide.request.some((value: string) => value.includes("match_link_key")));
+  assert(change.guide.examples.some((example: any) => example.arguments.target?.userAttributeName));
+  const add = payload.tools.find((entry: any) => entry.name === "grist_add_structure");
+  assert(add.guide.request.some((value: string) => value.includes("create_columns")));
+  assert(add.guide.examples.some((example: any) => example.arguments.action === "copy_document_as_template"));
+  const unknown = await help.callback({ tools: ["nonexistent_mcp_tool"] });
+  assert.equal(unknown.isError, true);
+  assert.doesNotMatch(JSON.stringify(payload), /private-token|example\\.com|sk-proj/i);
+});
+
 test("ACL MCP schema exposes only bounded LinkKey names", async () => {
   const observed: unknown[] = [];
   const registrations = capture({
