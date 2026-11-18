@@ -24,17 +24,9 @@ claim that persisted policy proves effective confidentiality.
 
 ### Finite work
 
-#### E1-E — bounded explanatory simulation
-
-**Status: ACTIVE**
-
-Evaluate only Gia's normalized supported subset against an explicit synthetic
-context for explanation/debugging. Results must state that they are simulated and
-that native enforcement/confidentiality is not verified.
-
 #### E1-F — LinkKey web acceptance and completeness review
 
-**Status: BLOCKED by E1-E**
+**Status: ACTIVE**
 
 Because native `user.LinkKey` context exists in the Grist web client but not the
 API, add or adapt a non-MCP qualification path only if needed for end-to-end
@@ -44,7 +36,7 @@ concrete generic evidence.
 
 ### Execution rules
 
-Remaining work proceeds sequentially E1-E through E1-F. Each slice must be independently
+Remaining work is the finite E1-F LinkKey web-acceptance and completeness review. Each slice must be independently
 bounded and reviewed on its exact head when required by [AGENTS.md](../AGENTS.md).
 Completed slice history belongs in issues, PRs, commits and CI; remove completed
 work from this Roadmap as it is absorbed into current normative docs and tests.

@@ -122,6 +122,32 @@ export type AccessRuleSchemaImpactTarget =
   | { kind: "table"; tableId: string }
   | { kind: "column"; tableId: string; columnId: string };
 
+/** Closed invented values, never real cell values, LinkKeys or identifiers. */
+export type AccessRuleSyntheticValue =
+  | { kind: "symbol"; symbol: "A" | "B" | "C" | "D" }
+  | { kind: "boolean"; value: boolean }
+  | { kind: "flag"; value: 0 | 1 }
+  | { kind: "empty_text" };
+
+export interface AccessRuleSyntheticField {
+  name: string;
+  value: AccessRuleSyntheticValue;
+}
+
+export interface AccessRuleSyntheticContext {
+  role?: AccessRuleRole | undefined;
+  user?: readonly AccessRuleSyntheticField[] | undefined;
+  rec?: readonly AccessRuleSyntheticField[] | undefined;
+  newRec?: readonly AccessRuleSyntheticField[] | undefined;
+  linkKeys?: readonly AccessRuleSyntheticField[] | undefined;
+  userAttributes?: readonly { name: string; fields: readonly AccessRuleSyntheticField[] }[] | undefined;
+}
+
+export interface AccessRuleSimulationRequest {
+  target: AccessRuleTarget;
+  context: AccessRuleSyntheticContext;
+}
+
 /** Closed structural mutation of a native Grist user-attribute definition. */
 export interface AccessUserAttributeTarget {
   userAttributeName: string;
@@ -1618,6 +1644,216 @@ export function projectAccessRuleSchemaImpact(
       protectedUserAttributeDefinitionCount: attributes.protectedDefinitionCount
     },
     note: "Only known structural references are reported. Protected or opaque policy may also depend on this schema identity. Native rename/delete effects, effective enforcement and confidentiality are not predicted or verified."
+  };
+}
+
+
+type SyntheticTruth = "true" | "false" | "unknown";
+
+function syntheticFieldValue(
+  fields: readonly AccessRuleSyntheticField[] | undefined,
+  name: string
+): AccessRuleSyntheticValue | undefined {
+  return fields?.find((item) => item.name === name)?.value;
+}
+
+function syntheticComparison(
+  left: AccessRuleSyntheticValue | undefined,
+  right: AccessRuleSyntheticValue | undefined,
+  operator: AccessRuleOperator
+): SyntheticTruth {
+  if (!left || !right) return "unknown";
+  let equal: boolean;
+  if (left.kind === "symbol" && right.kind === "symbol") {
+    equal = left.symbol === right.symbol;
+  } else if (left.kind === "boolean" && right.kind === "boolean") {
+    equal = left.value === right.value;
+  } else if (left.kind === "flag" && right.kind === "flag") {
+    equal = left.value === right.value;
+  } else if (left.kind === "empty_text" && right.kind === "empty_text") {
+    equal = true;
+  } else if ((left.kind === "empty_text" && right.kind === "symbol") ||
+             (left.kind === "symbol" && right.kind === "empty_text")) {
+    equal = false;
+  } else {
+    // Never guess native coercions or equality between incompatible kinds.
+    return "unknown";
+  }
+  return (operator === "equals" ? equal : !equal) ? "true" : "false";
+}
+
+// Synthetic equivalence classes still represent native typed values. Reject
+// impossible scenarios by treating mismatched operands as absent/unknown.
+function compatibleSyntheticValue(value: AccessRuleSyntheticValue, nativeType: string | undefined): boolean {
+  if (nativeType === "Text" || nativeType === "Choice" || nativeType === "Any") {
+    return value.kind === "symbol" || value.kind === "empty_text";
+  }
+  if (nativeType === "Bool") return value.kind === "boolean";
+  if (nativeType === "Int" || nativeType === "Numeric") return value.kind === "flag";
+  if (nativeType?.startsWith("Ref:")) return value.kind === "symbol";
+  return false;
+}
+
+function compatibleSyntheticFields(
+  fields: readonly AccessRuleSyntheticField[] | undefined,
+  nativeTypeFor: (name: string) => string | undefined
+): readonly AccessRuleSyntheticField[] | undefined {
+  return fields?.filter((field) => compatibleSyntheticValue(field.value, nativeTypeFor(field.name)));
+}
+
+function typedSyntheticContext(
+  snapshot: AccessRulesSnapshot,
+  tableId: string,
+  context: AccessRuleSyntheticContext
+): AccessRuleSyntheticContext {
+  const table = snapshot.tables.get(tableId);
+  const attributes = new Map(projectUserAttributes(snapshot).definitions
+    .filter((definition) => definition.editable)
+    .map((definition) => [definition.name, definition.tableId] as const));
+  const recordType = (name: string) => table?.columns.get(name)?.type;
+  return {
+    ...context,
+    rec: compatibleSyntheticFields(context.rec, recordType),
+    newRec: compatibleSyntheticFields(context.newRec, recordType),
+    user: compatibleSyntheticFields(context.user, (name) =>
+      name === "IsLoggedIn" ? "Bool" : name === "UserID" ? "Int" :
+        ACCESS_RULE_USER_PROPERTIES.includes(name as AccessRuleUserProperty) ? "Text" : undefined),
+    userAttributes: context.userAttributes?.map((attribute) => {
+      const sourceTableId = attributes.get(attribute.name);
+      return {
+        name: attribute.name,
+        fields: compatibleSyntheticFields(attribute.fields, (name) => {
+          if (!sourceTableId) return undefined;
+          return name === "id" ? `Ref:${sourceTableId}` :
+            snapshot.tables.get(sourceTableId)?.columns.get(name)?.type;
+        }) ?? []
+      };
+    })
+  };
+}
+
+function syntheticCondition(
+  condition: AccessRuleCondition,
+  context: AccessRuleSyntheticContext
+): SyntheticTruth {
+  if (condition.kind === "all" || condition.kind === "any") {
+    const answers = condition.conditions.map((item) => syntheticCondition(item, context));
+    if (condition.kind === "all") {
+      if (answers.includes("false")) return "false";
+      return answers.includes("unknown") ? "unknown" : "true";
+    }
+    if (answers.includes("true")) return "true";
+    return answers.includes("unknown") ? "unknown" : "false";
+  }
+  if (condition.kind === "not") {
+    const answer = syntheticCondition(condition.condition, context);
+    return answer === "unknown" ? answer : answer === "true" ? "false" : "true";
+  }
+  if (condition.kind === "everyone") return "true";
+  if (condition.kind === "user_access") {
+    if (!context.role) return "unknown";
+    const equals = context.role === condition.role;
+    return (condition.operator === "equals" ? equals : !equals) ? "true" : "false";
+  }
+  if (condition.kind === "user_access_membership") {
+    if (!context.role) return "unknown";
+    const includes = condition.roles.includes(context.role);
+    return (condition.operator === "in" ? includes : !includes) ? "true" : "false";
+  }
+  if (condition.kind === "user_login_status") {
+    return syntheticComparison(
+      syntheticFieldValue(context.user, "IsLoggedIn"),
+      { kind: "boolean", value: condition.value }, condition.operator);
+  }
+
+  const fromRecord = (columnId: string, useNewRec = false) =>
+    syntheticFieldValue(useNewRec ? context.newRec : context.rec, columnId);
+  if (condition.kind === "column_change") {
+    return syntheticComparison(fromRecord(condition.columnId),
+      fromRecord(condition.columnId, true), condition.operator);
+  }
+  const value = fromRecord(condition.columnId, condition.record === "newRec");
+  if (condition.kind === "match_boolean") {
+    return syntheticComparison(value,
+      { kind: "boolean", value: condition.value }, condition.operator);
+  }
+  if (condition.kind === "match_integer_flag") {
+    return syntheticComparison(value,
+      { kind: "flag", value: condition.value }, condition.operator);
+  }
+  if (condition.kind === "match_empty_text") {
+    return syntheticComparison(value, { kind: "empty_text" }, condition.operator);
+  }
+  if (condition.kind === "match_user") {
+    return syntheticComparison(value,
+      syntheticFieldValue(context.user, condition.userProperty), condition.operator);
+  }
+  if (condition.kind === "match_link_key") {
+    return syntheticComparison(value,
+      syntheticFieldValue(context.linkKeys, condition.linkKeyName), condition.operator);
+  }
+  const fields = context.userAttributes?.find(
+    (item) => item.name === condition.attributeName)?.fields;
+  return syntheticComparison(value,
+    syntheticFieldValue(fields, condition.attributeColumnId), condition.operator);
+}
+
+/**
+ * Explain exactly one supported ordinary group under invented, closed values.
+ * Unknown inputs and opaque policy stay unknown. Never infer native authority.
+ */
+export function projectAccessRuleSimulation(
+  snapshot: AccessRulesSnapshot,
+  request: AccessRuleSimulationRequest
+): unknown {
+  const target = normalizeRequestedTarget(snapshot, request.target);
+  const group = snapshot.groups.find((item) => sameTarget(item.target, target));
+  const disclaimer =
+    "Invented symbolic scenario for one ordinary group only. This is not native Grist enforcement, full policy precedence, a security test, a LinkKey web test, or confidentiality verification. Missing synthetic inputs and protected policy are unknown.";
+  if (!group?.normalizedRules) {
+    return {
+      target: target.columnIds.length ? target : { tableId: target.tableId },
+      simulated: true,
+      nativeEnforcementVerified: false,
+      confidentialityVerified: false,
+      status: group ? "protected_group" : "no_explicit_group",
+      ruleMatches: null,
+      permissionDecisions: null,
+      note: disclaimer
+    };
+  }
+  const context = typedSyntheticContext(snapshot, target.tableId, request.context);
+  const ruleMatches = group.normalizedRules.map((rule, index) => ({
+    ruleIndex: index + 1,
+    match: syntheticCondition(rule.condition, context)
+  }));
+  const permissionDecisions = Object.fromEntries(
+    (["read", "update", "create", "delete"] as const).map((permission) => {
+      let decision: AccessPermissionValue | "unknown" = "unspecified";
+      let ruleIndex: number | undefined;
+      for (const [index, rule] of group.normalizedRules!.entries()) {
+        const selected = rule.permissions[permission];
+        if (selected === "unspecified" || ruleMatches[index]!.match === "false") continue;
+        ruleIndex = index + 1;
+        if (ruleMatches[index]!.match === "unknown") {
+          decision = "unknown";
+        } else {
+          decision = selected;
+        }
+        break; // Native group ordering: first applicable decision per permission.
+      }
+      return [permission, { decision, ...(ruleIndex === undefined ? {} : { ruleIndex }) }];
+    })
+  );
+  return {
+    target: target.columnIds.length ? target : { tableId: target.tableId },
+    simulated: true,
+    nativeEnforcementVerified: false,
+    confidentialityVerified: false,
+    status: "supported_group",
+    ruleMatches,
+    permissionDecisions,
+    note: disclaimer
   };
 }
 

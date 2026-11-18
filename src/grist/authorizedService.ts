@@ -10,6 +10,7 @@ import {
   normalizeAccessRulesSnapshot,
   projectAccessRules,
   projectAccessRuleSchemaImpact,
+  projectAccessRuleSimulation,
   resolveAccessRuleMutation,
   resolveUserAttributeMutation,
   verifyAccessRuleMutation,
@@ -17,6 +18,7 @@ import {
   type AccessRuleInput,
   type AccessRuleTarget,
   type AccessRuleSchemaImpactTarget,
+  type AccessRuleSimulationRequest,
   type AccessUserAttributeTarget,
   type AccessUserAttributeDefinitionInput,
   type AccessRulesSnapshot
@@ -321,7 +323,8 @@ export class AuthorizedGristService {
 
   async inspectAccessRules(
     documentIdOrUrl: string,
-    schemaImpact?: AccessRuleSchemaImpactTarget
+    schemaImpact?: AccessRuleSchemaImpactTarget,
+    simulation?: AccessRuleSimulationRequest
   ): Promise<unknown> {
     return this.execute("inspect_access_rules", documentIdOrUrl, undefined, async (id) => {
       await this.inner.assertDocumentOwner(id);
@@ -329,7 +332,8 @@ export class AuthorizedGristService {
       return {
         documentId: id,
         ...(projectAccessRules(snapshot) as Record<string, unknown>),
-        ...(schemaImpact ? { schemaChangeImpact: projectAccessRuleSchemaImpact(snapshot, schemaImpact) } : {})
+        ...(schemaImpact ? { schemaChangeImpact: projectAccessRuleSchemaImpact(snapshot, schemaImpact) } : {}),
+        ...(simulation ? { simulatedPolicyGroup: projectAccessRuleSimulation(snapshot, simulation) } : {})
       };
     });
   }

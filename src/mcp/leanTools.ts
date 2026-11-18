@@ -107,6 +107,43 @@ const accessRuleTargetSchema = z
       .optional()
   })
   .strict();
+
+/** Synthetic equivalence classes, not LinkKey secrets or real record values. */
+const syntheticSymbolSchema = z.object({
+  kind: z.literal("symbol"), symbol: z.enum(["A", "B", "C", "D"])
+}).strict();
+const syntheticValueSchema = z.discriminatedUnion("kind", [
+  syntheticSymbolSchema,
+  z.object({ kind: z.literal("boolean"), value: z.boolean() }).strict(),
+  z.object({ kind: z.literal("flag"), value: z.union([z.literal(0), z.literal(1)]) }).strict(),
+  z.object({ kind: z.literal("empty_text") }).strict()
+]);
+const syntheticIdentifierSchema = z.string().min(1).max(100)
+  .regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
+const uniqueSyntheticFields = <T extends { name: string }>(entries: T[]) =>
+  new Set(entries.map((entry) => entry.name)).size === entries.length;
+function syntheticFields<Name extends z.ZodType<string>, Value extends z.ZodType>(name: Name, value: Value) {
+  return z.array(z.object({ name, value }).strict()).max(20)
+    .refine((entries) => new Set(entries.map((entry) => (entry as unknown as { name: string }).name)).size === entries.length,
+      "Synthetic field names must be unique.");
+}
+const syntheticScenarioSchema = z.object({
+  role: z.enum(["owner", "editor", "viewer"]).optional(),
+  user: syntheticFields(z.enum(ACCESS_RULE_USER_PROPERTIES), syntheticValueSchema).optional(),
+  rec: syntheticFields(syntheticIdentifierSchema, syntheticValueSchema).optional(),
+  newRec: syntheticFields(syntheticIdentifierSchema, syntheticValueSchema).optional(),
+  // LinkKey scenario operands are symbolic letters only, never actual URL values.
+  linkKeys: syntheticFields(accessRuleLinkKeyNameSchema, syntheticSymbolSchema).optional(),
+  userAttributes: z.array(z.object({
+    name: syntheticIdentifierSchema,
+    fields: syntheticFields(syntheticIdentifierSchema, syntheticValueSchema)
+  }).strict()).max(8).refine(uniqueSyntheticFields, "Synthetic attribute names must be unique.").optional()
+}).strict();
+const accessRuleSimulationSchema = z.object({
+  target: accessRuleTargetSchema,
+  context: syntheticScenarioSchema
+}).strict();
+
 // Same access_rule_group action, closed alternate target; no additional MCP tool.
 const accessUserAttributeTargetSchema = z.object({
   userAttributeName: accessRuleLinkKeyNameSchema
@@ -699,7 +736,8 @@ export function registerLeanTools(
               z.object({
                 kind: z.literal("column"), tableId: tableIdSchema, columnId: columnIdSchema
               }).strict()
-            ]).optional()
+            ]).optional(),
+            simulation: accessRuleSimulationSchema.optional()
           })
           .strict()
       ])
@@ -716,7 +754,7 @@ export function registerLeanTools(
               await grist.getPageWidgets(input.documentId, input.pageId)
             );
           case "access_rules":
-            return textResult(await grist.inspectAccessRules(input.documentId, input.schemaImpact));
+            return textResult(await grist.inspectAccessRules(input.documentId, input.schemaImpact, input.simulation));
         }
       } catch (error) {
         return errorResult(error);

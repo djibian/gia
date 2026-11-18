@@ -131,6 +131,16 @@ unknown; absence of a reported reference is not a safety guarantee. The
 same fresh native Owner proof is required. It neither writes nor simulates
 native schema rewrites, effective access or confidentiality.
 
+Bounded ACL explanation accepts a *synthetic* symbolic context through the
+existing Owner-only inspection action. Its LinkKey operands are enum symbols
+`A`–`D`, not token strings; real tokens/URLs and arbitrary literal
+data are not accepted. Absent or type-incompatible inputs are unknown.
+An earlier unknown rule with a specified permission blocks a definitive
+later simulated verdict. No live data, native authorization, browser or
+secret-bearing URL is used for the simulation, and only one supported
+ordinary rule group is evaluated. The returned decisions are not document
+permissions, effective enforcement or a confidentiality guarantee.
+
 Persisted rule verification is **not** proof of effective enforcement or
 confidentiality. Native defaults, structure/schema-edit permissions and formulas
 remain decisive. Hidden fields and saved filters are presentation state.

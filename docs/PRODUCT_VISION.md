@@ -18,6 +18,10 @@ combinations of supported ACL leaves, read-only bounded structural inspection
 and bounded create/replace/delete of native user-attribute definitions,
 typed comparable user-attribute field matches in ordinary ACL conditions,
 and empty-document/template bootstrap.
+The application-policy inspection also provides bounded read-only structural
+schema-impact references and one-group explanatory simulation using invented
+symbolic contexts only; neither is a native authorization or confidentiality
+test.
 The supported subset and its limits are defined by the contract and executable tests.
 
 Business applications such as teaching, stage tracking, CRM or inventory are
