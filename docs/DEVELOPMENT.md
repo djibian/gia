@@ -91,6 +91,7 @@ or run these mutating probes against a real user deployment.
 | Workflow / tool | Current purpose |
 | --- | --- |
 | Grist compatibility / `tools/grist-compatibility.ts` | MCP transport plus native document metadata, relation display, calendar, schema/UI/ACL/template boundaries across Grist Community 1.7.16–1.7.20 |
+| Grist compatibility / `tools/authorization-qualification.ts` | Native API allow/deny and independently re-read effects for R/C/U/D across synthetic row-policy cases |
 | Grist compatibility / `tools/grist-linkkey-web-acceptance.ts` | independent headless-Chrome web-client qualification of native `user.LinkKey` row filtering, absent/wrong LinkKeys and positive matches on disposable documents across the Grist Community matrix |
 | Application preservation / `tools/application-validation.ts` | existing human configuration/data, differing native grants, a second application shape and repeat execution on Grist Community 1.7.19 |
 
@@ -110,6 +111,18 @@ GRIST_COMPAT_BASE_URL=http://127.0.0.1:8484 \
 GRIST_TEST_BASE_URL=http://127.0.0.1:8484 GRIST_TEST_VERSION=1.7.19 \
   node --import tsx tools/application-validation.ts
 ```
+
+The native API qualification step derives its target from the job-owned local
+Docker container ID. It verifies the selected image version, explicit disposable
+label, test login, absence of persistent mounts and a loopback-only binding
+before opening any Grist session. Run it with the compatibility workflow or
+with `GIA_QUALIFICATION_CONTAINER` and `GRIST_COMPAT_VERSION` for a local
+container created using that workflow's settings. The fixed synthetic R/C/U/D
+cases use ordinary native API calls with two editors and a separate owner who
+re-reads their effects. Each output row identifies version, surface, scope,
+expected outcome and `PASS`, `FAIL`, `UNKNOWN`, `NOT_TESTED` or
+`UNSUPPORTED`. Case failures leave the run unsuccessful. Output omits
+credentials, document IDs, URLs and native response bodies.
 
 The probes start a local Gia process, provision synthetic native state, perform
 bounded tools and independently inspect native postconditions. The application

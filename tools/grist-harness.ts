@@ -36,6 +36,7 @@ export async function createTestApiKey(baseUrl: string, email: string, name: str
   const cookie = cookieHeader(login);
   const response = await fetch(new URL("/api/profile/apikey", baseUrl), {
     method: "POST",
+    redirect: "error",
     headers: { cookie, "content-type": "application/json" },
     body: JSON.stringify({ force: true }),
     signal: AbortSignal.timeout(10_000)
@@ -57,6 +58,7 @@ export async function gristApi(
   const response = await fetch(new URL(path, baseUrl), {
     ...init,
     headers,
+    redirect: "error",
     signal: AbortSignal.timeout(20_000)
   });
   return readJson(response);
@@ -74,6 +76,7 @@ export async function gristStatus(
   const response = await fetch(new URL(path, baseUrl), {
     ...init,
     headers,
+    redirect: "error",
     signal: AbortSignal.timeout(20_000)
   });
   await response.arrayBuffer();

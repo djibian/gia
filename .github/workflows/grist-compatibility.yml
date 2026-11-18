@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/grist-compatibility.yml"
       - "tools/grist-compatibility.ts"
+      - "tools/authorization-qualification.ts"
       - "tools/grist-linkkey-web-acceptance.ts"
       - "docs/MCP-CONTRACT.md"
       - "docs/SECURITY.md"
@@ -46,14 +47,17 @@ jobs:
         run: npm ci
 
       - name: Start Grist Community
+        id: grist
         run: |
-          docker run --detach --name test-grist \
-            --publish 8484:8484 \
+          container_id=$(docker run --detach --name test-grist \
+            --label com.gia.disposable-grist=true \
+            --publish 127.0.0.1:8484:8484 \
             --env GRIST_SESSION_SECRET=compatibility-session-secret \
             --env GRIST_IN_SERVICE=true \
             --env GRIST_TEST_LOGIN=1 \
             --env GRIST_LOG_LEVEL=warn \
-            gristlabs/grist-oss:${{ matrix.grist_version }}
+            gristlabs/grist-oss:${{ matrix.grist_version }})
+          echo "container-id=$container_id" >> "$GITHUB_OUTPUT"
 
       - name: Wait for Grist Community
         run: |
@@ -72,6 +76,12 @@ jobs:
           GRIST_COMPAT_VERSION: ${{ matrix.grist_version }}
         run: node --import tsx tools/grist-compatibility.ts
 
+      - name: Qualify native API authorization properties
+        env:
+          GIA_QUALIFICATION_CONTAINER: ${{ steps.grist.outputs.container-id }}
+          GRIST_COMPAT_VERSION: ${{ matrix.grist_version }}
+        run: node --import tsx tools/authorization-qualification.ts
+
       - name: Qualify native web-client LinkKey policy (disposable browser)
         env:
           GRIST_COMPAT_BASE_URL: http://127.0.0.1:8484
@@ -80,3 +90,9 @@ jobs:
       - name: Grist logs on failure
         if: failure()
         run: docker logs test-grist || true
+
+      - name: Remove disposable Grist container
+        if: always() && steps.grist.outputs.container-id != ''
+        env:
+          GIA_QUALIFICATION_CONTAINER: ${{ steps.grist.outputs.container-id }}
+        run: docker rm --force --volumes "$GIA_QUALIFICATION_CONTAINER"

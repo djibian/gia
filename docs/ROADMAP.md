@@ -15,9 +15,8 @@ security claims.
 
 | Work | Bounded result | Dependencies |
 | --- | --- | --- |
-| [#282](https://github.com/djibian/gia/issues/282) E2-C | Generic native authorization-property qualification runner | Persisted policy coverage |
-| [#283](https://github.com/djibian/gia/issues/283) E2-D | Browser qualification for web-only authorization surfaces | #282 where shared plumbing is useful |
-| [#284](https://github.com/djibian/gia/issues/284) E2-E | Bounded concurrent authorization and locking qualification | #282; #283 only for browser cases |
+| [#283](https://github.com/djibian/gia/issues/283) E2-D | Browser qualification for web-only authorization surfaces | Native API qualification where shared plumbing is useful |
+| [#284](https://github.com/djibian/gia/issues/284) E2-E | Bounded concurrent authorization and locking qualification | Native API qualification; #283 only for browser cases |
 | [#285](https://github.com/djibian/gia/issues/285) E2-F | Integrated effective-policy gap review and convergence | preceding selected E2 slices |
 
 Controllers pull the smallest useful complete eligible slice and re-resolve current

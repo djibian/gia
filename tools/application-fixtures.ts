@@ -23,7 +23,7 @@ export interface FixtureContext {
   teacherBKey: string;
 }
 
-async function createDoc(baseUrl: string, apiKey: string, workspaceId: number, name: string): Promise<string> {
+export async function createDoc(baseUrl: string, apiKey: string, workspaceId: number, name: string): Promise<string> {
   const value = await gristApi(baseUrl, apiKey, `/api/workspaces/${workspaceId}/docs`, {
     method: "POST",
     body: JSON.stringify({ name })
@@ -36,11 +36,7 @@ async function createDoc(baseUrl: string, apiKey: string, workspaceId: number, n
   throw new Error(`document_create_invalid:${name}`);
 }
 
-export async function setupFixtures(baseUrl: string): Promise<FixtureContext> {
-  const ownerKey = await createTestApiKey(baseUrl, OWNER_EMAIL, "Owner");
-  const teacherAKey = await createTestApiKey(baseUrl, TEACHER_A_EMAIL, "Teacher A");
-  const teacherBKey = await createTestApiKey(baseUrl, TEACHER_B_EMAIL, "Teacher B");
-
+export async function createWorkspace(baseUrl: string, ownerKey: string, name: string): Promise<number> {
   const orgs = await gristApi(baseUrl, ownerKey, "/api/orgs");
   assertThat(Array.isArray(orgs) && orgs.length > 0, "no_test_org");
   const orgId = (orgs[0] as { id?: unknown }).id;
@@ -49,10 +45,17 @@ export async function setupFixtures(baseUrl: string): Promise<FixtureContext> {
     baseUrl,
     ownerKey,
     `/api/orgs/${encodeURIComponent(String(orgId))}/workspaces`,
-    { method: "POST", body: JSON.stringify({ name: "Applications" }) }
+    { method: "POST", body: JSON.stringify({ name }) }
   );
   assertThat(typeof workspace === "number", "workspace_create_invalid");
-  const workspaceId = workspace;
+  return workspace;
+}
+
+export async function setupFixtures(baseUrl: string): Promise<FixtureContext> {
+  const ownerKey = await createTestApiKey(baseUrl, OWNER_EMAIL, "Owner");
+  const teacherAKey = await createTestApiKey(baseUrl, TEACHER_A_EMAIL, "Teacher A");
+  const teacherBKey = await createTestApiKey(baseUrl, TEACHER_B_EMAIL, "Teacher B");
+  const workspaceId = await createWorkspace(baseUrl, ownerKey, "Applications");
 
   await gristApi(baseUrl, ownerKey, `/api/workspaces/${workspaceId}/access`, {
     method: "PATCH",
