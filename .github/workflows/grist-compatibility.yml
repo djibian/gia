@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/grist-compatibility.yml"
       - "tools/grist-compatibility.ts"
+      - "tools/grist-linkkey-web-acceptance.ts"
       - "docs/MCP-CONTRACT.md"
       - "src/**"
       - "test/**"
@@ -69,6 +70,11 @@ jobs:
           GRIST_COMPAT_BASE_URL: http://127.0.0.1:8484
           GRIST_COMPAT_VERSION: ${{ matrix.grist_version }}
         run: node --import tsx tools/grist-compatibility.ts
+
+      - name: Qualify native web-client LinkKey policy (disposable browser)
+        env:
+          GRIST_COMPAT_BASE_URL: http://127.0.0.1:8484
+        run: node --import tsx tools/grist-linkkey-web-acceptance.ts
 
       - name: Grist logs on failure
         if: failure()
