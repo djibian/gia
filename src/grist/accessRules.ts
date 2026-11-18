@@ -17,6 +17,10 @@ export const ACCESS_RULE_USER_PROPERTIES = [
   "IsLoggedIn"
 ] as const;
 
+export const ACCESS_USER_ATTRIBUTE_PROPERTIES = [
+  ...ACCESS_RULE_USER_PROPERTIES, "Access", "SessionID"
+] as const;
+
 export type AccessRuleUserProperty = (typeof ACCESS_RULE_USER_PROPERTIES)[number];
 export type AccessRuleOperator = "equals" | "not_equals";
 export type AccessRuleRole = "owner" | "editor" | "viewer";
@@ -104,6 +108,29 @@ export interface AccessRuleInput {
 export interface AccessRuleTarget {
   tableId: string;
   columnIds?: readonly string[] | undefined;
+}
+
+/** Closed structural mutation of a native Grist user-attribute definition. */
+export interface AccessUserAttributeTarget {
+  userAttributeName: string;
+}
+export interface AccessUserAttributeDefinitionInput {
+  tableId: string;
+  lookupColId: string;
+  source:
+    | { kind: "user_property"; property: (typeof ACCESS_USER_ATTRIBUTE_PROPERTIES)[number] }
+    | { kind: "link_key"; name: string };
+}
+export interface AccessUserAttributeMutationPlan {
+  mode: "create" | "replace" | "delete" | "noop";
+  requestedMode: "create" | "replace" | "delete";
+  name: string;
+  targetRuleId?: number;
+  defaultResourceId?: number;
+  createDefaultResource: boolean;
+  rulePos: number;
+  /** Server-generated trusted native JSON, never supplied as arbitrary text by MCP. */
+  nativeDefinition?: string;
 }
 
 export interface ResolvedAccessRuleTarget {
@@ -1401,6 +1428,183 @@ export function verifyAccessRuleMutation(
   return {
     changed: plan.mode !== "noop",
     ruleCount: actual.normalizedRules.length,
+    persistedDefinitionVerified: true,
+    effectiveEnforcementVerified: false
+  };
+}
+
+/** Native user attributes are rows of _grist_ACLRules, not identity/share administration. */
+export function resolveUserAttributeMutation(
+  snapshot: AccessRulesSnapshot,
+  target: AccessUserAttributeTarget,
+  mode: "create" | "replace" | "delete",
+  definition?: AccessUserAttributeDefinitionInput
+): AccessUserAttributeMutationPlan {
+  const name = target.userAttributeName;
+  if (typeof name !== "string" || name.length > MAX_ACCESS_RULE_LINK_KEY_NAME_LENGTH ||
+      !SAFE_IDENTIFIER.test(name) || ACCESS_USER_ATTRIBUTE_PROPERTIES.some(p => p === name) ||
+      name === "LinkKey") {
+    throw new Error("User attribute name must be a bounded, non-reserved stable identifier.");
+  }
+  // A selected name must not collide with any opaque/ambiguous native definition.
+  // Refusing *all* writes in that case is intentional: even a different name
+  // could shadow a malformed rule or alter native resolution order.
+  const inspected = projectUserAttributes(snapshot);
+  if (inspected.protectedDefinitionCount !== 0) {
+    throw new Error("Native user-attribute definitions are unsupported or ambiguous; refusing mutation.");
+  }
+  const defaultResources = snapshot.resources.filter(r => r.tableId === "*" && r.colIds === "*");
+  if (defaultResources.length > 1) {
+    throw new Error("Multiple default ACL resources; refusing user-attribute mutation.");
+  }
+  const existing = inspected.definitions.find(d => d.name === name);
+  if (mode === "create" && existing) {
+    throw new Error("A native user attribute already exists with this name.");
+  }
+  if (mode !== "create" && !existing) {
+    throw new Error("The selected native user attribute does not exist.");
+  }
+  if (mode === "delete" && definition !== undefined) {
+    throw new Error("Delete user-attribute mutations do not accept a definition.");
+  }
+  if (mode !== "delete" && definition === undefined) {
+    throw new Error("Create/replace user-attribute mutations require a typed definition.");
+  }
+  if (definition !== undefined) {
+    const { tableId, lookupColId, source } = definition;
+    if (!SAFE_IDENTIFIER.test(tableId) || tableId.startsWith("_grist_") ||
+        !SAFE_IDENTIFIER.test(lookupColId) ||
+        !snapshot.tables.get(tableId)?.columns.has(lookupColId)) {
+      throw new Error("User-attribute lookup must name an existing ordinary table and stable column.");
+    }
+    if (!source || (source.kind !== "user_property" && source.kind !== "link_key")) {
+      throw new Error("User-attribute source must be a supported typed user property or LinkKey name.");
+    }
+    if (source.kind === "user_property" &&
+        !ACCESS_USER_ATTRIBUTE_PROPERTIES.includes(source.property)) {
+      throw new Error("User-attribute source property is unsupported.");
+    }
+    if (source.kind === "link_key" && !validLinkKeyName(source.name)) {
+      throw new Error("User-attribute LinkKey name is not a bounded safe identifier.");
+    }
+  }
+  const selected = existing
+    ? snapshot.rules.filter(rule => {
+        const raw = rule.fields.userAttributes;
+        if (typeof raw !== "string") return false;
+        try { return record(JSON.parse(raw))?.name === name; } catch { return false; }
+      })
+    : [];
+  if (existing && (selected.length !== 1 || selected[0]!.resourceId !== defaultResources[0]?.id)) {
+    throw new Error("User-attribute native row identity is ambiguous.");
+  }
+  // A deletion must not knowingly invalidate an existing ACL condition.
+  // Native Grist's supported user-attribute syntax uses user.<identifier>.
+  if (mode === "delete") {
+    const reference = new RegExp(`\\buser\\.${name}\\b`);
+    if (snapshot.rules.some(rule => reference.test(rule.aclFormula))) {
+      throw new Error("An existing ACL condition references this attribute; delete its dependencies first.");
+    }
+  }
+  const defaultResourceId = defaultResources[0]?.id;
+  const positions = snapshot.rules
+    .filter(rule => rule.resourceId === defaultResourceId)
+    .map(rule => rule.rulePos ?? 0);
+  const nextPosition = Math.max(0, ...positions) + 1;
+  if (!Number.isSafeInteger(nextPosition) || nextPosition < 1) {
+    throw new Error("Cannot allocate a finite native user-attribute rule position.");
+  }
+  const charId = definition?.source.kind === "user_property"
+    ? definition.source.property
+    : definition?.source.kind === "link_key"
+      ? `LinkKey.${definition.source.name}`
+      : undefined;
+  const nativeDefinition = definition === undefined ? undefined : JSON.stringify({
+    name, tableId: definition.tableId, lookupColId: definition.lookupColId, charId
+  });
+  const selectedRuleId = selected[0]?.id;
+  const existingNative = selected[0]?.fields.userAttributes;
+  const unchanged = mode === "replace" && existingNative === nativeDefinition;
+  return {
+    mode: unchanged ? "noop" : mode,
+    requestedMode: mode,
+    name,
+    ...(selectedRuleId === undefined ? {} : { targetRuleId: selectedRuleId }),
+    ...(defaultResourceId === undefined ? {} : { defaultResourceId }),
+    createDefaultResource: mode === "create" && defaultResourceId === undefined,
+    rulePos: selected[0]?.rulePos ?? nextPosition,
+    ...(nativeDefinition === undefined ? {} : { nativeDefinition })
+  };
+}
+
+function otherAclRows(snapshot: AccessRulesSnapshot, skipRuleId?: number): string {
+  return stableJson(snapshot.rules
+    .filter(rule => rule.id !== skipRuleId)
+    .map(rule => ({ id: rule.id, fields: rule.fields }))
+    .sort((a, b) => a.id - b.id));
+}
+function aclResources(snapshot: AccessRulesSnapshot, skipResourceId?: number): string {
+  return stableJson(snapshot.resources
+    .filter(resource => resource.id !== skipResourceId)
+    .map(resource => ({ id: resource.id, fields: resource.fields }))
+    .sort((a, b) => a.id - b.id));
+}
+
+export function verifyUserAttributeMutation(
+  before: AccessRulesSnapshot,
+  after: AccessRulesSnapshot,
+  plan: AccessUserAttributeMutationPlan
+): { changed: boolean; persistedDefinitionVerified: true; effectiveEnforcementVerified: false } {
+  const original = plan.targetRuleId === undefined
+    ? undefined : before.rules.find(r => r.id === plan.targetRuleId);
+  if ((plan.requestedMode === "create") === Boolean(original)) {
+    throw new Error("Internal user-attribute pre-state is inconsistent.");
+  }
+  const afterInspection = projectUserAttributes(after);
+  if (afterInspection.protectedDefinitionCount !== 0) {
+    throw new Error("Native user-attribute definitions became opaque or ambiguous after write.");
+  }
+  const current = afterInspection.definitions.filter(def => def.name === plan.name);
+  if (plan.requestedMode === "delete" ? current.length !== 0 : current.length !== 1) {
+    throw new Error("Native user-attribute postcondition does not match the requested mode.");
+  }
+  const afterDefault = after.resources.filter(r => r.tableId === "*" && r.colIds === "*");
+  if (afterDefault.length !== 1 && (plan.requestedMode !== "delete" || plan.defaultResourceId !== undefined)) {
+    throw new Error("Native default ACL resource postcondition could not be verified.");
+  }
+  if (plan.createDefaultResource) {
+    const created = afterDefault[0];
+    if (!created || before.resources.some(r => r.id === created.id) ||
+        aclResources(before) !== aclResources(after, created.id)) {
+      throw new Error("Untargeted ACL resources changed while creating the default resource.");
+    }
+  } else if (aclResources(before) !== aclResources(after)) {
+    throw new Error("Untargeted ACL resources changed during user-attribute mutation.");
+  }
+  let actualId: number | undefined;
+  if (plan.requestedMode === "create") {
+    const newRules = after.rules.filter(rule => !before.rules.some(r => r.id === rule.id));
+    if (newRules.length !== 1 || newRules[0]!.fields.userAttributes !== plan.nativeDefinition ||
+        newRules[0]!.resourceId !== afterDefault[0]?.id) {
+      throw new Error("Created native user-attribute row could not be uniquely verified.");
+    }
+    actualId = newRules[0]!.id;
+  } else if (plan.requestedMode === "replace") {
+    const afterRow = after.rules.find(r => r.id === plan.targetRuleId);
+    if (!afterRow || afterRow.fields.userAttributes !== plan.nativeDefinition ||
+        stableJson({ ...original!.fields, userAttributes: plan.nativeDefinition }) !==
+        stableJson(afterRow.fields)) {
+      throw new Error("Replaced native user-attribute row identity/content was not preserved.");
+    }
+    actualId = plan.targetRuleId;
+  } else if (after.rules.some(r => r.id === plan.targetRuleId)) {
+    throw new Error("Deleted native user-attribute row remains present.");
+  }
+  if (otherAclRows(before, plan.targetRuleId) !== otherAclRows(after, actualId)) {
+    throw new Error("Untargeted persisted ACL rules changed during user-attribute mutation.");
+  }
+  return {
+    changed: plan.mode !== "noop",
     persistedDefinitionVerified: true,
     effectiveEnforcementVerified: false
   };
