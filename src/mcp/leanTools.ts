@@ -635,7 +635,7 @@ export function registerLeanTools(
   }).strict();
   const tableSpecSchema = z.object({
     id: tableIdSchema,
-    columns: boundedArray(columnSpecSchema, limits.maxSchemaItems).optional()
+    columns: boundedArray(columnSpecSchema, limits.maxSchemaItems)
   }).strict();
   const tableUpdateSchema = z.object({
     id: tableIdSchema,
