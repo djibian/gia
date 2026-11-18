@@ -264,20 +264,15 @@ test("zero limits mean unlimited bridge-side guardrails", async () => {
 });
 
 
-test("omitted table columns become a native empty array without inventing fields", async () => {
+test("table creation refuses missing or empty columns before any native write", async () => {
   const { grist, observed } = service();
-  await grist.createTables("doc", [
-    { id: "EmptyImplicit" },
-    { id: "EmptyExplicit", columns: [] },
-    { id: "WithColumn", columns: [{ id: "Name", fields: { type: "Text" } }] }
-  ]);
-  assert.deepEqual(observed, [{
-    action: "createTables",
-    documentId: "doc",
-    tables: [
-      { id: "EmptyImplicit", columns: [] },
-      { id: "EmptyExplicit", columns: [] },
-      { id: "WithColumn", columns: [{ id: "Name", fields: { type: "Text" } }] }
-    ]
-  }]);
+  await assert.rejects(() => grist.createTables("doc", [{ id: "Missing" }]), /at least one column/);
+  await assert.rejects(() => grist.createTables("doc", [{ id: "Empty", columns: [] }]), /at least one column/);
+  await assert.rejects(() => grist.createTables("doc", [
+    { id: "Valid", columns: [{ id: "Name" }] }, { id: "Invalid" }
+  ]), /at least one column/);
+  assert.deepEqual(observed, []);
+  await grist.createTables("doc", [{ id: "Valid", columns: [{ id: "Name", fields: { type: "Text" } }] }]);
+  assert.deepEqual(observed, [{ action: "createTables", documentId: "doc",
+    tables: [{ id: "Valid", columns: [{ id: "Name", fields: { type: "Text" } }] }] }]);
 });
