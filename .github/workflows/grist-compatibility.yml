@@ -7,6 +7,7 @@ on:
       - "tools/grist-compatibility.ts"
       - "tools/grist-linkkey-web-acceptance.ts"
       - "docs/MCP-CONTRACT.md"
+      - "docs/SECURITY.md"
       - "src/**"
       - "test/**"
       - "package*.json"

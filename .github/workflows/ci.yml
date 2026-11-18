@@ -4,9 +4,13 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
 
 permissions:
   contents: read
+  actions: read
+  issues: read
+  pull-requests: read
 
 jobs:
   verify:
@@ -22,3 +26,24 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      # This is the branch-protection-required job. Post-review rerun is intentional:
+      # all technical steps run first, then the exact-head review/native evidence gate.
+      - name: Checkout protected integration policy
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: .integration-policy
+          persist-credentials: false
+      - name: Require exact-head integration evidence
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f .integration-policy/tools/check-pr-integration.mjs ]; then
+            node .integration-policy/tools/check-pr-integration.mjs
+          else
+            # One-time bootstrap for the PR introducing the guard; independent
+            # review is still mandatory before this PR can pass.
+            node tools/check-pr-integration.mjs
+          fi

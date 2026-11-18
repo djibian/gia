@@ -13,7 +13,6 @@ anchored to its audited SHA, not an assumption that main has stayed unchanged.
 
 | Work | Bounded result | Dependencies |
 | --- | --- | --- |
-| [#268](https://github.com/djibian/gia/issues/268) Review gates | Settle current safety-relevant qualification and require applicable independent exact-head evidence before merge | Applies to every correction and release |
 | [#262](https://github.com/djibian/gia/issues/262) ACL consistency | Protect malformed or contradictory native predicate metadata before editable projection, analysis and persisted verification | Independent runtime slice |
 | [#263](https://github.com/djibian/gia/issues/263) Compact schemas | Remove exponential advertised ACL schema duplication while retaining the bounded accepted input language | Coordinate overlapping schema edits |
 | [#265](https://github.com/djibian/gia/issues/265) Creation contract | Align required table columns and accepted column-creation fields with native persisted effects | Finish each bounded creation slice before overlapping work |

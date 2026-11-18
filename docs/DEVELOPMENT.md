@@ -12,8 +12,44 @@ npm test
 npm run build
 ```
 
-The required `verify` CI job runs these checks. No new production dependency is
-needed for convergence enforcement. Unit/contract tests protect current behavior;
+The branch-protection-required `verify` CI job runs these checks. On pull
+requests its final read-only integration gate also checks the declared review
+classification, exact-head PR comment verdict and relevant native workflow runs.
+For all subsequent PRs the gate executes the checked-out policy from protected
+`main`, not the proposed PR implementation. The initial guard-introduction PR
+must use its proposed script once, under independent review. No new production
+dependency or external review/orchestration service is needed.
+
+Every PR states scope, `Dependencies:`, net complexity, validation and a
+reasoned `Review gate: REQUIRED` or `Review gate: NOT REQUIRED` declaration.
+Runtime, contract, authorization, governance and related native security test
+changes require independent exact-head review, including test-only changes
+whose fixtures materially qualify an authorization boundary. Bounded factual
+documentation edits may be declared NOT REQUIRED with an explicit rationale.
+A distinct Controller execution, not necessarily a distinct GitHub account,
+records a verdict with exactly `Head: <SHA>` and `Result: PASS` or
+`Result: CHANGES REQUIRED` in a PR comment, and attests in prose it did not
+materially author that head. CI can check matching evidence, not prove the
+independence of two executions sharing one account; that remains a review duty.
+A later CHANGES REQUIRED for the same head overrides earlier PASS.
+
+The final evidence step intentionally reports failure while required review or
+native validation remains pending. An independent reviewer may inspect green
+individual build/test steps before commenting; after recording PASS and after
+native workflows succeed, rerun failed `verify` jobs on that unchanged head.
+If the head, base, dependencies or validation changes, reconstruct and recheck;
+a stale review or an earlier green run cannot authorize a changed head.
+Before merge the Controller must confirm that required `verify` is green for
+the exact PR head and the independent verdict still applies. The integration
+gate does not replace this final GitHub state check or grant new permissions.
+
+Relevant native suites must run on the exact PR head: `Grist compatibility`
+for supported Grist semantics, and `Application preservation` for user-state
+safety. Their automatic path filters cover common runtime, tests, security and
+contract edits; if a less obvious change affects either native boundary without
+triggering its workflow, dispatch the matching workflow manually on the exact
+PR branch and inspect the resulting head SHA before merging. Do not treat the
+names-only `verify` result or a skipped workflow as native qualification. Unit/contract tests protect current behavior;
 remove a test only when its subject is removed and no current invariant is lost.
 
 ## Current documentation
