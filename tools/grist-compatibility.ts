@@ -582,7 +582,8 @@ async function run(): Promise<void> {
           columns: [
             { id: "ShareToken", fields: { type: "Text" } },
             { id: "Enabled", fields: { type: "Bool" } },
-            { id: "StatusCode", fields: { type: "Int" } }
+            { id: "StatusCode", fields: { type: "Int" } },
+            { id: "RequiredText", fields: { type: "Text" } }
           ]
         },
         {
@@ -1457,6 +1458,48 @@ async function run(): Promise<void> {
     assert(flagDeleted.persistedDefinitionVerified === true,
       "integer_flag_access_rule_delete_not_verified");
 
+    // Empty-string comparison remains closed native ACL metadata, not raw input.
+    const emptyTextCreated = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "create",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["RequiredText"] },
+        rules: [
+          { condition: { kind: "match_empty_text", columnId: "RequiredText",
+              operator: "equals" },
+            permissions: { read: "unspecified", update: "deny" } },
+          { condition: { kind: "match_empty_text", columnId: "RequiredText",
+              operator: "not_equals", record: "newRec" },
+            permissions: { read: "unspecified", update: "deny" } }
+        ]
+      }), "empty_text_access_rule_create"
+    );
+    assert(emptyTextCreated.persistedDefinitionVerified === true,
+      "empty_text_access_rule_not_verified");
+    assert(emptyTextCreated.effectiveEnforcementVerified === false,
+      "empty_text_access_rule_overclaimed_enforcement");
+    const emptyInspected = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", { action: "access_rules", documentId }),
+      "empty_text_access_rule_inspect"
+    );
+    const emptyGroup = (emptyInspected.groups as Array<Record<string, unknown>>).find((group) => {
+      const target = group.target as Record<string, unknown> | undefined;
+      return target?.tableId === ACL_TABLE_ID && Array.isArray(target.columnIds) &&
+        target.columnIds.length === 1 && target.columnIds[0] === "RequiredText";
+    });
+    assert(emptyGroup?.editable === true, "empty_text_access_rule_not_editable");
+    const emptyRules = emptyGroup.rules as Array<Record<string, unknown>>;
+    assert(emptyRules.length === 2 &&
+      emptyRules.every((rule) => (rule.condition as Record<string, unknown>).kind === "match_empty_text") &&
+      (emptyRules[1]!.condition as Record<string, unknown>).record === "newRec",
+      "empty_text_access_rule_not_normalized");
+    const emptyDeleted = resultJson(
+      await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "delete",
+        target: { tableId: ACL_TABLE_ID, columnIds: ["RequiredText"] }
+      }), "empty_text_access_rule_delete"
+    );
+    assert(emptyDeleted.persistedDefinitionVerified === true,
+      "empty_text_access_rule_delete_not_verified");
     const aclDeleted = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "access_rule_group",

@@ -159,6 +159,12 @@ const accessRuleLeafConditionVariants = [
     record: z.literal("newRec").optional()
   }).strict(),
   z.object({
+    kind: z.literal("match_empty_text"),
+    operator: z.enum(["equals", "not_equals"]),
+    columnId: columnIdSchema,
+    record: z.literal("newRec").optional()
+  }).strict(),
+  z.object({
     kind: z.literal("column_change"),
     operator: z.enum(["equals", "not_equals"]),
     columnId: columnIdSchema

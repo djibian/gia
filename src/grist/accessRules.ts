@@ -68,6 +68,12 @@ export type AccessRuleCondition =
       record?: "newRec" | undefined;
     }
   | {
+      kind: "match_empty_text";
+      operator: AccessRuleOperator;
+      columnId: string;
+      record?: "newRec" | undefined;
+    }
+  | {
       kind: "column_change";
       operator: AccessRuleOperator;
       columnId: string;
@@ -423,6 +429,21 @@ function parseLeafCondition(
     };
   }
 
+  // Exact empty text is the only admitted string literal; nonempty values
+  // and their possible secrets remain opaque and non-editable.
+  const emptyMatch = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) (\x27\x27|\x22\x22)$/.exec(formula);
+  const reverseEmptyMatch = /^(\x27\x27|\x22\x22) (==|!=) (rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(formula);
+  if (emptyMatch || reverseEmptyMatch) {
+    const recordScope = emptyMatch ? emptyMatch[1]! : reverseEmptyMatch![3]!;
+    const columnId = emptyMatch ? emptyMatch[2]! : reverseEmptyMatch![4]!;
+    const operator = NATIVE_OP.get(emptyMatch ? emptyMatch[3]! : reverseEmptyMatch![2]!);
+    if (!operator || table.columns.get(columnId)?.type !== "Text") return undefined;
+    return {
+      kind: "match_empty_text", operator, columnId,
+      ...(recordScope === "newRec" ? { record: "newRec" as const } : {})
+    };
+  }
+
   // A small typed update predicate: old and proposed values of one stable column.
   // Both native operand orders normalize to a single model-facing representation.
   const changeMatch = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) (rec|newRec)\.\2$/.exec(formula);
@@ -534,7 +555,8 @@ function usesNewRec(condition: AccessRuleCondition): boolean {
   if (condition.kind === "not") return usesNewRec(condition.condition);
   if (condition.kind === "column_change") return true;
   return (condition.kind === "match_user" || condition.kind === "match_link_key" ||
-    condition.kind === "match_boolean" || condition.kind === "match_integer_flag") &&
+    condition.kind === "match_boolean" || condition.kind === "match_integer_flag" ||
+    condition.kind === "match_empty_text") &&
     condition.record === "newRec";
 }
 
@@ -579,6 +601,15 @@ function serializeLeafCondition(condition: AccessRuleLeafCondition, table: Table
       throw new Error("Integer-flag ACL predicates require an existing Int column and exact 0/1 values.");
     }
     return `${recordExpression(condition)} ${OP_NATIVE[condition.operator]} ${condition.value}`;
+  }
+
+  if (condition.kind === "match_empty_text") {
+    if (!SAFE_IDENTIFIER.test(condition.columnId) ||
+        table.columns.get(condition.columnId)?.type !== "Text" ||
+        (condition.operator !== "equals" && condition.operator !== "not_equals")) {
+      throw new Error("Empty-text ACL predicates require an existing Text column and equality/inequality.");
+    }
+    return `${recordExpression(condition)} ${OP_NATIVE[condition.operator]} ''`;
   }
 
   if (condition.kind === "column_change") {
