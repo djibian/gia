@@ -262,3 +262,22 @@ test("zero limits mean unlimited bridge-side guardrails", async () => {
     Array.from({ length: 500 }, (_, i) => ({ id: `C${i}` }))
   );
 });
+
+
+test("omitted table columns become a native empty array without inventing fields", async () => {
+  const { grist, observed } = service();
+  await grist.createTables("doc", [
+    { id: "EmptyImplicit" },
+    { id: "EmptyExplicit", columns: [] },
+    { id: "WithColumn", columns: [{ id: "Name", fields: { type: "Text" } }] }
+  ]);
+  assert.deepEqual(observed, [{
+    action: "createTables",
+    documentId: "doc",
+    tables: [
+      { id: "EmptyImplicit", columns: [] },
+      { id: "EmptyExplicit", columns: [] },
+      { id: "WithColumn", columns: [{ id: "Name", fields: { type: "Text" } }] }
+    ]
+  }]);
+});
