@@ -9,12 +9,14 @@ import {
   AccessRuleWriteVerificationError,
   normalizeAccessRulesSnapshot,
   projectAccessRules,
+  projectAccessRuleSchemaImpact,
   resolveAccessRuleMutation,
   resolveUserAttributeMutation,
   verifyAccessRuleMutation,
   verifyUserAttributeMutation,
   type AccessRuleInput,
   type AccessRuleTarget,
+  type AccessRuleSchemaImpactTarget,
   type AccessUserAttributeTarget,
   type AccessUserAttributeDefinitionInput,
   type AccessRulesSnapshot
@@ -317,13 +319,17 @@ export class AuthorizedGristService {
     });
   }
 
-  async inspectAccessRules(documentIdOrUrl: string): Promise<unknown> {
+  async inspectAccessRules(
+    documentIdOrUrl: string,
+    schemaImpact?: AccessRuleSchemaImpactTarget
+  ): Promise<unknown> {
     return this.execute("inspect_access_rules", documentIdOrUrl, undefined, async (id) => {
       await this.inner.assertDocumentOwner(id);
       const snapshot = await this.loadAccessRulesSnapshot(id);
       return {
         documentId: id,
-        ...(projectAccessRules(snapshot) as Record<string, unknown>)
+        ...(projectAccessRules(snapshot) as Record<string, unknown>),
+        ...(schemaImpact ? { schemaChangeImpact: projectAccessRuleSchemaImpact(snapshot, schemaImpact) } : {})
       };
     });
   }
