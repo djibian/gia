@@ -79,8 +79,22 @@ Malformed, duplicate, ambiguous or unsupported definitions count as protected
 and their original text is never returned. Neither user-attribute values nor
 LinkKey values, secret-bearing URLs, raw ACL JSON/formulas or native row IDs are
 model-visible. This is not an evaluation of the native lookup or enforcement.
-Gia does not yet mutate user-attribute definitions or permit user-attribute
-references in editable ACL conditions.
+The same `grist_change_structure(action="access_rule_group")` also supports a
+closed `target:{userAttributeName:<safe identifier>}` in place of an ordinary
+table/column target. `create` and `replace` require exactly one typed
+`definition:{tableId,lookupColId,source}`, where source is either
+`{kind:"user_property",property:<bounded native built-in>}` or
+`{kind:"link_key",name:<safe LinkKey name>}`. `delete` accepts no definition.
+An attribute target accepts no `rules`. Existing ordinary group semantics
+and tool count are unchanged. Names cannot shadow reserved built-in properties.
+Only known, structurally verified native user-attribute definitions are
+mutable; any opaque/duplicate definition blocks user-attribute writes.
+Replacing preserves native rule identity; deletion refuses known references in
+persisted ACL conditions. Untargeted resources/rules must be unchanged and
+post-write definition/identity is re-read and verified. Unknown effects forbid
+blind replay. The operation does **not** verify effective enforcement.
+Safe typed references to user attributes inside editable ACL conditions remain
+a separate unfinished E1-C slice.
 
 Opaque formulas, memos, unsupported user-attribute definitions, default/special/schema-edit policy and other unsupported persisted semantics are preserved but not copied into editable model content. Before reading ACL metadata, the bridge performs a fresh native document metadata read and requires `access === "owners"`; this prevents censored non-owner metadata from being mistaken for an empty policy. The bridge also refuses incomplete/censored/truncated ACL metadata, duplicate or overlapping stable targets, and any selected group it cannot normalize without loss.
 
