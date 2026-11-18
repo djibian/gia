@@ -1268,7 +1268,7 @@ export function registerLeanTools(
     },
     async ({ tools }) => {
       try {
-        return textResult(leanToolHelp(tools));
+        return textResult(leanToolHelp(tools, limits));
       } catch (error) {
         return errorResult(error);
       }

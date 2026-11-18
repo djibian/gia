@@ -491,6 +491,28 @@ async function run(): Promise<void> {
       assert(Object.hasOwn(defs, name), "acl_schema_unresolved_reference");
     }
 
+    // Discoverability is a real authenticated MCP round trip, not only
+    // an in-process registry snapshot. Selected help must explain usable
+    // ACL inspection shapes without exposing any real policy values.
+    const selectedHelp = resultJson(
+      await callTool(bridgeBaseUrl, "grist_help", {
+        tools: ["grist_inspect", "grist_change_structure"]
+      }), "selected_help"
+    );
+    const guides = selectedHelp.tools as Array<{
+      name: string;
+      guide?: { request?: string[]; examples?: Array<{ arguments: Record<string, unknown> }> };
+    }>;
+    assert(guides.length === 2, "selected_help_tool_count");
+    assert(guides[0]?.name === "grist_inspect" &&
+      guides[0]?.guide?.request?.some((shape) => shape.includes("schemaImpact")),
+      "selected_help_acl_inspection_missing");
+    assert(guides[0]?.guide?.examples?.some((example) => example.arguments.simulation),
+      "selected_help_symbolic_simulation_missing");
+    assert(guides[1]?.name === "grist_change_structure" &&
+      guides[1]?.guide?.request?.some((shape) => shape.includes("match_link_key")),
+      "selected_help_acl_mutation_missing");
+
     const discovered = resultText(
       await callTool(bridgeBaseUrl, "grist_discover", { action: "documents" })
     );
