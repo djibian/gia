@@ -132,7 +132,7 @@ async function selectTablePage(sessionId: string): Promise<string> {
     if (selected) {
       await delay(900);
       const page = await inspectPage(sessionId);
-      assertThat(page.url.includes("/doc/"), "linkkey_page_navigation_invalid");
+      assertThat(new URL(page.url).origin === new URL(baseUrl!).origin, "linkkey_page_navigation_invalid");
       return page.url;
     }
     await delay(500);
@@ -155,13 +155,13 @@ async function assertPage(
     if (expected !== "none" && last.text.includes(tableId) &&
         (expected === "alpha" ? a && !b : b && !a)) return;
     if (expected === "none" && attempt >= 8 && !a && !b &&
-        last.url.includes("/doc/") && last.text.length > 50) {
+        new URL(last.url).origin === new URL(baseUrl!).origin && last.text.length > 50) {
       // A denied table can disappear from the native navigation altogether.
       // Confirm absence again after a settle interval, not on a blank page.
       await delay(1500);
       const settled = await inspectPage(sessionId);
       if (!settled.text.includes(visibleA) && !settled.text.includes(visibleB) &&
-          settled.url.includes("/doc/") && settled.text.length > 50) return;
+          new URL(settled.url).origin === new URL(baseUrl!).origin && settled.text.length > 50) return;
     }
     await delay(500);
   }
