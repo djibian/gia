@@ -1544,8 +1544,24 @@ async function run(): Promise<void> {
     const resourceRows = (nativeAclResources as { records?: Array<{
       id: number; fields: Record<string, unknown>
     }> }).records ?? [];
-    const defaultAclResource = resourceRows.find((row) =>
+    let defaultAclResource = resourceRows.find((row) =>
       row.fields.tableId === "*" && row.fields.colIds === "*");
+    // Empty native documents need not have a default ACL resource yet. Create
+    // it only inside the disposable compatibility document.
+    if (!defaultAclResource) {
+      await gristApi(gristBaseUrl, apiKey,
+        `/api/docs/${encodeURIComponent(documentId)}/apply`, {
+          method: "POST",
+          body: JSON.stringify([["AddRecord", "_grist_ACLResources", null,
+            { tableId: "*", colIds: "*" }]])
+        });
+      const createdResources = await gristApi(gristBaseUrl, apiKey,
+        `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_ACLResources/records`);
+      defaultAclResource = (createdResources as { records: Array<{
+        id: number; fields: Record<string, unknown>
+      }> }).records.find((row) =>
+        row.fields.tableId === "*" && row.fields.colIds === "*");
+    }
     assert(defaultAclResource?.id, "native_default_acl_resource_missing");
     await gristApi(gristBaseUrl, apiKey,
       `/api/docs/${encodeURIComponent(documentId)}/apply`, {
