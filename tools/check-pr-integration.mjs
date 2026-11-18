@@ -4,6 +4,8 @@ import { pathToFileURL } from "node:url";
 const SHA = /^[a-f0-9]{40}$/i;
 const mandatoryReview = path =>
   path === "AGENTS.md" || path === "docs/ROADMAP.md" ||
+  path === "docs/DEVELOPMENT.md" || path === ".github/pull_request_template.md" ||
+  path === "test/pr-integration-gate.test.mjs" ||
   path === "docs/PRODUCT_VISION.md" || path === "docs/MCP-CONTRACT.md" ||
   path === "docs/SECURITY.md" || path.startsWith("src/") ||
   path.startsWith("tools/") || path.startsWith(".github/workflows/") ||
@@ -27,7 +29,8 @@ function reviewDeclaration(body) {
   const match = body.match(/^\s*(?:\*\*)?Review gate:\s*(REQUIRED|NOT REQUIRED)(?:\*\*)?\s*[:—–-]?\s*(.*)$/im);
   if (!match) return null;
   const reason = match[2].trim().replace(/^[\s(*]+|[\s)*]+$/g, "");
-  return { gate: match[1], reason };
+  // Unfilled template placeholders are not a substantive review justification.
+  return { gate: match[1], reason: /<[^<>]+>/.test(reason) ? "" : reason };
 }
 
 function verdicts(comments, sha) {
