@@ -49,7 +49,9 @@ test("registered mutation schemas reject unsupported wrapper keys before dispatc
   assert.equal(writes.length, 1);
 });
 
-function capture(grist: any = {}): Registration[] {
+function capture(grist: any = {}, limits = {
+  maxReadRecords: 200, maxWriteRecords: 50, maxSchemaItems: 100
+}): Registration[] {
   const registrations: Registration[] = [];
   const server = {
     registerTool: (
@@ -62,11 +64,7 @@ function capture(grist: any = {}): Registration[] {
     }
   } as unknown as McpServer;
 
-  registerLeanTools(server, grist, {
-    maxReadRecords: 200,
-    maxWriteRecords: 50,
-    maxSchemaItems: 100
-  });
+  registerLeanTools(server, grist, limits);
   return registrations;
 }
 
@@ -393,6 +391,7 @@ test("selected help exposes usable current guides and real-schema-valid syntheti
     maxReadRecords: 200, maxWriteRecords: 50, maxSchemaItems: 100
   });
   assert.equal(payload.tools.length, 10);
+  const minimumLimits = capture({}, { maxReadRecords: 1, maxWriteRecords: 1, maxSchemaItems: 1 });
   for (const entry of payload.tools) {
     assert(entry.guide?.request?.length > 0, `missing request for ${entry.name}`);
     assert(entry.guide?.constraints?.length > 0, `missing constraints for ${entry.name}`);
@@ -402,6 +401,9 @@ test("selected help exposes usable current guides and real-schema-valid syntheti
       assert.equal(typeof example.purpose, "string");
       assert.deepEqual(registered.options.inputSchema!.parse(example.arguments), example.arguments,
         `stale advertised example in ${entry.name}: ${example.purpose}`);
+      const minimumRegistration = minimumLimits.find((tool) => tool.name === entry.name)!;
+      assert.deepEqual(minimumRegistration.options.inputSchema!.parse(example.arguments), example.arguments,
+        `advertised example exceeds minimum deployment limits in ${entry.name}: ${example.purpose}`);
     }
   }
   const inspect = payload.tools.find((entry: any) => entry.name === "grist_inspect");
