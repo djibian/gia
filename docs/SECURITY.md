@@ -87,6 +87,16 @@ into editable model content. Incomplete/censored/truncated metadata, overlapping
 targets or lossy normalization refuses mutation. Untargeted persisted policy is
 fingerprinted internally and verified unchanged after the write.
 
+User-attribute definitions are inspected only from the default native ACL
+resource after the fresh Owner proof, as a closed structural projection with
+validated existing table/column IDs and safe built-in user-property or LinkKey
+**names**. The projection is read-only and excludes values, raw definition
+JSON, formulas, LinkKey tokens and URLs. Unknown, malformed, misplaced or
+duplicate-name definitions are protected and counted, not normalized to a
+writable policy. Ordinary ACL writes continue to fingerprint and preserve all
+untargeted native user-attribute rows. The lookup's effective results and
+confidentiality are not asserted.
+
 Persisted rule verification is **not** proof of effective enforcement or
 confidentiality. Native defaults, structure/schema-edit permissions and formulas
 remain decisive. Hidden fields and saved filters are presentation state.
