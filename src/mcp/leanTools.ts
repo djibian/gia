@@ -3,6 +3,7 @@ import * as z from "zod/v4";
 
 import {
   ACCESS_RULE_USER_PROPERTIES,
+  ACCESS_USER_ATTRIBUTE_PROPERTIES,
   MAX_ACCESS_RULE_COLUMNS,
   MAX_ACCESS_RULE_CONDITION_DEPTH,
   MAX_ACCESS_RULE_CONDITION_WIDTH,
@@ -106,6 +107,21 @@ const accessRuleTargetSchema = z
       .optional()
   })
   .strict();
+// Same access_rule_group action, closed alternate target; no additional MCP tool.
+const accessUserAttributeTargetSchema = z.object({
+  userAttributeName: accessRuleLinkKeyNameSchema
+}).strict();
+const accessUserAttributeDefinitionSchema = z.object({
+  tableId: z.string().min(1).max(100).regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+  lookupColId: z.string().min(1).max(100).regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+  source: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("user_property"),
+      property: z.enum(ACCESS_USER_ATTRIBUTE_PROPERTIES) }).strict(),
+    z.object({ kind: z.literal("link_key"),
+      name: accessRuleLinkKeyNameSchema }).strict()
+  ])
+}).strict();
+
 const accessRuleLeafConditionVariants = [
   z.object({ kind: z.literal("everyone") }).strict(),
   z
@@ -941,8 +957,9 @@ export function registerLeanTools(
             action: z.literal("access_rule_group"),
             documentId: documentIdSchema,
             mode: z.enum(["create", "replace", "delete"]),
-            target: accessRuleTargetSchema,
-            rules: z.array(accessRuleSchema).min(1).max(MAX_ACCESS_RULES_PER_GROUP).optional()
+            target: z.union([accessRuleTargetSchema, accessUserAttributeTargetSchema]),
+            rules: z.array(accessRuleSchema).min(1).max(MAX_ACCESS_RULES_PER_GROUP).optional(),
+            definition: accessUserAttributeDefinitionSchema.optional()
           })
           .strict()
       ])
@@ -1000,7 +1017,8 @@ export function registerLeanTools(
                 input.documentId,
                 input.target,
                 input.mode,
-                input.rules
+                input.rules,
+                input.definition
               )
             );
         }

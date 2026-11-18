@@ -5,7 +5,9 @@ import {
   normalizeAccessRulesSnapshot,
   projectAccessRules,
   resolveAccessRuleMutation,
-  verifyAccessRuleMutation
+  resolveUserAttributeMutation,
+  verifyAccessRuleMutation,
+  verifyUserAttributeMutation
 } from "../src/grist/accessRules.js";
 
 function baseMetadata() {
@@ -1287,4 +1289,143 @@ test("ambiguous or misplaced user attributes stay protected; unrelated ACL write
   assert.throws(() => resolveAccessRuleMutation(state, { tableId: "Projects" }, "replace",
     [{ condition: { kind: "everyone" }, permissions: { read: "allow", update: "unspecified" } }]),
   /unsupported or sensitive/);
+});
+
+
+test("native user-attribute create plans a single default resource and verifies only target rows", () => {
+  const before = snapshot([], []);
+  const target = { userAttributeName: "Mentor" };
+  const definition = { tableId: "Projects", lookupColId: "OwnerEmail",
+    source: { kind: "user_property" as const, property: "Email" as const } };
+  const plan = resolveUserAttributeMutation(before, target, "create", definition);
+  assert.equal(plan.mode, "create");
+  assert.equal(plan.createDefaultResource, true);
+  assert.equal(plan.defaultResourceId, undefined);
+  assert.equal(plan.rulePos, 1);
+  assert.equal(plan.nativeDefinition,
+    JSON.stringify({ name: "Mentor", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email" }));
+  const after = snapshot([{ id: 1, fields: { tableId: "*", colIds: "*" } }], [
+    { id: 10, fields: { resource: 1, rulePos: 1, userAttributes: plan.nativeDefinition,
+      aclFormula: "", aclFormulaParsed: "", permissionsText: "" } }
+  ]);
+  assert.deepEqual(verifyUserAttributeMutation(before, after, plan), {
+    changed: true, persistedDefinitionVerified: true, effectiveEnforcementVerified: false
+  });
+  assert.equal((projectAccessRules(after) as any).userAttributes.definitions[0].editable, true);
+  assert.throws(() => resolveUserAttributeMutation(after, target, "create", definition),
+    /already exists/);
+  const altered = snapshot([{ id: 1, fields: { tableId: "*", colIds: "*" } }], [
+    { id: 10, fields: { resource: 1, rulePos: 1, userAttributes: plan.nativeDefinition,
+      aclFormula: "", aclFormulaParsed: "", permissionsText: "" } },
+    { id: 11, fields: { resource: 1, rulePos: 2,
+      aclFormula: "", aclFormulaParsed: "", permissionsText: "+R" } }
+  ]);
+  assert.throws(() => verifyUserAttributeMutation(before, altered, plan), /uniquely verified/);
+});
+
+test("native user-attribute replacement preserves identity and unrelated policy rows", () => {
+  const existingRaw = JSON.stringify({
+    name: "Mentor", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
+  });
+  const resource = [
+    { id: 1, fields: { tableId: "*", colIds: "*" } },
+    { id: 2, fields: { tableId: "Projects", colIds: "*" } }
+  ];
+  const original = [
+    { id: 10, fields: { resource: 1, rulePos: 1,
+      aclFormula: "", aclFormulaParsed: "", permissionsText: "", userAttributes: existingRaw } },
+    { id: 20, fields: { resource: 2, rulePos: 1,
+      aclFormula: "rec.OwnerEmail == user.Email",
+      aclFormulaParsed: '["Eq"]', permissionsText: "+R" } }
+  ];
+  const before = snapshot(resource, original);
+  const target = { userAttributeName: "Mentor" };
+  const definition = { tableId: "Projects", lookupColId: "ShareToken",
+    source: { kind: "link_key" as const, name: "StageToken" } };
+  const plan = resolveUserAttributeMutation(before, target, "replace", definition);
+  assert.equal(plan.targetRuleId, 10);
+  assert.equal(plan.mode, "replace");
+  const after = snapshot(resource, [
+    { ...original[0]!, fields: { ...original[0]!.fields,
+      userAttributes: plan.nativeDefinition } }, original[1]!
+  ]);
+  assert.equal(verifyUserAttributeMutation(before, after, plan).persistedDefinitionVerified, true);
+  assert.equal(resolveUserAttributeMutation(after, target, "replace", definition).mode, "noop");
+  const modifiedPolicy = snapshot(resource, [
+    { ...original[0]!, fields: { ...original[0]!.fields,
+      userAttributes: plan.nativeDefinition } },
+    { ...original[1]!, fields: { ...original[1]!.fields, permissionsText: "-R" } }
+  ]);
+  assert.throws(() => verifyUserAttributeMutation(before, modifiedPolicy, plan),
+    /Untargeted persisted ACL rules changed/);
+});
+
+test("native user-attribute deletion refuses referenced or opaque definitions", () => {
+  const native = JSON.stringify({
+    name: "Mentor", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
+  });
+  const resources = [{ id: 1, fields: { tableId: "*", colIds: "*" } }];
+  const rule = { id: 10, fields: {
+    resource: 1, rulePos: 1, userAttributes: native,
+    aclFormula: "", aclFormulaParsed: "", permissionsText: "" } };
+  const before = snapshot(resources, [rule]);
+  const plan = resolveUserAttributeMutation(before, { userAttributeName: "Mentor" }, "delete");
+  assert.equal(plan.mode, "delete");
+  assert.equal(verifyUserAttributeMutation(before, snapshot(resources, []), plan)
+    .persistedDefinitionVerified, true);
+  assert.throws(() => resolveUserAttributeMutation(before,
+    { userAttributeName: "Mentor" }, "delete",
+    { tableId: "Projects", lookupColId: "OwnerEmail",
+      source: { kind: "user_property", property: "Email" } }), /do not accept/);
+  const referenced = snapshot([
+    ...resources, { id: 2, fields: { tableId: "Projects", colIds: "*" } }
+  ], [rule, { id: 20, fields: { resource: 2, rulePos: 1,
+    aclFormula: "user.Mentor == rec.OwnerEmail",
+    aclFormulaParsed: '["Eq",["Attr",["Name","user"],"Mentor"],["Attr",["Name","rec"],"OwnerEmail"]]',
+    permissionsText: "+R" } }]);
+  assert.throws(() => resolveUserAttributeMutation(referenced,
+    { userAttributeName: "Mentor" }, "delete"), /references this attribute/);
+  const aclResource = { id: 2, fields: { tableId: "Projects", colIds: "*" } };
+  for (const [formula, parsed] of [
+    ["user . Mentor == rec.OwnerEmail",
+      '["Eq",["Attr",["Name","user"],"Mentor"],["Attr",["Name","rec"],"OwnerEmail"]]'],
+    ["user . Mentor.OwnerEmail == rec.OwnerEmail",
+      '["Eq",["Attr",["Attr",["Name","user"],"Mentor"],"OwnerEmail"],["Attr",["Name","rec"],"OwnerEmail"]]']
+  ]) {
+    const dependent = snapshot([...resources, aclResource], [rule, {
+      id: 20, fields: { resource: 2, rulePos: 1, aclFormula: formula,
+        aclFormulaParsed: parsed, permissionsText: "+R" }
+    }]);
+    assert.throws(() => resolveUserAttributeMutation(dependent,
+      { userAttributeName: "Mentor" }, "delete"), /references this attribute/);
+  }
+  for (const parsed of ["", "not JSON", '["Eq"]',
+    '["Call",["Name","getattr"],["Name","user"],["Const","Mentor"]]']) {
+    const uncertain = snapshot([...resources, aclResource], [rule, {
+      id: 20, fields: { resource: 2, rulePos: 1,
+        aclFormula: "user . Mentor == rec.OwnerEmail",
+        aclFormulaParsed: parsed, permissionsText: "+R" }
+    }]);
+    assert.throws(() => resolveUserAttributeMutation(uncertain,
+      { userAttributeName: "Mentor" }, "delete"), /refusing|ambiguous|outside/);
+  }
+  const independent = snapshot([...resources, aclResource], [rule, {
+    id: 20, fields: { resource: 2, rulePos: 1,
+      aclFormula: "user.Email == rec.OwnerEmail",
+      aclFormulaParsed: '["Eq",["Attr",["Name","user"],"Email"],["Attr",["Name","rec"],"OwnerEmail"]]',
+      permissionsText: "+R" }
+  }]);
+  assert.equal(resolveUserAttributeMutation(independent,
+    { userAttributeName: "Mentor" }, "delete").mode, "delete");
+  const opaque = snapshot(resources, [rule, { id: 11, fields: {
+    resource: 1, rulePos: 2, aclFormula: "", aclFormulaParsed: "",
+    permissionsText: "", userAttributes: "PRIVATE" } }]);
+  assert.throws(() => resolveUserAttributeMutation(opaque,
+    { userAttributeName: "Other" }, "create", { tableId: "Projects",
+      lookupColId: "OwnerEmail", source: { kind: "user_property", property: "Email" } }),
+    /unsupported or ambiguous/);
+  assert.throws(() => resolveUserAttributeMutation(before,
+    { userAttributeName: "Email" }, "create", { tableId: "Projects",
+      lookupColId: "OwnerEmail", source: { kind: "user_property", property: "Email" } }),
+    /non-reserved/);
 });

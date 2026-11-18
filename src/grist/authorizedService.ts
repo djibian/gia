@@ -10,9 +10,13 @@ import {
   normalizeAccessRulesSnapshot,
   projectAccessRules,
   resolveAccessRuleMutation,
+  resolveUserAttributeMutation,
   verifyAccessRuleMutation,
+  verifyUserAttributeMutation,
   type AccessRuleInput,
   type AccessRuleTarget,
+  type AccessUserAttributeTarget,
+  type AccessUserAttributeDefinitionInput,
   type AccessRulesSnapshot
 } from "./accessRules.js";
 import type {
@@ -1213,13 +1217,36 @@ export class AuthorizedGristService {
 
   async changeAccessRuleGroup(
     documentIdOrUrl: string,
-    target: AccessRuleTarget,
+    target: AccessRuleTarget | AccessUserAttributeTarget,
     mode: "create" | "replace" | "delete",
-    rules?: readonly AccessRuleInput[]
+    rules?: readonly AccessRuleInput[],
+    definition?: AccessUserAttributeDefinitionInput
   ): Promise<unknown> {
     return this.execute("change_access_rule_group", documentIdOrUrl, 1, async (id) => {
       await this.inner.assertDocumentOwner(id);
       const before = await this.loadAccessRulesSnapshot(id);
+      if ("userAttributeName" in target) {
+        if (rules !== undefined) {
+          throw new Error("User-attribute mutations do not accept access rules.");
+        }
+        const plan = resolveUserAttributeMutation(before, target, mode, definition);
+        const base = { documentId: id, target, mode };
+        if (plan.mode === "noop") {
+          return { ...base, changed: false, persistedDefinitionVerified: true,
+            effectiveEnforcementVerified: false };
+        }
+        await this.uiActions.mutateUserAttribute(id, plan);
+        try {
+          const after = await this.loadAccessRulesSnapshot(id);
+          return { ...base, ...verifyUserAttributeMutation(before, after, plan) };
+        } catch (error) {
+          throw new AccessRuleWriteVerificationError(error instanceof Error
+            ? error.message : "Native user-attribute write could not be verified.");
+        }
+      }
+      if (definition !== undefined) {
+        throw new Error("Ordinary access-rule group mutations do not accept a user-attribute definition.");
+      }
       const plan = resolveAccessRuleMutation(before, target, mode, rules);
 
       if (plan.mode === "noop") {

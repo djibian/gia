@@ -664,3 +664,35 @@ test("ACL MCP empty-text check accepts no model-facing literal content", () => {
     { ...empty, linkKeyName: "Secret" }
   ]) assert.throws(() => parse(invalid));
 });
+
+test("user-attribute mutations reuse the typed access_rule_group entry point", async () => {
+  const observed: unknown[] = [];
+  const registrations = capture({
+    changeAccessRuleGroup: async (...args: unknown[]) => {
+      observed.push(args);
+      return { persistedDefinitionVerified: true };
+    }
+  });
+  const tool = registrations.find(entry => entry.name === "grist_change_structure")!;
+  const base = { action: "access_rule_group", documentId: "doc-1",
+    mode: "create", target: { userAttributeName: "StageAccess" },
+    definition: { tableId: "Projects", lookupColId: "ShareToken",
+      source: { kind: "link_key", name: "StageToken" } } };
+  const input = tool.options.inputSchema!.parse(base);
+  await tool.callback(input);
+  assert.equal(observed.length, 1);
+  assert.deepEqual((observed[0] as unknown[])[4], base.definition);
+  for (const forbidden of [
+    { ...base, definition: { ...base.definition,
+      source: { kind: "link_key", name: "bad-name" } } },
+    { ...base, definition: { ...base.definition, charId: "PRIVATE" } },
+    { ...base, definition: { ...base.definition,
+      source: { kind: "literal", value: "PRIVATE" } } },
+    { ...base, target: { ...base.target, linkKeyValue: "PRIVATE" } },
+    { ...base, aclFormula: "True" },
+    { ...base, target: { userAttributeName: "bad-name" } }
+  ]) assert.throws(() => tool.options.inputSchema!.parse(forbidden));
+  assert.ok(tool.options.inputSchema!.parse({
+    ...base, mode: "delete", definition: undefined
+  }));
+});

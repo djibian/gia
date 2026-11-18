@@ -1589,9 +1589,97 @@ async function run(): Promise<void> {
         def.tableId === ACL_TABLE_ID && def.lookupColId === "ShareToken" &&
         (def.source as Record<string, unknown>)?.kind === "user_property" &&
         (def.source as Record<string, unknown>)?.property === "Email" &&
-        def.editable === false), "native_user_attribute_not_normalized");
+        def.editable === true), "native_user_attribute_not_normalized");
     assert(nativeAttrsInspected.effectiveEnforcementVerified === false,
       "native_user_attribute_overclaimed_enforcement");
+
+    const attrCreate = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "create",
+        target: { userAttributeName: "CompatCreated" },
+        definition: { tableId: ACL_TABLE_ID, lookupColId: "ShareToken",
+          source: { kind: "user_property", property: "Email" } }
+      }), "native_user_attribute_create");
+    assert(attrCreate.changed === true && attrCreate.persistedDefinitionVerified === true &&
+      attrCreate.effectiveEnforcementVerified === false,
+      "native_user_attribute_create_not_verified");
+    const attrReplace = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "replace",
+        target: { userAttributeName: "CompatCreated" },
+        definition: { tableId: ACL_TABLE_ID, lookupColId: "ShareToken",
+          source: { kind: "link_key", name: "StageToken" } }
+      }), "native_user_attribute_replace");
+    assert(attrReplace.changed === true && attrReplace.persistedDefinitionVerified === true,
+      "native_user_attribute_replace_not_verified");
+    const attrsAfterReplace = resultJson(await callTool(bridgeBaseUrl,
+      "grist_inspect", { action: "access_rules", documentId }),
+      "native_user_attribute_after_replace");
+    assert((attrsAfterReplace.userAttributes as {definitions: Array<Record<string, unknown>>})
+      .definitions.some(def => def.name === "CompatCreated" &&
+        (def.source as Record<string, unknown>).kind === "link_key" &&
+        (def.source as Record<string, unknown>).name === "StageToken"),
+      "native_user_attribute_link_key_source_not_preserved");
+    // Native Grist accepts spaces around Python attribute access. Regress
+    // deletion against its actual persisted parsed AST, not only Gia's mocks.
+    await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/apply`, {
+        method: "POST",
+        body: JSON.stringify([
+          ["AddRecord", "_grist_ACLResources", -31, {
+            tableId: ACL_TABLE_ID, colIds: "*"
+          }],
+          ["AddRecord", "_grist_ACLRules", null, {
+            resource: -31, rulePos: 1,
+            aclFormula: "user . CompatCreated.ShareToken == rec.ShareToken",
+            permissionsText: "+R"
+          }]
+        ])
+      });
+    const beforeRejectedDelete = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_ACLRules/records`);
+    const dependentRows = (beforeRejectedDelete as { records?: Array<{
+      id: number; fields: Record<string, unknown>
+    }> }).records ?? [];
+    const dependent = dependentRows.find(row =>
+      row.fields.aclFormula === "user . CompatCreated.ShareToken == rec.ShareToken");
+    assert(dependent &&
+      String(dependent.fields.aclFormulaParsed).includes('"CompatCreated"'),
+      "native_user_attribute_spaced_predicate_not_parsed");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "delete",
+      target: { userAttributeName: "CompatCreated" }
+    });
+    const afterRejectedDelete = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_ACLRules/records`);
+    assert(JSON.stringify(afterRejectedDelete) === JSON.stringify(beforeRejectedDelete),
+      "native_user_attribute_rejected_delete_changed_state");
+    const dependentResourceId = dependent.fields.resource;
+    assert(typeof dependentResourceId === "number" && dependentResourceId > 0,
+      "native_user_attribute_dependency_resource_missing");
+    await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/apply`, {
+        method: "POST",
+        body: JSON.stringify([
+          ["RemoveRecord", "_grist_ACLRules", dependent.id],
+          ["RemoveRecord", "_grist_ACLResources", dependentResourceId]
+        ])
+      });
+    const attrDelete = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "delete",
+        target: { userAttributeName: "CompatCreated" }
+      }), "native_user_attribute_delete");
+    assert(attrDelete.changed === true && attrDelete.persistedDefinitionVerified === true,
+      "native_user_attribute_delete_not_verified");
+    const attrsAfterDelete = resultJson(await callTool(bridgeBaseUrl,
+      "grist_inspect", { action: "access_rules", documentId }),
+      "native_user_attribute_after_delete");
+    assert(!(attrsAfterDelete.userAttributes as {definitions: Array<Record<string, unknown>>})
+      .definitions.some(def => def.name === "CompatCreated") &&
+      (attrsAfterDelete.userAttributes as {definitions: Array<Record<string, unknown>>})
+      .definitions.some(def => def.name === "CompatMember"),
+      "native_user_attribute_delete_damaged_untargeted_definition");
 
     await callToolExpectError(bridgeBaseUrl, "grist_add_structure", {
       action: "create_document",
