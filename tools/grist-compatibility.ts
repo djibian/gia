@@ -1593,6 +1593,49 @@ async function run(): Promise<void> {
     assert(nativeAttrsInspected.effectiveEnforcementVerified === false,
       "native_user_attribute_overclaimed_enforcement");
 
+    const attrCreate = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "create",
+        target: { userAttributeName: "CompatCreated" },
+        definition: { tableId: ACL_TABLE_ID, lookupColId: "ShareToken",
+          source: { kind: "user_property", property: "Email" } }
+      }), "native_user_attribute_create");
+    assert(attrCreate.changed === true && attrCreate.persistedDefinitionVerified === true &&
+      attrCreate.effectiveEnforcementVerified === false,
+      "native_user_attribute_create_not_verified");
+    const attrReplace = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "replace",
+        target: { userAttributeName: "CompatCreated" },
+        definition: { tableId: ACL_TABLE_ID, lookupColId: "ShareToken",
+          source: { kind: "link_key", name: "StageToken" } }
+      }), "native_user_attribute_replace");
+    assert(attrReplace.changed === true && attrReplace.persistedDefinitionVerified === true,
+      "native_user_attribute_replace_not_verified");
+    const attrsAfterReplace = resultJson(await callTool(bridgeBaseUrl,
+      "grist_inspect", { action: "access_rules", documentId }),
+      "native_user_attribute_after_replace");
+    assert((attrsAfterReplace.userAttributes as {definitions: Array<Record<string, unknown>>})
+      .definitions.some(def => def.name === "CompatCreated" &&
+        (def.source as Record<string, unknown>).kind === "link_key" &&
+        (def.source as Record<string, unknown>).name === "StageToken"),
+      "native_user_attribute_link_key_source_not_preserved");
+    const attrDelete = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "delete",
+        target: { userAttributeName: "CompatCreated" }
+      }), "native_user_attribute_delete");
+    assert(attrDelete.changed === true && attrDelete.persistedDefinitionVerified === true,
+      "native_user_attribute_delete_not_verified");
+    const attrsAfterDelete = resultJson(await callTool(bridgeBaseUrl,
+      "grist_inspect", { action: "access_rules", documentId }),
+      "native_user_attribute_after_delete");
+    assert(!(attrsAfterDelete.userAttributes as {definitions: Array<Record<string, unknown>>})
+      .definitions.some(def => def.name === "CompatCreated") &&
+      (attrsAfterDelete.userAttributes as {definitions: Array<Record<string, unknown>>})
+      .definitions.some(def => def.name === "CompatMember"),
+      "native_user_attribute_delete_damaged_untargeted_definition");
+
     await callToolExpectError(bridgeBaseUrl, "grist_add_structure", {
       action: "create_document",
       workspaceId: deniedTarget.workspaceId,
