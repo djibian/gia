@@ -27,6 +27,8 @@ A v2 server exposes exactly these ten tools:
 
 Both `grist_add_structure(create_tables)` and `grist_add_structure(create_columns)` accept only creation metadata actually persisted by the supported native Grist operations: optional `label`, `type`, `isFormula`, `formula` and `widgetOptions`. Native `AddTable` and `AddVisibleColumn` do not persist `description` and do not resolve the public stable-ID alias `visibleColumnId` at creation time. These two update-only fields therefore fail validation **before any create write**, including mixed batches, rather than producing a misleading success. To set them, first create the column with supported fields, then call `grist_change_structure(action="update_columns")` on the resulting stable IDs; update verification and uncertain-write handling remain authoritative. This narrows previously advertised but ineffective create inputs, not a functioning native creation workflow.
 
+The bounded ACL condition input language is advertised using local JSON Schema `$defs`/`$ref` references for its finite depth levels. Clients must resolve these local references to discover the complete closed predicate variants; a client's flattened or `unknown` display is not evidence that Gia accepts arbitrary predicates. Server-side validation, depth/width/node bounds and closed actions remain unchanged. This is not a promise of support for every client's JSON Schema dialect.
+
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
 ## Versioning rule
