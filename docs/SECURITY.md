@@ -90,12 +90,18 @@ fingerprinted internally and verified unchanged after the write.
 User-attribute definitions are inspected only from the default native ACL
 resource after the fresh Owner proof, as a closed structural projection with
 validated existing table/column IDs and safe built-in user-property or LinkKey
-**names**. The projection is read-only and excludes values, raw definition
-JSON, formulas, LinkKey tokens and URLs. Unknown, malformed, misplaced or
-duplicate-name definitions are protected and counted, not normalized to a
-writable policy. Ordinary ACL writes continue to fingerprint and preserve all
-untargeted native user-attribute rows. The lookup's effective results and
-confidentiality are not asserted.
+**names**. The projection excludes values, raw definition JSON, formulas,
+LinkKey tokens and URLs. Unknown, malformed, misplaced or duplicate-name
+definitions remain protected. A separately bounded typed create/replace/delete
+target in the existing access_rule_group action requires fresh Owner proof and
+local doc.schema:write, refuses all native user-attribute writes whenever any
+definition is opaque/ambiguous, rejects reserved names and missing stable
+lookup columns, and never accepts raw JSON or arbitrary user properties.
+Deletion refuses known references from ACL conditions. Writes preserve all
+untargeted native ACL rows/resources, verify selected post-state and native
+identity, and return uncertain/non-retryable effect on failed re-read.
+Ordinary ACL writes still fingerprint and preserve user-attribute rows.
+The lookup's effective results and confidentiality are not asserted.
 
 Persisted rule verification is **not** proof of effective enforcement or
 confidentiality. Native defaults, structure/schema-edit permissions and formulas
