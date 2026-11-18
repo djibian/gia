@@ -394,20 +394,15 @@ export class GristService {
     this.assertUniqueStrings(tables.map((table) => table.id), "Table IDs");
     for (const table of tables) {
       this.assertIdentifier(table.id, "Table ID");
-      if (table.columns) {
-        this.assertUniqueStrings(table.columns.map((column) => column.id), "Column IDs");
-        for (const column of table.columns) {
-          this.assertIdentifier(column.id, "Column ID");
-        }
+      if (!Array.isArray(table.columns) || table.columns.length === 0) {
+        throw new Error("Each new table requires at least one column.");
+      }
+      this.assertUniqueStrings(table.columns.map((column) => column.id), "Column IDs");
+      for (const column of table.columns) {
+        this.assertIdentifier(column.id, "Column ID");
       }
     }
-    // Grist requires a columns array in each table payload, even when no
-    // initial user column is requested. Preserve the optional MCP input.
-    const nativeTables = tables.map((table) => ({
-      ...table,
-      columns: table.columns ?? []
-    }));
-    const result = await this.client.createTables(documentId, nativeTables);
+    const result = await this.client.createTables(documentId, tables);
     return projectCreatedItems(result, "tables", tables.length, "string");
   }
 
