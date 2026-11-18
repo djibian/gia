@@ -460,6 +460,37 @@ async function run(): Promise<void> {
       assert(names.includes(expected), `missing_tool:${expected}`);
     }
 
+    // Measure what the actual MCP HTTP server advertises, not a mocked
+    // registerTool call. A compact ACL schema still declares every finite
+    // condition but shares its depth definitions using local JSON Schema refs.
+    const changeTool = (tools.tools as Array<{ name: string; inputSchema?: unknown }>)
+      .find((entry) => entry.name === "grist_change_structure");
+    assert(changeTool?.inputSchema !== undefined, "change_structure_schema_missing");
+    const wireSchema = changeTool.inputSchema as Record<string, unknown>;
+    const schemaBytes = Buffer.byteLength(JSON.stringify(wireSchema), "utf8");
+    assert(schemaBytes < 60_000, `acl_schema_too_large:${schemaBytes}`);
+    const defs = wireSchema.$defs;
+    assert(defs !== null && typeof defs === "object" && !Array.isArray(defs),
+      "acl_schema_local_definitions_missing");
+    const refs: string[] = [];
+    const walkRefs = (node: unknown): void => {
+      if (Array.isArray(node)) { for (const item of node) walkRefs(item); return; }
+      if (node === null || typeof node !== "object") return;
+      for (const [key, value] of Object.entries(node)) {
+        if (key === "$ref") {
+          assert(typeof value === "string" && value.startsWith("#/$defs/"),
+            "acl_schema_invalid_reference");
+          refs.push(value as string);
+        } else walkRefs(value);
+      }
+    };
+    walkRefs(wireSchema);
+    assert(refs.length >= 2, "acl_schema_reuse_not_advertised");
+    for (const reference of refs) {
+      const name = reference.slice("#/$defs/".length).replace(/~1/g, "/").replace(/~0/g, "~");
+      assert(Object.hasOwn(defs, name), "acl_schema_unresolved_reference");
+    }
+
     const discovered = resultText(
       await callTool(bridgeBaseUrl, "grist_discover", { action: "documents" })
     );

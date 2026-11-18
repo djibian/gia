@@ -770,3 +770,48 @@ test("create_tables and create_columns reject ignored metadata before dispatch",
   };
   assert.deepEqual(change.options.inputSchema!.parse(update).columns, update.columns);
 });
+
+test("ACL schema advertises compact shared finite definitions and retains depth/strictness", () => {
+  const tool = capture().find((entry) => entry.name === "grist_change_structure")!;
+  const json = z.toJSONSchema(tool.options.inputSchema as z.ZodType, { io: "input" });
+  const bytes = Buffer.byteLength(JSON.stringify(json), "utf8");
+  // Was ~471 KB at this tool alone. Budget retains headroom for other actions.
+  assert(bytes < 60_000, `ACL tool schema expanded to ${bytes} bytes`);
+  const refs = new Set<string>();
+  const visit = (item: unknown): void => {
+    if (Array.isArray(item)) {
+      for (const child of item) visit(child);
+    } else if (item !== null && typeof item === "object") {
+      for (const [key, value] of Object.entries(item)) {
+        if (key === "$ref") {
+          assert.equal(typeof value, "string");
+          refs.add(value as string);
+        } else {
+          visit(value);
+        }
+      }
+    }
+  };
+  visit(json);
+  assert(refs.size > 0, "shared ACL condition depths must have local refs");
+  for (const ref of refs) {
+    assert(ref.startsWith("#/$defs/"), `external or nonlocal schema reference: ${ref}`);
+    const id = ref.slice("#/$defs/".length).replace(/~1/g, "/").replace(/~0/g, "~");
+    assert(Object.hasOwn((json as { $defs?: Record<string, unknown> }).$defs ?? {}, id),
+      `unresolved MCP reference ${ref}`);
+  }
+
+  const base = { action: "access_rule_group", documentId: "doc-1", mode: "create",
+    target: { tableId: "Projects" } };
+  const leaf = { kind: "match_link_key", operator: "equals", columnId: "Token",
+    linkKeyName: "StageToken" };
+  let deepest: unknown = leaf;
+  for (let depth = 0; depth < 4; depth++) deepest = { kind: "not", condition: deepest };
+  const parse = (condition: unknown) => tool.options.inputSchema!.parse({
+    ...base, rules: [{ condition, permissions: { read: "unspecified", update: "allow" } }]
+  });
+  assert.ok(parse(deepest));
+  assert.throws(() => parse({ kind: "not", condition: deepest }));
+  assert.throws(() => parse({ kind: "any", conditions: [leaf] }));
+  assert.throws(() => parse({ kind: "not", condition: { ...leaf, linkKeyValue: "SECRET" } }));
+});
