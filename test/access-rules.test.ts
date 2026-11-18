@@ -122,7 +122,7 @@ test("normalizes only bounded secret-safe ordinary ACL groups", () => {
   const projected = projectAccessRules(state) as any;
   assert.equal(projected.protectedPersistedGroupCount, 2);
   assert.equal(projected.effectiveEnforcementVerified, false);
-  assert.deepEqual(projected.groups, [
+  assert.deepEqual(projected.groups.map(({ dependencies, ...group }: any) => group), [
     {
       target: { tableId: "Projects" },
       editable: true,
@@ -1534,4 +1534,59 @@ test("user-attribute ACL references require compatible Ref IDs and unambiguous d
     [{ condition: { kind: "match_user_attribute", operator: "equals",
       columnId: "OwnerEmail", attributeName: "Mentor", attributeColumnId: "OwnerEmail" },
       permissions: { read: "allow", update: "unspecified" } }]), /unsupported or sensitive/);
+});
+
+test("E1-D1 projects only verified typed ACL dependencies, including nested and proposed-row conditions", () => {
+  const resources = [
+    { id: 1, fields: { tableId: "*", colIds: "*" } },
+    { id: 2, fields: { tableId: "Projects", colIds: "*" } }
+  ];
+  const userAttribute = JSON.stringify({
+    name: "Mentor", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
+  });
+  const state = snapshot(resources, [
+    { id: 10, fields: { resource: 1, rulePos: 1,
+      userAttributes: userAttribute, aclFormula: "", aclFormulaParsed: "", permissionsText: "" } },
+    { id: 20, fields: { resource: 2, rulePos: 1,
+      aclFormula: "rec.ShareToken == user.LinkKey.StageToken and (newRec.OwnerEmail == user.Mentor.OwnerEmail or user.IsLoggedIn == True)",
+      aclFormulaParsed: '["And"]', permissionsText: "+U" } },
+    { id: 21, fields: { resource: 2, rulePos: 2,
+      aclFormula: "user.Access in [EDITOR, VIEWER]",
+      aclFormulaParsed: '["In"]', permissionsText: "+R" } },
+    { id: 22, fields: { resource: 2, rulePos: 3,
+      aclFormula: "rec.UserId != newRec.UserId",
+      aclFormulaParsed: '["NotEq"]', permissionsText: "-U" } }
+  ]);
+  const view = projectAccessRules(state) as any;
+  const group = view.groups[0];
+  assert.equal(group.editable, true);
+  assert.deepEqual(group.dependencies, {
+    coverage: "supported_rules",
+    recordColumnIds: ["ShareToken", "UserId"],
+    newRecordColumnIds: ["OwnerEmail", "UserId"],
+    userProperties: ["Access", "IsLoggedIn"],
+    linkKeyNames: ["StageToken"],
+    userAttributeFields: [{ attributeName: "Mentor", attributeColumnId: "OwnerEmail" }]
+  });
+  assert.deepEqual(group.rules.map((rule: any) => rule.permissions), [
+    { read: "unspecified", update: "allow", create: "unspecified", delete: "unspecified" },
+    { read: "allow", update: "unspecified", create: "unspecified", delete: "unspecified" },
+    { read: "unspecified", update: "deny", create: "unspecified", delete: "unspecified" }
+  ]);
+  assert.equal(view.effectiveEnforcementVerified, false);
+  assert.doesNotMatch(JSON.stringify(view), /userAttributes.*charId|aclFormula|private-secret/);
+});
+
+test("E1-D1 refuses to infer names from protected formulas or secret literals", () => {
+  const state = snapshot(
+    [{ id: 2, fields: { tableId: "Projects", colIds: "Title" } }],
+    [{ id: 20, fields: { resource: 2, rulePos: 1,
+      aclFormula: "rec.Title == 'private-secret'",
+      aclFormulaParsed: '["Eq"]', permissionsText: "-R" } }]
+  );
+  const view = projectAccessRules(state) as any;
+  assert.deepEqual(view.groups[0].dependencies, { coverage: "unknown" });
+  assert.equal(view.groups[0].editable, false);
+  assert.equal(view.groups[0].rules, undefined);
+  assert.doesNotMatch(JSON.stringify(view), /private-secret|aclFormula|recordColumnIds/);
 });
