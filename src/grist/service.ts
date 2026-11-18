@@ -401,7 +401,13 @@ export class GristService {
         }
       }
     }
-    const result = await this.client.createTables(documentId, tables);
+    // Grist requires a columns array in each table payload, even when no
+    // initial user column is requested. Preserve the optional MCP input.
+    const nativeTables = tables.map((table) => ({
+      ...table,
+      columns: table.columns ?? []
+    }));
+    const result = await this.client.createTables(documentId, nativeTables);
     return projectCreatedItems(result, "tables", tables.length, "string");
   }
 
