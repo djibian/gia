@@ -145,6 +145,29 @@ ordinary groups, other policy resources and protected user attributes as
 unknown. It is read-only structural context before a possible rename/delete,
 not a forecast of Grist's native schema rewrite, authorization or confidentiality.
 
+An optional `simulation` on `grist_inspect(action="access_rules")`
+selects exactly one existing ordinary ACL group by stable table/column target
+and supplies an **invented** closed `context`: optional built-in role,
+synthetic user/rec/newRec fields, symbolic LinkKey names and attribute fields.
+Each value is only one of four fixed symbols `A`–`D`, a Boolean, an Int
+0/1 flag, or an explicit empty-Text marker. LinkKey inputs accept **symbols
+only**, never actual URL token values. At most 20 fields per collection and
+eight user-attribute collections are accepted. No record rows, URLs, secret
+strings or arbitrary formulas are fetched or submitted for simulation.
+
+The additive `simulatedPolicyGroup` reports each normalized rule's
+`true`/`false`/`unknown` match and the first potentially deciding rule
+for each R/U/C/D permission. Unknown earlier conditions remain unknown
+rather than yielding an unjustified later allow/deny. A missing or protected
+ordinary group returns no permission verdict. Simulation is restricted to
+the selected ordinary group: it does **not** apply native precedence across
+column/table/default/special policies, resolve live user attributes, call
+the Grist API with LinkKeys, or test effective native authorization.
+`simulated:true`, `nativeEnforcementVerified:false`, and
+`confidentialityVerified:false` are mandatory. The simulation never
+echoes input symbols or values; it is an explanation/debugging aid, not a
+policy safety certificate.
+
 Opaque formulas, memos, unsupported user-attribute definitions, default/special/schema-edit policy and other unsupported persisted semantics are preserved but not copied into editable model content. Before reading ACL metadata, the bridge performs a fresh native document metadata read and requires `access === "owners"`; this prevents censored non-owner metadata from being mistaken for an empty policy. The bridge also refuses incomplete/censored/truncated ACL metadata, duplicate or overlapping stable targets, and any selected group it cannot normalize without loss.
 
 Mutations require local `doc.schema:write` and remain subject to Grist's native Owner enforcement. The bridge verifies the requested persisted definition and an internal fingerprint of all untargeted persisted ACL state after re-read. A successful result explicitly does **not** claim effective enforcement verification; persisted rule rows alone are not treated as a confidentiality proof. Native `user.LinkKey` context exists in the Grist web client but not in API calls, so Gia's persisted LinkKey-rule verification is deliberately not presented as an end-to-end LinkKey authorization test. If post-write persisted verification fails, the MCP result preserves the operation's `UNCERTAIN` effect knowledge with `retryWholeOperation: false` rather than collapsing it into a generic failure.
