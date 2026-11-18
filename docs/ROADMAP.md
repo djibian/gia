@@ -24,23 +24,25 @@ claim that persisted policy proves effective confidentiality.
 
 ### Finite work
 
-#### E1-B — composable bounded condition AST
+#### E1-C — native user attributes
 
 **Status: ACTIVE**
 
-Generalize the condition model only as far as needed for important native
-application policies: bounded `all`/`any`/`not`, typed comparisons,
-built-in user properties, LinkKey names, stable `rec`/`newRec` columns,
-bounded typed literals and justified membership forms. No free-form expression
-string enters the public contract.
+E1-B's finite, additive closed AST has been absorbed into the current
+contract and tests. No further literal/operand variants are selected without
+new important generic evidence.
 
-#### E1-C — native user attributes
+E1-C begins with read-only, strictly structural inspection of native
+user-attribute definitions in the existing access-rules inspection path.
+The first tranche exposes only validated user-attribute names, existing table
+and lookup-column IDs, and bounded built-in user-property or LinkKey **names**;
+it never returns source values, credentials or raw formulas, and it does not
+permit editing. Unsupported/ambiguous definitions remain protected.
 
-**Status: BLOCKED by E1-B**
-
-After rechecking current upstream semantics, add bounded inspection and mutation
-of Grist user-attribute definitions and safe references from ACL conditions.
-Account creation, sharing and identity administration remain outside Gia.
+Next: recheck current native mutation actions, implement separately bounded
+create/replace/delete of user-attribute definitions and safe typed references
+from ACL conditions. Preserve native Owner authority, untargeted state,
+postconditions and uncertainty semantics. No account/share administration.
 
 #### E1-D — policy inspection and deterministic lint
 
@@ -71,7 +73,7 @@ concrete generic evidence.
 
 ### Execution rules
 
-Remaining work proceeds sequentially E1-B through E1-F. Each slice must be independently
+Remaining work proceeds sequentially E1-C through E1-F. Each slice must be independently
 bounded and reviewed on its exact head when required by [AGENTS.md](../AGENTS.md).
 Completed slice history belongs in issues, PRs, commits and CI; remove completed
 work from this Roadmap as it is absorbed into current normative docs and tests.
