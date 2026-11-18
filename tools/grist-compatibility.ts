@@ -1537,6 +1537,46 @@ async function run(): Promise<void> {
       "access_rule_deleted_group_still_present"
     );
 
+    // Qualify the actual Grist user-attribute metadata shape using a disposable
+    // document. Native UserActions are test-only; Gia never exposes raw /apply.
+    const nativeAclResources = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_ACLResources/records`);
+    const resourceRows = (nativeAclResources as { records?: Array<{
+      id: number; fields: Record<string, unknown>
+    }> }).records ?? [];
+    const defaultAclResource = resourceRows.find((row) =>
+      row.fields.tableId === "*" && row.fields.colIds === "*");
+    assert(defaultAclResource?.id, "native_default_acl_resource_missing");
+    await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/apply`, {
+        method: "POST",
+        body: JSON.stringify([["AddRecord", "_grist_ACLRules", null, {
+          resource: defaultAclResource.id, rulePos: 50,
+          userAttributes: JSON.stringify({
+            name: "CompatMember", tableId: ACL_TABLE_ID,
+            lookupColId: "ShareToken", charId: "Email"
+          })
+        }]])
+      });
+    const nativeAttrsInspected = resultJson(
+      await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "access_rules", documentId
+      }), "native_user_attribute_inspect"
+    );
+    const attrs = nativeAttrsInspected.userAttributes as {
+      definitions?: Array<Record<string, unknown>>;
+      protectedDefinitionCount?: number
+    };
+    assert(attrs && Array.isArray(attrs.definitions) &&
+      attrs.definitions.some((def) =>
+        def.name === "CompatMember" &&
+        def.tableId === ACL_TABLE_ID && def.lookupColId === "ShareToken" &&
+        (def.source as Record<string, unknown>)?.kind === "user_property" &&
+        (def.source as Record<string, unknown>)?.property === "Email" &&
+        def.editable === false), "native_user_attribute_not_normalized");
+    assert(nativeAttrsInspected.effectiveEnforcementVerified === false,
+      "native_user_attribute_overclaimed_enforcement");
+
     await callToolExpectError(bridgeBaseUrl, "grist_add_structure", {
       action: "create_document",
       workspaceId: deniedTarget.workspaceId,
