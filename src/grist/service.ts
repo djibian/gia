@@ -1,3 +1,4 @@
+import { columnCreationFieldsSchema } from "../operations/schemaMutationContract.js";
 import { AccessPolicy } from "./accessPolicy.js";
 import {
   GristClient,
@@ -234,6 +235,12 @@ async function resultingSchemaIds(
 }
 
 export class GristService {
+  private assertCreationColumnFields(column: GristColumnSpec): void {
+    if (column.fields !== undefined && !columnCreationFieldsSchema.safeParse(column.fields).success) {
+      throw new Error("Unsupported column creation fields. Apply description or visibleColumnId through update_columns after creation.");
+    }
+  }
+
   constructor(
     private readonly client: GristClient,
     private readonly accessPolicy: AccessPolicy,
@@ -400,6 +407,7 @@ export class GristService {
       this.assertUniqueStrings(table.columns.map((column) => column.id), "Column IDs");
       for (const column of table.columns) {
         this.assertIdentifier(column.id, "Column ID");
+        this.assertCreationColumnFields(column);
       }
     }
     const result = await this.client.createTables(documentId, tables);
@@ -452,7 +460,10 @@ export class GristService {
     this.assertIdentifier(tableId, "Table ID");
     this.assertSchemaCount(columns.length);
     this.assertUniqueStrings(columns.map((column) => column.id), "Column IDs");
-    for (const column of columns) this.assertIdentifier(column.id, "Column ID");
+    for (const column of columns) {
+      this.assertIdentifier(column.id, "Column ID");
+      this.assertCreationColumnFields(column);
+    }
     const result = await this.client.createColumns(documentId, tableId, columns);
     return projectCreatedItems(result, "columns", columns.length, "string");
   }

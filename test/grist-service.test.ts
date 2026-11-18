@@ -276,3 +276,27 @@ test("table creation refuses missing or empty columns before any native write", 
   assert.deepEqual(observed, [{ action: "createTables", documentId: "doc",
     tables: [{ id: "Valid", columns: [{ id: "Name", fields: { type: "Text" } }] }] }]);
 });
+
+test("column creation refuses ignored native metadata before any table or column write", async () => {
+  const { grist, observed } = service();
+  const good = { id: "Name", fields: { type: "Text", label: "Display", isFormula: false, formula: "", widgetOptions: "{}" } };
+  const rejected = [
+    { id: "Description", fields: { description: "Would silently disappear" } },
+    { id: "Reference", fields: { type: "Ref:People", visibleColumnId: "Name" } }
+  ];
+  for (const bad of rejected) {
+    await assert.rejects(
+      () => grist.createTables("doc", [{ id: "First", columns: [good] }, { id: "Bad", columns: [bad] }]),
+      /Unsupported column creation fields/
+    );
+    await assert.rejects(() => grist.createColumns("doc", "People", [good, bad]),
+      /Unsupported column creation fields/);
+  }
+  assert.deepEqual(observed, []);
+  await grist.createTables("doc", [{ id: "Created", columns: [good] }]);
+  await grist.createColumns("doc", "People", [good]);
+  assert.deepEqual(observed, [
+    { action: "createTables", documentId: "doc", tables: [{ id: "Created", columns: [good] }] },
+    { action: "createColumns", documentId: "doc", tableId: "People", columns: [good] }
+  ]);
+});

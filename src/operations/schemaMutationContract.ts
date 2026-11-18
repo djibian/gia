@@ -27,3 +27,9 @@ export const columnMutationFieldsSchema = z
     visibleColumnId: z.string().trim().min(1).optional()
   })
   .strict();
+
+/** Creation-only fields actually persisted by Grist's native AddTable/AddVisibleColumn. */
+export const columnCreationFieldsSchema = columnMutationFieldsSchema.omit({
+  description: true,
+  visibleColumnId: true
+});

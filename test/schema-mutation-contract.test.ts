@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  columnCreationFieldsSchema,
   columnMutationFieldsSchema,
   tableMutationFieldsSchema
 } from "../src/operations/schemaMutationContract.js";
@@ -39,4 +40,22 @@ test("table mutation fields accept only tableId and onDemand", () => {
     tableMutationFieldsSchema.safeParse({ tableId: "" }).success,
     false
   );
+});
+
+test("creation accepts only persisted Grist column fields while update retains the extra metadata", () => {
+  const effective = {
+    label: "Total",
+    type: "Numeric",
+    isFormula: true,
+    formula: "$Qty * 2",
+    widgetOptions: "{}"
+  };
+  assert.deepEqual(columnCreationFieldsSchema.parse(effective), effective);
+  for (const unsupported of [{ description: "Expected description" },
+    { visibleColumnId: "Name" }, { visibleCol: 2 }, { privateField: "ignored" }]) {
+    assert.equal(columnCreationFieldsSchema.safeParse({ ...effective, ...unsupported }).success, false);
+  }
+  assert.deepEqual(columnMutationFieldsSchema.parse({
+    ...effective, description: "Expected description", visibleColumnId: "Name"
+  }), { ...effective, description: "Expected description", visibleColumnId: "Name" });
 });
