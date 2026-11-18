@@ -24,14 +24,6 @@ claim that persisted policy proves effective confidentiality.
 
 ### Finite work
 
-#### E1-E — bounded explanatory simulation
-
-**Status: ACTIVE**
-
-Evaluate only Gia's normalized supported subset against an explicit synthetic
-context for explanation/debugging. Results must state that they are simulated and
-that native enforcement/confidentiality is not verified.
-
 #### E1-F — LinkKey web acceptance and completeness review
 
 **Status: BLOCKED by E1-E**
