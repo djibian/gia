@@ -135,12 +135,12 @@ export interface AccessRuleSyntheticField {
 }
 
 export interface AccessRuleSyntheticContext {
-  role?: AccessRuleRole;
-  user?: readonly AccessRuleSyntheticField[];
-  rec?: readonly AccessRuleSyntheticField[];
-  newRec?: readonly AccessRuleSyntheticField[];
-  linkKeys?: readonly AccessRuleSyntheticField[];
-  userAttributes?: readonly { name: string; fields: readonly AccessRuleSyntheticField[] }[];
+  role?: AccessRuleRole | undefined;
+  user?: readonly AccessRuleSyntheticField[] | undefined;
+  rec?: readonly AccessRuleSyntheticField[] | undefined;
+  newRec?: readonly AccessRuleSyntheticField[] | undefined;
+  linkKeys?: readonly AccessRuleSyntheticField[] | undefined;
+  userAttributes?: readonly { name: string; fields: readonly AccessRuleSyntheticField[] }[] | undefined;
 }
 
 export interface AccessRuleSimulationRequest {
