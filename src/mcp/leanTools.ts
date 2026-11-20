@@ -192,6 +192,19 @@ const accessRuleLeafConditionVariants = [
     operator: z.enum(["equals", "not_equals"]),
     value: z.boolean()
   }).strict(),
+  z.object({
+    kind: z.literal("user_attribute_flag"),
+    attributeName: accessRuleLinkKeyNameSchema,
+    attributeColumnId: z.string().min(1).max(100).regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+  }).strict(),
+  z.object({
+    kind: z.literal("record_in_user_attribute_ref_list"),
+    operator: z.enum(["in", "not_in"]),
+    columnId: z.string().min(1).max(100).regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+    attributeName: accessRuleLinkKeyNameSchema,
+    attributeColumnId: z.string().min(1).max(100).regex(/^[A-Za-z_][A-Za-z0-9_]*$/),
+    record: z.literal("newRec").optional()
+  }).strict(),
   z
     .object({
       kind: z.literal("match_user"),

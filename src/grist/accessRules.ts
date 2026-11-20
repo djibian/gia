@@ -45,6 +45,19 @@ export type AccessRuleCondition =
       value: boolean;
     }
   | {
+      kind: "user_attribute_flag";
+      attributeName: string;
+      attributeColumnId: string;
+    }
+  | {
+      kind: "record_in_user_attribute_ref_list";
+      operator: "in" | "not_in";
+      columnId: string;
+      attributeName: string;
+      attributeColumnId: string;
+      record?: "newRec" | undefined;
+    }
+  | {
       kind: "match_user";
       operator: AccessRuleOperator;
       columnId: string;
@@ -459,6 +472,29 @@ function comparableUserAttributeField(
   return recordType === attributeType && ["Int", "Numeric", "Bool"].includes(recordType);
 }
 
+function userAttributeColumnType(
+  attributeName: string,
+  attributeColumnId: string,
+  context?: UserAttributeReferenceContext
+): string | undefined {
+  if (!validLinkKeyName(attributeName) || !SAFE_IDENTIFIER.test(attributeColumnId)) return undefined;
+  const sourceTable = context?.names.get(attributeName);
+  return sourceTable ? context?.tables.get(sourceTable)?.columns.get(attributeColumnId)?.type : undefined;
+}
+
+function matchesUserAttributeRefList(
+  table: TableInfo,
+  columnId: string,
+  attributeName: string,
+  attributeColumnId: string,
+  context?: UserAttributeReferenceContext
+): boolean {
+  if (!SAFE_IDENTIFIER.test(columnId)) return false;
+  const target = columnId === "id" ? table.id : table.columns.get(columnId)?.type?.match(/^Ref:(.+)$/)?.[1];
+  if (!target || !context?.tables.has(target)) return false;
+  return userAttributeColumnType(attributeName, attributeColumnId, context) === "RefList:" + target;
+}
+
 function parseLeafCondition(
   formula: string,
   table: TableInfo,
@@ -496,6 +532,19 @@ function parseLeafCondition(
     if (!operator) return undefined;
     const literal = loginMatch ? loginMatch[2]! : reverseLoginMatch![1]!;
     return { kind: "user_login_status", operator, value: literal === "True" };
+  }
+
+  const flag = /^user\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(formula);
+  if (flag && userAttributeColumnType(flag[1]!, flag[2]!, attributes) === "Bool") {
+    return { kind: "user_attribute_flag", attributeName: flag[1]!, attributeColumnId: flag[2]! };
+  }
+  const member = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (in|not in) user\.([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)$/.exec(formula);
+  if (member && matchesUserAttributeRefList(table, member[2]!, member[4]!, member[5]!, attributes)) {
+    return {
+      kind: "record_in_user_attribute_ref_list", operator: member[3] === "in" ? "in" : "not_in",
+      columnId: member[2]!, attributeName: member[4]!, attributeColumnId: member[5]!,
+      ...(member[1] === "newRec" ? { record: "newRec" as const } : {})
+    };
   }
 
   const userMatch = /^(rec|newRec)\.([A-Za-z_][A-Za-z0-9_]*) (==|!=) user\.(Email|UserID|Name|UserRef|Origin|IsLoggedIn)$/.exec(
@@ -734,6 +783,7 @@ function usesNewRec(condition: AccessRuleCondition): boolean {
   if (condition.kind === "not") return usesNewRec(condition.condition);
   if (condition.kind === "column_change") return true;
   return (condition.kind === "match_user" || condition.kind === "match_link_key" ||
+    condition.kind === "record_in_user_attribute_ref_list" ||
     condition.kind === "match_user_attribute" ||
     condition.kind === "match_boolean" || condition.kind === "match_integer_flag" ||
     condition.kind === "match_empty_text") &&
@@ -767,6 +817,23 @@ function serializeLeafCondition(
       throw new Error("User login ACL predicate requires a supported operator and a boolean value.");
     }
     return `user.IsLoggedIn ${OP_NATIVE[condition.operator]} ${condition.value ? "True" : "False"}`;
+  }
+
+  if (condition.kind === "user_attribute_flag") {
+    if (userAttributeColumnType(condition.attributeName, condition.attributeColumnId, attributes) !== "Bool") {
+      throw new Error("User-attribute flags require a verified definition and a native Bool column.");
+    }
+    return `user.${condition.attributeName}.${condition.attributeColumnId}`;
+  }
+  if (condition.kind === "record_in_user_attribute_ref_list") {
+    if ((condition.operator !== "in" && condition.operator !== "not_in") ||
+        !matchesUserAttributeRefList(table, condition.columnId, condition.attributeName,
+          condition.attributeColumnId, attributes)) {
+      throw new Error("User-attribute list membership requires a stable record ID or Ref and a RefList targeting the same table.");
+    }
+    const operator = condition.operator === "in" ? "in" : "not in";
+    return recordExpression(condition) + " " + operator + " user." +
+      condition.attributeName + "." + condition.attributeColumnId;
   }
 
   if (condition.kind === "match_boolean") {
@@ -1045,12 +1112,13 @@ function matchesNativeAclCondition(
     if (node.length === 3 && (kind === "Eq" || kind === "NotEq" || kind === "In" || kind === "NotIn")) {
       const left = nativeAclOperand(node[1]);
       const right = kind === "In" || kind === "NotIn"
-        ? nativeAclRoleList(node[2]) : nativeAclOperand(node[2]);
+        ? nativeAclRoleList(node[2]) ?? nativeAclOperand(node[2]) : nativeAclOperand(node[2]);
       if (left !== undefined && right !== undefined) {
         const operator = { Eq: "==", NotEq: "!=", In: "in", NotIn: "not in" }[kind];
         return `${left} ${operator} ${right}`;
       }
     }
+    if (kind === "Attr") return nativeAclOperand(node);
     return undefined;
   }
 
@@ -1588,6 +1656,13 @@ function projectGroupDependencies(rules: readonly NormalizedAccessRule[]): {
       case "user_login_status":
         userProperties.add("IsLoggedIn");
         return;
+      case "user_attribute_flag": {
+        const { attributeName, attributeColumnId } = condition;
+        userAttributeFields.set(JSON.stringify([attributeName, attributeColumnId]), {
+          attributeName, attributeColumnId
+        });
+        return;
+      }
       case "column_change":
         recordColumnIds.add(condition.columnId);
         newRecordColumnIds.add(condition.columnId);
@@ -1599,7 +1674,7 @@ function projectGroupDependencies(rules: readonly NormalizedAccessRule[]): {
           userProperties.add(condition.userProperty);
         } else if (condition.kind === "match_link_key") {
           linkKeyNames.add(condition.linkKeyName);
-        } else if (condition.kind === "match_user_attribute") {
+        } else if (condition.kind === "match_user_attribute" || condition.kind === "record_in_user_attribute_ref_list") {
           const field = { attributeName: condition.attributeName,
             attributeColumnId: condition.attributeColumnId };
           userAttributeFields.set(JSON.stringify([field.attributeName, field.attributeColumnId]), field);
@@ -1971,6 +2046,14 @@ function syntheticCondition(
       syntheticFieldValue(context.user, "IsLoggedIn"),
       { kind: "boolean", value: condition.value }, condition.operator);
   }
+  if (condition.kind === "user_attribute_flag") {
+    const fields = context.userAttributes?.find(item => item.name === condition.attributeName)?.fields;
+    const flag = syntheticFieldValue(fields, condition.attributeColumnId);
+    return flag?.kind === "boolean" ? (flag.value ? "true" : "false") : "unknown";
+  }
+  // Synthetic contexts represent single operands only. A missing list
+  // is not evidence that Grist evaluates a membership test to false.
+  if (condition.kind === "record_in_user_attribute_ref_list") return "unknown";
 
   const fromRecord = (columnId: string, useNewRec = false) =>
     syntheticFieldValue(useNewRec ? context.newRec : context.rec, columnId);
