@@ -52,7 +52,7 @@ test("page widget inspection projects native form layout with stable field IDs a
   assert.equal(grid?.id, 9);
   assert.equal(grid?.form, undefined);
   assert.deepEqual(form?.form, {
-    status: "supported", sectionPublicationIntent: "requested", publicationQualification: "not_tested",
+    status: "protected", sectionPublicationIntent: "requested", publicationQualification: "not_tested",
     tableId: "Students", submission: { submitText: "Envoyer", successText: "Merci" },
     layout: { type: "layout", children: [
       { type: "paragraph", text: "Prénom et classe", alignment: "center" },
@@ -100,5 +100,42 @@ test("form inspection marks unsupported and unresolved layouts incomplete withou
     assert.equal(form?.status, "incomplete");
     assert.equal(form?.layout, undefined);
     assert.equal(form?.publicationQualification, "not_tested");
+  }
+});
+
+test("configured dropdown predicates are protected until a typed projection exists", () => {
+  const { inspect, tables } = fixture();
+  const field = tables.tables[0]!.columns[1]!.fields;
+  const secret = "synthetic-private-predicate";
+  field.widgetOptions = JSON.stringify({
+    formAcceptFromUrl: true,
+    dropdownCondition: { text: `choice.Name == "${secret}"` }
+  });
+  const inspected = inspect().widgets[0]?.form;
+  assert.equal(inspected?.status, "protected");
+  assert.deepEqual((inspected?.layout as any).children[1].children[1], {
+    type: "field", columnId: "Class", columnOptions: { acceptFromUrl: true },
+    fieldOptions: {}, dropdownConditionConfigured: true
+  });
+  assert.doesNotMatch(JSON.stringify(inspected), /synthetic-private-predicate/);
+
+  field.widgetOptions = '{"formAcceptFromUrl":true}';
+  const withoutCondition = inspect().widgets[0]?.form;
+  assert.equal(withoutCondition?.status, "supported");
+  assert.doesNotMatch(JSON.stringify(withoutCondition), /dropdownConditionConfigured/);
+});
+
+test("malformed native dropdown predicates cannot be mistaken for an absent condition", () => {
+  for (const malformed of [
+    null, false, "secret", {}, { text: "" }, { text: 5 },
+    { text: "choice.Name == True", parsed: 123 },
+    { text: "x".repeat(2049) }
+  ]) {
+    const { inspect, tables } = fixture();
+    tables.tables[0]!.columns[1]!.fields.widgetOptions =
+      JSON.stringify({ dropdownCondition: malformed });
+    const form = inspect().widgets[0]?.form;
+    assert.equal(form?.status, "incomplete");
+    assert.equal(form?.layout, undefined);
   }
 });

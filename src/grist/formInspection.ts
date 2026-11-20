@@ -88,6 +88,7 @@ export function inspectNativeForm(
   }
 
   let hasProtectedText = false;
+  let hasProtectedDropdownCondition = false;
   const safeText = (value: string): FormText => {
     // Free-text links may embed LinkKeys or tokens, including relative URLs
     // inside Markdown. Keep plain prose and omit the whole link-bearing value.
@@ -150,10 +151,27 @@ export function inspectNativeForm(
       const column = fieldOptions(columnRaw);
       const override = fieldOptions(fieldRaw);
       if (!column || !override) return undefined;
+      // The native predicate is not yet normalized into a supported, stable-ID
+      // contract. Report its presence as protected, never as reconstructible.
+      const configured = [columnRaw, fieldRaw].some(source =>
+        Object.prototype.hasOwnProperty.call(source, "dropdownCondition"));
+      if (configured) {
+        for (const source of [columnRaw, fieldRaw]) {
+          if (!Object.prototype.hasOwnProperty.call(source, "dropdownCondition")) continue;
+          const condition = record(source.dropdownCondition);
+          if (!condition || typeof condition.text !== "string" ||
+              !condition.text.trim() || condition.text.length > 2048 ||
+              (condition.parsed !== undefined &&
+                (typeof condition.parsed !== "string" || condition.parsed.length > 16_384))) {
+            return undefined;
+          }
+        }
+        hasProtectedDropdownCondition = true;
+      }
       usedFields.add(leaf);
       return {
         type: "field", columnId, columnOptions: column, fieldOptions: override,
-        ...(columnRaw.dropdownCondition || fieldRaw.dropdownCondition ? { dropdownConditionConfigured: true } : {})
+        ...(configured ? { dropdownConditionConfigured: true } : {})
       };
     }
     if (node.leaf !== undefined) return undefined;
@@ -180,6 +198,6 @@ export function inspectNativeForm(
   };
   return {
     ...common, tableId: widget.tableId, layout, submission,
-    status: sectionPublicationIntent === "unknown" ? "incomplete" : hasProtectedText || successURL ? "protected" : "supported"
+    status: sectionPublicationIntent === "unknown" ? "incomplete" : hasProtectedText || hasProtectedDropdownCondition || successURL ? "protected" : "supported"
   };
 }
