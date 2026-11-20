@@ -660,12 +660,15 @@ export function registerLeanTools(
   const documentUpdateSchema = z
     .object({
       name: documentNameSchema.optional(),
-      type: z.enum(["normal", "template", "tutorial"]).optional()
+      type: z.enum(["normal", "template", "tutorial"]).optional(),
+      timezone: z.string().min(1).max(64).optional()
     })
     .strict()
     .refine(
-      (value) => value.name !== undefined || value.type !== undefined,
-      "At least one document metadata field must be supplied."
+      (value) => value.timezone !== undefined
+        ? value.name === undefined && value.type === undefined
+        : value.name !== undefined || value.type !== undefined,
+      "Supply a timezone alone or at least one of name and type."
     );
 
   server.registerTool(
@@ -1056,6 +1059,9 @@ export function registerLeanTools(
                   : {}),
                 ...(input.update.type !== undefined
                   ? { type: input.update.type }
+                  : {}),
+                ...(input.update.timezone !== undefined
+                  ? { timezone: input.update.timezone }
                   : {})
               })
             );
