@@ -246,7 +246,7 @@ test("applyUserActions posts only the action array supplied by the service", asy
 test("document bootstrap uses native empty-create and fixed template-copy contracts", async () => {
   const original = globalThis.fetch;
   const requests: CapturedRequest[] = [];
-  const responses: unknown[] = [{ data: "new-empty" }, "new-template"];
+  const responses: unknown[] = [{ data: "new-empty" }, "new-template", "new-full"];
 
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     requests.push({
@@ -266,6 +266,10 @@ test("document bootstrap uses native empty-create and fixed template-copy contra
       await grist.copyDocumentAsTemplate("source-doc", 42, "Template app"),
       "new-template"
     );
+    assert.equal(
+      await grist.copyDocument("source-doc", 42, "Full app"),
+      "new-full"
+    );
 
     assert.equal(
       requests[0]?.url,
@@ -283,6 +287,14 @@ test("document bootstrap uses native empty-create and fixed template-copy contra
       workspaceId: 42,
       documentName: "Template app",
       asTemplate: true
+    });
+    assert.equal(requests[2]?.url, "https://grist.example.org/api/docs");
+    assert.equal(requests[2]?.init.method, "POST");
+    assert.deepEqual(JSON.parse(String(requests[2]?.init.body)), {
+      sourceDocumentId: "source-doc",
+      workspaceId: 42,
+      documentName: "Full app",
+      asTemplate: false
     });
   } finally {
     globalThis.fetch = original;
