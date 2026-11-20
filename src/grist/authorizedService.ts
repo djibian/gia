@@ -85,7 +85,7 @@ import {
   SchemaWriteVerificationError,
   type DocumentMetadataUpdateInput,
   type GristService,
-  QueryRecordsOptions
+  type QueryRecordsOptions
 } from "./service.js";
 import {
   GristUiActionsAdapter,
