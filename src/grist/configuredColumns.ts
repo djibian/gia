@@ -9,7 +9,7 @@ const plainText = (max: number) => z.string().min(1).max(max).refine(
   value => !/[\p{Cc}\p{Cs}]/u.test(value) && safeNativeFormText(value, max) === value,
   "Use bounded plain text without links or control characters."
 );
-const dropdownCondition = z.discriminatedUnion("kind", [
+export const dropdownConditionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("choice_field_equals_literal"),
     choiceColumnId: identifier, value: plainText(120) }).strict(),
   z.object({ kind: z.literal("choice_field_equals_record_ref"),
@@ -23,10 +23,11 @@ export const configuredColumnSchema = z.object({
   configuration: z.object({
     form: z.object({ question: plainText(300).optional(), required: z.boolean().optional(),
       acceptFromUrl: z.boolean().optional() }).strict().refine(value => Object.keys(value).length > 0).optional(),
-    dropdownCondition: dropdownCondition.optional()
+    dropdownCondition: dropdownConditionSchema.optional()
   }).strict().refine(value => Object.keys(value).length > 0)
 }).strict();
 
+export type DropdownConditionInput = z.infer<typeof dropdownConditionSchema>;
 type ConfiguredColumn = z.infer<typeof configuredColumnSchema>;
 type Fields = Record<string, unknown>;
 type Table = NonNullable<ReturnType<typeof tableColumnMaps>>;
@@ -37,7 +38,7 @@ function attr(name: "choice" | "rec", columnId: string): unknown[] {
 }
 
 function resolveCondition(
-  condition: z.infer<typeof dropdownCondition>, type: string, table: Table, readTable: ReadTable
+  condition: DropdownConditionInput, type: string, table: Table, readTable: ReadTable
 ): { text: string; parsed: string } {
   const target = /^(?:Ref|RefList):([A-Za-z][A-Za-z0-9_]*)$/.exec(type)?.[1];
   if (!target) throw new Error("A dropdown condition requires a Ref or RefList column.");
@@ -98,14 +99,12 @@ function matchesColumn(current: Fields, planned: Fields): boolean {
   }
 }
 
-/** Preflight creation and reconcile known stable IDs against fresh Grist columns. */
-export function planConfiguredColumns(
-  metadata: unknown, tableId: string, requested: readonly GristColumnSpec[]
-): GristColumnSpec[] {
+/** Fail closed if expanded Grist metadata cannot resolve stable IDs and reference types. */
+function tableReader(metadata: unknown): ReadTable {
   const tables = (metadata as { tables?: unknown } | null)?.tables;
   if (!Array.isArray(tables)) throw new Error("Expanded Grist schema metadata is unavailable.");
   const verified = new Map<string, Table>();
-  const readTable: ReadTable = id => {
+  return id => {
     const prior = verified.get(id);
     if (prior) return prior;
     const tableRef = tables.find(table => table?.id === id)?.fields?.tableRef;
@@ -114,6 +113,29 @@ export function planConfiguredColumns(
     verified.set(id, columns);
     return columns;
   };
+}
+
+/** Resolve the same closed native predicate compiler for an existing Ref/RefList column. */
+export function resolveExistingDropdownCondition(
+  metadata: unknown, tableId: string, columnId: string,
+  condition: DropdownConditionInput | null
+): { text: string; parsed: string } | null {
+  const readTable = tableReader(metadata);
+  const table = readTable(tableId);
+  const type = table.fieldsById.get(columnId)?.type;
+  const target = typeof type === "string" &&
+    /^(?:Ref|RefList):([A-Za-z][A-Za-z0-9_]*)$/.exec(type)?.[1];
+  if (!target) throw new Error("Dropdown configuration requires an existing Ref or RefList column.");
+  readTable(target);
+  return condition === null ? null :
+    resolveCondition(dropdownConditionSchema.parse(condition), type as string, table, readTable);
+}
+
+/** Preflight creation and reconcile known stable IDs against fresh Grist columns. */
+export function planConfiguredColumns(
+  metadata: unknown, tableId: string, requested: readonly GristColumnSpec[]
+): GristColumnSpec[] {
+  const readTable = tableReader(metadata);
   const table = readTable(tableId);
   const missing: GristColumnSpec[] = [];
   for (const input of requested) {

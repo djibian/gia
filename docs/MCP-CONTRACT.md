@@ -62,6 +62,15 @@ complete persisted options, and returns an idempotent no-op on re-execution.
 `question:null` clears the question. This does **not** create, render, submit or
 publish forms, accept link-bearing question text, or change native sharing.
 
+`grist_change_structure(action="update_dropdown_condition")` applies or clears
+a typed native reference-dropdown predicate on one existing stable Ref/RefList
+column, reusing the same three closed forms supported by configured-column
+creation. `condition:null` clears the predicate. The operation validates the
+reference operands against fresh expanded schema, preserves all other native
+`widgetOptions`, refuses malformed existing native predicates, verifies the
+complete persisted options, and returns a no-op for identical requested state.
+It does not accept arbitrary expressions or establish Form visibility/ACL rights.
+
 `grist_change_ui(action="update_form_layout")` configures one existing
 native Form section with a bounded tree of typed paragraphs, field groups and a
 final submit element. All field references are supplied as stable column IDs and

@@ -155,6 +155,12 @@ preserving unrelated option keys and verifying exact persisted post-state.
 An uncertain post-state must not be blindly retried. Questions exclude
 link-bearing text, and Form publication/ACL behavior is not implied.
 
+Reference-dropdown condition updates accept only three validated typed predicates
+or explicit removal on an existing Ref/RefList column. The compiler is shared
+with column creation. The mutation refuses malformed native state, preserves
+untargeted options, verifies the complete post-read state, and does not claim
+that dropdown filtering is an authorization boundary.
+
 Form layout mutation accepts a finite, typed tree and server-side resolution of
 stable column identifiers to existing native section fields. A protected,
 unrecognized or partially readable existing layout refuses replacement rather

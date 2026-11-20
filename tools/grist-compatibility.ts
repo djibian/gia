@@ -2150,6 +2150,45 @@ async function run(): Promise<void> {
     assert(question?.question === "Preferred mentor" && question.options.formRequired === true &&
       question.options.formAcceptFromUrl === true, "configured_form_defaults_not_used_natively");
 
+    // #295: change and clear a native reference dropdown predicate on an existing column.
+    const conditionRequest = {
+      action: "update_dropdown_condition", documentId: emptyDocumentId,
+      tableId: "Placements", columnId: "ActiveMentor",
+      condition: { kind: "choice_field_equals_literal", choiceColumnId: "Status", value: "actif" }
+    };
+    const changedDropdown = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      conditionRequest), "native_dropdown_update") as { changed: boolean; persistedOptionsVerified: boolean };
+    assert(changedDropdown.changed && changedDropdown.persistedOptionsVerified,
+      "native_dropdown_update_not_verified");
+    const changedDropdownReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      conditionRequest), "native_dropdown_replay") as { changed: boolean; persistedOptionsVerified: boolean };
+    assert(changedDropdownReplay.changed === false && changedDropdownReplay.persistedOptionsVerified,
+      "native_dropdown_update_replayed");
+    const activeOptionsAfterUpdate = await gristApi(gristBaseUrl, apiKey, columnPath) as typeof nativeColumns;
+    const changedActive = JSON.parse(String(activeOptionsAfterUpdate.columns.find(
+      column => column.id === "ActiveMentor")?.fields.widgetOptions)) as Record<string, unknown>;
+    const changedCondition = changedActive.dropdownCondition as { text: string; parsed: string };
+    assert(changedCondition.text === 'choice.Status == "actif"' &&
+      isDeepStrictEqual(JSON.parse(changedCondition.parsed), [
+        "Eq", ["Attr", ["Name", "choice"], "Status"], ["Const", "actif"]
+      ]) && changedActive.question === "Preferred mentor" &&
+      changedActive.formRequired === true && changedActive.formAcceptFromUrl === true,
+      "native_dropdown_update_lost_form_defaults_or_compilation");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...conditionRequest, condition: { kind: "choice_id_in_record_reflist", recordColumnId: "Class" }
+    });
+    const clearedDropdown = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      ...conditionRequest, condition: null
+    }), "native_dropdown_clear") as { changed: boolean; persistedOptionsVerified: boolean };
+    assert(clearedDropdown.changed && clearedDropdown.persistedOptionsVerified,
+      "native_dropdown_clear_not_verified");
+    const activeOptionsAfterClear = await gristApi(gristBaseUrl, apiKey, columnPath) as typeof nativeColumns;
+    const clearOptions = JSON.parse(String(activeOptionsAfterClear.columns.find(
+      column => column.id === "ActiveMentor")?.fields.widgetOptions)) as Record<string, unknown>;
+    assert(!Object.hasOwn(clearOptions, "dropdownCondition") &&
+      clearOptions.question === "Preferred mentor" && clearOptions.formRequired === true &&
+      clearOptions.formAcceptFromUrl === true, "native_dropdown_clear_lost_unrelated_form_options");
+
     const copied = resultJson(
       await callTool(bridgeBaseUrl, "grist_add_structure", {
         action: "copy_document_as_template",
