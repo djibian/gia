@@ -155,6 +155,33 @@ test("adds doc:read step-up only for template copy when schema scope is already 
   assert.equal(createBody.result._meta?.["mcp/www_authenticate"], undefined);
 });
 
+test("full copy challenges only for missing doc:download and never upgrades doc:read", async () => {
+  const principal = createPrincipal({
+    id: "oauth:read-only-copy",
+    transport: "mcp",
+    documentIds: ["source-doc"],
+    workspaceIds: ["7"],
+    capabilities: ["doc:read", "doc.schema:write"]
+  });
+  const handler = installOAuthToolAuthChallenges(
+    fakeHandler({
+      jsonrpc: "2.0", id: 1,
+      result: { isError: true, content: [{ type: "text", text: "source download denied" }] }
+    }),
+    { principal, resourceMetadataUrl: METADATA_URL }
+  );
+  const response = await handler.fetch(new Request("https://example.test/mcp"), {
+    parsedBody: toolCall("grist_add_structure", {
+      action: "copy_document", sourceDocumentId: "source-doc",
+      workspaceId: 7, name: "Full app"
+    })
+  });
+  const body = await response.json() as {result: {_meta: Record<string, unknown>}};
+  assert.deepEqual(body.result._meta["mcp/www_authenticate"], [
+    `Bearer resource_metadata="${METADATA_URL}", error="insufficient_scope", error_description="Additional authorization is required for scope doc:download.", scope="doc:download"`
+  ]);
+});
+
 test("does not turn a source resource denial into a scope challenge when doc:read exists", async () => {
   const principal = createPrincipal({
     id: "oauth:both-scopes",
