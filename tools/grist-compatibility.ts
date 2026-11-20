@@ -256,6 +256,8 @@ function bridgeEnvironment(options: {
     GRIST_WRITE_BATCH_RECORDS: "25",
     GRIST_MAX_SCHEMA_ITEMS: String(COMPAT_TOOL_LIMITS.maxSchemaItems),
     MCP_AUTH_MODE: "static",
+    // Synthetic compatibility fixture explicitly opts into the sensitive source scope.
+    MCP_CAPABILITIES: "doc:read,doc:write,doc.schema:write,doc:download",
     MCP_BEARER_TOKEN: STATIC_BEARER,
     MCP_ALLOWED_HOSTS: "127.0.0.1,localhost",
     HOST: "127.0.0.1",
