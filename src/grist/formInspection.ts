@@ -140,7 +140,11 @@ export function inspectNativeForm(
       const columnId = fieldsById.get(leaf);
       const field = rawFields.get(leaf);
       if (!columnId || !field) return undefined;
-      const columnRaw = options(columns.fieldsById.get(columnId)?.widgetOptions);
+      const columnMetadata = columns.fieldsById.get(columnId);
+      if (!columnMetadata ||
+          (columnMetadata.isFormula === true && typeof columnMetadata.formula === "string" &&
+            columnMetadata.formula.length > 0)) return undefined;
+      const columnRaw = options(columnMetadata.widgetOptions);
       const fieldRaw = options(field.widgetOptions);
       if (!columnRaw || !fieldRaw) return undefined;
       const column = fieldOptions(columnRaw);

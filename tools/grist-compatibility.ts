@@ -2114,8 +2114,7 @@ async function run(): Promise<void> {
           `${docPath}/tables/${table}/records?hidden=true`) as MetaRecords
       )
     );
-    const formSection = nativeSections?.records.find(row =>
-      row.fields.parentId === pageId && row.fields.parentKey === "record");
+    const formSection = nativeSections?.records.find(row => row.id === firstCardId);
     assert(formSection, "form_fixture_section_missing");
     const column = columns?.records.find(row =>
       row.fields.parentId === formSection.fields.tableRef && row.fields.colId === "Name");
@@ -2150,10 +2149,10 @@ async function run(): Promise<void> {
       formTableId: string;
       formFieldsById: Record<number, { colId: string; question: string }>;
     };
-    assert(nativePreview.formTableId === TABLE_ID &&
-      nativePreview.formFieldsById[formField.id]?.colId === "Name" &&
-      nativePreview.formFieldsById[formField.id]?.question === "Preferred name",
-      "native_form_did_not_resolve_field_override");
+    assert(nativePreview.formTableId === TABLE_ID, "native_form_table_id_mismatch");
+    const previewField = nativePreview.formFieldsById[formField.id];
+    assert(previewField?.colId === "Name", "native_form_leaf_column_id_mismatch");
+    assert(previewField.question === "Preferred name", "native_form_field_override_mismatch");
     const widgets = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
       action: "page_widgets", documentId, pageId
     }), "native_form_inspection").widgets as Array<{ id: number; form?: unknown }>;

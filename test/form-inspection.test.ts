@@ -42,11 +42,12 @@ function fixture() {
       widgets: Array<{ id: number; form?: Record<string, unknown> }>;
     };
   };
-  return { layout, fields, section, inspect };
+  return { layout, fields, section, tables, inspect };
 }
 
 test("page widget inspection projects native form layout with stable field IDs and option origins", () => {
-  const { inspect } = fixture();
+  const { inspect, tables } = fixture();
+  Object.assign(tables.tables[0]!.columns[0]!.fields, { isFormula: true, formula: "" });
   const [form, grid] = inspect().widgets;
   assert.equal(grid?.id, 9);
   assert.equal(grid?.form, undefined);
@@ -88,7 +89,10 @@ test("form inspection marks unsupported and unresolved layouts incomplete withou
     ({ fields }: ReturnType<typeof fixture>) => fields.records.push(fields.records[0]!),
     ({ fields }: ReturnType<typeof fixture>) => { fields.records[0]!.fields.colRef = 14; },
     ({ layout }: ReturnType<typeof fixture>) => { layout.children[0]!.type = "Unsupported"; },
-    ({ layout }: ReturnType<typeof fixture>) => { layout.children[1]!.children![1]!.leaf = 91; }
+    ({ layout }: ReturnType<typeof fixture>) => { layout.children[1]!.children![1]!.leaf = 91; },
+    ({ tables }: ReturnType<typeof fixture>) => {
+      Object.assign(tables.tables[0]!.columns[0]!.fields, { isFormula: true, formula: "1 + 1" });
+    }
   ]) {
     const app = fixture();
     damage(app);
