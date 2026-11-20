@@ -161,6 +161,12 @@ with column creation. The mutation refuses malformed native state, preserves
 untargeted options, verifies the complete post-read state, and does not claim
 that dropdown filtering is an authorization boundary.
 
+The separate locale operation accepts only two qualified canonical locales,
+preserves unprojected native documentSettings keys and verifies the entire
+post-write JSON. Missing, malformed or over-budget metadata refuses mutation;
+uncertain writes cannot be blindly retried. Unprojected values never appear in
+the model output.
+
 Form layout mutation accepts a finite, typed tree and server-side resolution of
 stable column identifiers to existing native section fields. A protected,
 unrecognized or partially readable existing layout refuses replacement rather

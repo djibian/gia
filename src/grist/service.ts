@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { columnCreationFieldsSchema } from "../operations/schemaMutationContract.js";
 import { planConfiguredColumns } from "./configuredColumns.js";
 import { AccessPolicy } from "./accessPolicy.js";
@@ -23,11 +24,13 @@ import {
 export type PublicDocumentType = "normal" | "template" | "tutorial";
 
 export const DOCUMENT_TIMEZONE_CHOICES = ["UTC", "Europe/Paris"] as const;
+import { planDocumentLocaleUpdate, readNativeDocumentSettings } from "./documentLocale.js";
 
 export interface DocumentMetadataUpdateInput {
   name?: string;
   type?: PublicDocumentType;
   timezone?: string;
+  locale?: string;
 }
 
 export interface PublicDocumentMetadata {
@@ -402,6 +405,11 @@ export class GristService {
     update: DocumentMetadataUpdateInput
   ): Promise<unknown> {
     const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    if (update.locale !== undefined) {
+      if (update.name !== undefined || update.type !== undefined || update.timezone !== undefined)
+        throw Error("Send locale separately from other metadata.");
+      return this.updateDocumentLocale(documentId, update.locale);
+    }
     if (update.timezone !== undefined) {
       if (update.name !== undefined || update.type !== undefined) {
         throw new Error("Send a timezone update separately from a name or type update.");
@@ -461,6 +469,30 @@ export class GristService {
           ? error.message
           : "Updated document metadata could not be verified."
       );
+    }
+  }
+
+  private async updateDocumentLocale(documentId: string, locale: string): Promise<unknown> {
+    const read = () => this.client.queryRecords(documentId, "_grist_DocInfo", {
+      limit: 2, hidden: true
+    });
+    const before = await read();
+    const plan = planDocumentLocaleUpdate(before, locale);
+    if (!plan.changed) return { documentId,
+      settings: projectDocumentSettings(before), changed: false };
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_DocInfo", 1, { documentSettings: plan.documentSettings }]
+    ]);
+    try {
+      const afterNative = await read();
+      if (!isDeepStrictEqual(readNativeDocumentSettings(afterNative), plan.expected))
+        throw Error("Native settings preservation failed.");
+      const settings = projectDocumentSettings(afterNative);
+      if (settings.locale !== locale) throw Error("Locale postcondition failed.");
+      return { documentId, settings, changed: true };
+    } catch {
+      throw new SchemaWriteVerificationError("update_document",
+        "Native locale post-state uncertain; do not blindly replay.");
     }
   }
 
