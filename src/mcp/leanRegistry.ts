@@ -248,7 +248,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     ],
     constraints: [
       "Destination workspace needs doc.schema:write; template source additionally needs doc:read.",
-      "Template and full-data copies are not privacy scrubs. Full copy requires fresh native source Owner proof and Grist full-download authorization. Neither copy is idempotent; preserve known IDs on partial/uncertain outcomes."
+      "Template and full-data copies are not privacy scrubs. Full copy additionally requires explicit source doc:download grant, native source Owner proof and Grist full-download authorization; existing principals gain no new default grant. Neither copy is idempotent; preserve known IDs on partial/uncertain outcomes."
     ],
     examples: [
       { purpose: "Copy all data from a natively owned source into an authorized workspace", arguments: {
