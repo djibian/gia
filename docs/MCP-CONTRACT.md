@@ -35,6 +35,17 @@ The bounded ACL condition input language is advertised using local JSON Schema `
 
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
+Expanded column discovery (`grist_discover(columns)` and
+`grist_discover(tables, expandColumns=true)`) reports
+`conditionalStyleRules: {status: "protected" | "incomplete"}` for
+a nonempty or malformed native conditional-style rule reference list.
+`protected` means a bounded, structurally valid native list is present, not
+that its formulas, styles or behavior can be reconstructed; `incomplete`
+means the native list is malformed or over budget. Empty native lists produce
+no signal, and absence of the native field is **not** proof that no styles
+exist. This additive diagnostic exposes no helper IDs or rule formulas and
+does not grant a conditional-style write operation.
+
 ## Versioning rule
 
 Increment the MCP contract major version when a model-facing change is incompatible, including removal/rename of a tool or action, incompatible input/output schema changes, or a materially changed semantic/safety meaning.

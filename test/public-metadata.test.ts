@@ -79,11 +79,47 @@ test("column projection keeps functional schema metadata and drops engine metada
           isFormula: true,
           formula: "$Amount * 2",
           description: "Derived amount",
-          widgetOptions: "{\"numMode\":\"decimal\"}"
+          widgetOptions: "{\"numMode\":\"decimal\"}",
+          conditionalStyleRules: { status: "protected" }
         }
       }
     ]
   });
+});
+
+test("conditional styles are signaled without exporting private helper references", () => {
+  const project = (rules: unknown) => projectPublicColumns({
+    columns: [{ id: "Name", fields: { type: "Text", rules } }]
+  });
+  assert.deepEqual(project(["L"]), {
+    columns: [{ id: "Name", fields: { type: "Text" } }]
+  });
+  assert.deepEqual(project(["L", 20, 21]), {
+    columns: [{ id: "Name", fields: { type: "Text",
+      conditionalStyleRules: { status: "protected" } } }]
+  });
+  for (const malformed of [
+    null, false, "synthetic-private-rule", [], ["L", 0],
+    ["L", -2], ["L", "synthetic-private-rule"], ["L", 7, 7],
+    ["L", ...Array.from({ length: 33 }, (_, i) => i + 1)]
+  ]) {
+    const result = project(malformed);
+    assert.deepEqual(result, {
+      columns: [{ id: "Name", fields: { type: "Text",
+        conditionalStyleRules: { status: "incomplete" } } }]
+    });
+    assert.doesNotMatch(JSON.stringify(result), /synthetic-private-rule/);
+  }
+  const expanded = projectPublicTables({ tables: [{
+    id: "Data", fields: { tableRef: 1 }, columns: [
+      { id: "Name", fields: { colRef: 2, rules: ["L", 19] } }
+    ]
+  }] });
+  assert.deepEqual(expanded, { tables: [{
+    id: "Data", fields: { isSummary: false }, columns: [
+      { id: "Name", fields: { conditionalStyleRules: { status: "protected" } } }
+    ]
+  }] });
 });
 
 test("unexpected upstream metadata shapes fail closed", () => {
