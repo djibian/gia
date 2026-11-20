@@ -2086,6 +2086,29 @@ async function run(): Promise<void> {
     );
     assert(!copiedRows.includes("Alpha") && !copiedRows.includes("Beta"), "template_copy_retained_user_rows");
 
+    // A full copy retains records, unlike native asTemplate:true.
+    const fullCopied = resultJson(
+      await callTool(bridgeBaseUrl, "grist_add_structure", {
+        action: "copy_document",
+        sourceDocumentId: documentId,
+        workspaceId,
+        name: "Compatibility Full Copy"
+      }),
+      "copy_document"
+    );
+    const fullCopiedId = createdDocumentId(fullCopied, "copy_document");
+    assert(fullCopiedId !== documentId && fullCopiedId !== copiedDocumentId,
+      "full_copy_id_reused");
+    const fullRows = resultText(
+      await callTool(bridgeBaseUrl, "grist_query", {
+        documentId: fullCopiedId,
+        tableId: TABLE_ID,
+        limit: 10
+      })
+    );
+    assert(fullRows.includes("Alpha") && fullRows.includes("Beta"),
+      "full_copy_lost_source_rows");
+
     const queried = resultText(
       await callTool(bridgeBaseUrl, "grist_query", {
         documentId,
