@@ -1,0 +1,72 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { resolveFormLayoutUpdate, type FormLayoutInput } from "../src/grist/formLayout.js";
+
+const tables = { tables: [{ id: "People", fields: { tableRef: 10 }, columns: [
+  { id: "Name", fields: { colRef: 11, isFormula: false } },
+  { id: "Class", fields: { colRef: 12, isFormula: false } },
+  { id: "Computed", fields: { colRef: 13, isFormula: true, formula: "1+1" } }
+] }] };
+const fields = { records: [
+  { id: 77, fields: { parentId: 5, colRef: 11, parentPos: 1, width: 0 } },
+  { id: 78, fields: { parentId: 5, colRef: 12, parentPos: 2, width: 0 } },
+  { id: 79, fields: { parentId: 5, colRef: 13, parentPos: 3, width: 0 } }
+] };
+const widget = (layoutSpec?: unknown) => ({ id: 5, tableRef: 10, tableId: "People",
+  ...(layoutSpec !== undefined ? { layoutSpec } : {}) });
+const requested: FormLayoutInput = {
+  submitText: "Envoyer", successText: "Merci", anotherResponse: false,
+  children: [
+    { type: "paragraph", text: "Application" },
+    { type: "section", children: [
+      { type: "paragraph", text: "Votre profil" }, { type: "field", columnId: "Name" },
+      { type: "field", columnId: "Class" }
+    ] },
+    { type: "submit" }
+  ]
+};
+
+test("Form layout resolves stable column IDs to private native section field IDs", () => {
+  const result = resolveFormLayoutUpdate(widget(), tables, fields, requested);
+  assert.deepEqual(result.layoutSpec, {
+    id: "gia_root", type: "Layout", submitText: "Envoyer",
+    successText: "Merci", anotherResponse: false, children: [
+      { id: "gia_0", type: "Paragraph", text: "Application" },
+      { id: "gia_1", type: "Section", children: [
+        { id: "gia_1_0", type: "Paragraph", text: "Votre profil" },
+        { id: "gia_1_1", type: "Field", leaf: 77 },
+        { id: "gia_1_2", type: "Field", leaf: 78 }
+      ] }, { id: "gia_2", type: "Submit" }
+    ]
+  });
+  assert.deepEqual(resolveFormLayoutUpdate(widget(result.layoutSpec), tables, fields, requested).layoutSpec,
+    result.layoutSpec);
+});
+
+test("Form layout refuses unknown, duplicate or computed fields and absent submit", () => {
+  for (const bad of [
+    [{ type: "section", children: [{ type: "field", columnId: "Unknown" }] }, { type: "submit" }],
+    [{ type: "section", children: [{ type: "field", columnId: "Computed" }] }, { type: "submit" }],
+    [{ type: "section", children: [{ type: "field", columnId: "Name" },
+      { type: "field", columnId: "Name" }] }, { type: "submit" }],
+    [{ type: "section", children: [{ type: "field", columnId: "Name" }] }]
+  ]) {
+    assert.throws(() => resolveFormLayoutUpdate(widget(), tables, fields,
+      { children: bad } as FormLayoutInput));
+  }
+  assert.throws(() => resolveFormLayoutUpdate(widget(), tables, { records: [] }, requested));
+  assert.throws(() => resolveFormLayoutUpdate(widget(), tables, fields,
+    { ...requested, successText: "https://example.test/?key=token" }));
+});
+
+test("Form layout refuses to destroy protected/opaque pre-existing native settings", () => {
+  for (const layoutSpec of [
+    { type: "Layout", children: [], successURL: "https://example.test/" },
+    { type: "Layout", children: [], unknown: 7 },
+    { type: "Layout", children: [{ type: "FutureWidget" }] },
+    { type: "Layout", children: [{ type: "Field", leaf: 123456 }] },
+    "{malformed-json"
+  ]) {
+    assert.throws(() => resolveFormLayoutUpdate(widget(layoutSpec), tables, fields, requested));
+  }
+});
