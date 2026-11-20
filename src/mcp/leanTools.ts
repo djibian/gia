@@ -33,6 +33,7 @@ import {
   type NormalizedPageLayoutNode
 } from "../grist/pageLayout.js";
 import { MAX_SUMMARY_GROUP_BY_COLUMNS } from "../grist/summaryTables.js";
+import { DOCUMENT_TIMEZONE_CHOICES } from "../grist/service.js";
 import { NATIVE_WIDGET_TYPES } from "../grist/uiActionsAdapter.js";
 import {
   MAX_WIDGET_SORT_COLUMNS,
@@ -660,12 +661,15 @@ export function registerLeanTools(
   const documentUpdateSchema = z
     .object({
       name: documentNameSchema.optional(),
-      type: z.enum(["normal", "template", "tutorial"]).optional()
+      type: z.enum(["normal", "template", "tutorial"]).optional(),
+      timezone: z.enum(DOCUMENT_TIMEZONE_CHOICES).optional()
     })
     .strict()
     .refine(
-      (value) => value.name !== undefined || value.type !== undefined,
-      "At least one document metadata field must be supplied."
+      (value) => value.timezone !== undefined
+        ? value.name === undefined && value.type === undefined
+        : value.name !== undefined || value.type !== undefined,
+      "Supply a timezone alone or at least one of name and type."
     );
 
   server.registerTool(
@@ -1056,6 +1060,9 @@ export function registerLeanTools(
                   : {}),
                 ...(input.update.type !== undefined
                   ? { type: input.update.type }
+                  : {}),
+                ...(input.update.timezone !== undefined
+                  ? { timezone: input.update.timezone }
                   : {})
               })
             );

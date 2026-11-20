@@ -21,9 +21,12 @@ import {
 
 export type PublicDocumentType = "normal" | "template" | "tutorial";
 
+export const DOCUMENT_TIMEZONE_CHOICES = ["UTC", "Europe/Paris"] as const;
+
 export interface DocumentMetadataUpdateInput {
   name?: string;
   type?: PublicDocumentType;
+  timezone?: string;
 }
 
 export interface PublicDocumentMetadata {
@@ -159,6 +162,17 @@ function projectDocumentMetadata(
   };
 }
 
+function nativeTimezone(value: unknown): string | undefined {
+  if (typeof value !== "string" || !/^[A-Za-z][A-Za-z0-9_+/-]{0,63}$/.test(value)) return undefined;
+  try {
+    const resolved = new Intl.DateTimeFormat("en", { timeZone: value }).resolvedOptions().timeZone;
+    if (value.toLowerCase() === resolved.toLowerCase() && value !== resolved) return undefined;
+    return value;
+  } catch {
+    return undefined;
+  }
+}
+
 function projectDocumentSettings(response: unknown): PublicDocumentSettings {
   const records = jsonRecord(response)?.records;
   const row = Array.isArray(records) && records.length === 1 ? jsonRecord(records[0]) : null;
@@ -177,16 +191,7 @@ function projectDocumentSettings(response: unknown): PublicDocumentSettings {
     }
   }
 
-  let timezone: string | undefined;
-  const candidate = fields.timezone;
-  if (typeof candidate === "string" && /^[A-Za-z][A-Za-z0-9_+/-]{0,63}$/.test(candidate)) {
-    try {
-      new Intl.DateTimeFormat("en", { timeZone: candidate });
-      timezone = candidate;
-    } catch {
-      // Do not echo unrecognized or malformed native timezone metadata.
-    }
-  }
+  const timezone = nativeTimezone(fields.timezone);
   return {
     status: locale && timezone ? "supported" : "incomplete",
     ...(locale ? { locale } : {}),
@@ -396,6 +401,12 @@ export class GristService {
     update: DocumentMetadataUpdateInput
   ): Promise<unknown> {
     const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    if (update.timezone !== undefined) {
+      if (update.name !== undefined || update.type !== undefined) {
+        throw new Error("Send a timezone update separately from a name or type update.");
+      }
+      return this.updateDocumentTimezone(documentId, update.timezone);
+    }
     if (update.name === undefined && update.type === undefined) {
       throw new Error("At least one document metadata field must be updated.");
     }
@@ -449,6 +460,25 @@ export class GristService {
           ? error.message
           : "Updated document metadata could not be verified."
       );
+    }
+  }
+
+  private async updateDocumentTimezone(documentId: string, value: string): Promise<unknown> {
+    const timezone = DOCUMENT_TIMEZONE_CHOICES.find(choice => choice === value);
+    if (!timezone) throw new Error("Timezone must be UTC or Europe/Paris for the qualified native settings update.");
+    const before = await this.readDocumentSettings(documentId);
+    if (!before.timezone) throw new Error("Current Grist timezone metadata is unavailable.");
+    if (before.timezone === timezone) return { documentId, settings: before, changed: false };
+
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_DocInfo", 1, { timezone }]
+    ]);
+    try {
+      const after = await this.readDocumentSettings(documentId);
+      if (after.timezone !== timezone) throw new Error("Timezone postcondition not met.");
+      return { documentId, settings: after, changed: true };
+    } catch {
+      throw new SchemaWriteVerificationError("update_document", "The Grist timezone could not be verified.");
     }
   }
 
