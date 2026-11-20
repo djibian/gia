@@ -65,6 +65,10 @@ export function inspectNativeForm(
   };
 } {
   const sectionPublicationIntent = publicationIntent(widget.formShareOptions);
+  // Native share options may alter publication even when form/publish are known.
+  // Report unknown keys as protected without returning their names or values.
+  const hasProtectedShareOptions = Object.keys(options(widget.formShareOptions) ?? {}).some(
+    key => key !== "form" && key !== "publish");
   const common = { sectionPublicationIntent, publicationQualification: "not_tested" as const };
   const incomplete = { ...common, status: "incomplete" as const };
   if (budget.forms <= 0 || budget.nodes <= 0) return incomplete;
@@ -223,7 +227,7 @@ export function inspectNativeForm(
     ...common, tableId: widget.tableId, layout, submission,
     status: sectionPublicationIntent === "unknown" ? "incomplete" :
       hasProtectedText || hasProtectedDropdownCondition || hasProtectedLayoutAttributes ||
-      hasProtectedFieldOptions || successURL
+      hasProtectedFieldOptions || hasProtectedShareOptions || successURL
         ? "protected" : "supported"
   };
 }
