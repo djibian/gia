@@ -149,6 +149,13 @@ actually exercised. A native API result applies to that API case. A LinkKey
 browser result applies to the tested web-client context. Native production
 qualification is read-only, and any unexercised case remains unqualified.
 
+Form layout mutation accepts a finite, typed tree and server-side resolution of
+stable column identifiers to existing native section fields. A protected,
+unrecognized or partially readable existing layout refuses replacement rather
+than discarding unknown attributes; destination layout has no URL-bearing or
+arbitrary HTML elements. After write, native persisted layout must match or the
+outcome remains uncertain. Layout changes do not confer Form publication rights.
+
 Hidden fields and saved filters are presentation state. A generated summary
 table has its own native policy. Native roles, sharing and credential
 administration remain in Grist and its deployment.
