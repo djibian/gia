@@ -68,14 +68,14 @@ makes the form `incomplete`. The projection includes supported submit and
 success text and whether a redirect is configured.
 
 `status: "protected"` identifies omitted text, an opaque dropdown condition,
-a protected redirect, or unprojected native form layout-node, field-option
-or section share-option attributes. Such attributes remain private: a layout
+a protected redirect, or unprojected native form layout-node, field-option,
+section-option or section share-option attributes. Such attributes remain private: a layout
 and publication intent may be readable without being fully reconstructible. Text
 containing potential links is omitted entirely, including links in Markdown.
 The redirect URL and raw share options are never returned by this projection.
 `status: "incomplete"` covers unresolved field references, insufficient
-metadata, unsupported layout and inspection bounds. An empty native section
-options object is valid. The result pairs `sectionPublicationIntent`
+metadata, unsupported layout, malformed native section options and inspection
+bounds. An empty native section options object is valid. The result pairs `sectionPublicationIntent`
 (`requested`, `not_requested` or `unknown`) with
 `publicationQualification: "not_tested"`. Native share and page state also
 affect publication. Inspecting an intent does not perform an anonymous or
