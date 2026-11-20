@@ -513,7 +513,7 @@ export class GristService {
       catch { result = null; }
       const settings = projectDocumentSettings(after);
       if (!result || !isDeepStrictEqual(result, expected) ||
-          afterFields?.timezone !== fields.timezone || settings.locale !== locale ||
+          afterFields?.timezone !== fields?.timezone || settings.locale !== locale ||
           settings.status !== "supported") {
         throw new Error("Locale or preserved document settings did not match the requested state.");
       }
