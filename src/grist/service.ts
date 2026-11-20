@@ -1,6 +1,7 @@
 import { columnCreationFieldsSchema } from "../operations/schemaMutationContract.js";
 import { AccessPolicy } from "./accessPolicy.js";
 import {
+  GristApiError,
   GristClient,
   isUncertainGristEffect,
   type GristColumnSpec,
@@ -29,6 +30,12 @@ export interface PublicDocumentMetadata {
   id: string;
   name: string;
   type: PublicDocumentType;
+}
+
+interface PublicDocumentSettings {
+  status: "supported" | "protected" | "incomplete";
+  locale?: string;
+  timezone?: string;
 }
 
 export interface GristServiceOptions {
@@ -149,6 +156,41 @@ function projectDocumentMetadata(
     id: documentId,
     name: document.name,
     type: normalizeDocumentType(document.type)
+  };
+}
+
+function projectDocumentSettings(response: unknown): PublicDocumentSettings {
+  const records = jsonRecord(response)?.records;
+  const row = Array.isArray(records) && records.length === 1 ? jsonRecord(records[0]) : null;
+  const fields = row?.id === 1 ? jsonRecord(row.fields) : null;
+  if (!fields) return { status: "incomplete" };
+
+  let locale: string | undefined;
+  const stored = fields.documentSettings;
+  if (typeof stored === "string" && stored.length <= 16_384) {
+    try {
+      const candidate = jsonRecord(JSON.parse(stored))?.locale;
+      if (typeof candidate === "string" && /^[a-z]{2,3}(?:-[A-Z][a-z]{3})?(?:-(?:[A-Z]{2}|\d{3}))?$/.test(candidate) &&
+          Intl.getCanonicalLocales(candidate)[0] === candidate) locale = candidate;
+    } catch {
+      // Native settings may be malformed; report only independently identified fields.
+    }
+  }
+
+  let timezone: string | undefined;
+  const candidate = fields.timezone;
+  if (typeof candidate === "string" && /^[A-Za-z][A-Za-z0-9_+/-]{0,63}$/.test(candidate)) {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: candidate });
+      timezone = candidate;
+    } catch {
+      // Do not echo unrecognized or malformed native timezone metadata.
+    }
+  }
+  return {
+    status: locale && timezone ? "supported" : "incomplete",
+    ...(locale ? { locale } : {}),
+    ...(timezone ? { timezone } : {})
   };
 }
 
@@ -326,12 +368,27 @@ export class GristService {
 
   async getDocumentMetadata(
     documentIdOrUrl: string
-  ): Promise<PublicDocumentMetadata> {
+  ): Promise<PublicDocumentMetadata & { settings: PublicDocumentSettings }> {
     const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
-    return projectDocumentMetadata(
-      documentId,
-      await this.client.getDocument(documentId)
-    );
+    const [document, settings] = await Promise.all([
+      this.client.getDocument(documentId),
+      this.readDocumentSettings(documentId)
+    ]);
+    return { ...projectDocumentMetadata(documentId, document), settings };
+  }
+
+  private async readDocumentSettings(documentId: string): Promise<PublicDocumentSettings> {
+    try {
+      const response = await this.client.queryRecords(documentId, "_grist_DocInfo", {
+        limit: 2,
+        hidden: true
+      });
+      return projectDocumentSettings(response);
+    } catch (error) {
+      if (error instanceof GristApiError && error.status === 403) return { status: "protected" };
+      if (error instanceof GristApiError && error.status === 404) return { status: "incomplete" };
+      throw error;
+    }
   }
 
   async updateDocument(
