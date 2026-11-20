@@ -41,7 +41,7 @@ function requiredCapabilities(
   const args = requestedToolArguments(options);
   if (
     toolName === "grist_add_structure" &&
-    args?.action === "copy_document_as_template" &&
+    (args?.action === "copy_document_as_template" || args?.action === "copy_document") &&
     !capabilities.includes("doc:read")
   ) {
     capabilities.push("doc:read");
