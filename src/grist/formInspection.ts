@@ -49,7 +49,7 @@ export function nativeDropdownConditionState(value: unknown): "protected" | "inc
 
 /** Redact link-bearing native Form prose instead of returning potential tokens/URLs. */
 export function safeNativeFormText(value: string, maxLength: number): FormText {
-    const linkLike = /[:/\\@<>{}\[\]=&%]|[\p{L}\d]\.[\p{L}\d]/u;
+  const linkLike = /[:/\\@<>{}\[\]=&%]|[\p{L}\d]\.[\p{L}\d]/u;
   return value.length > Math.min(1000, maxLength) || linkLike.test(value)
     ? { protected: true } : value;
 }
@@ -133,7 +133,6 @@ export function inspectNativeForm(
     budget.text -= value.length;
     return safe;
   };
-
   const fieldOptions = (parsed: JsonRecord): FormOptions | undefined => {
     const { question, formRequired, formAcceptFromUrl } = parsed;
     if ((question !== undefined && typeof question !== "string") ||
