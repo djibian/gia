@@ -326,9 +326,10 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     } }]
   },
   grist_change_ui: {
-    actions: ["rename_page", "delete_page", "reorder_pages", "delete_widget", "update_layout", "update_widget"],
+    actions: ["rename_page", "delete_page", "reorder_pages", "delete_widget", "update_layout", "update_form_layout", "update_widget"],
     request: [
       "rename_page: {action,documentId,pageId,name}; delete_page: {action,documentId,pageId}; delete_widget: {action,documentId,pageId,widgetId}.",
+      "update_form_layout: {action,documentId,pageId,widgetId,layout:{children:[paragraph|section(fields/paragraphs)|submit],submitText?,successText?,anotherResponse?}}; stable column IDs resolved server-side; no publish.",
       "reorder_pages: {action,documentId,pageIds:completeNavigationPageIds[]}; update_layout: {action,documentId,pageId,layout:{root:{kind:'widget',widgetId}|{kind:'group',children:[...]},collapsedWidgetIds?:positiveInteger[]}}",
       "update_widget: {action,documentId,pageId,widgetId,update:{calendarConfig?:{titleColumnId,startDateColumnId,endDateColumnId?,allDayColumnId?,typeColumnId?},visibleFields?,cardLayout?:{root:{kind:'field',columnId}|{kind:'group',children:[...]}},gridOptions?,filters?,sort?,...}}"
     ],
