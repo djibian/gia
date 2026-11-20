@@ -256,6 +256,9 @@ function bridgeEnvironment(options: {
     GRIST_MAX_WRITE_RECORDS: String(COMPAT_TOOL_LIMITS.maxWriteRecords),
     GRIST_WRITE_BATCH_RECORDS: "25",
     GRIST_MAX_SCHEMA_ITEMS: String(COMPAT_TOOL_LIMITS.maxSchemaItems),
+    // Disposable comprehensive native matrix exceeds the default production
+    // request/minute ceiling. Dedicated rate limiter tests verify enforcement.
+    MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE: "1000",
     MCP_AUTH_MODE: "static",
     // Synthetic compatibility fixture explicitly opts into the sensitive source scope.
     MCP_CAPABILITIES: "doc:read,doc:write,doc.schema:write,doc:download",
