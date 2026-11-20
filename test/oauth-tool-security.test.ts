@@ -146,7 +146,10 @@ test("wire adapter transforms JSON tool lists and removes stale content-length",
   ]);
   assert.deepEqual(
     (body.result.tools[0]?._meta as Record<string, unknown>)?.["gia/actionScopeRequirements"],
-    { copy_document_as_template: ["doc.schema:write", "doc:read"] }
+    {
+      copy_document_as_template: ["doc.schema:write", "doc:read"],
+      copy_document: ["doc.schema:write", "doc:download"]
+    }
   );
 });
 
