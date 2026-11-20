@@ -1145,6 +1145,79 @@ export class AuthorizedGristService {
     }
   }
 
+  async copyDocument(
+    sourceDocumentIdOrUrl: string,
+    workspaceId: number,
+    name: string
+  ): Promise<unknown> {
+    const definition = getOperation("copy_document");
+    const capability = getRequiredCapability(definition.name);
+    const requestId = this.audit.nextRequestId();
+    const started = Date.now();
+    let sourceDocumentId = sourceDocumentIdOrUrl;
+    let createdDocumentId: string | undefined;
+    try {
+      await this.authorization.assertWorkspaceAllowed(
+        this.principal,
+        workspaceId,
+        capability
+      );
+      sourceDocumentId = await this.authorization.assertDocumentAllowed(
+        this.principal,
+        sourceDocumentIdOrUrl,
+        "doc:read"
+      );
+      // A full copy can include rows hidden by document ACLs. Require a fresh
+      // native source Owner proof in addition to the bounded bridge grants.
+      await this.inner.assertDocumentOwner(sourceDocumentId);
+      createdDocumentId = await this.inner.copyDocument(
+        sourceDocumentId,
+        workspaceId,
+        name
+      );
+      await this.verifyCreatedDocumentWorkspace(
+        createdDocumentId,
+        workspaceId,
+        capability
+      );
+      this.audit.record({
+        requestId,
+        principal: this.principal.id,
+        transport: this.principal.transport,
+        operation: definition.name,
+        capability,
+        documentId: createdDocumentId,
+        itemCount: 1,
+        status: "success",
+        durationMs: Date.now() - started
+      });
+      return {
+        documentId: createdDocumentId,
+        sourceDocumentId,
+        workspaceId,
+        created: true,
+        bootstrap: "full_copy",
+        asTemplate: false,
+        destinationMembershipVerified: true,
+        creatorOwnershipIsNativeGristBehavior: true,
+        nativeCopyAuthorizationVerifiedByGrist: true,
+        sourceOwnershipVerified: true
+      };
+    } catch (error) {
+      this.auditFailure(
+        requestId,
+        started,
+        definition.name,
+        capability,
+        createdDocumentId,
+        error,
+        1
+      );
+      throw error;
+    }
+  }
+
+
   async copyDocumentAsTemplate(
     sourceDocumentIdOrUrl: string,
     workspaceId: number,
