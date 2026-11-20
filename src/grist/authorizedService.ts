@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { AuditLogger } from "../audit/auditLogger.js";
 import type { AuthorizationService } from "../auth/authorizationService.js";
 import type { GristCapability, Principal } from "../auth/principal.js";
@@ -71,6 +72,7 @@ import {
   resolveColumnSelectByAllowed,
   type ColumnSelectByInput
 } from "./selectBy.js";
+import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUpdateInput } from "./formColumnOptions.js";
 import { DocumentContextService } from "./documentContext.js";
 import { DocumentUiService, type DocumentUiContext } from "./documentUi.js";
 import {
@@ -79,9 +81,10 @@ import {
   projectPublicWidget,
   projectPublicTables
 } from "./publicMetadata.js";
-import type {
-  DocumentMetadataUpdateInput,
-  GristService,
+import {
+  SchemaWriteVerificationError,
+  type DocumentMetadataUpdateInput,
+  type GristService,
   QueryRecordsOptions
 } from "./service.js";
 import {
@@ -1368,6 +1371,38 @@ export class AuthorizedGristService {
     return this.execute("update_columns", documentIdOrUrl, columns.length, (id) => {
       assertPublicTableId(tableId);
       return this.inner.updateColumns(id, tableId, columns);
+    });
+  }
+
+  async updateFormColumnOptions(
+    documentIdOrUrl: string, tableId: string, columnId: string,
+    update: FormColumnOptionsUpdateInput
+  ): Promise<unknown> {
+    return this.execute("update_form_column_options", documentIdOrUrl, 1, async (id) => {
+      assertPublicTableId(tableId);
+      if (!columnId.trim()) throw new Error("Form option update requires a stable column ID.");
+      const read = async () => readFormColumnOptions(
+        await this.inner.listColumns(id, tableId, { hidden: true }), columnId,
+        this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000
+      );
+      const before = await read();
+      const plan = applyFormColumnOptions(before, update);
+      const base = { documentId: id, tableId, columnId };
+      if (!plan.changed) return { ...base, changed: false,
+        persistedOptionsVerified: true, nativeFormRenderingQualified: false };
+      await this.inner.updateColumns(id, tableId, [{
+        id: columnId, fields: { widgetOptions: plan.widgetOptions }
+      }]);
+      try {
+        if (!isDeepStrictEqual(await read(), plan.options)) {
+          throw new Error("Native Form options differ from requested preserved state.");
+        }
+      } catch (error) {
+        throw new SchemaWriteVerificationError("update_form_column_options",
+          error instanceof Error ? error.message : "Form option post-read failed.");
+      }
+      return { ...base, changed: true,
+        persistedOptionsVerified: true, nativeFormRenderingQualified: false };
     });
   }
 
