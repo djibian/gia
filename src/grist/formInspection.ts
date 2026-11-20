@@ -89,6 +89,14 @@ export function inspectNativeForm(
 
   let hasProtectedText = false;
   let hasProtectedDropdownCondition = false;
+  let hasProtectedLayoutAttributes = false;
+  const markUnprojectedAttributes = (node: JsonRecord, supported: readonly string[]): void => {
+    if (Object.keys(node).some(key => !supported.includes(key))) {
+      // Native form presentation may be meaningful even when we cannot safely
+      // project it. Never claim a completely reconstructible layout.
+      hasProtectedLayoutAttributes = true;
+    }
+  };
   const safeText = (value: string): FormText => {
     // Free-text links may embed LinkKeys or tokens, including relative URLs
     // inside Markdown. Keep plain prose and omit the whole link-bearing value.
@@ -126,6 +134,9 @@ export function inspectNativeForm(
     }
     if (node.type === "Section" || (depth === 0 && node.type === "Layout")) {
       if (!Array.isArray(node.children) || node.leaf !== undefined) return undefined;
+      markUnprojectedAttributes(node, node.type === "Layout"
+        ? ["id", "type", "children", "submitText", "successText", "successURL", "anotherResponse"]
+        : ["id", "type", "children"]);
       const children: FormNode[] = [];
       for (const child of node.children) {
         const normalized = walk(child, depth + 1);
@@ -168,6 +179,7 @@ export function inspectNativeForm(
         }
         hasProtectedDropdownCondition = true;
       }
+      markUnprojectedAttributes(node, ["id", "type", "leaf", "children"]);
       usedFields.add(leaf);
       return {
         type: "field", columnId, columnOptions: column, fieldOptions: override,
@@ -175,11 +187,15 @@ export function inspectNativeForm(
       };
     }
     if (node.leaf !== undefined) return undefined;
-    if (node.type === "Submit") return { type: "submit" };
+    if (node.type === "Submit") {
+      markUnprojectedAttributes(node, ["id", "type", "children"]);
+      return { type: "submit" };
+    }
     if (node.type === "Paragraph") {
       const { text, alignment } = node;
       if (text !== undefined && typeof text !== "string") return undefined;
       if (alignment !== undefined && alignment !== "left" && alignment !== "center" && alignment !== "right") return undefined;
+      markUnprojectedAttributes(node, ["id", "type", "children", "text", "alignment"]);
       return { type: "paragraph", text: safeText(text ?? ""), ...(alignment ? { alignment } : {}) };
     }
     return undefined;
@@ -198,6 +214,8 @@ export function inspectNativeForm(
   };
   return {
     ...common, tableId: widget.tableId, layout, submission,
-    status: sectionPublicationIntent === "unknown" ? "incomplete" : hasProtectedText || hasProtectedDropdownCondition || successURL ? "protected" : "supported"
+    status: sectionPublicationIntent === "unknown" ? "incomplete" :
+      hasProtectedText || hasProtectedDropdownCondition || hasProtectedLayoutAttributes || successURL
+        ? "protected" : "supported"
   };
 }

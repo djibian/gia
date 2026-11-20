@@ -139,3 +139,26 @@ test("malformed native dropdown predicates cannot be mistaken for an absent cond
     assert.equal(form?.layout, undefined);
   }
 });
+
+test("unknown native form layout properties are protected and never returned as reconstructible", () => {
+  const secret = "synthetic-private-opaque-form-property";
+  const inject = [
+    (layout: ReturnType<typeof fixture>["layout"]) => Object.assign(layout, { nativeTheme: secret }),
+    (layout: ReturnType<typeof fixture>["layout"]) => Object.assign(layout.children[0]!, { nativeRichText: secret }),
+    (layout: ReturnType<typeof fixture>["layout"]) => Object.assign(layout.children[1]!, { nativeSectionLayout: secret }),
+    (layout: ReturnType<typeof fixture>["layout"]) =>
+      Object.assign(layout.children[1]!.children![0]!, { nativeFieldPresentation: secret }),
+    (layout: ReturnType<typeof fixture>["layout"]) => Object.assign(layout.children[2]!, { nativeSubmitStyle: secret })
+  ];
+  for (const addUnknown of inject) {
+    const { layout, tables, inspect } = fixture();
+    tables.tables[0]!.columns[1]!.fields.widgetOptions = '{"formAcceptFromUrl":true}';
+    const baseline = inspect().widgets[0]?.form;
+    assert.equal(baseline?.status, "supported");
+    addUnknown(layout);
+    const inspected = inspect().widgets[0]?.form;
+    assert.equal(inspected?.status, "protected");
+    assert.deepEqual(inspected?.layout, baseline?.layout);
+    assert.doesNotMatch(JSON.stringify(inspected), /synthetic-private-opaque-form-property/);
+  }
+});
