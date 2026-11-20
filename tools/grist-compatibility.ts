@@ -2104,6 +2104,23 @@ async function run(): Promise<void> {
     assert(inspected.includes(TABLE_ID), "table_missing_from_inspection");
     assert(inspected.includes(PAGE_NAME), "page_missing_from_inspection");
 
+    const settingsDocPath = `/api/docs/${encodeURIComponent(documentId)}`;
+    await gristApi(gristBaseUrl, apiKey, `${settingsDocPath}/apply`, {
+      method: "POST",
+      body: JSON.stringify([["UpdateRecord", "_grist_DocInfo", 1, {
+        timezone: "Europe/Paris",
+        documentSettings: JSON.stringify({ locale: "fr-FR", currency: "EUR", opaque: "synthetic-private-settings" })
+      }]])
+    });
+    const settingsInspection = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+      action: "document", documentId
+    }), "native_document_settings_inspection");
+    const settings = (settingsInspection.document as Record<string, unknown>).settings;
+    assert(isDeepStrictEqual(settings, { status: "supported", locale: "fr-FR", timezone: "Europe/Paris" }),
+      "native_document_settings_shape_mismatch");
+    assert(!JSON.stringify(settingsInspection).includes("synthetic-private-settings"),
+      "native_document_settings_private_value_exposed");
+
     // Persist a native form in the disposable fixture. Section intent alone
     // cannot publish it because no native page share is created.
     const docPath = `/api/docs/${encodeURIComponent(documentId)}`;
