@@ -20,6 +20,7 @@ const OPERATION_CAPABILITIES = new Map<string, GristCapability>([
   ["update_columns", "doc.schema:write"],
   ["rename_column", "doc.schema:write"],
   ["change_access_rule_group", "doc.schema:write"],
+  ["grant_document_user", "doc.schema:write"],
   ["delete_columns", "doc.schema:write"],
   ["inspect_access_rules", "doc:read"],
   ["inspect_document", "doc:read"],

@@ -361,6 +361,18 @@ export class GristService {
     }
   }
 
+  async listDocumentAccess(documentIdOrUrl: string): Promise<unknown> {
+    const id = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    return this.client.listDocumentAccess(id);
+  }
+
+  async grantDocumentUser(
+    documentIdOrUrl: string, email: string, role: "viewers" | "editors"
+  ): Promise<unknown> {
+    const id = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    return this.client.grantDocumentUser(id, email, role);
+  }
+
   async assertDocumentOwner(documentIdOrUrl: string): Promise<void> {
     const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
     const document = await this.client.getDocument(documentId);

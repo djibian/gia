@@ -256,6 +256,8 @@ function bridgeEnvironment(options: {
     GRIST_MAX_WRITE_RECORDS: String(COMPAT_TOOL_LIMITS.maxWriteRecords),
     GRIST_WRITE_BATCH_RECORDS: "25",
     GRIST_MAX_SCHEMA_ITEMS: String(COMPAT_TOOL_LIMITS.maxSchemaItems),
+    // Native synthetic end-to-end exercises more than 120 requests/minute.
+    MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE: "1000",
     MCP_AUTH_MODE: "static",
     // Synthetic compatibility fixture explicitly opts into the sensitive source scope.
     MCP_CAPABILITIES: "doc:read,doc:write,doc.schema:write,doc:download",
@@ -515,6 +517,26 @@ async function run(): Promise<void> {
       await callTool(bridgeBaseUrl, "grist_discover", { action: "documents" })
     );
     assert(discovered.includes(documentId), "created_document_not_discovered");
+
+    const grantRecipient = "gia-synthetic-reader@example.invalid";
+    const firstGrant = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "grant_document_user", documentId, email: grantRecipient, role: "viewers"
+    }), "native_grant_single_viewer");
+    assert(firstGrant.changed === true && firstGrant.persistedGrantVerified === true &&
+      firstGrant.effectiveAclVerified === false, "native_grant_not_verified");
+    const nativeGrant = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?: string;access?: string}>;
+      };
+    assert(nativeGrant.users.some(row => row.email === grantRecipient && row.access === "viewers"),
+      "native_grant_role_not_persisted");
+    const repeatedGrant = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "grant_document_user", documentId, email: grantRecipient, role: "viewers"
+    }), "native_grant_repeated");
+    assert(repeatedGrant.changed === false, "native_grant_repeat_not_idempotent");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "grant_document_user", documentId, email: grantRecipient, role: "editors"
+    });
 
     const templateMetadata = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
