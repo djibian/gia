@@ -277,6 +277,29 @@ export class GristService {
     }
   }
 
+  async copyDocument(
+    sourceDocumentIdOrUrl: string,
+    workspaceId: number,
+    name: string
+  ): Promise<string> {
+    this.assertWorkspaceId(workspaceId);
+    const sourceDocumentId = await this.accessPolicy.assertDocumentAllowed(
+      sourceDocumentIdOrUrl
+    );
+    await this.accessPolicy.assertWorkspaceAllowed(workspaceId);
+    const documentName = this.normalizeDocumentName(name);
+    try {
+      return await this.client.copyDocument(
+        sourceDocumentId,
+        workspaceId,
+        documentName
+      );
+    } finally {
+      this.accessPolicy.invalidate();
+    }
+  }
+
+
   async copyDocumentAsTemplate(
     sourceDocumentIdOrUrl: string,
     workspaceId: number,
