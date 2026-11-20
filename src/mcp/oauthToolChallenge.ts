@@ -39,12 +39,14 @@ function requiredCapabilities(
 
   const capabilities: GristCapability[] = baseline ? [baseline] : [];
   const args = requestedToolArguments(options);
-  if (
-    toolName === "grist_add_structure" &&
-    (args?.action === "copy_document_as_template" || args?.action === "copy_document") &&
-    !capabilities.includes("doc:read")
-  ) {
-    capabilities.push("doc:read");
+  if (toolName === "grist_add_structure") {
+    const sourceCapability =
+      args?.action === "copy_document" ? "doc:download"
+      : args?.action === "copy_document_as_template" ? "doc:read"
+      : null;
+    if (sourceCapability && !capabilities.includes(sourceCapability)) {
+      capabilities.push(sourceCapability);
+    }
   }
   return capabilities;
 }
