@@ -2133,24 +2133,39 @@ async function run(): Promise<void> {
     const persistedDocSettings = JSON.stringify({ locale: "fr-FR", currency: "EUR", opaque: "synthetic-private-settings" });
     await gristApi(gristBaseUrl, apiKey, `${settingsDocPath}/apply`, {
       method: "POST",
-      body: JSON.stringify([["UpdateRecord", "_grist_DocInfo", 1, {
-        timezone: "UTC",
-        documentSettings: persistedDocSettings
-      }]])
+      body: JSON.stringify([
+        ["UpdateRecord", "_grist_DocInfo", 1, {
+          timezone: "UTC",
+          documentSettings: persistedDocSettings
+        }],
+        ["AddColumn", TABLE_ID, "TimezoneOffset", {
+          type: "Numeric", isFormula: true,
+          formula: "DTIME(DATE(2025, 1, 15)).utcoffset().total_seconds()"
+        }]
+      ])
     });
     for (const update of [
       { timezone: "Europe/Invalid" },
+      { timezone: "America/Ciudad_Juarez" },
       { timezone: "Europe/Paris", name: "Unexpected name" }
     ]) {
       await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
         action: "update_document", documentId, update
       });
     }
-    for (const expectedChanged of [true, false]) {
+    for (const [timezone, expectedChanged] of [
+      ["Europe/Paris", true], ["Europe/Paris", false], ["UTC", true], ["Europe/Paris", true]
+    ] as const) {
       const updateResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
-        action: "update_document", documentId, update: { timezone: "Europe/Paris" }
+        action: "update_document", documentId, update: { timezone }
       }), "native_document_timezone_update");
       assert(updateResult.changed === expectedChanged, "native_document_timezone_changed_mismatch");
+      const computed = await gristApi(gristBaseUrl, apiKey,
+        `${settingsDocPath}/tables/${TABLE_ID}/records?limit=1`) as {
+          records: Array<{ fields: Record<string, unknown> }>;
+        };
+      assert(computed.records[0]?.fields.TimezoneOffset === (timezone === "UTC" ? 0 : 3600),
+        "native_document_timezone_formula_mismatch");
     }
     const docInfo = await gristApi(gristBaseUrl, apiKey,
       `${settingsDocPath}/tables/_grist_DocInfo/records?hidden=true`) as {

@@ -275,7 +275,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     actions: ["update_document", "update_tables", "delete_table", "update_columns",
       "rename_column", "delete_columns", "access_rule_group"],
     request: [
-      "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:IANAIdentifier}}",
+      "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
       "update_tables: {action,documentId,tables:[{id,fields}]}; delete_table: {action,documentId,tableId}; rename_column: {action,documentId,tableId,oldColumnId,newColumnId}; delete_columns: {action,documentId,tableId,columnIds}",
       "access_rule_group: {action,documentId,mode:'create'|'replace'|'delete',target:{tableId,columnIds?:string[]}|{userAttributeName},rules?:[{condition,permissions:{read,update,create?,delete?}}],definition?:{tableId,lookupColId,source:{kind:'user_property',property}|{kind:'link_key',name}}}",

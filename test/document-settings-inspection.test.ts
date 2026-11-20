@@ -66,7 +66,8 @@ test("timezone update writes one metadata cell and repeated execution is a no-op
 
 test("timezone update refuses malformed and mixed inputs and never replays ambiguous writes", async () => {
   const untouched = service(async () => assert.fail("Must reject before reading native metadata"));
-  await assert.rejects(() => untouched.updateDocument("synthetic", { timezone: "europe/paris" }), /valid IANA/);
+  await assert.rejects(() => untouched.updateDocument("synthetic", { timezone: "America/Ciudad_Juarez" }),
+    /UTC or Europe\/Paris/);
   await assert.rejects(() => untouched.updateDocument("synthetic", { timezone: "UTC", name: "Mixed" }), /separately/);
   const uncertain = new GristTransportError("lost acknowledgement", "UNCERTAIN");
   let writes = 0;

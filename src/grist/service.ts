@@ -21,6 +21,8 @@ import {
 
 export type PublicDocumentType = "normal" | "template" | "tutorial";
 
+export const DOCUMENT_TIMEZONE_CHOICES = ["UTC", "Europe/Paris"] as const;
+
 export interface DocumentMetadataUpdateInput {
   name?: string;
   type?: PublicDocumentType;
@@ -462,10 +464,8 @@ export class GristService {
   }
 
   private async updateDocumentTimezone(documentId: string, value: string): Promise<unknown> {
-    const timezone = value === "UTC" || Intl.supportedValuesOf("timeZone").includes(value)
-      ? value
-      : undefined;
-    if (!timezone) throw new Error("Supply a valid IANA timezone identifier.");
+    const timezone = DOCUMENT_TIMEZONE_CHOICES.find(choice => choice === value);
+    if (!timezone) throw new Error("Timezone must be UTC or Europe/Paris for the qualified native settings update.");
     const before = await this.readDocumentSettings(documentId);
     if (!before.timezone) throw new Error("Current Grist timezone metadata is unavailable.");
     if (before.timezone === timezone) return { documentId, settings: before, changed: false };

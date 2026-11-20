@@ -33,6 +33,7 @@ import {
   type NormalizedPageLayoutNode
 } from "../grist/pageLayout.js";
 import { MAX_SUMMARY_GROUP_BY_COLUMNS } from "../grist/summaryTables.js";
+import { DOCUMENT_TIMEZONE_CHOICES } from "../grist/service.js";
 import { NATIVE_WIDGET_TYPES } from "../grist/uiActionsAdapter.js";
 import {
   MAX_WIDGET_SORT_COLUMNS,
@@ -661,7 +662,7 @@ export function registerLeanTools(
     .object({
       name: documentNameSchema.optional(),
       type: z.enum(["normal", "template", "tutorial"]).optional(),
-      timezone: z.string().min(1).max(64).optional()
+      timezone: z.enum(DOCUMENT_TIMEZONE_CHOICES).optional()
     })
     .strict()
     .refine(
