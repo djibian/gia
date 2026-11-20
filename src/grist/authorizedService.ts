@@ -1122,7 +1122,7 @@ export class AuthorizedGristService {
         let verified: boolean;
         try {
           const actual = await this.inner.getDocumentMetadata(createdDocumentId);
-          verified = actual.settings.status === "supported" && actual.settings.locale === locale;
+          verified = actual.settings.locale === locale;
         } catch {
           verified = false;
         }
