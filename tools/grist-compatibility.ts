@@ -2257,6 +2257,29 @@ async function run(): Promise<void> {
     assert(afterInspection.records.find(row => row.id === formSection.id)?.fields.layoutSpec === layoutSpec,
       "form_inspection_modified_native_layout");
 
+    // Confirm that a real native column-style rule is visible only as a safe
+    // presence signal through the existing schema discovery surface.
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
+      method: "POST",
+      body: JSON.stringify([["AddEmptyRule", TABLE_ID, null, column.id]])
+    });
+    const nativeStyledColumns = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const nativeStyleRules = nativeStyledColumns.records.find(
+      row => row.id === column.id)?.fields.rules;
+    assert(Array.isArray(nativeStyleRules) && nativeStyleRules[0] === "L" &&
+      nativeStyleRules.length === 2, "native_conditional_style_rule_not_persisted");
+    const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
+      action: "columns", documentId, tableId: TABLE_ID
+    }), "native_conditional_style_inspection");
+    const publicStyledColumn = (schemaWithStyle.columns as Array<{
+      id: string; fields: Record<string, unknown>
+    }>).find(item => item.id === "Name");
+    assert(isDeepStrictEqual(publicStyledColumn?.fields.conditionalStyleRules, { status: "protected" }),
+      "native_conditional_style_projection_mismatch");
+    assert(!Object.hasOwn(publicStyledColumn?.fields ?? {}, "rules"),
+      "native_conditional_style_refs_exposed");
+
     // Qualify an actual Bool user attribute with two authenticated synthetic
     // viewers. Both can read the control table, and only the true flag may
     // read the protected table.
