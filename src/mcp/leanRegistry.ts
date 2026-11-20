@@ -249,7 +249,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     ],
     constraints: [
       "Destination workspace needs doc.schema:write; template source additionally needs doc:read.",
-      "Full copy requires deployment opt-in, an explicit source document doc:download grant, native source Owner proof and Grist full-download authorization. Authorize the exact destination workspace and account for its inherited access before copying. Access, publication, attachment and history equivalence are not verified.",
+      "Full copy requires deployment opt-in, the canonical source document ID, an explicit doc:download grant on that ID, native source Owner proof and Grist full-download authorization. Authorize the exact destination workspace and account for its inherited access before copying. Access, publication, attachment and history equivalence are not verified.",
       "Native copy may retain sensitive data or metadata. Neither copy is idempotent; preserve known IDs on partial or uncertain outcomes."
     ],
     examples: [

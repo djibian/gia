@@ -187,7 +187,7 @@ test("full copy requires an explicit source download grant AND native Owner proo
   const workspaces: GristWorkspaceSummary[] = [
     { id: 10, name: "Destination", access: "editors", docs: [] },
     { id: 20, name: "Source", access: "owners",
-      docs: [{ id: "source-doc", urlId: "source-doc", name: "Source", access: "owners" }] }
+      docs: [{ id: "source-doc", urlId: "source-alias", name: "Source", access: "owners" }] }
   ];
   const authorization = new AuthorizationService(new AccessPolicy(discoveryClient(workspaces), {
     allowedDocumentIds: ["source-doc"],
@@ -234,6 +234,21 @@ test("full copy requires an explicit source download grant AND native Owner proo
   };
   await assert.rejects(
     () => service(inner, authorization, workspaceSource).copyDocument("source-doc", 10, "Denied"),
+    /doc:download/
+  );
+  await assert.rejects(
+    () => service(inner, authorization, target).copyDocument("source-alias", 10, "Denied"),
+    /doc:download/
+  );
+  const aliasGrant: Principal = {
+    ...target,
+    grants: [
+      { documentIds: ["source-alias"], workspaceIds: [], capabilities: ["doc:download"] },
+      target.grants[1]!
+    ]
+  };
+  await assert.rejects(
+    () => service(inner, authorization, aliasGrant).copyDocument("source-doc", 10, "Denied"),
     /doc:download/
   );
   assert.equal(ownerProofs, 0);

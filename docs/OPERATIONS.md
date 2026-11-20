@@ -90,8 +90,8 @@ Gia is a provider-neutral OAuth resource server, not an authorization server.
 Use an Authorization Code + PKCE flow with the configured resource audience.
 The default public scopes are `doc:read`, `doc:write`, `doc.schema:write`.
 When opting in to `doc:download`, configure the issuer to issue that scope only
-to authorized clients for the resource. List each authorized source explicitly
-in `GRIST_ALLOWED_DOCUMENT_IDS`. Destination workspaces still need their own
+to authorized clients for the resource. List the canonical native ID for each
+authorized source in `GRIST_ALLOWED_DOCUMENT_IDS`. Destination workspaces still need their own
 allowlist entry. Review native destination permissions for the intended audience
 before any full-data copy. OAuth principal grants still derive their baseline
 capabilities from the verified token.

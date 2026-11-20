@@ -160,8 +160,8 @@ same-principal grant naming that workspace with `doc.schema:write`.
 A document-only grant or capabilities from unrelated grants cannot manufacture
 destination authority. Template copy separately requires source `doc:read`;
 full-data copy requires deployment opt-in, a capability grant explicitly naming
-the source document, and fresh native Owner verification of that source. A source
-workspace grant is insufficient. OAuth additionally requires a verified
+the canonical native source ID, and fresh native Owner verification on that
+same ID. A source workspace grant or URL alias is insufficient. OAuth additionally requires a verified
 `doc:download` scope. Grist's native copy/download and destination `ADD`
 authorization remain decisive.
 
