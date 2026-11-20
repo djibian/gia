@@ -117,7 +117,10 @@ function parseCapabilities(
   name: string,
   value: string | undefined
 ): GristCapability[] {
-  const configured = value?.trim() ? parseCsv(value) : [...GRIST_CAPABILITIES];
+  // Introducing a sensitive capability must never widen existing default principals.
+  const configured = value?.trim()
+    ? parseCsv(value)
+    : GRIST_CAPABILITIES.filter((capability) => capability !== "doc:download");
   const allowed = new Set<string>(GRIST_CAPABILITIES);
   for (const capability of configured) {
     if (!allowed.has(capability)) {
