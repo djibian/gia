@@ -3,7 +3,8 @@ export type PrincipalTransport = "mcp";
 export const GRIST_CAPABILITIES = [
   "doc:read",
   "doc:write",
-  "doc.schema:write"
+  "doc.schema:write",
+  "doc:download"
 ] as const;
 
 export type GristCapability = (typeof GRIST_CAPABILITIES)[number];
