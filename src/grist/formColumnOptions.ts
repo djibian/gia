@@ -3,9 +3,9 @@ import { safeNativeFormText } from "./formInspection.js";
 
 type JsonRecord = Record<string, unknown>;
 export interface FormColumnOptionsUpdateInput {
-  question?: string | null;
-  required?: boolean;
-  acceptFromUrl?: boolean;
+  question?: string | null | undefined;
+  required?: boolean | undefined;
+  acceptFromUrl?: boolean | undefined;
 }
 const MAX_OPTIONS_LENGTH = 16_384;
 function record(value: unknown): JsonRecord | undefined {
