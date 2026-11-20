@@ -2104,6 +2104,80 @@ async function run(): Promise<void> {
     assert(inspected.includes(TABLE_ID), "table_missing_from_inspection");
     assert(inspected.includes(PAGE_NAME), "page_missing_from_inspection");
 
+    // Persist a native form in the disposable fixture. Section intent alone
+    // cannot publish it because no native page share is created.
+    const docPath = `/api/docs/${encodeURIComponent(documentId)}`;
+    type MetaRecords = { records: Array<{ id: number; fields: Record<string, unknown> }> };
+    const [nativeSections, sectionFields, columns] = await Promise.all(
+      ["_grist_Views_section", "_grist_Views_section_field", "_grist_Tables_column"].map(
+        async table => await gristApi(gristBaseUrl, apiKey,
+          `${docPath}/tables/${table}/records?hidden=true`) as MetaRecords
+      )
+    );
+    const formSection = nativeSections?.records.find(row =>
+      row.fields.parentId === pageId && row.fields.parentKey === "record");
+    assert(formSection, "form_fixture_section_missing");
+    const column = columns?.records.find(row =>
+      row.fields.parentId === formSection.fields.tableRef && row.fields.colId === "Name");
+    assert(column, "form_fixture_column_missing");
+    const formField = sectionFields?.records.find(row =>
+      row.fields.parentId === formSection.id && row.fields.colRef === column.id);
+    assert(formField, "form_fixture_field_missing");
+    const layoutSpec = JSON.stringify({
+      id: "root", type: "Layout", submitText: "Send", successText: "Thank you",
+      successURL: "https://example.test/?key=synthetic-private-form-marker",
+      children: [
+        { id: "paragraph", type: "Paragraph", text: "Application" },
+        { id: "section", type: "Section", children: [{ id: "field", type: "Field", leaf: formField.id }] },
+        { id: "submit", type: "Submit" }
+      ]
+    });
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
+      method: "POST",
+      body: JSON.stringify([
+        ["UpdateRecord", "_grist_Tables_column", column.id, {
+          widgetOptions: JSON.stringify({ question: "Your name", formRequired: true, formAcceptFromUrl: true })
+        }],
+        ["UpdateRecord", "_grist_Views_section_field", formField.id, {
+          widgetOptions: JSON.stringify({ question: "Preferred name" })
+        }],
+        ["UpdateRecord", "_grist_Views_section", formSection.id, {
+          parentKey: "form", layoutSpec, options: "", shareOptions: '{"form":true,"publish":true}'
+        }]
+      ])
+    });
+    const nativePreview = await gristApi(gristBaseUrl, apiKey, `${docPath}/forms/${formSection.id}`) as {
+      formTableId: string;
+      formFieldsById: Record<number, { colId: string; question: string }>;
+    };
+    assert(nativePreview.formTableId === TABLE_ID &&
+      nativePreview.formFieldsById[formField.id]?.colId === "Name" &&
+      nativePreview.formFieldsById[formField.id]?.question === "Preferred name",
+      "native_form_did_not_resolve_field_override");
+    const widgets = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+      action: "page_widgets", documentId, pageId
+    }), "native_form_inspection").widgets as Array<{ id: number; form?: unknown }>;
+    const form = widgets.find(widget => widget.id === formSection.id)?.form;
+    assert(isDeepStrictEqual(form, {
+      status: "protected", sectionPublicationIntent: "requested", publicationQualification: "not_tested",
+      tableId: TABLE_ID, submission: { submitText: "Send", successText: "Thank you", successUrlConfigured: true },
+      layout: { type: "layout", children: [
+        { type: "paragraph", text: "Application" },
+        { type: "section", children: [
+          { type: "field", columnId: "Name",
+            columnOptions: { question: "Your name", required: true, acceptFromUrl: true },
+            fieldOptions: { question: "Preferred name" } }
+        ] },
+        { type: "submit" }
+      ] }
+    }), "native_form_projection_mismatch");
+    assert(!JSON.stringify(widgets).includes("synthetic-private-form-marker"),
+      "native_form_secret_exposed");
+    const afterInspection = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    assert(afterInspection.records.find(row => row.id === formSection.id)?.fields.layoutSpec === layoutSpec,
+      "form_inspection_modified_native_layout");
+
     console.log(`Grist Community ${version}: PASS`);
     console.log(
       `document=${documentId} workspace=${workspaceId} table=${TABLE_ID} page=${PAGE_NAME} empty=${emptyDocumentId} template=${copiedDocumentId}`

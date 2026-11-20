@@ -364,8 +364,13 @@ export class AuthorizedGristService {
     return this.execute("get_page_widgets", documentIdOrUrl, undefined, async (id) => {
       const tableResponse = await this.inner.listTables(id, { expandColumns: true });
       const ui = await this.loadDocumentUi(id, tableResponse, true, true);
+      const fields = ui[SECTION_FIELDS_METADATA];
+      const metadataLimit = this.inner.maxReadRecords || 5000;
       return exposeUiSnapshotCompleteness(
-        this.documentUi.getPageWidgets(ui, pageId, tableResponse),
+        this.documentUi.getPageWidgets(
+          ui, pageId, tableResponse,
+          fields && !metadataResponseReachedLimit(fields, metadataLimit) ? fields : undefined
+        ),
         ui
       );
     });

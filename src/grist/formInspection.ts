@@ -1,0 +1,181 @@
+import { tableColumnMaps } from "./tableColumnMaps.js";
+import { existingWidgetFields } from "./widgetFields.js";
+
+type JsonRecord = Record<string, unknown>;
+type FormText = string | { protected: true };
+type FormOptions = {
+  question?: FormText;
+  required?: boolean;
+  acceptFromUrl?: boolean;
+};
+type FormNode =
+  | { type: "layout" | "section"; children: FormNode[] }
+  | {
+      type: "field";
+      columnId: string;
+      columnOptions: FormOptions;
+      fieldOptions: FormOptions;
+      dropdownConditionConfigured?: true;
+    }
+  | { type: "paragraph"; text: FormText; alignment?: "left" | "center" | "right" }
+  | { type: "submit" };
+
+function record(value: unknown): JsonRecord | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as JsonRecord
+    : undefined;
+}
+
+function options(value: unknown): JsonRecord | undefined {
+  if (value === undefined || value === "") return {};
+  if (typeof value !== "string" || value.length > 16_384) return undefined;
+  try {
+    return record(JSON.parse(value));
+  } catch {
+    return undefined;
+  }
+}
+
+function publicationIntent(value: unknown): "requested" | "not_requested" | "unknown" {
+  if (value === undefined) return "unknown";
+  const parsed = options(value);
+  if (!parsed || [parsed.form, parsed.publish].some(
+    flag => flag !== undefined && typeof flag !== "boolean"
+  )) return "unknown";
+  return parsed.form === true && parsed.publish === true ? "requested" : "not_requested";
+}
+
+/** Project the native layout elements qualified for application reconstruction. */
+export function inspectNativeForm(
+  widget: { id: number; tableRef: number; tableId?: string; layoutSpec?: unknown; formShareOptions?: unknown },
+  tables: unknown,
+  sectionFields: unknown,
+  budget: { forms: number; nodes: number; text: number }
+): {
+  status: "supported" | "protected" | "incomplete";
+  sectionPublicationIntent: ReturnType<typeof publicationIntent>;
+  publicationQualification: "not_tested";
+  tableId?: string;
+  layout?: FormNode;
+  submission?: {
+    submitText?: FormText;
+    successText?: FormText;
+    successUrlConfigured?: true;
+    anotherResponse?: boolean;
+  };
+} {
+  const sectionPublicationIntent = publicationIntent(widget.formShareOptions);
+  const common = { sectionPublicationIntent, publicationQualification: "not_tested" as const };
+  const incomplete = { ...common, status: "incomplete" as const };
+  if (budget.forms <= 0 || budget.nodes <= 0) return incomplete;
+  budget.forms--;
+  const fields = existingWidgetFields(widget, tables, sectionFields);
+  const columns = tableColumnMaps(widget, tables);
+  const root = record(widget.layoutSpec);
+  if (!widget.tableId || !fields || !columns || root?.type !== "Layout") return incomplete;
+
+  const fieldsById = new Map(fields.map(field => [field.fieldId, field.columnId]));
+  const rawFields = new Map<number, JsonRecord>();
+  const records = record(sectionFields)?.records;
+  if (!Array.isArray(records)) return incomplete;
+  for (const entry of records) {
+    const field = record(entry);
+    const id = field?.id;
+    if (typeof id !== "number" || !fieldsById.has(id)) continue;
+    const metadata = record(field?.fields);
+    if (!metadata || metadata.parentId !== widget.id || rawFields.has(id)) return incomplete;
+    rawFields.set(id, metadata);
+  }
+
+  let hasProtectedText = false;
+  const safeText = (value: string): FormText => {
+    // Free-text links may embed LinkKeys or tokens, including relative URLs
+    // inside Markdown. Keep plain prose and omit the whole link-bearing value.
+    const linkLike = /[:/\\@<>{}\[\]=&%]|[\p{L}\d]\.[\p{L}\d]/u;
+    if (value.length > Math.min(1000, budget.text) || linkLike.test(value)) {
+      hasProtectedText = true;
+      return { protected: true };
+    }
+    budget.text -= value.length;
+    return value;
+  };
+  const fieldOptions = (parsed: JsonRecord): FormOptions | undefined => {
+    const { question, formRequired, formAcceptFromUrl } = parsed;
+    if ((question !== undefined && typeof question !== "string") ||
+        (formRequired !== undefined && typeof formRequired !== "boolean") ||
+        (formAcceptFromUrl !== undefined && typeof formAcceptFromUrl !== "boolean")) return undefined;
+    return {
+      ...(typeof question === "string" ? { question: safeText(question) } : {}),
+      ...(typeof formRequired === "boolean" ? { required: formRequired } : {}),
+      ...(typeof formAcceptFromUrl === "boolean" ? { acceptFromUrl: formAcceptFromUrl } : {})
+    };
+  };
+
+  const usedFields = new Set<number>();
+  const usedNodeIds = new Set<string>();
+  let nodes = 0;
+  const walk = (value: unknown, depth: number): FormNode | undefined => {
+    if (depth > 12 || ++nodes > 200 || budget.nodes <= 0) return undefined;
+    budget.nodes--;
+    const node = record(value);
+    if (!node) return undefined;
+    if (node.id !== undefined) {
+      if (typeof node.id !== "string" || !node.id || usedNodeIds.has(node.id)) return undefined;
+      usedNodeIds.add(node.id);
+    }
+    if (node.type === "Section" || (depth === 0 && node.type === "Layout")) {
+      if (!Array.isArray(node.children) || node.leaf !== undefined) return undefined;
+      const children: FormNode[] = [];
+      for (const child of node.children) {
+        const normalized = walk(child, depth + 1);
+        if (!normalized) return undefined;
+        children.push(normalized);
+      }
+      return { type: node.type === "Layout" ? "layout" : "section", children };
+    }
+    if (node.children !== undefined && (!Array.isArray(node.children) || node.children.length)) return undefined;
+    if (node.type === "Field") {
+      const leaf = node.leaf;
+      if (typeof leaf !== "number" || usedFields.has(leaf)) return undefined;
+      const columnId = fieldsById.get(leaf);
+      const field = rawFields.get(leaf);
+      if (!columnId || !field) return undefined;
+      const columnRaw = options(columns.fieldsById.get(columnId)?.widgetOptions);
+      const fieldRaw = options(field.widgetOptions);
+      if (!columnRaw || !fieldRaw) return undefined;
+      const column = fieldOptions(columnRaw);
+      const override = fieldOptions(fieldRaw);
+      if (!column || !override) return undefined;
+      usedFields.add(leaf);
+      return {
+        type: "field", columnId, columnOptions: column, fieldOptions: override,
+        ...(columnRaw.dropdownCondition || fieldRaw.dropdownCondition ? { dropdownConditionConfigured: true } : {})
+      };
+    }
+    if (node.leaf !== undefined) return undefined;
+    if (node.type === "Submit") return { type: "submit" };
+    if (node.type === "Paragraph") {
+      const { text, alignment } = node;
+      if (text !== undefined && typeof text !== "string") return undefined;
+      if (alignment !== undefined && alignment !== "left" && alignment !== "center" && alignment !== "right") return undefined;
+      return { type: "paragraph", text: safeText(text ?? ""), ...(alignment ? { alignment } : {}) };
+    }
+    return undefined;
+  };
+
+  const { submitText, successText, successURL, anotherResponse } = root;
+  if ([submitText, successText, successURL].some(value => value !== undefined && typeof value !== "string") ||
+      (anotherResponse !== undefined && typeof anotherResponse !== "boolean")) return incomplete;
+  const layout = walk(root, 0);
+  if (!layout) return incomplete;
+  const submission = {
+    ...(typeof submitText === "string" ? { submitText: safeText(submitText) } : {}),
+    ...(typeof successText === "string" ? { successText: safeText(successText) } : {}),
+    ...(successURL ? { successUrlConfigured: true as const } : {}),
+    ...(typeof anotherResponse === "boolean" ? { anotherResponse } : {})
+  };
+  return {
+    ...common, tableId: widget.tableId, layout, submission,
+    status: sectionPublicationIntent === "unknown" ? "incomplete" : hasProtectedText || successURL ? "protected" : "supported"
+  };
+}

@@ -21,6 +21,7 @@ import {
   type ColumnSelectByInput
 } from "./selectBy.js";
 import { GristApiError } from "./client.js";
+import { inspectNativeForm } from "./formInspection.js";
 import {
   normalizePageLayout,
   type NormalizedPageLayout
@@ -58,6 +59,7 @@ export interface GristPageWidget {
   chartType?: string;
   options?: unknown;
   layoutSpec?: unknown;
+  formShareOptions?: unknown;
   sortColRefs?: unknown;
   sort?: WidgetSortInput[];
   sortNormalizationIncomplete?: boolean;
@@ -217,6 +219,7 @@ export class DocumentUiService {
       const chartType = text(section.fields.chartType);
       const options = section.fields.options === "" ? {} : jsonText(section.fields.options);
       const layoutSpec = jsonText(section.fields.layoutSpec);
+      const type = canonicalWidgetType(text(section.fields.parentKey) ?? "unknown");
       const sortColRefs = jsonText(section.fields.sortColRefs);
       const sourceSectionId = ref(section.fields.linkSrcSectionRef);
       const sourceColumnRef = ref(section.fields.linkSrcColRef);
@@ -232,14 +235,13 @@ export class DocumentUiService {
         pageId,
         tableRef,
         ...(tableId !== undefined ? { tableId } : {}),
-        type: canonicalWidgetType(
-          text(section.fields.parentKey) ?? "unknown"
-        ),
+        type,
         title: text(section.fields.title) ?? "",
         ...(description !== undefined && description !== "" ? { description } : {}),
         ...(chartType !== undefined && chartType !== "" ? { chartType } : {}),
         ...(options !== undefined ? { options } : {}),
         ...(layoutSpec !== undefined ? { layoutSpec } : {}),
+        ...(type === "form" ? { formShareOptions: section.fields.shareOptions } : {}),
         ...(sortColRefs !== undefined ? { sortColRefs } : {}),
         ...(sourceSectionId
           ? {
@@ -381,7 +383,8 @@ export class DocumentUiService {
   getPageWidgets(
     context: DocumentUiContext,
     pageId: number,
-    expandedTableResponse?: unknown
+    expandedTableResponse?: unknown,
+    sectionFields?: unknown
   ): unknown {
     const page = context.pages.find((candidate) => candidate.id === pageId);
     if (!page) {
@@ -396,6 +399,7 @@ export class DocumentUiService {
     let remainingCandidates = 10000;
     let remainingColumnOptions = 1000;
     let remainingColumnCandidates = 10000;
+    const formBudget = { forms: 20, nodes: 400, text: 12_000 };
 
     return {
       documentId: context.documentId,
@@ -457,6 +461,9 @@ export class DocumentUiService {
 
         return {
           ...projectPublicWidget(target),
+          ...(target.type === "form" ? {
+            form: inspectNativeForm(target, expandedTableResponse, sectionFields, formBudget)
+          } : {}),
           directSelectByOptions,
           directSelectByOptionsTruncated: examined < widgets.length,
           columnSelectByOptions,
