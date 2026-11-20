@@ -22,11 +22,13 @@ import {
 export type PublicDocumentType = "normal" | "template" | "tutorial";
 
 export const DOCUMENT_TIMEZONE_CHOICES = ["UTC", "Europe/Paris"] as const;
+export const DOCUMENT_LOCALE_CHOICES = ["en-US", "fr-FR"] as const;
 
 export interface DocumentMetadataUpdateInput {
   name?: string;
   type?: PublicDocumentType;
   timezone?: string;
+  locale?: string;
 }
 
 export interface PublicDocumentMetadata {
@@ -401,6 +403,12 @@ export class GristService {
     update: DocumentMetadataUpdateInput
   ): Promise<unknown> {
     const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    if (update.locale !== undefined) {
+      if (update.name !== undefined || update.type !== undefined || update.timezone !== undefined) {
+        throw new Error("Send a locale update separately from other document metadata.");
+      }
+      return this.updateDocumentLocale(documentId, update.locale);
+    }
     if (update.timezone !== undefined) {
       if (update.name !== undefined || update.type !== undefined) {
         throw new Error("Send a timezone update separately from a name or type update.");
@@ -479,6 +487,53 @@ export class GristService {
       return { documentId, settings: after, changed: true };
     } catch {
       throw new SchemaWriteVerificationError("update_document", "The Grist timezone could not be verified.");
+    }
+  }
+
+
+  private async updateDocumentLocale(documentId: string, value: string): Promise<unknown> {
+    const locale = DOCUMENT_LOCALE_CHOICES.find(choice => choice === value);
+    if (!locale) throw new Error("Locale must be en-US or fr-FR for the qualified native settings update.");
+
+    // Native documentSettings is one JSON cell. Preserve unknown keys and never
+    // expose its contents to an MCP client, including on failure.
+    const read = async (): Promise<{ settings: JsonRecord; publicSettings: PublicDocumentSettings }> => {
+      const response = await this.client.queryRecords(documentId, "_grist_DocInfo", {
+        limit: 2, hidden: true
+      });
+      const records = jsonRecord(response)?.records;
+      const row = Array.isArray(records) && records.length === 1 ? jsonRecord(records[0]) : null;
+      const fields = row?.id === 1 ? jsonRecord(row.fields) : null;
+      const raw = fields?.documentSettings;
+      if (typeof raw !== "string" || raw.length > 16_384) {
+        throw new Error("Current Grist locale metadata is unavailable.");
+      }
+      let settings: JsonRecord | null = null;
+      try { settings = jsonRecord(JSON.parse(raw)); } catch { /* refuse malformed native settings */ }
+      const publicSettings = projectDocumentSettings(response);
+      if (!settings || !publicSettings.locale) {
+        throw new Error("Current Grist locale metadata is incomplete.");
+      }
+      return { settings, publicSettings };
+    };
+
+    const before = await read();
+    if (before.publicSettings.locale === locale) {
+      return { documentId, settings: before.publicSettings, changed: false };
+    }
+    const expected = JSON.stringify({ ...before.settings, locale });
+    if (expected.length > 16_384) throw new Error("Native document settings exceed the bounded write size.");
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_DocInfo", 1, { documentSettings: expected }]
+    ]);
+    try {
+      const after = await read();
+      if (after.publicSettings.locale !== locale || JSON.stringify(after.settings) !== expected) {
+        throw new Error("Locale postcondition not met.");
+      }
+      return { documentId, settings: after.publicSettings, changed: true };
+    } catch {
+      throw new SchemaWriteVerificationError("update_document", "The Grist locale could not be verified.");
     }
   }
 

@@ -2168,6 +2168,33 @@ async function run(): Promise<void> {
       assert(computed.records[0]?.fields.TimezoneOffset === (timezone === "UTC" ? 0 : 3600),
         "native_document_timezone_formula_mismatch");
     }
+
+    for (const update of [
+      { locale: "fr-INVALID" },
+      { locale: "en-US", timezone: "UTC" },
+      { locale: "en-US", name: "Unexpected name" }
+    ]) {
+      await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+        action: "update_document", documentId, update
+      });
+    }
+    for (const [locale, expectedChanged] of [
+      ["en-US", true], ["en-US", false], ["fr-FR", true]
+    ] as const) {
+      const updateResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "update_document", documentId, update: { locale }
+      }), "native_document_locale_update");
+      assert(updateResult.changed === expectedChanged, "native_document_locale_changed_mismatch");
+      const read = await gristApi(gristBaseUrl, apiKey,
+        `${settingsDocPath}/tables/_grist_DocInfo/records?hidden=true`) as {
+          records: Array<{ id: number; fields: Record<string, unknown> }>;
+        };
+      const raw = read.records.find(row => row.id === 1)?.fields.documentSettings;
+      assert(typeof raw === "string" && isDeepStrictEqual(JSON.parse(raw), {
+        locale, currency: "EUR", opaque: "synthetic-private-settings"
+      }), "native_document_locale_preservation_mismatch");
+    }
+
     const docInfo = await gristApi(gristBaseUrl, apiKey,
       `${settingsDocPath}/tables/_grist_DocInfo/records?hidden=true`) as {
         records: Array<{ id: number; fields: Record<string, unknown> }>;

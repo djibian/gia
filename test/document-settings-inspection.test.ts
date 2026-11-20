@@ -82,6 +82,64 @@ test("timezone update refuses malformed and mixed inputs and never replays ambig
     SchemaWriteVerificationError);
 });
 
+
+test("locale update preserves unknown native document settings and is idempotent", async () => {
+  let locale = "en-US";
+  let writes = 0;
+  const app = service(
+    async () => ({ records: [{ id: 1, fields: {
+      timezone: "Europe/Paris",
+      documentSettings: JSON.stringify({ locale, currency: "EUR", opaque: { untouched: true } })
+    } }] }),
+    async (id, actions) => {
+      assert.equal(id, "synthetic");
+      assert.equal(actions.length, 1);
+      const action = actions[0];
+      assert.equal(action?.[0], "UpdateRecord");
+      assert.equal(action?.[1], "_grist_DocInfo");
+      assert.equal(action?.[2], 1);
+      const fields = action?.[3] as { documentSettings: string };
+      assert.deepEqual(JSON.parse(fields.documentSettings), {
+        locale: "fr-FR", currency: "EUR", opaque: { untouched: true }
+      });
+      locale = "fr-FR";
+      writes++;
+    }
+  );
+  const expected = {
+    documentId: "synthetic",
+    settings: { status: "supported", locale: "fr-FR", timezone: "Europe/Paris" }
+  };
+  assert.deepEqual(await app.updateDocument("synthetic", { locale: "fr-FR" }), {
+    ...expected, changed: true
+  });
+  assert.deepEqual(await app.updateDocument("synthetic", { locale: "fr-FR" }), {
+    ...expected, changed: false
+  });
+  assert.equal(writes, 1);
+});
+
+test("locale refuses mixed, invalid, incomplete and unverifiable updates", async () => {
+  const untouched = service(async () => assert.fail("Invalid locale must not reach native settings"));
+  await assert.rejects(() => untouched.updateDocument("synthetic", { locale: "fr-INVALID" }), /en-US or fr-FR/);
+  await assert.rejects(() => untouched.updateDocument("synthetic", { locale: "fr-FR", timezone: "UTC" }), /separately/);
+  const malformed = service(async () => ({ records: [{ id: 1, fields: {
+    documentSettings: "{", timezone: "UTC"
+  } }] }));
+  await assert.rejects(() => malformed.updateDocument("synthetic", { locale: "fr-FR" }), /incomplete/);
+  const uncertain = new GristTransportError("lost acknowledgement", "UNCERTAIN");
+  let writes = 0;
+  const ambiguous = service(async () => nativeSettings("UTC"), async () => {
+    writes++;
+    throw uncertain;
+  });
+  await assert.rejects(() => ambiguous.updateDocument("synthetic", { locale: "en-US" }), uncertain);
+  assert.equal(writes, 1);
+  const stale = service(async () => nativeSettings("UTC"), async () => undefined);
+  await assert.rejects(() => stale.updateDocument("synthetic", { locale: "en-US" }),
+    SchemaWriteVerificationError);
+});
+
 test("document inspection retains independently readable settings and reports protected state", async () => {
   const incomplete = service(async () => ({
     records: [{ id: 1, fields: { documentSettings: '{', timezone: "UTC" } }]

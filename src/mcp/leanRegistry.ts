@@ -275,7 +275,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     actions: ["update_document", "update_tables", "delete_table", "update_columns",
       "rename_column", "delete_columns", "access_rule_group"],
     request: [
-      "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}}",
+      "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}|{locale:'en-US'|'fr-FR'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
       "update_tables: {action,documentId,tables:[{id,fields}]}; delete_table: {action,documentId,tableId}; rename_column: {action,documentId,tableId,oldColumnId,newColumnId}; delete_columns: {action,documentId,tableId,columnIds}",
       "access_rule_group: {action,documentId,mode:'create'|'replace'|'delete',target:{tableId,columnIds?:string[]}|{userAttributeName},rules?:[{condition,permissions:{read,update,create?,delete?}}],definition?:{tableId,lookupColId,source:{kind:'user_property',property}|{kind:'link_key',name}}}",
@@ -288,7 +288,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "user_access_membership: {kind,operator:'in'|'not_in',roles:[2..3 distinct owner/editor/viewer roles]}; all/any: {kind,conditions:[2..6 conditions]}; not: {kind,condition}"
     ],
     constraints: [
-      "Supply timezone alone. Name and type use a separate native document path. Verify the persisted timezone after updating.",
+      "Supply timezone or locale alone. Preserve untargeted document settings and verify the persisted value after updating.",
       "Table/column targets forbid definition and require rules for create/replace. User-attribute targets forbid rules and require definition for create/replace. Delete forbids both. Native Owner + doc.schema:write required.",
       "Column groups only set read/update. Each rule must allow or deny at least one permitted operation. Rules cannot repeat. An everyone rule is allowed only as the last top-level rule, outside all/any/not.",
       "ACL fixed bounds: <=20 rules/group, tree depth <=4, <=20 nodes, all/any width 2..6; unknown predicates and literals are rejected.",
