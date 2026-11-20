@@ -100,8 +100,9 @@ function createdDocumentId(response: unknown): string {
   if (typeof response === "string" && response.trim()) return response;
 
   if (response !== null && typeof response === "object" && !Array.isArray(response)) {
-    const data = (response as Record<string, unknown>).data;
-    if (typeof data === "string" && data.trim()) return data;
+    const source = response as Record<string, unknown>;
+    const id = source.data ?? source.id;
+    if (typeof id === "string" && id.trim()) return id;
   }
 
   throw new GristTransportError(
@@ -153,7 +154,20 @@ export class GristClient {
     return this.request("/api/widgets/");
   }
 
-  async createDocument(workspaceId: number, name: string): Promise<string> {
+  async createDocument(workspaceId: number, name: string, locale?: "en-US" | "fr-FR"): Promise<string> {
+    if (locale !== undefined) {
+      if (locale !== "en-US" && locale !== "fr-FR") {
+        throw new Error("Document creation locale must be en-US or fr-FR.");
+      }
+      // Grist initializes locale from the explicit HTTP Accept-Language header.
+      // This happens atomically at creation and never replaces an existing settings blob.
+      const response = await this.request("/api/docs", {
+        method: "POST",
+        headers: { "Accept-Language": locale },
+        body: JSON.stringify({ workspaceId, documentName: name })
+      });
+      return createdDocumentId(response);
+    }
     const response = await this.request(
       `/api/workspaces/${encodeURIComponent(String(workspaceId))}/docs`,
       {

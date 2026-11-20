@@ -312,13 +312,14 @@ export class GristService {
 
   async createDocument(
     workspaceId: number,
-    name: string
+    name: string,
+    locale?: "en-US" | "fr-FR"
   ): Promise<string> {
     this.assertWorkspaceId(workspaceId);
     await this.accessPolicy.assertWorkspaceAllowed(workspaceId);
     const documentName = this.normalizeDocumentName(name);
     try {
-      return await this.client.createDocument(workspaceId, documentName);
+      return await this.client.createDocument(workspaceId, documentName, locale);
     } finally {
       this.accessPolicy.invalidate();
     }

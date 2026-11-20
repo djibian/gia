@@ -326,3 +326,41 @@ test("retains a known created ID when destination membership cannot be verified"
     }
   );
 });
+
+test("native initial document locale is verified with a known created ID on failure", async () => {
+  const workspaces: GristWorkspaceSummary[] = [
+    { id: 10, name: "Destination", access: "editors", docs: [] }
+  ];
+  const authorization = new AuthorizationService(new AccessPolicy(discoveryClient(workspaces), {
+    allowedDocumentIds: [], allowedWorkspaceIds: ["10"], cacheTtlMs: 0
+  }));
+  let nativeLocale = "fr-FR";
+  const inner = {
+    createDocument: async (workspaceId: number, name: string, locale?: string) => {
+      assert.equal(workspaceId, 10);
+      assert.equal(name, "New app");
+      assert.equal(locale, "fr-FR");
+      workspaces[0]!.docs = [
+        { id: "native-created", urlId: "native-created", name, access: "owners" }
+      ];
+      return "native-created";
+    },
+    getDocumentMetadata: async () => ({
+      id: "native-created", name: "New app", type: "normal",
+      settings: { status: "supported", locale: nativeLocale, timezone: "UTC" }
+    })
+  } as unknown as GristService;
+  const created = await service(inner, authorization).createDocument(10, "New app", "fr-FR");
+  assert.deepEqual(created, {
+    documentId: "native-created", workspaceId: 10, created: true, bootstrap: "empty",
+    initialLocale: "fr-FR", initialLocaleVerified: true,
+    destinationMembershipVerified: true, creatorOwnershipIsNativeGristBehavior: true
+  });
+  nativeLocale = "en-US";
+  await assert.rejects(() => service(inner, authorization).createDocument(10, "New app", "fr-FR"),
+    (error: unknown) => {
+      assert.ok(error instanceof DocumentBootstrapVerificationError);
+      assert.equal(error.createdDocumentId, "native-created");
+      return true;
+    });
+});

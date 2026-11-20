@@ -244,7 +244,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
   grist_add_structure: {
     actions: ["create_document", "copy_document_as_template", "copy_document", "create_tables", "create_columns"],
     request: [
-      "create_document: {action,workspaceId:positiveInteger,name}; copy_document_as_template: {action,sourceDocumentId,workspaceId,name}; copy_document (native full data): {action,sourceDocumentId,workspaceId,name}",
+      "create_document: {action,workspaceId:positiveInteger,name,locale?:'en-US'|'fr-FR'}; copy_document_as_template: {action,sourceDocumentId,workspaceId,name}; copy_document (native full data): {action,sourceDocumentId,workspaceId,name}",
       "create_tables: {action,documentId,tables:[{id,columns:[{id,fields?:{label?,type?,isFormula?,formula?,widgetOptions?}}]}]}; create_columns: {action,documentId,tableId,columns:[{id,fields?}]}",
       "Each new table requires at least one column; creation does not accept update-only description or visibleColumnId."
     ],

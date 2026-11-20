@@ -139,6 +139,19 @@ when other configuration is protected. None of these states authorizes installin
 or executing an external widget.
 
 
+## Initial locale on a new empty document
+
+`grist_add_structure(action="create_document")` optionally accepts a native initial
+`locale: "en-US" | "fr-FR"`. Gia passes the locale via a fixed
+`Accept-Language` header to Grist's native `POST /api/docs` creation route,
+rather than replacing a pre-existing `documentSettings` cell. The existing
+creation route is unchanged when locale is omitted. The requested locale is
+verified from the created document's persisted Grist settings only after
+destination membership verification. A known created ID is retained in
+`DocumentBootstrapVerificationError` if a postcondition cannot be verified;
+never retry a non-idempotent creation by name. No client-chosen URL, arbitrary
+HTTP header, generic settings object or import is accepted.
+
 ## Document metadata, relation display and calendars
 
 `grist_inspect(action="document")` adds `document.settings` for the persisted

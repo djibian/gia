@@ -256,6 +256,8 @@ function bridgeEnvironment(options: {
     GRIST_MAX_WRITE_RECORDS: String(COMPAT_TOOL_LIMITS.maxWriteRecords),
     GRIST_WRITE_BATCH_RECORDS: "25",
     GRIST_MAX_SCHEMA_ITEMS: String(COMPAT_TOOL_LIMITS.maxSchemaItems),
+    // Disposable complete fixture, not production. Dedicated throttling tests stay active.
+    MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE: "1000",
     MCP_AUTH_MODE: "static",
     // Synthetic compatibility fixture explicitly opts into the sensitive source scope.
     MCP_CAPABILITIES: "doc:read,doc:write,doc.schema:write,doc:download",
@@ -515,6 +517,21 @@ async function run(): Promise<void> {
       await callTool(bridgeBaseUrl, "grist_discover", { action: "documents" })
     );
     assert(discovered.includes(documentId), "created_document_not_discovered");
+
+    const initialLocaleCreated = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", {
+      action: "create_document", workspaceId, name: "Fresh French Grist App", locale: "fr-FR"
+    }), "native_create_document_locale");
+    assert(initialLocaleCreated.created === true &&
+      initialLocaleCreated.initialLocaleVerified === true &&
+      initialLocaleCreated.initialLocale === "fr-FR", "native_create_initial_locale_unverified");
+    const freshDocumentId = initialLocaleCreated.documentId;
+    assert(typeof freshDocumentId === "string" && freshDocumentId !== documentId,
+      "native_create_initial_locale_unknown_id");
+    const nativeCreated = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+      action: "document", documentId: freshDocumentId
+    }), "native_created_locale_inspection");
+    assert((nativeCreated.document as {settings?: {locale?: string}}).settings?.locale === "fr-FR",
+      "native_created_locale_not_persisted");
 
     const templateMetadata = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {

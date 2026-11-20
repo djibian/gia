@@ -317,3 +317,20 @@ test("successful document creation without a usable ID is uncertain and not repl
     mock.restore();
   }
 });
+
+test("explicit initial locale uses native creation header rather than settings overwrite", async () => {
+  const mock = mockFetch({ id: "new-fr" });
+  try {
+    assert.equal(await client().createDocument(42, "Nouvelle application", "fr-FR"), "new-fr");
+    const req = mock.requests[0]!;
+    assert.equal(req.url, "https://grist.example.org/api/docs");
+    assert.equal(req.init.method, "POST");
+    assert.equal(new Headers(req.init.headers).get("Accept-Language"), "fr-FR");
+    assert.deepEqual(JSON.parse(String(req.init.body)),
+      { workspaceId: 42, documentName: "Nouvelle application" });
+    assert.equal(mock.requests.length, 1);
+    await assert.rejects(() => client().createDocument(42, "Wrong", "de-DE" as "fr-FR"),
+      /en-US or fr-FR/);
+    assert.equal(mock.requests.length, 1);
+  } finally { mock.restore(); }
+});

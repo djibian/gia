@@ -1098,7 +1098,8 @@ export class AuthorizedGristService {
 
   async createDocument(
     workspaceId: number,
-    name: string
+    name: string,
+    locale?: "en-US" | "fr-FR"
   ): Promise<unknown> {
     const definition = getOperation("create_document");
     const capability = getRequiredCapability(definition.name);
@@ -1111,12 +1112,25 @@ export class AuthorizedGristService {
         workspaceId,
         capability
       );
-      createdDocumentId = await this.inner.createDocument(workspaceId, name);
+      createdDocumentId = await this.inner.createDocument(workspaceId, name, locale);
       await this.verifyCreatedDocumentWorkspace(
         createdDocumentId,
         workspaceId,
         capability
       );
+      if (locale !== undefined) {
+        let verified: boolean;
+        try {
+          const actual = await this.inner.getDocumentMetadata(createdDocumentId);
+          verified = actual.settings.status === "supported" && actual.settings.locale === locale;
+        } catch {
+          verified = false;
+        }
+        if (!verified) {
+          throw new DocumentBootstrapVerificationError(createdDocumentId,
+            "Requested initial locale could not be confirmed in native Grist metadata.");
+        }
+      }
       this.audit.record({
         requestId,
         principal: this.principal.id,
@@ -1133,6 +1147,7 @@ export class AuthorizedGristService {
         workspaceId,
         created: true,
         bootstrap: "empty",
+        ...(locale !== undefined ? { initialLocale: locale, initialLocaleVerified: true } : {}),
         destinationMembershipVerified: true,
         creatorOwnershipIsNativeGristBehavior: true
       };

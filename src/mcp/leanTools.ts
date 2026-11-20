@@ -915,7 +915,8 @@ export function registerLeanTools(
           .object({
             action: z.literal("create_document"),
             workspaceId: positiveIdSchema,
-            name: documentNameSchema
+            name: documentNameSchema,
+            locale: z.enum(["en-US", "fr-FR"]).optional()
           })
           .strict(),
         z
@@ -956,7 +957,7 @@ export function registerLeanTools(
         switch (input.action) {
           case "create_document":
             return textResult(
-              await grist.createDocument(input.workspaceId, input.name)
+              await grist.createDocument(input.workspaceId, input.name, input.locale)
             );
           case "copy_document_as_template":
             return textResult(
