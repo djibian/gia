@@ -162,6 +162,48 @@ test("conditional styles are signaled without exporting private helper reference
   }] });
 });
 
+test("conditional style options are independently detected without projecting styles", () => {
+  const fields = (widgetOptions: unknown, rules?: unknown) =>
+    (projectPublicColumns({ columns: [
+      { id: "Name", fields: { type: "Text", widgetOptions, ...(rules !== undefined ? { rules } : {}) } }
+    ] }) as { columns: Array<{ fields: Record<string, unknown> }> }).columns[0]!.fields;
+  const secret = "synthetic-private-style";
+  const protectedFields = fields(JSON.stringify({ rulesOptions: [{ fillColor: secret }] }));
+  assert.deepEqual(protectedFields.conditionalStyleOptions, { status: "protected" });
+  assert.equal(protectedFields.conditionalStyleRules, undefined);
+  // Legacy raw widgetOptions remains for MCP v2 compatibility; only the new
+  // projection is normalized and has no style values or helper IDs.
+  assert.doesNotMatch(JSON.stringify(protectedFields.conditionalStyleOptions), /synthetic-private-style/);
+  const together = fields(JSON.stringify({ rulesOptions: [{ textColor: secret }] }), ["L", 19]);
+  assert.deepEqual(together.conditionalStyleRules, { status: "protected" });
+  assert.deepEqual(together.conditionalStyleOptions, { status: "protected" });
+  for (const malformed of [
+    "{", "null", "x".repeat(16_385),
+    JSON.stringify({ rulesOptions: null }),
+    JSON.stringify({ rulesOptions: { fillColor: secret } }),
+    JSON.stringify({ rulesOptions: [null] }),
+    JSON.stringify({ rulesOptions: [secret] }),
+    JSON.stringify({ rulesOptions: Array.from({ length: 33 }, () => ({})) })
+  ]) {
+    assert.deepEqual(fields(malformed).conditionalStyleOptions, { status: "incomplete" });
+  }
+  for (const empty of [
+    undefined, "", JSON.stringify({ numMode: "decimal" }),
+    JSON.stringify({ rulesOptions: [] })
+  ]) {
+    assert.equal(fields(empty).conditionalStyleOptions, undefined);
+  }
+  const expanded = projectPublicTables({ tables: [{
+    id: "Data", fields: { tableRef: 1 }, columns: [
+      { id: "Name", fields: { colRef: 3, widgetOptions: JSON.stringify({
+        rulesOptions: [{ fillColor: secret }]
+      }) } }
+    ]
+  }] }) as { tables: Array<{ columns: Array<{ fields: Record<string, unknown> }> }> };
+  assert.deepEqual(expanded.tables[0]!.columns[0]!.fields.conditionalStyleOptions,
+    { status: "protected" });
+});
+
 test("column discovery classifies native dropdown condition presence without promising Form enforcement", () => {
   const project = (widgetOptions: unknown) => projectPublicColumns({
     columns: [{ id: "Stage", fields: { type: "Ref:Structures", widgetOptions } }]

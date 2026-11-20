@@ -2283,6 +2283,26 @@ async function run(): Promise<void> {
       row => row.id === column.id)?.fields.rules;
     assert(Array.isArray(nativeStyleRules) && nativeStyleRules[0] === "L" &&
       nativeStyleRules.length === 2, "native_conditional_style_rule_not_persisted");
+    // Populate column style settings through native metadata in this disposable
+    // fixture only. Preserve the existing Form/dropdown options while proving
+    // that Gia diagnoses both independent conditional-style native surfaces.
+    const persistedStyledColumn = nativeStyledColumns.records.find(row => row.id === column.id);
+    const currentWidgetOptions = persistedStyledColumn?.fields.widgetOptions;
+    assert(typeof currentWidgetOptions === "string", "native_style_widget_options_missing");
+    const parsedWidgetOptions = JSON.parse(currentWidgetOptions) as Record<string, unknown>;
+    const nativeStyleOptions = JSON.stringify({
+      ...parsedWidgetOptions, rulesOptions: [{ fillColor: "#112233" }]
+    });
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
+      method: "POST",
+      body: JSON.stringify([["UpdateRecord", "_grist_Tables_column", column.id, {
+        widgetOptions: nativeStyleOptions
+      }]])
+    });
+    const rereadStyleColumns = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    assert(rereadStyleColumns.records.find(row => row.id === column.id)?.fields.widgetOptions === nativeStyleOptions,
+      "native_style_options_not_persisted");
     const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
       action: "columns", documentId, tableId: TABLE_ID
     }), "native_conditional_style_inspection");
@@ -2291,6 +2311,10 @@ async function run(): Promise<void> {
     }>).find(item => item.id === "Name");
     assert(isDeepStrictEqual(publicStyledColumn?.fields.conditionalStyleRules, { status: "protected" }),
       "native_conditional_style_projection_mismatch");
+    assert(isDeepStrictEqual(publicStyledColumn?.fields.conditionalStyleOptions, { status: "protected" }),
+      "native_conditional_style_options_projection_mismatch");
+    assert(!JSON.stringify(publicStyledColumn?.fields.conditionalStyleOptions).includes("#112233"),
+      "native_conditional_style_options_leaked");
     assert(!Object.hasOwn(publicStyledColumn?.fields ?? {}, "rules"),
       "native_conditional_style_refs_exposed");
 

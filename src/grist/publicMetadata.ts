@@ -69,26 +69,39 @@ function conditionalStyleRuleState(value: unknown): "protected" | "incomplete" |
   return refs.length ? "protected" : undefined;
 }
 
+type ColumnWidgetOptions =
+  | { status: "absent" }
+  | { status: "incomplete" }
+  | { status: "parsed"; parsed: JsonRecord };
+
+/** Parse once for independent, bounded Form, dropdown and style diagnostics. */
+function columnWidgetOptions(value: unknown): ColumnWidgetOptions {
+  if (value === undefined || value === "") return { status: "absent" };
+  if (typeof value !== "string" || value.length > 16_384) return { status: "incomplete" };
+  try {
+    const parsed = record(JSON.parse(value));
+    if (parsed) return { status: "parsed", parsed };
+  } catch { /* incomplete native options */ }
+  return { status: "incomplete" };
+}
+
 /** Read-only column-level presence/quality signal. Native Form display filtering
  * is deliberately NOT inferred from a persisted dropdown condition. */
-function columnDropdownConditionState(value: unknown): "protected" | "incomplete" | undefined {
-  if (value === undefined || value === "") return undefined;
-  if (typeof value !== "string" || value.length > 16_384) return "incomplete";
-  let parsed: JsonRecord | null = null;
-  try { parsed = record(JSON.parse(value)); } catch { /* incomplete native options */ }
-  if (!parsed) return "incomplete";
-  if (!Object.prototype.hasOwnProperty.call(parsed, "dropdownCondition")) return undefined;
-  return nativeDropdownConditionState(parsed.dropdownCondition);
+function columnDropdownConditionState(
+  options: ColumnWidgetOptions
+): "protected" | "incomplete" | undefined {
+  if (options.status === "absent") return undefined;
+  if (options.status === "incomplete") return "incomplete";
+  if (!Object.prototype.hasOwnProperty.call(options.parsed, "dropdownCondition")) return undefined;
+  return nativeDropdownConditionState(options.parsed.dropdownCondition);
 }
 
 /** Column-level native Form metadata is independent of any Form section.
  * This is only a safe option preview, never a complete rendering guarantee. */
-function columnFormOptionsState(value: unknown): JsonRecord | undefined {
-  if (value === undefined || value === "") return undefined;
-  if (typeof value !== "string" || value.length > 16_384) return { status: "incomplete" };
-  let parsed: JsonRecord | null = null;
-  try { parsed = record(JSON.parse(value)); } catch { /* incomplete native options */ }
-  if (!parsed) return { status: "incomplete" };
+function columnFormOptionsState(options: ColumnWidgetOptions): JsonRecord | undefined {
+  if (options.status === "absent") return undefined;
+  if (options.status === "incomplete") return { status: "incomplete" };
+  const parsed = options.parsed;
   const keys = ["question", "formRequired", "formAcceptFromUrl"] as const;
   if (!keys.some(key => Object.prototype.hasOwnProperty.call(parsed, key))) return undefined;
   const { question, formRequired, formAcceptFromUrl } = parsed;
@@ -107,6 +120,21 @@ function columnFormOptionsState(value: unknown): JsonRecord | undefined {
     ...(typeof formRequired === "boolean" ? { required: formRequired } : {}),
     ...(typeof formAcceptFromUrl === "boolean" ? { acceptFromUrl: formAcceptFromUrl } : {})
   };
+}
+
+/** Native rulesOptions is a column style-option array, distinct from the
+ * private helper-column references in fields.rules. Never project its content. */
+function columnConditionalStyleOptionsState(
+  options: ColumnWidgetOptions
+): "protected" | "incomplete" | undefined {
+  if (options.status === "absent") return undefined;
+  if (options.status === "incomplete") return "incomplete";
+  if (!Object.prototype.hasOwnProperty.call(options.parsed, "rulesOptions")) return undefined;
+  const styles = options.parsed.rulesOptions;
+  if (!Array.isArray(styles) || styles.length > 32 || styles.some(style => !record(style))) {
+    return "incomplete";
+  }
+  return styles.length ? "protected" : undefined;
 }
 
 /** Read-only completeness of the native custom-widget configuration, not remote code. */
@@ -210,12 +238,15 @@ function publicColumn(
   if (typeof fields.formula === "string") projected.formula = fields.formula;
   if (typeof fields.description === "string") projected.description = fields.description;
   if (typeof fields.widgetOptions === "string") projected.widgetOptions = fields.widgetOptions;
-  const formColumnOptions = columnFormOptionsState(fields.widgetOptions);
+  const options = columnWidgetOptions(fields.widgetOptions);
+  const formColumnOptions = columnFormOptionsState(options);
   if (formColumnOptions) projected.formColumnOptions = formColumnOptions;
-  const dropdownCondition = columnDropdownConditionState(fields.widgetOptions);
+  const dropdownCondition = columnDropdownConditionState(options);
   if (dropdownCondition) projected.dropdownCondition = { status: dropdownCondition };
   const conditionalStyleRules = conditionalStyleRuleState(fields.rules);
   if (conditionalStyleRules) projected.conditionalStyleRules = { status: conditionalStyleRules };
+  const conditionalStyleOptions = columnConditionalStyleOptionsState(options);
+  if (conditionalStyleOptions) projected.conditionalStyleOptions = { status: conditionalStyleOptions };
   if (visibleColumnId !== undefined) projected.visibleColumnId = visibleColumnId;
 
   return { id, fields: projected };
