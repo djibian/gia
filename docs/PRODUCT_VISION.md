@@ -27,6 +27,29 @@ The supported subset and its limits are defined by the contract and executable t
 Business applications such as teaching, stage tracking, CRM or inventory are
 consumers and test cases. Their schemas and policy choices never drive core architecture.
 
+## Selected finite application-creation goal
+
+The owner selected [#295](https://github.com/djibian/gia/issues/295):
+an MCP client must be able to construct, configure, publish with explicit
+authorization, and qualify a functional Grist Community application from an
+empty document. The representative stage-tracking application is an acceptance
+case, **not** Gia runtime business logic or a general Grist feature-parity
+mandate. A full native document copy is complementary, never acceptance proof
+for building from scratch.
+
+The client retains application specifications, orchestration, symbolic
+cross-component references, dependency ordering and restart progress.
+Gia provides safe, bounded, semantically typed operations and verified
+postconditions. Grist remains authoritative for data, formulas, UI behavior,
+native authorization and publication. Inspection must distinguish incomplete
+or protected state from absence; synthetic authenticated tests, not merely
+persisted policy simulations, qualify access boundaries.
+
+The selection does not authorize arbitrary widget URLs, publication,
+unrestricted sharing, token exposure, global identity management, raw ACL
+formulas or implicit privilege escalation. New document-scoped access and
+publication capabilities require a separately checked owner/grant gate.
+
 ## Design policy
 
 Prefer the small portion of Grist semantics that enables useful application work.
