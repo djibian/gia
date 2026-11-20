@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
-import { configuredColumnSchema } from "../grist/configuredColumns.js";
+import { configuredColumnSchema, dropdownConditionSchema } from "../grist/configuredColumns.js";
 
 import {
   ACCESS_POLICY_OPERATIONS,
@@ -1053,6 +1053,15 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("update_dropdown_condition"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            condition: dropdownConditionSchema.nullable()
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_form_column_options"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1133,6 +1142,10 @@ export function registerLeanTools(
                 input.columns
               )
             );
+          case "update_dropdown_condition":
+            return textResult(await grist.updateDropdownCondition(
+              input.documentId, input.tableId, input.columnId, input.condition
+            ));
           case "update_form_column_options":
             return textResult(await grist.updateFormColumnOptions(
               input.documentId, input.tableId, input.columnId, input.update

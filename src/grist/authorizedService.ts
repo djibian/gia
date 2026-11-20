@@ -73,6 +73,8 @@ import {
   type ColumnSelectByInput
 } from "./selectBy.js";
 import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUpdateInput } from "./formColumnOptions.js";
+import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
+import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
 import { readFormFieldOptions, resolveFormFieldOptions, type FormFieldOptionsInput } from "./formFieldOptions.js";
 import { DocumentContextService } from "./documentContext.js";
@@ -1500,6 +1502,48 @@ export class AuthorizedGristService {
       }
       return { ...base, changed: true,
         persistedOptionsVerified: true, nativeFormRenderingQualified: false };
+    });
+  }
+
+
+  async updateDropdownCondition(
+    documentIdOrUrl: string, tableId: string, columnId: string,
+    condition: DropdownConditionInput | null
+  ): Promise<unknown> {
+    return this.execute("update_dropdown_condition", documentIdOrUrl, 1, async (id) => {
+      assertPublicTableId(tableId);
+      if (!columnId.trim()) throw new Error("Dropdown update requires a stable column ID.");
+      const read = async () => {
+        const [tables, columns] = await Promise.all([
+          this.inner.listTables(id, { expandColumns: true }),
+          this.inner.listColumns(id, tableId, { hidden: true })
+        ]);
+        return {
+          options: readFormColumnOptions(columns, columnId,
+            this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000),
+          condition: resolveExistingDropdownCondition(tables, tableId, columnId, condition)
+        };
+      };
+      const before = await read();
+      const plan = planDropdownConditionUpdate(before.options, before.condition);
+      const base = { documentId: id, tableId, columnId };
+      if (!plan.changed) return { ...base, changed: false,
+        persistedOptionsVerified: true, nativeDropdownRenderingQualified: false };
+      await this.inner.updateColumns(id, tableId, [{
+        id: columnId, fields: { widgetOptions: plan.widgetOptions }
+      }]);
+      try {
+        const after = await read();
+        if (!isDeepStrictEqual(after.options, plan.options) ||
+            !isDeepStrictEqual(after.condition, before.condition)) {
+          throw new Error("Native dropdown options or reference schema differ from requested state.");
+        }
+      } catch (error) {
+        throw new SchemaWriteVerificationError("update_dropdown_condition",
+          error instanceof Error ? error.message : "Dropdown post-read failed.");
+      }
+      return { ...base, changed: true,
+        persistedOptionsVerified: true, nativeDropdownRenderingQualified: false };
     });
   }
 
