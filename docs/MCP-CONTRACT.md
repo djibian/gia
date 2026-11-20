@@ -51,10 +51,13 @@ Field, Paragraph and Submit nodes. The form's `tableId` and the field's
 `columnId` are stable IDs. Question, required and URL-prefill options retain
 their column and field origins. Native field options override the column
 options. A configured dropdown condition is indicated without returning its
-expression. The projection includes supported submit and success text and
-whether a redirect is configured.
+expression; while no stable typed projection exists, its containing form is
+`protected`, not reconstructible. Malformed or oversized dropdown metadata
+makes the form `incomplete`. The projection includes supported submit and
+success text and whether a redirect is configured.
 
-`status: "protected"` identifies omitted text or a protected redirect. Text
+`status: "protected"` identifies omitted text, an opaque dropdown condition,
+or a protected redirect. Text
 containing potential links is omitted entirely, including links in Markdown.
 The redirect URL and raw share options are never returned by this projection.
 `status: "incomplete"` covers unresolved field references, insufficient
