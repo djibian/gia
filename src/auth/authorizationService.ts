@@ -28,7 +28,8 @@ function grantMatchesDocument(
   capability: GristCapability
 ): boolean {
   if (!grant.capabilities.includes(capability)) return false;
-  if (grant.workspaceIds.map(String).includes(String(allowed.workspace.id))) return true;
+  if (capability !== "doc:download" &&
+      grant.workspaceIds.map(String).includes(String(allowed.workspace.id))) return true;
   const candidates = documentCandidates(allowed.document);
   return grant.documentIds.some((id) => candidates.includes(String(id)));
 }

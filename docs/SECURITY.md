@@ -3,7 +3,8 @@
 Grist remains authoritative for the selected upstream credential's permissions.
 Gia can reduce that authority through the intersection of deployment resource
 ceiling, principal grants and required capability; it cannot elevate it.
-The capability vocabulary is exactly `doc:read`, `doc:write`, `doc.schema:write`.
+The baseline vocabulary is `doc:read`, `doc:write`, `doc.schema:write`.
+Native full-data copy adds the opt-in `doc:download` capability.
 
 ## Authentication and credentials
 
@@ -158,10 +159,17 @@ Creation/copy requires both the explicit deployment workspace ceiling and one
 same-principal grant naming that workspace with `doc.schema:write`.
 A document-only grant or capabilities from unrelated grants cannot manufacture
 destination authority. Template copy separately requires source `doc:read`;
-Grist's native copy/download and destination `ADD` authorization remain decisive.
+full-data copy requires deployment opt-in, a capability grant explicitly naming
+the source document, and fresh native Owner verification of that source. A source
+workspace grant is insufficient. OAuth additionally requires a verified
+`doc:download` scope. Grist's native copy/download and destination `ADD`
+authorization remain decisive.
 
 Creator ownership and destination inheritance are native effects. A new document
-ID never widens the bridge allowlist. Discovery is invalidated on every creation
+may therefore expose full-copy data to a different audience. Copy verification
+covers the observed destination and returned identifier. Sharing and publication
+require separate qualification. A new document ID never widens the bridge
+allowlist. Discovery is invalidated on every creation
 attempt. Known created IDs survive failed membership verification; ambiguous
 creation is not replayed by name or automatically deleted.
 

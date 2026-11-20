@@ -37,8 +37,11 @@ test("derives OAuth scopes from the lean MCP registry", () => {
   assert.equal(oauthSecuritySchemesForTool("unknown_tool"), undefined);
 });
 
-test("publishes the additional action-specific read requirement for template copy", () => {
+test("advertises the template copy scope by default and download only after opt-in", () => {
   assert.deepEqual(actionScopeRequirementsForTool("grist_add_structure"), {
+    copy_document_as_template: ["doc.schema:write", "doc:read"]
+  });
+  assert.deepEqual(actionScopeRequirementsForTool("grist_add_structure", true), {
     copy_document_as_template: ["doc.schema:write", "doc:read"],
     copy_document: ["doc.schema:write", "doc:download"]
   });
@@ -147,8 +150,7 @@ test("wire adapter transforms JSON tool lists and removes stale content-length",
   assert.deepEqual(
     (body.result.tools[0]?._meta as Record<string, unknown>)?.["gia/actionScopeRequirements"],
     {
-      copy_document_as_template: ["doc.schema:write", "doc:read"],
-      copy_document: ["doc.schema:write", "doc:download"]
+      copy_document_as_template: ["doc.schema:write", "doc:read"]
     }
   );
 });

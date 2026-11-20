@@ -225,6 +225,17 @@ test("full copy requires an explicit source download grant AND native Owner proo
     () => denied.copyDocument("source-doc", 10, "Denied"),
     /doc:download|allowed by this bridge/
   );
+  const workspaceSource: Principal = {
+    ...target,
+    grants: [
+      { documentIds: [], workspaceIds: ["20"], capabilities: ["doc:download"] },
+      target.grants[1]!
+    ]
+  };
+  await assert.rejects(
+    () => service(inner, authorization, workspaceSource).copyDocument("source-doc", 10, "Denied"),
+    /doc:download/
+  );
   assert.equal(ownerProofs, 0);
   assert.equal(fullCopies, 0);
 
@@ -256,6 +267,24 @@ test("full copy requires an explicit source download grant AND native Owner proo
     ),
     /Native Owner required/
   );
+  let attempts = 0;
+  const unreadableCopy = {
+    assertDocumentOwner: async () => {},
+    copyDocument: async () => {
+      attempts++;
+      return "known-full-copy-id";
+    }
+  } as unknown as GristService;
+  await assert.rejects(
+    () => service(unreadableCopy, authorization, target).copyDocument("source-doc", 10, "Unknown destination"),
+    (error: unknown) => {
+      assert.ok(error instanceof DocumentBootstrapVerificationError);
+      assert.equal(error.createdDocumentId, "known-full-copy-id");
+      assert.match(error.message, /Do not retry the creation by name/);
+      return true;
+    }
+  );
+  assert.equal(attempts, 1);
 });
 
 test("retains a known created ID when destination membership cannot be verified", async () => {

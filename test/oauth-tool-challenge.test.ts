@@ -163,12 +163,13 @@ test("full copy challenges only for missing doc:download and never upgrades doc:
     workspaceIds: ["7"],
     capabilities: ["doc:read", "doc.schema:write"]
   });
-  const handler = installOAuthToolAuthChallenges(
-    fakeHandler({
+  const errorBody = {
       jsonrpc: "2.0", id: 1,
       result: { isError: true, content: [{ type: "text", text: "source download denied" }] }
-    }),
-    { principal, resourceMetadataUrl: METADATA_URL }
+  };
+  const handler = installOAuthToolAuthChallenges(
+    fakeHandler(errorBody),
+    { principal, resourceMetadataUrl: METADATA_URL, documentDownloadEnabled: true }
   );
   const response = await handler.fetch(new Request("https://example.test/mcp"), {
     parsedBody: toolCall("grist_add_structure", {
@@ -180,6 +181,15 @@ test("full copy challenges only for missing doc:download and never upgrades doc:
   assert.deepEqual(body.result._meta["mcp/www_authenticate"], [
     `Bearer resource_metadata="${METADATA_URL}", error="insufficient_scope", error_description="Additional authorization is required for scope doc:download.", scope="doc:download"`
   ]);
+  const disabled = installOAuthToolAuthChallenges(fakeHandler(errorBody), {
+    principal, resourceMetadataUrl: METADATA_URL
+  });
+  const beforeOptIn = await disabled.fetch(new Request("https://example.test/mcp"), {
+    parsedBody: toolCall("grist_add_structure", {
+      action: "copy_document", sourceDocumentId: "source-doc", workspaceId: 7, name: "Full app"
+    })
+  });
+  assert.deepEqual(await beforeOptIn.json(), errorBody);
 });
 
 test("does not turn a source resource denial into a scope challenge when doc:read exists", async () => {

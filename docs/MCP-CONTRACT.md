@@ -45,6 +45,26 @@ Gia package/runtime version **0.11.0** implements MCP contract major **2**.
 
 ## Widget detail
 
+For native form widgets, read-only `grist_inspect(action="page_widgets")` adds
+the `form` result. Its bounded `layout` preserves ordered Layout, Section,
+Field, Paragraph and Submit nodes. The form's `tableId` and the field's
+`columnId` are stable IDs. Question, required and URL-prefill options retain
+their column and field origins. Native field options override the column
+options. A configured dropdown condition is indicated without returning its
+expression. The projection includes supported submit and success text and
+whether a redirect is configured.
+
+`status: "protected"` identifies omitted text or a protected redirect. Text
+containing potential links is omitted entirely, including links in Markdown.
+The redirect URL and raw share options are never returned by this projection.
+`status: "incomplete"` covers unresolved field references, insufficient
+metadata, unsupported layout and inspection bounds. An empty native section
+options object is valid. The result pairs `sectionPublicationIntent`
+(`requested`, `not_requested` or `unknown`) with
+`publicationQualification: "not_tested"`. Native share and page state also
+affect publication. Inspecting an intent does not perform an anonymous or
+authenticated form access test.
+
 Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect.page_widgets` returns a normalized `cardLayout` for native Card/Card List widgets, and `grist_change_ui.update_widget` accepts the corresponding complete stable-column layout tree. This is additive result/input detail inside the existing closed semantic action. Card layout inputs never accept private Grist field refs, raw BoxSpec JSON or raw UserActions.
 
 The pre-existing numeric `layoutSpec`, sort and identity read detail remains available for MCP v2 compatibility and is not the stable semantic contract for writes. Public `options` contains only present, valid supported display flags and custom-widget access/identity; arbitrary URL/plugin/configuration fields remain internal. Layouts with unsupported attributes and invalid raw sort tokens are omitted rather than forwarded. `compatibilityMetadataOmitted: true` identifies omitted detail. This security correction does not remove the promised supported numeric layout shape; removal of the remaining non-secret compatibility fields requires an incompatible MCP major-version decision. New clients should use normalized stable-ID fields.
@@ -229,9 +249,9 @@ Gia keeps the ten-tool MCP v2 surface unchanged. `grist_discover(action="workspa
 
 `grist_add_structure(action="copy_document_as_template")` additionally requires a separately authorized `sourceDocumentId` with local `doc:read`. The bridge always invokes Grist's native same-installation copy with `asTemplate: true`; local source readability is only a bridge precondition and is **not** presented as proof of native full-copy authority. Grist's own template-copy/download authorization and destination `ADD` checks remain authoritative. Gia exposes no arbitrary upload/import, fork, destination auto-selection or sharing/grant mutation in this contract.
 
-`grist_add_structure(action="copy_document")` is a separately closed native **full-data** copy intention with fixed `asTemplate: false`, input `{sourceDocumentId,workspaceId,name}`. It requires an **explicit source `doc:download` bridge grant**, a destination workspace `doc.schema:write` grant, a **fresh native Grist Owner proof** on the source and Grist's own full-copy/download authorization. `doc:read` alone never authorizes a full-data copy; existing static principals do **not** receive `doc:download` from the default configuration. Full copy is not a privacy scrub or an access/share replication guarantee, and does not copy user accounts or give the bridge permission to mutate shares. It returns the known created ID and native authorization/owner evidence; verification of destination membership is **not** proof that every source row was copied. Native compatibility tests check data preservation using synthetic rows. This action is independent of building a new application from an empty document.
+`grist_add_structure(action="copy_document")` is a native **full-data** copy with fixed `asTemplate: false` and input `{sourceDocumentId,workspaceId,name}`. It requires deployment opt-in, a `doc:download` grant explicitly naming the source document, a destination workspace `doc.schema:write` grant, fresh native Owner proof on the source and Grist's own full-copy/download authorization. An OAuth caller also needs the verified `doc:download` scope. Document data and metadata may be sensitive. The new document inherits native destination access, which can expose data to a different audience. Gia reports the known created ID, source Owner check and destination membership. The native tests establish retention of the fixture rows. Effective ACLs, sharing, publication, attachments and history equivalence are outside the verification result.
 
-The tool-level OAuth security scheme remains the baseline `doc.schema:write` because `create_document` does not require source read authority. For `copy_document_as_template`, metadata publishes `gia/actionScopeRequirements.copy_document_as_template = ["doc.schema:write", "doc:read"]`. For `copy_document`, metadata publishes `gia/actionScopeRequirements.copy_document = ["doc.schema:write", "doc:download"]`. A missing action-specific scope is challenged precisely; a resource denial is never treated as a scope failure if the required scope is present.
+The tool-level OAuth security scheme remains the baseline `doc.schema:write`. Template copy metadata publishes `gia/actionScopeRequirements.copy_document_as_template = ["doc.schema:write", "doc:read"]`. Opted-in deployments additionally advertise `doc:download` and publish `gia/actionScopeRequirements.copy_document = ["doc.schema:write", "doc:download"]`. A missing enabled action-specific scope is challenged precisely. Resource authorization remains a separate prerequisite even with an adequate token.
 
 All three creation paths are non-idempotent. After a known created ID is returned, Gia invalidates principal-local discovery and verifies that the created document currently resolves inside the requested destination under the same principal and required destination capability. If verification fails, the model-facing result retains `effectState: "APPLIED"`, `postconditionVerified: false`, the exact `createdDocumentId`, and `retryWholeOperation: false`; the operation must not be retried by name or “cleaned up” by guessing. Response loss or an acknowledged mutation whose created ID cannot be normalized remains `UNCERTAIN`; the discovery cache is still invalidated, but Gia does not replay the request automatically.
 

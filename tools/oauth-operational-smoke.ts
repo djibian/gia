@@ -4,7 +4,7 @@ import {
   buildOAuthProtectedResourceMetadataUrl,
   type OAuthProtectedResourceMetadata
 } from "../src/auth/oauthProtectedResource.js";
-import { GRIST_CAPABILITIES } from "../src/auth/principal.js";
+import { BASE_GRIST_CAPABILITIES, GRIST_CAPABILITIES } from "../src/auth/principal.js";
 
 export interface OperationalSmokeCheck {
   id: string;
@@ -35,12 +35,12 @@ function parseCanonicalResource(value: string): URL | undefined {
   }
 }
 
-function exactScopes(value: unknown): boolean {
+function exactScopes(value: unknown, documentDownloadEnabled: boolean): boolean {
   if (!Array.isArray(value) || value.some(scope => typeof scope !== "string")) {
     return false;
   }
   const actual = [...value].sort();
-  const expected = [...GRIST_CAPABILITIES].sort();
+  const expected = [...(documentDownloadEnabled ? GRIST_CAPABILITIES : BASE_GRIST_CAPABILITIES)].sort();
   return actual.length === expected.length && actual.every((scope, index) => scope === expected[index]);
 }
 
@@ -87,7 +87,8 @@ async function request(
  */
 export async function runOAuthOperationalSmoke(
   resourceUri: string,
-  fetchImpl: FetchLike = fetch
+  fetchImpl: FetchLike = fetch,
+  documentDownloadEnabled = false
 ): Promise<OperationalSmokeCheck[]> {
   const resource = parseCanonicalResource(resourceUri);
   if (!resource) return [{ id: "configuration_valid", passed: false }];
@@ -127,7 +128,7 @@ export async function runOAuthOperationalSmoke(
     },
     {
       id: "metadata_scopes",
-      passed: exactScopes(metadataBody?.scopes_supported)
+      passed: exactScopes(metadataBody?.scopes_supported, documentDownloadEnabled)
     },
     {
       id: "unauthenticated_mcp_challenge",
@@ -148,7 +149,9 @@ function printChecks(checks: OperationalSmokeCheck[]): void {
 
 async function main(): Promise<void> {
   const resourceUri = process.env.MCP_RESOURCE_URI ?? "";
-  const checks = await runOAuthOperationalSmoke(resourceUri);
+  const documentDownloadEnabled = process.env.MCP_CAPABILITIES
+    ?.split(",").some(scope => scope.trim() === "doc:download") === true;
+  const checks = await runOAuthOperationalSmoke(resourceUri, fetch, documentDownloadEnabled);
   printChecks(checks);
   if (checks.some(check => !check.passed)) process.exitCode = 1;
 }

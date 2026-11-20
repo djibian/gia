@@ -105,3 +105,11 @@ test("full-document download requires a literal verified OAuth doc:download scop
   assert.equal(capabilitiesFromOAuthScope("doc:read doc.schema:write").includes("doc:download"), false);
   assert.equal(capabilitiesFromOAuthScope("doc:read doc.schema:write doc:download").includes("doc:download"), true);
 });
+
+test("OAuth grants keep full-document download disabled until deployment opts in", () => {
+  const identity = { issuer: "https://auth.example.test", subject: "user-123", scope: "doc:read doc:download" };
+  const grant = { documentIds: ["doc-a"], workspaceIds: ["42"] };
+  assert.deepEqual(createOAuthMcpPrincipal(identity, grant).grants[0]?.capabilities, ["doc:read"]);
+  assert.deepEqual(createOAuthMcpPrincipal(identity, { ...grant, documentDownloadEnabled: true })
+    .grants[0]?.capabilities, ["doc:read", "doc:download"]);
+});

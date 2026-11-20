@@ -3,6 +3,7 @@ import type { McpHandlerRequestOptions, McpHttpHandler } from "@modelcontextprot
 import { buildInsufficientScopeToolChallenge } from "../auth/oauthProtectedResource.js";
 import type { GristCapability, Principal } from "../auth/principal.js";
 import { getLeanTool } from "./leanRegistry.js";
+import { actionScopeRequirementsForTool } from "./oauthToolSecurity.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -28,7 +29,8 @@ function requestedToolArguments(
 
 function requiredCapabilities(
   toolName: string,
-  options: McpHandlerRequestOptions | undefined
+  options: McpHandlerRequestOptions | undefined,
+  documentDownloadEnabled: boolean
 ): GristCapability[] {
   let baseline: GristCapability | null;
   try {
@@ -37,18 +39,12 @@ function requiredCapabilities(
     return [];
   }
 
-  const capabilities: GristCapability[] = baseline ? [baseline] : [];
-  const args = requestedToolArguments(options);
-  if (toolName === "grist_add_structure") {
-    const sourceCapability =
-      args?.action === "copy_document" ? "doc:download"
-      : args?.action === "copy_document_as_template" ? "doc:read"
-      : null;
-    if (sourceCapability && !capabilities.includes(sourceCapability)) {
-      capabilities.push(sourceCapability);
-    }
+  const action = requestedToolArguments(options)?.action;
+  const actionScopes = actionScopeRequirementsForTool(toolName, documentDownloadEnabled);
+  if (typeof action === "string" && actionScopes && Object.hasOwn(actionScopes, action)) {
+    return actionScopes[action]!;
   }
-  return capabilities;
+  return baseline ? [baseline] : [];
 }
 
 function principalHasCapability(
@@ -94,13 +90,16 @@ export function installOAuthToolAuthChallenges(
   options: {
     principal: Principal;
     resourceMetadataUrl: string;
+    documentDownloadEnabled?: boolean;
   }
 ): McpHttpHandler {
   const originalFetch = handler.fetch;
 
   handler.fetch = async (request, requestOptions) => {
     const toolName = requestedToolName(requestOptions);
-    const required = toolName ? requiredCapabilities(toolName, requestOptions) : [];
+    const required = toolName
+      ? requiredCapabilities(toolName, requestOptions, options.documentDownloadEnabled === true)
+      : [];
     const missingCapability = required.find(
       (capability) => !principalHasCapability(options.principal, capability)
     );

@@ -364,8 +364,13 @@ export class AuthorizedGristService {
     return this.execute("get_page_widgets", documentIdOrUrl, undefined, async (id) => {
       const tableResponse = await this.inner.listTables(id, { expandColumns: true });
       const ui = await this.loadDocumentUi(id, tableResponse, true, true);
+      const fields = ui[SECTION_FIELDS_METADATA];
+      const metadataLimit = this.inner.maxReadRecords || 5000;
       return exposeUiSnapshotCompleteness(
-        this.documentUi.getPageWidgets(ui, pageId, tableResponse),
+        this.documentUi.getPageWidgets(
+          ui, pageId, tableResponse,
+          fields && !metadataResponseReachedLimit(fields, metadataLimit) ? fields : undefined
+        ),
         ui
       );
     });
@@ -1150,80 +1155,24 @@ export class AuthorizedGristService {
     workspaceId: number,
     name: string
   ): Promise<unknown> {
-    const definition = getOperation("copy_document");
-    const capability = getRequiredCapability(definition.name);
-    const requestId = this.audit.nextRequestId();
-    const started = Date.now();
-    let sourceDocumentId = sourceDocumentIdOrUrl;
-    let createdDocumentId: string | undefined;
-    try {
-      await this.authorization.assertWorkspaceAllowed(
-        this.principal,
-        workspaceId,
-        capability
-      );
-      sourceDocumentId = await this.authorization.assertDocumentAllowed(
-        this.principal,
-        sourceDocumentIdOrUrl,
-        "doc:download"
-      );
-      // A full copy can include rows hidden by document ACLs. Require a fresh
-      // native source Owner proof in addition to the bounded bridge grants.
-      await this.inner.assertDocumentOwner(sourceDocumentId);
-      createdDocumentId = await this.inner.copyDocument(
-        sourceDocumentId,
-        workspaceId,
-        name
-      );
-      await this.verifyCreatedDocumentWorkspace(
-        createdDocumentId,
-        workspaceId,
-        capability
-      );
-      this.audit.record({
-        requestId,
-        principal: this.principal.id,
-        transport: this.principal.transport,
-        operation: definition.name,
-        capability,
-        documentId: createdDocumentId,
-        itemCount: 1,
-        status: "success",
-        durationMs: Date.now() - started
-      });
-      return {
-        documentId: createdDocumentId,
-        sourceDocumentId,
-        workspaceId,
-        created: true,
-        bootstrap: "full_copy",
-        asTemplate: false,
-        destinationMembershipVerified: true,
-        creatorOwnershipIsNativeGristBehavior: true,
-        nativeCopyAuthorizationVerifiedByGrist: true,
-        sourceOwnershipVerified: true
-      };
-    } catch (error) {
-      this.auditFailure(
-        requestId,
-        started,
-        definition.name,
-        capability,
-        createdDocumentId,
-        error,
-        1
-      );
-      throw error;
-    }
+    return this.copyDocumentToWorkspace(sourceDocumentIdOrUrl, workspaceId, name, false);
   }
-
 
   async copyDocumentAsTemplate(
     sourceDocumentIdOrUrl: string,
     workspaceId: number,
     name: string
   ): Promise<unknown> {
-    const definition = getOperation("copy_document_as_template");
+    return this.copyDocumentToWorkspace(sourceDocumentIdOrUrl, workspaceId, name, true);
+  }
+
+  private async copyDocumentToWorkspace(
+    sourceDocumentIdOrUrl: string,
+    workspaceId: number,
+    name: string,
+    asTemplate: boolean
+  ): Promise<unknown> {
+    const definition = getOperation(asTemplate ? "copy_document_as_template" : "copy_document");
     const capability = getRequiredCapability(definition.name);
     const requestId = this.audit.nextRequestId();
     const started = Date.now();
@@ -1238,13 +1187,12 @@ export class AuthorizedGristService {
       sourceDocumentId = await this.authorization.assertDocumentAllowed(
         this.principal,
         sourceDocumentIdOrUrl,
-        "doc:read"
+        asTemplate ? "doc:read" : "doc:download"
       );
-      createdDocumentId = await this.inner.copyDocumentAsTemplate(
-        sourceDocumentId,
-        workspaceId,
-        name
-      );
+      if (!asTemplate) await this.inner.assertDocumentOwner(sourceDocumentId);
+      createdDocumentId = asTemplate
+        ? await this.inner.copyDocumentAsTemplate(sourceDocumentId, workspaceId, name)
+        : await this.inner.copyDocument(sourceDocumentId, workspaceId, name);
       await this.verifyCreatedDocumentWorkspace(
         createdDocumentId,
         workspaceId,
@@ -1266,11 +1214,12 @@ export class AuthorizedGristService {
         sourceDocumentId,
         workspaceId,
         created: true,
-        bootstrap: "template_copy",
-        asTemplate: true,
+        bootstrap: asTemplate ? "template_copy" : "full_copy",
+        asTemplate,
         destinationMembershipVerified: true,
         creatorOwnershipIsNativeGristBehavior: true,
-        nativeCopyAuthorizationVerifiedByGrist: true
+        nativeCopyAuthorizationVerifiedByGrist: true,
+        ...(!asTemplate ? { sourceOwnershipVerified: true } : {})
       };
     } catch (error) {
       this.auditFailure(

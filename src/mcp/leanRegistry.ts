@@ -91,7 +91,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: false,
     title: "Add Grist structure",
     description:
-      "Create one empty document, copy a separately authorized source as a data-free template or native full-data copy, or create bounded tables/columns. Full data requires a fresh native source Owner check. Document bootstrap requires destination workspace doc.schema:write; template copy additionally requires source doc:read and always uses asTemplate=true. A template retains substantial document metadata/policy/formulas and is not a privacy scrub. Exactly one creation action is performed per invocation."
+      "Create one empty document, copy a separately authorized source as a data-free template or native full-data copy, or create bounded tables/columns. Full copy requires deployment opt-in, an explicit source document download grant and native source Owner access. Destination workspace permissions can expose the copied data to a different audience. Document bootstrap requires destination workspace doc.schema:write; template copy additionally requires source doc:read. Exactly one creation action is performed per invocation."
   },
   {
     name: "grist_change_structure",
@@ -192,6 +192,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "symbolic field: {name,value:{kind:'symbol',symbol:'A'|'B'|'C'|'D'}|{kind:'boolean',value:boolean}|{kind:'flag',value:0|1}|{kind:'empty_text'}}; linkKeys allow symbols only"
     ],
     constraints: [
+      "Page widget inspection projects native form fields using stable table and column IDs. Persisted section publication intent does not establish public access.",
       "ACL inspection requires native Owner proof; optional schemaImpact identifies references, not effective security.",
       "Simulation evaluates one persisted group on invented symbolic context, not actual Grist enforcement or row confidentiality.",
       "Policy coverage classifies persisted components. An optional invented context asks for a bounded expected decision. Native qualification is untested."
@@ -248,7 +249,8 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     ],
     constraints: [
       "Destination workspace needs doc.schema:write; template source additionally needs doc:read.",
-      "Template and full-data copies are not privacy scrubs. Full copy additionally requires explicit source doc:download grant, native source Owner proof and Grist full-download authorization; existing principals gain no new default grant. Neither copy is idempotent; preserve known IDs on partial/uncertain outcomes."
+      "Full copy requires deployment opt-in, an explicit source document doc:download grant, native source Owner proof and Grist full-download authorization. Authorize the exact destination workspace and account for its inherited access before copying. Access, publication, attachment and history equivalence are not verified.",
+      "Native copy may retain sensitive data or metadata. Neither copy is idempotent; preserve known IDs on partial or uncertain outcomes."
     ],
     examples: [
       { purpose: "Copy all data from a natively owned source into an authorized workspace", arguments: {
