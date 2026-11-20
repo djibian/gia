@@ -497,6 +497,28 @@ const pageLayoutUpdateSchema = z
   })
   .strict();
 
+const formParagraphSchema = z.object({
+  type: z.literal("paragraph"), text: z.string().max(300),
+  alignment: z.enum(["left", "center", "right"]).optional()
+}).strict();
+const formFieldSchema = z.object({
+  type: z.literal("field"), columnId: columnIdSchema
+}).strict();
+const formSectionSchema = z.object({
+  type: z.literal("section"),
+  children: z.array(z.discriminatedUnion("type", [formParagraphSchema, formFieldSchema]))
+    .min(1).max(40)
+}).strict();
+const formSubmitSchema = z.object({ type: z.literal("submit") }).strict();
+const formLayoutUpdateSchema = z.object({
+  children: z.array(z.discriminatedUnion("type", [
+    formParagraphSchema, formSectionSchema, formSubmitSchema
+  ])).min(2).max(40),
+  submitText: z.string().max(300).optional(),
+  successText: z.string().max(300).optional(),
+  anotherResponse: z.boolean().optional()
+}).strict();
+
 function widgetUpdateSchema() {
   return z
     .object({
@@ -1241,6 +1263,15 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("update_form_layout"),
+            documentId: documentIdSchema,
+            pageId: positiveIdSchema,
+            widgetId: positiveIdSchema,
+            layout: formLayoutUpdateSchema
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_widget"),
             documentId: documentIdSchema,
             pageId: positiveIdSchema,
@@ -1285,6 +1316,10 @@ export function registerLeanTools(
                 input.layout
               )
             );
+          case "update_form_layout":
+            return textResult(await grist.updateFormLayout(
+              input.documentId, input.pageId, input.widgetId, input.layout
+            ));
           case "update_widget":
             return textResult(
               await grist.updatePageWidget(
