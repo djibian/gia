@@ -2280,18 +2280,21 @@ async function run(): Promise<void> {
       })
     });
     const flagTarget = { tableId: TABLE_ID };
+    const nonOwner = { kind: "user_access", operator: "not_equals", role: "owner" };
     const flagRule = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
       action: "access_rule_group", documentId, mode: "create", target: flagTarget,
       rules: [{
-        condition: { kind: "not", condition: {
+        condition: { kind: "all", conditions: [nonOwner, { kind: "not", condition: {
           kind: "user_attribute_flag", attributeName: "CompatMember", attributeColumnId: "Enabled"
-        } },
+        } }] },
         permissions: { read: "deny", update: "unspecified" }
       }]
     }), "native_bool_user_attribute_create");
     assert(flagRule.persistedDefinitionVerified === true && flagRule.effectiveEnforcementVerified === false,
       "native_bool_user_attribute_postcondition");
-    assert((await readNativeAcl()).some(row => row.fields.aclFormula === "not (user.CompatMember.Enabled)"),
+    assert((await readNativeAcl()).some(row => typeof row.fields.aclFormula === "string" &&
+      row.fields.aclFormula.includes("not (user.CompatMember.Enabled)") &&
+      row.fields.aclFormula.includes("user.Access != OWNER")),
       "native_bool_user_attribute_formula_missing");
     const controlPath = `${docPath}/tables/Compat_Events/records`;
     const protectedPath = `${docPath}/tables/${TABLE_ID}/records`;
@@ -2324,7 +2327,10 @@ async function run(): Promise<void> {
       attributeName: "CompatMember", attributeColumnId: "AllowedItems" };
     const memberRule = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
       action: "access_rule_group", documentId, mode: "replace", target: flagTarget,
-      rules: [{ condition: membership, permissions: { read: "deny", update: "unspecified" } }]
+      rules: [{
+        condition: { kind: "all", conditions: [nonOwner, membership] },
+        permissions: { read: "deny", update: "unspecified" }
+      }]
     }), "native_ref_list_user_attribute_replace");
     assert(memberRule.persistedDefinitionVerified === true && memberRule.effectiveEnforcementVerified === false,
       "native_ref_list_user_attribute_postcondition");
