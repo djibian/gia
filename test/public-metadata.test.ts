@@ -162,6 +162,37 @@ test("conditional styles are signaled without exporting private helper reference
   }] });
 });
 
+test("column discovery classifies native dropdown condition presence without promising Form enforcement", () => {
+  const project = (widgetOptions: unknown) => projectPublicColumns({
+    columns: [{ id: "Stage", fields: { type: "Ref:Structures", widgetOptions } }]
+  }) as { columns: Array<{ fields: Record<string, unknown> }> };
+  const valid = JSON.stringify({
+    widget: "native", dropdownCondition: { text: 'choice.Statut == "validé"' }
+  });
+  assert.deepEqual(project(valid).columns[0]?.fields.dropdownCondition, {
+    status: "protected"
+  });
+  for (const malformed of [
+    "{", "null", JSON.stringify({ dropdownCondition: null }),
+    JSON.stringify({ dropdownCondition: { text: " " } }),
+    JSON.stringify({ dropdownCondition: { text: "x", parsed: 5 } }),
+    "x".repeat(16_385)
+  ]) {
+    assert.deepEqual(project(malformed).columns[0]?.fields.dropdownCondition, {
+      status: "incomplete"
+    });
+  }
+  assert.equal(project('{"formRequired":true}').columns[0]?.fields.dropdownCondition, undefined);
+  assert.equal(project("").columns[0]?.fields.dropdownCondition, undefined);
+  assert.equal(project(undefined).columns[0]?.fields.dropdownCondition, undefined);
+  const expanded = projectPublicTables({ tables: [{
+    id: "Stages", fields: { tableRef: 8 }, columns: [
+      { id: "Stage", fields: { colRef: 9, widgetOptions: valid } }
+    ]
+  }] }) as { tables: Array<{ columns: Array<{ fields: Record<string, unknown> }> }> };
+  assert.deepEqual(expanded.tables[0]?.columns[0]?.fields.dropdownCondition, { status: "protected" });
+});
+
 test("unexpected upstream metadata shapes fail closed", () => {
   assert.throws(() => projectPublicTables({ tables: [{ fields: {} }] }), /table metadata shape/);
   assert.throws(() => projectPublicColumns({ columns: [{ id: "A" }] }), /column metadata shape/);

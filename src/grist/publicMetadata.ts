@@ -1,6 +1,7 @@
 import type { GristPage, GristPageWidget } from "./documentUi.js";
 import { stableVisibleColumnId } from "./referenceDisplay.js";
 import { customViewOptions } from "./customWidgetSettings.js";
+import { nativeDropdownConditionState } from "./formInspection.js";
 import {
   MAX_NORMALIZED_LAYOUT_DEPTH,
   MAX_NORMALIZED_LAYOUT_NODES
@@ -66,6 +67,18 @@ function conditionalStyleRuleState(value: unknown): "protected" | "incomplete" |
   if (refs.some(ref => positiveInteger(ref) === undefined) ||
       new Set(refs).size !== refs.length) return "incomplete";
   return refs.length ? "protected" : undefined;
+}
+
+/** Read-only column-level presence/quality signal. Native Form display filtering
+ * is deliberately NOT inferred from a persisted dropdown condition. */
+function columnDropdownConditionState(value: unknown): "protected" | "incomplete" | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (typeof value !== "string" || value.length > 16_384) return "incomplete";
+  let parsed: JsonRecord | null = null;
+  try { parsed = record(JSON.parse(value)); } catch { /* incomplete native options */ }
+  if (!parsed) return "incomplete";
+  if (!Object.prototype.hasOwnProperty.call(parsed, "dropdownCondition")) return undefined;
+  return nativeDropdownConditionState(parsed.dropdownCondition);
 }
 
 /** Read-only completeness of the native custom-widget configuration, not remote code. */
@@ -169,6 +182,8 @@ function publicColumn(
   if (typeof fields.formula === "string") projected.formula = fields.formula;
   if (typeof fields.description === "string") projected.description = fields.description;
   if (typeof fields.widgetOptions === "string") projected.widgetOptions = fields.widgetOptions;
+  const dropdownCondition = columnDropdownConditionState(fields.widgetOptions);
+  if (dropdownCondition) projected.dropdownCondition = { status: dropdownCondition };
   const conditionalStyleRules = conditionalStyleRuleState(fields.rules);
   if (conditionalStyleRules) projected.conditionalStyleRules = { status: conditionalStyleRules };
   if (visibleColumnId !== undefined) projected.visibleColumnId = visibleColumnId;

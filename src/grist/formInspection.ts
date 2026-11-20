@@ -36,6 +36,17 @@ function options(value: unknown): JsonRecord | undefined {
   }
 }
 
+/** An opaque native dropdown predicate is present, or its metadata cannot be trusted.
+ * This is not a parser or a promise of native Form display filtering. */
+export function nativeDropdownConditionState(value: unknown): "protected" | "incomplete" {
+  const condition = record(value);
+  return condition && typeof condition.text === "string" &&
+    condition.text.trim() !== "" && condition.text.length <= 2048 &&
+    (condition.parsed === undefined ||
+      (typeof condition.parsed === "string" && condition.parsed.length <= 16_384))
+    ? "protected" : "incomplete";
+}
+
 function publicationIntent(value: unknown): "requested" | "not_requested" | "unknown" {
   if (value === undefined) return "unknown";
   const parsed = options(value);
@@ -184,11 +195,7 @@ export function inspectNativeForm(
       if (configured) {
         for (const source of [columnRaw, fieldRaw]) {
           if (!Object.prototype.hasOwnProperty.call(source, "dropdownCondition")) continue;
-          const condition = record(source.dropdownCondition);
-          if (!condition || typeof condition.text !== "string" ||
-              !condition.text.trim() || condition.text.length > 2048 ||
-              (condition.parsed !== undefined &&
-                (typeof condition.parsed !== "string" || condition.parsed.length > 16_384))) {
+          if (nativeDropdownConditionState(source.dropdownCondition) === "incomplete") {
             return undefined;
           }
         }

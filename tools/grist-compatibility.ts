@@ -2215,7 +2215,10 @@ async function run(): Promise<void> {
       method: "POST",
       body: JSON.stringify([
         ["UpdateRecord", "_grist_Tables_column", column.id, {
-          widgetOptions: JSON.stringify({ question: "Your name", formRequired: true, formAcceptFromUrl: true })
+          widgetOptions: JSON.stringify({
+            question: "Your name", formRequired: true, formAcceptFromUrl: true,
+            dropdownCondition: { text: 'choice.Status == "active"' }
+          })
         }],
         ["UpdateRecord", "_grist_Views_section_field", formField.id, {
           widgetOptions: JSON.stringify({ question: "Preferred name" })
@@ -2245,13 +2248,21 @@ async function run(): Promise<void> {
         { type: "section", children: [
           { type: "field", columnId: "Name",
             columnOptions: { question: "Your name", required: true, acceptFromUrl: true },
-            fieldOptions: { question: "Preferred name" } }
+            fieldOptions: { question: "Preferred name" }, dropdownConditionConfigured: true }
         ] },
         { type: "submit" }
       ] }
     }), "native_form_projection_mismatch");
     assert(!JSON.stringify(widgets).includes("synthetic-private-form-marker"),
       "native_form_secret_exposed");
+    const dropdownDiscovery = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
+      action: "columns", documentId, tableId: TABLE_ID
+    }), "native_dropdown_column_inspection");
+    const discoveredName = (dropdownDiscovery.columns as Array<{
+      id: string; fields: Record<string, unknown>
+    }>).find(item => item.id === "Name");
+    assert(isDeepStrictEqual(discoveredName?.fields.dropdownCondition, { status: "protected" }),
+      "native_dropdown_column_presence_missing");
     const afterInspection = await gristApi(gristBaseUrl, apiKey,
       `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
     assert(afterInspection.records.find(row => row.id === formSection.id)?.fields.layoutSpec === layoutSpec,

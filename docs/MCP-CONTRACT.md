@@ -54,6 +54,15 @@ Compatible clarifications, descriptions, implementation fixes and additional res
 
 Gia package/runtime version **0.11.0** implements MCP contract major **2**.
 
+Column discovery additionally reports `dropdownCondition: {status:"protected"|"incomplete"}`
+for a valid opaque native dropdown predicate or malformed/oversized column
+widget options. The condition expression and parsed native representation
+are not duplicated in this diagnostic. Missing metadata is not proof of
+absence. A persisted condition does **not** guarantee filtering in a native
+Form, and it is never an authorization boundary. The supported-version native
+Form behavioral limitation is recorded in #295; this read-only diagnostic
+does not qualify Form display or submission.
+
 ## Widget detail
 
 For native form widgets, read-only `grist_inspect(action="page_widgets")` adds
