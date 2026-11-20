@@ -39,7 +39,8 @@ test("derives OAuth scopes from the lean MCP registry", () => {
 
 test("publishes the additional action-specific read requirement for template copy", () => {
   assert.deepEqual(actionScopeRequirementsForTool("grist_add_structure"), {
-    copy_document_as_template: ["doc.schema:write", "doc:read"]
+    copy_document_as_template: ["doc.schema:write", "doc:read"],
+    copy_document: ["doc.schema:write", "doc:download"]
   });
   assert.equal(actionScopeRequirementsForTool("grist_add_records"), undefined);
 });
