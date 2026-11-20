@@ -56,13 +56,14 @@ function principal(): Principal {
 
 function service(
   inner: GristService,
-  authorization: AuthorizationService
+  authorization: AuthorizationService,
+  actingPrincipal: Principal = principal()
 ): AuthorizedGristService {
   return new AuthorizedGristService(
     inner,
     authorization,
     audit(),
-    principal(),
+    actingPrincipal,
     {} as GristUiActionsAdapter
   );
 }
@@ -180,6 +181,125 @@ test("template copy requires separate source read authority and destination sche
     /document "source-doc" is not allowed by this bridge/
   );
   assert.equal(copyCalls, 1);
+});
+
+test("full copy requires an explicit source download grant AND native Owner proof", async () => {
+  const workspaces: GristWorkspaceSummary[] = [
+    { id: 10, name: "Destination", access: "editors", docs: [] },
+    { id: 20, name: "Source", access: "owners",
+      docs: [{ id: "source-doc", urlId: "source-alias", name: "Source", access: "owners" }] }
+  ];
+  const authorization = new AuthorizationService(new AccessPolicy(discoveryClient(workspaces), {
+    allowedDocumentIds: ["source-doc"],
+    allowedWorkspaceIds: ["10"],
+    cacheTtlMs: 0
+  }));
+  let ownerProofs = 0;
+  let fullCopies = 0;
+  const inner = {
+    assertDocumentOwner: async (id: string) => {
+      assert.equal(id, "source-doc");
+      ownerProofs += 1;
+    },
+    copyDocument: async (id: string, workspace: number, name: string) => {
+      assert.equal(id, "source-doc");
+      assert.equal(workspace, 10);
+      assert.equal(name, "Full app");
+      fullCopies += 1;
+      workspaces[0]!.docs = [
+        { id: "full-doc", urlId: "full-doc", name, access: "owners" }
+      ];
+      return "full-doc";
+    }
+  } as unknown as GristService;
+  const target: Principal = {
+    id: "explicit-full-copy",
+    transport: "mcp",
+    grants: [
+      { documentIds: ["source-doc"], workspaceIds: [], capabilities: ["doc:download"] },
+      { documentIds: [], workspaceIds: ["10"], capabilities: ["doc.schema:write"] }
+    ]
+  };
+  const denied = service(inner, authorization);
+  await assert.rejects(
+    () => denied.copyDocument("source-doc", 10, "Denied"),
+    /doc:download|allowed by this bridge/
+  );
+  const workspaceSource: Principal = {
+    ...target,
+    grants: [
+      { documentIds: [], workspaceIds: ["20"], capabilities: ["doc:download"] },
+      target.grants[1]!
+    ]
+  };
+  await assert.rejects(
+    () => service(inner, authorization, workspaceSource).copyDocument("source-doc", 10, "Denied"),
+    /doc:download/
+  );
+  await assert.rejects(
+    () => service(inner, authorization, target).copyDocument("source-alias", 10, "Denied"),
+    /doc:download/
+  );
+  const aliasGrant: Principal = {
+    ...target,
+    grants: [
+      { documentIds: ["source-alias"], workspaceIds: [], capabilities: ["doc:download"] },
+      target.grants[1]!
+    ]
+  };
+  await assert.rejects(
+    () => service(inner, authorization, aliasGrant).copyDocument("source-doc", 10, "Denied"),
+    /doc:download/
+  );
+  assert.equal(ownerProofs, 0);
+  assert.equal(fullCopies, 0);
+
+  const result = await service(inner, authorization, target).copyDocument(
+    "source-doc", 10, "Full app"
+  );
+  assert.deepEqual(result, {
+    documentId: "full-doc",
+    sourceDocumentId: "source-doc",
+    workspaceId: 10,
+    created: true,
+    bootstrap: "full_copy",
+    asTemplate: false,
+    destinationMembershipVerified: true,
+    creatorOwnershipIsNativeGristBehavior: true,
+    nativeCopyAuthorizationVerifiedByGrist: true,
+    sourceOwnershipVerified: true
+  });
+  assert.equal(ownerProofs, 1);
+  assert.equal(fullCopies, 1);
+
+  const noOwner = {
+    assertDocumentOwner: async () => { throw new Error("Native Owner required"); },
+    copyDocument: async () => { throw new Error("Must not copy"); }
+  } as unknown as GristService;
+  await assert.rejects(
+    () => service(noOwner, authorization, target).copyDocument(
+      "source-doc", 10, "Owner denied"
+    ),
+    /Native Owner required/
+  );
+  let attempts = 0;
+  const unreadableCopy = {
+    assertDocumentOwner: async () => {},
+    copyDocument: async () => {
+      attempts++;
+      return "known-full-copy-id";
+    }
+  } as unknown as GristService;
+  await assert.rejects(
+    () => service(unreadableCopy, authorization, target).copyDocument("source-doc", 10, "Unknown destination"),
+    (error: unknown) => {
+      assert.ok(error instanceof DocumentBootstrapVerificationError);
+      assert.equal(error.createdDocumentId, "known-full-copy-id");
+      assert.match(error.message, /Do not retry the creation by name/);
+      return true;
+    }
+  );
+  assert.equal(attempts, 1);
 });
 
 test("retains a known created ID when destination membership cannot be verified", async () => {

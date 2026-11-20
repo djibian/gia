@@ -22,6 +22,7 @@ import {
 } from "./auth/oauthRequestContext.js";
 import {
   createPrincipal,
+  BASE_GRIST_CAPABILITIES,
   GRIST_CAPABILITIES,
   type Principal
 } from "./auth/principal.js";
@@ -49,6 +50,7 @@ import { PrincipalRateLimiter } from "./ops/principalRateLimiter.js";
 import { VERSION } from "./version.js";
 
 const config = loadConfig();
+const documentDownloadEnabled = config.mcpCapabilities.includes("doc:download");
 const credentialProvider =
   config.gristCredentials.mode === "static"
     ? new StaticApiKeyCredentialProvider(config.gristCredentials.apiKey)
@@ -122,8 +124,8 @@ function buildNodeMcpHandler(
 ) {
   const handler = createMcpHandler(() => buildServer(grist));
   if (config.mcpAuth.mode === "oauth") {
-    installOAuthToolSecuritySchemes(handler);
-    if (oauth) installOAuthToolAuthChallenges(handler, oauth);
+    installOAuthToolSecuritySchemes(handler, documentDownloadEnabled);
+    if (oauth) installOAuthToolAuthChallenges(handler, { ...oauth, documentDownloadEnabled });
   }
   return toNodeHandler(handler);
 }
@@ -202,7 +204,7 @@ if (config.mcpAuth.mode === "oauth") {
       buildOAuthProtectedResourceMetadata({
         resource: oauthAuth.resourceUri,
         authorizationServer: oauthAuth.issuer,
-        scopes: GRIST_CAPABILITIES
+        scopes: documentDownloadEnabled ? GRIST_CAPABILITIES : BASE_GRIST_CAPABILITIES
       })
     );
   });
@@ -256,7 +258,8 @@ app.all("/mcp", async (req, res) => {
       },
       grant: {
         documentIds: config.allowedDocumentIds,
-        workspaceIds: config.allowedWorkspaceIds
+        workspaceIds: config.allowedWorkspaceIds,
+        documentDownloadEnabled
       },
       contextFactory
     });

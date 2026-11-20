@@ -52,7 +52,7 @@ credentials, runtime logs or private Grist data belong in published source.
 | `MCP_AUTH_MODE` | `static` or `oauth`; default `static` |
 | `MCP_BEARER_TOKEN` | static authentication only; random value of at least 32 characters; absent in OAuth mode |
 | `OAUTH_ISSUER`, `OAUTH_JWKS_URI`, `MCP_RESOURCE_URI` | OAuth mode: HTTPS issuer, JWKS and canonical public `/mcp` resource |
-| `MCP_CAPABILITIES` | static principal capability ceiling; default all three capabilities |
+| `MCP_CAPABILITIES` | static principal capability ceiling, with three baseline capabilities by default. Add `doc:download` explicitly to enable native full-data copying in static or OAuth mode |
 | `GRIST_MAX_READ_RECORDS` | `5000` |
 | `GRIST_MAX_WRITE_RECORDS` | `500` |
 | `GRIST_WRITE_BATCH_RECORDS` | positive sequential batch size; `200` |
@@ -64,7 +64,9 @@ credentials, runtime logs or private Grist data belong in published source.
 OAuth URLs reject credentials and fragments, including an empty `#` delimiter.
 Deployment probes require the `/mcp` resource without any query or fragment,
 including empty `?`/`#` delimiters, exactly one HTTPS authorization server,
-and exactly the three fixed scopes. Encoded delimiters inside URL paths remain valid
+and the exact configured scope set. Give both OAuth probes the same
+`MCP_CAPABILITIES` value as the release deployment when enabling full copy.
+Encoded delimiters inside URL paths remain valid
 where those paths are supported; a JWKS query remains permitted.
 
 Zero disables the configurable read/write/schema count ceiling; use finite positive
@@ -86,7 +88,13 @@ body, including dense record batches. Semantic per-tool bounds still apply.
 
 Gia is a provider-neutral OAuth resource server, not an authorization server.
 Use an Authorization Code + PKCE flow with the configured resource audience.
-Public scopes remain exactly `doc:read`, `doc:write`, `doc.schema:write`.
+The default public scopes are `doc:read`, `doc:write`, `doc.schema:write`.
+When opting in to `doc:download`, configure the issuer to issue that scope only
+to authorized clients for the resource. List the canonical native ID for each
+authorized source in `GRIST_ALLOWED_DOCUMENT_IDS`. Destination workspaces still need their own
+allowlist entry. Review native destination permissions for the intended audience
+before any full-data copy. OAuth principal grants still derive their baseline
+capabilities from the verified token.
 Logto can provide authorization and ProConnect an upstream identity source;
 no provider-specific login logic is required in bridge core.
 Self-contained JWTs are validated without online grant introspection: revoking an

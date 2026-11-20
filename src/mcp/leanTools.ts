@@ -911,6 +911,14 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("copy_document"),
+            sourceDocumentId: documentIdSchema,
+            workspaceId: positiveIdSchema,
+            name: documentNameSchema
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("create_tables"),
             documentId: documentIdSchema,
             tables: boundedArray(tableSpecSchema, limits.maxSchemaItems)
@@ -936,6 +944,14 @@ export function registerLeanTools(
           case "copy_document_as_template":
             return textResult(
               await grist.copyDocumentAsTemplate(
+                input.sourceDocumentId,
+                input.workspaceId,
+                input.name
+              )
+            );
+          case "copy_document":
+            return textResult(
+              await grist.copyDocument(
                 input.sourceDocumentId,
                 input.workspaceId,
                 input.name

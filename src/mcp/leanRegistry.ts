@@ -91,7 +91,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: false,
     title: "Add Grist structure",
     description:
-      "Create one empty document in an explicitly authorized workspace, copy one separately authorized source as a native data-free template, or create bounded tables/columns. Document bootstrap requires destination workspace doc.schema:write; template copy additionally requires source doc:read and always uses asTemplate=true. A template retains substantial document metadata/policy/formulas and is not a privacy scrub. Exactly one creation action is performed per invocation."
+      "Create one empty document, copy a separately authorized source as a data-free template or native full-data copy, or create bounded tables/columns. Full copy requires deployment opt-in, an explicit source document download grant and native source Owner access. Destination workspace permissions can expose the copied data to a different audience. Document bootstrap requires destination workspace doc.schema:write; template copy additionally requires source doc:read. Exactly one creation action is performed per invocation."
   },
   {
     name: "grist_change_structure",
@@ -241,17 +241,22 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     } }]
   },
   grist_add_structure: {
-    actions: ["create_document", "copy_document_as_template", "create_tables", "create_columns"],
+    actions: ["create_document", "copy_document_as_template", "copy_document", "create_tables", "create_columns"],
     request: [
-      "create_document: {action,workspaceId:positiveInteger,name}; copy_document_as_template: {action,sourceDocumentId,workspaceId,name}",
+      "create_document: {action,workspaceId:positiveInteger,name}; copy_document_as_template: {action,sourceDocumentId,workspaceId,name}; copy_document (native full data): {action,sourceDocumentId,workspaceId,name}",
       "create_tables: {action,documentId,tables:[{id,columns:[{id,fields?:{label?,type?,isFormula?,formula?,widgetOptions?}}]}]}; create_columns: {action,documentId,tableId,columns:[{id,fields?}]}",
       "Each new table requires at least one column; creation does not accept update-only description or visibleColumnId."
     ],
     constraints: [
       "Destination workspace needs doc.schema:write; template source additionally needs doc:read.",
-      "Template copy retains metadata/policies/formulas and is NOT a privacy scrub; bootstrap is not idempotent. Preserve IDs on partial/uncertain outcomes."
+      "Full copy requires deployment opt-in, the canonical source document ID, an explicit doc:download grant on that ID, native source Owner proof and Grist full-download authorization. Authorize the exact destination workspace and account for its inherited access before copying. Access, publication, attachment and history equivalence are not verified.",
+      "Native copy may retain sensitive data or metadata. Neither copy is idempotent; preserve known IDs on partial or uncertain outcomes."
     ],
     examples: [
+      { purpose: "Copy all data from a natively owned source into an authorized workspace", arguments: {
+        action: "copy_document", sourceDocumentId: "synthetic-source",
+        workspaceId: 1, name: "Synthetic Full Copy"
+      } },
       { purpose: "Create an empty document in an authorized workspace", arguments: {
         action: "create_document", workspaceId: 1, name: "Synthetic Example"
       } },

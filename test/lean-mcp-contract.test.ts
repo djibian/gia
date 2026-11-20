@@ -440,6 +440,8 @@ test("selected help exposes usable current guides and real-schema-valid syntheti
   const add = payload.tools.find((entry: any) => entry.name === "grist_add_structure");
   assert(add.guide.request.some((value: string) => value.includes("create_columns")));
   assert(add.guide.examples.some((example: any) => example.arguments.action === "copy_document_as_template"));
+  assert(add.guide.actions.includes("copy_document"));
+  assert(add.guide.examples.some((example: any) => example.arguments.action === "copy_document"));
   const ui = payload.tools.find((entry: any) => entry.name === "grist_change_ui");
   assert(ui.guide.constraints.some((value: string) =>
     /Omitting endDateColumnId, allDayColumnId or typeColumnId clears/.test(value)));

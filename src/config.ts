@@ -1,6 +1,7 @@
 import { isAbsolute } from "node:path";
 
 import {
+  BASE_GRIST_CAPABILITIES,
   GRIST_CAPABILITIES,
   type GristCapability
 } from "./auth/principal.js";
@@ -117,7 +118,10 @@ function parseCapabilities(
   name: string,
   value: string | undefined
 ): GristCapability[] {
-  const configured = value?.trim() ? parseCsv(value) : [...GRIST_CAPABILITIES];
+  // Introducing a sensitive capability must never widen existing default principals.
+  const configured = value?.trim()
+    ? parseCsv(value)
+    : [...BASE_GRIST_CAPABILITIES];
   const allowed = new Set<string>(GRIST_CAPABILITIES);
   for (const capability of configured) {
     if (!allowed.has(capability)) {

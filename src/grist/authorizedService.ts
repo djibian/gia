@@ -1150,12 +1150,29 @@ export class AuthorizedGristService {
     }
   }
 
+  async copyDocument(
+    sourceDocumentIdOrUrl: string,
+    workspaceId: number,
+    name: string
+  ): Promise<unknown> {
+    return this.copyDocumentToWorkspace(sourceDocumentIdOrUrl, workspaceId, name, false);
+  }
+
   async copyDocumentAsTemplate(
     sourceDocumentIdOrUrl: string,
     workspaceId: number,
     name: string
   ): Promise<unknown> {
-    const definition = getOperation("copy_document_as_template");
+    return this.copyDocumentToWorkspace(sourceDocumentIdOrUrl, workspaceId, name, true);
+  }
+
+  private async copyDocumentToWorkspace(
+    sourceDocumentIdOrUrl: string,
+    workspaceId: number,
+    name: string,
+    asTemplate: boolean
+  ): Promise<unknown> {
+    const definition = getOperation(asTemplate ? "copy_document_as_template" : "copy_document");
     const capability = getRequiredCapability(definition.name);
     const requestId = this.audit.nextRequestId();
     const started = Date.now();
@@ -1170,13 +1187,12 @@ export class AuthorizedGristService {
       sourceDocumentId = await this.authorization.assertDocumentAllowed(
         this.principal,
         sourceDocumentIdOrUrl,
-        "doc:read"
+        asTemplate ? "doc:read" : "doc:download"
       );
-      createdDocumentId = await this.inner.copyDocumentAsTemplate(
-        sourceDocumentId,
-        workspaceId,
-        name
-      );
+      if (!asTemplate) await this.inner.assertDocumentOwner(sourceDocumentId);
+      createdDocumentId = asTemplate
+        ? await this.inner.copyDocumentAsTemplate(sourceDocumentId, workspaceId, name)
+        : await this.inner.copyDocument(sourceDocumentId, workspaceId, name);
       await this.verifyCreatedDocumentWorkspace(
         createdDocumentId,
         workspaceId,
@@ -1198,11 +1214,12 @@ export class AuthorizedGristService {
         sourceDocumentId,
         workspaceId,
         created: true,
-        bootstrap: "template_copy",
-        asTemplate: true,
+        bootstrap: asTemplate ? "template_copy" : "full_copy",
+        asTemplate,
         destinationMembershipVerified: true,
         creatorOwnershipIsNativeGristBehavior: true,
-        nativeCopyAuthorizationVerifiedByGrist: true
+        nativeCopyAuthorizationVerifiedByGrist: true,
+        ...(!asTemplate ? { sourceOwnershipVerified: true } : {})
       };
     } catch (error) {
       this.auditFailure(

@@ -27,6 +27,7 @@ function response(body: unknown, init: ResponseInit = {}): Response {
 
 test("operational smoke validates only non-secret public OAuth surfaces", async () => {
   const seen: string[] = [];
+  let advertisesDownload = false;
   const fetchImpl = async (input: string | URL | Request): Promise<Response> => {
     const url = input instanceof Request ? input.url : input.toString();
     seen.push(url);
@@ -37,7 +38,8 @@ test("operational smoke validates only non-secret public OAuth surfaces", async 
       return response({
         resource: resourceUri,
         authorization_servers: ["https://auth.example.org/oidc"],
-        scopes_supported: ["doc:read", "doc:write", "doc.schema:write"]
+        scopes_supported: ["doc:read", "doc:write", "doc.schema:write",
+          ...(advertisesDownload ? ["doc:download"] : [])]
       });
     }
     if (url === resourceUri) {
@@ -58,6 +60,11 @@ test("operational smoke validates only non-secret public OAuth surfaces", async 
     metadataUrl,
     resourceUri
   ].sort());
+  advertisesDownload = true;
+  const unchangedDeployment = await runOAuthOperationalSmoke(resourceUri, fetchImpl);
+  assert.equal(unchangedDeployment.find(check => check.id === "metadata_scopes")?.passed, false);
+  const optedIn = await runOAuthOperationalSmoke(resourceUri, fetchImpl, true);
+  assert.ok(optedIn.every(check => check.passed));
 });
 
 test("operational smoke reports bounded failures without echoing remote data", async () => {

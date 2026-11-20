@@ -256,6 +256,8 @@ function bridgeEnvironment(options: {
     GRIST_WRITE_BATCH_RECORDS: "25",
     GRIST_MAX_SCHEMA_ITEMS: String(COMPAT_TOOL_LIMITS.maxSchemaItems),
     MCP_AUTH_MODE: "static",
+    // Synthetic compatibility fixture explicitly opts into the sensitive source scope.
+    MCP_CAPABILITIES: "doc:read,doc:write,doc.schema:write,doc:download",
     MCP_BEARER_TOKEN: STATIC_BEARER,
     MCP_ALLOWED_HOSTS: "127.0.0.1,localhost",
     HOST: "127.0.0.1",
@@ -2085,6 +2087,29 @@ async function run(): Promise<void> {
       })
     );
     assert(!copiedRows.includes("Alpha") && !copiedRows.includes("Beta"), "template_copy_retained_user_rows");
+
+    // A full copy retains records, unlike native asTemplate:true.
+    const fullCopied = resultJson(
+      await callTool(bridgeBaseUrl, "grist_add_structure", {
+        action: "copy_document",
+        sourceDocumentId: documentId,
+        workspaceId,
+        name: "Compatibility Full Copy"
+      }),
+      "copy_document"
+    );
+    const fullCopiedId = createdDocumentId(fullCopied, "copy_document");
+    assert(fullCopiedId !== documentId && fullCopiedId !== copiedDocumentId,
+      "full_copy_id_reused");
+    const fullRows = resultText(
+      await callTool(bridgeBaseUrl, "grist_query", {
+        documentId: fullCopiedId,
+        tableId: TABLE_ID,
+        limit: 10
+      })
+    );
+    assert(fullRows.includes("Alpha") && fullRows.includes("Beta"),
+      "full_copy_lost_source_rows");
 
     const queried = resultText(
       await callTool(bridgeBaseUrl, "grist_query", {

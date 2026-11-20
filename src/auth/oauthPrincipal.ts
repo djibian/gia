@@ -19,6 +19,7 @@ export interface VerifiedOAuthIdentity {
 export interface OAuthPrincipalGrant {
   documentIds: readonly string[];
   workspaceIds: readonly string[];
+  documentDownloadEnabled?: boolean;
 }
 
 export class OAuthPrincipalError extends Error {
@@ -82,6 +83,8 @@ export function createOAuthMcpPrincipal(
     transport: "mcp",
     documentIds: grant.documentIds,
     workspaceIds: grant.workspaceIds,
-    capabilities: capabilitiesFromOAuthScope(identity.scope)
+    capabilities: capabilitiesFromOAuthScope(identity.scope).filter(
+      capability => capability !== "doc:download" || grant.documentDownloadEnabled === true
+    )
   });
 }
