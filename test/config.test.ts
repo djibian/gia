@@ -373,3 +373,17 @@ test("defaults and validates the per-principal MCP request ceiling", () => {
     }
   );
 });
+
+
+test("full-document download capability is opt-in and never a default static grant", () => {
+  withEnv({ ...BASE_ENV, MCP_CAPABILITIES: undefined }, () => {
+    const capabilities = loadConfig().mcpCapabilities;
+    assert.equal(capabilities.includes("doc:download"), false);
+  });
+  withEnv({
+    ...BASE_ENV, MCP_CAPABILITIES: "doc:read,doc.schema:write,doc:download"
+  }, () => {
+    const capabilities = loadConfig().mcpCapabilities;
+    assert.equal(capabilities.includes("doc:download"), true);
+  });
+});

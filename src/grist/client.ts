@@ -164,10 +164,27 @@ export class GristClient {
     return createdDocumentId(response);
   }
 
+  async copyDocument(
+    sourceDocumentId: string,
+    workspaceId: number,
+    documentName: string
+  ): Promise<string> {
+    return this.copyDocumentToWorkspace(sourceDocumentId, workspaceId, documentName, false);
+  }
+
   async copyDocumentAsTemplate(
     sourceDocumentId: string,
     workspaceId: number,
     documentName: string
+  ): Promise<string> {
+    return this.copyDocumentToWorkspace(sourceDocumentId, workspaceId, documentName, true);
+  }
+
+  private async copyDocumentToWorkspace(
+    sourceDocumentId: string,
+    workspaceId: number,
+    documentName: string,
+    asTemplate: boolean
   ): Promise<string> {
     const response = await this.request("/api/docs", {
       method: "POST",
@@ -175,7 +192,7 @@ export class GristClient {
         sourceDocumentId,
         workspaceId,
         documentName,
-        asTemplate: true
+        asTemplate
       })
     });
     return createdDocumentId(response);

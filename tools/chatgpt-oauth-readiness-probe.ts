@@ -1,11 +1,14 @@
 import { isDeepStrictEqual } from "node:util";
+import { BASE_GRIST_CAPABILITIES, GRIST_CAPABILITIES } from "../src/auth/principal.js";
 import { LEAN_TOOL_REGISTRY, leanToolHelp } from "../src/mcp/leanRegistry.js";
 import type { LeanToolLimits } from "../src/mcp/leanTools.js";
 import { actionScopeRequirementsForTool, oauthSecuritySchemesForTool } from "../src/mcp/oauthToolSecurity.js";
 import { VERSION } from "../src/version.js";
 import { jsonObject, makeReadinessRequest, matchReadinessSchemas, READINESS_PROTOCOL_VERSION } from "./mcp-readiness-schema.js";
 
-const REQUIRED_SCOPES = ["doc:read", "doc:write", "doc.schema:write"] as const;
+const DOCUMENT_DOWNLOAD_ENABLED = process.env.MCP_CAPABILITIES
+  ?.split(",").some(scope => scope.trim() === "doc:download") === true;
+const REQUIRED_SCOPES = DOCUMENT_DOWNLOAD_ENABLED ? GRIST_CAPABILITIES : BASE_GRIST_CAPABILITIES;
 const PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource";
 const CHATGPT_STABLE_CIMD_URL = "https://chatgpt.com/oauth/client.json";
 const PREVIOUS_PROTOCOLS = ["2025-03-26", "2025-06-18", "2025-11-25"];
@@ -131,7 +134,8 @@ function inspectToolSecurity(tools: unknown[]) {
     if (!meta || !expected || !isDeepStrictEqual(meta.securitySchemes, expected)) {
       compatibilityMirrorMatches = false;
     }
-    if (!isDeepStrictEqual(meta?.["gia/actionScopeRequirements"], actionScopeRequirementsForTool(definition.name))) {
+    if (!isDeepStrictEqual(meta?.["gia/actionScopeRequirements"],
+      actionScopeRequirementsForTool(definition.name, DOCUMENT_DOWNLOAD_ENABLED))) {
       actionScopeRequirementsMatch = false;
     }
   }
@@ -218,7 +222,7 @@ async function qualifyAuthenticated(resourceUri: string, bearer: string): Promis
   printPass("Live tools/list is exactly the ten-tool MCP v2 contract", security.exactLeanToolSet);
   printPass("Root OAuth securitySchemes match lean tool capabilities", security.rootSecuritySchemesMatch);
   printPass("Compatibility _meta securitySchemes mirror matches", security.compatibilityMirrorMatches);
-  printPass("Template action declares additional source read scope", security.actionScopeRequirementsMatch);
+  printPass("Document copy actions declare configured source scopes", security.actionScopeRequirementsMatch);
   printPass("Live input schemas match current Gia wire shapes and configured limits", schemaMatches);
   printPass("Selected help exposes the current MCP contract and guides", helpMatches);
   const qualified = schemaMatches && helpMatches && security.rootSecuritySchemesMatch &&
@@ -241,15 +245,12 @@ async function run(): Promise<"PASS" | "FAIL" | "NOT QUALIFIED"> {
 
   const resourceMatches = metadata.resource === resourceUri;
   const authorizationServerPresent = authorizationServers.length === 1 && isHttpsUrl(authorizationServers[0]);
-  const scopesMatch =
-    scopesSupported.length === REQUIRED_SCOPES.length &&
-    REQUIRED_SCOPES.every((scope) => scopesSupported.includes(scope)) &&
-    scopesSupported.every((scope) => REQUIRED_SCOPES.includes(scope as typeof REQUIRED_SCOPES[number]));
+  const scopesMatch = isDeepStrictEqual([...scopesSupported].sort(), [...REQUIRED_SCOPES].sort());
 
   printPass("Protected-resource metadata reachable", true);
   printPass("Protected-resource resource matches canonical MCP URI", resourceMatches);
   printPass("Authorization server advertised", authorizationServerPresent);
-  printPass("Protected-resource metadata exposes exactly the fixed bridge scopes", scopesMatch);
+  printPass("Protected-resource metadata exposes exactly the configured bridge scopes", scopesMatch);
 
   if (!authorizationServerPresent) {
     printPass("Public OAuth metadata and challenge", false);

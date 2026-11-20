@@ -28,6 +28,9 @@ function grantMatchesDocument(
   capability: GristCapability
 ): boolean {
   if (!grant.capabilities.includes(capability)) return false;
+  if (capability === "doc:download") {
+    return grant.documentIds.some((id) => String(id) === String(allowed.document.id));
+  }
   if (grant.workspaceIds.map(String).includes(String(allowed.workspace.id))) return true;
   const candidates = documentCandidates(allowed.document);
   return grant.documentIds.some((id) => candidates.includes(String(id)));
@@ -134,9 +137,9 @@ export class AuthorizationService {
   ): Promise<string> {
     const documentId = await this.deploymentPolicy.assertDocumentAllowed(documentIdOrUrl);
     const allowed = await this.listDocuments(principal, capability);
-    const match = allowed.some(({ document }) =>
-      documentCandidates(document).includes(documentId)
-    );
+    const match = allowed.some(({ document }) => capability === "doc:download"
+      ? String(document.id) === documentId
+      : documentCandidates(document).includes(documentId));
 
     if (!match) {
       throw new AuthorizationError(

@@ -319,10 +319,27 @@ export class GristService {
     }
   }
 
+  async copyDocument(
+    sourceDocumentIdOrUrl: string,
+    workspaceId: number,
+    name: string
+  ): Promise<string> {
+    return this.copyDocumentToWorkspace(sourceDocumentIdOrUrl, workspaceId, name, false);
+  }
+
   async copyDocumentAsTemplate(
     sourceDocumentIdOrUrl: string,
     workspaceId: number,
     name: string
+  ): Promise<string> {
+    return this.copyDocumentToWorkspace(sourceDocumentIdOrUrl, workspaceId, name, true);
+  }
+
+  private async copyDocumentToWorkspace(
+    sourceDocumentIdOrUrl: string,
+    workspaceId: number,
+    name: string,
+    asTemplate: boolean
   ): Promise<string> {
     this.assertWorkspaceId(workspaceId);
     const sourceDocumentId = await this.accessPolicy.assertDocumentAllowed(
@@ -331,11 +348,9 @@ export class GristService {
     await this.accessPolicy.assertWorkspaceAllowed(workspaceId);
     const documentName = this.normalizeDocumentName(name);
     try {
-      return await this.client.copyDocumentAsTemplate(
-        sourceDocumentId,
-        workspaceId,
-        documentName
-      );
+      return await (asTemplate
+        ? this.client.copyDocumentAsTemplate(sourceDocumentId, workspaceId, documentName)
+        : this.client.copyDocument(sourceDocumentId, workspaceId, documentName));
     } finally {
       this.accessPolicy.invalidate();
     }
@@ -346,7 +361,7 @@ export class GristService {
     const document = await this.client.getDocument(documentId);
     if (document.access !== "owners") {
       throw new Error(
-        "Grist document owner access is required for application-level access-rule inspection and mutation."
+        "Grist document owner access is required for this operation."
       );
     }
   }

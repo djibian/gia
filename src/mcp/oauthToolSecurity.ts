@@ -1,5 +1,6 @@
 import type { McpHttpHandler } from "@modelcontextprotocol/server";
 
+import type { GristCapability } from "../auth/principal.js";
 import { getLeanTool } from "./leanRegistry.js";
 
 export interface OAuth2ToolSecurityScheme {
@@ -30,16 +31,19 @@ export function oauthSecuritySchemesForTool(
 }
 
 export function actionScopeRequirementsForTool(
-  name: string
-): Record<string, string[]> | undefined {
+  name: string,
+  documentDownloadEnabled = false
+): Record<string, GristCapability[]> | undefined {
   if (name !== "grist_add_structure") return undefined;
   return {
-    copy_document_as_template: ["doc.schema:write", "doc:read"]
+    copy_document_as_template: ["doc.schema:write", "doc:read"],
+    ...(documentDownloadEnabled ? { copy_document: ["doc.schema:write", "doc:download"] } : {})
   };
 }
 
 export function addRootOAuthSecuritySchemesToToolList(
-  value: unknown
+  value: unknown,
+  documentDownloadEnabled = false
 ): { value: unknown; changed: boolean } {
   if (!isRecord(value) || !isRecord(value.result) || !Array.isArray(value.result.tools)) {
     return { value, changed: false };
@@ -54,7 +58,7 @@ export function addRootOAuthSecuritySchemesToToolList(
 
     changed = true;
     const meta = isRecord(tool._meta) ? tool._meta : {};
-    const actionScopeRequirements = actionScopeRequirementsForTool(tool.name);
+    const actionScopeRequirements = actionScopeRequirementsForTool(tool.name, documentDownloadEnabled);
     return {
       ...tool,
       securitySchemes,
@@ -83,7 +87,8 @@ export function addRootOAuthSecuritySchemesToToolList(
 }
 
 export function installOAuthToolSecuritySchemes(
-  handler: McpHttpHandler
+  handler: McpHttpHandler,
+  documentDownloadEnabled = false
 ): McpHttpHandler {
   const originalFetch = handler.fetch;
 
@@ -99,7 +104,7 @@ export function installOAuthToolSecuritySchemes(
       return response;
     }
 
-    const transformed = addRootOAuthSecuritySchemesToToolList(body);
+    const transformed = addRootOAuthSecuritySchemesToToolList(body, documentDownloadEnabled);
     if (!transformed.changed) return response;
 
     const headers = new Headers(response.headers);
