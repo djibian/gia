@@ -31,7 +31,65 @@ Unselected `grist_help({})` remains a compact ten-tool index. Selecting named to
 
 Both `grist_add_structure(create_tables)` and `grist_add_structure(create_columns)` accept only creation metadata actually persisted by the supported native Grist operations: optional `label`, `type`, `isFormula`, `formula` and `widgetOptions`. Native `AddTable` and `AddVisibleColumn` do not persist `description` and do not resolve the public stable-ID alias `visibleColumnId` at creation time. These two update-only fields therefore fail validation **before any create write**, including mixed batches, rather than producing a misleading success. To set them, first create the column with supported fields, then call `grist_change_structure(action="update_columns")` on the resulting stable IDs; update verification and uncertain-write handling remain authoritative. This narrows previously advertised but ineffective create inputs, not a functioning native creation workflow.
 
+`grist_add_structure(action="create_columns")` also accepts a homogeneous
+batch of configured data columns. Each item has `id`, `fields:{type,label?}`
+and `configuration:{form?,dropdownCondition?}`. The `form` object accepts
+`question`, `required` and `acceptFromUrl` as native Form column defaults.
+The `dropdownCondition` object accepts a single typed predicate:
+
+| `kind` | Operand fields |
+| --- | --- |
+| `choice_field_equals_literal` | `choiceColumnId`, `value` (bounded plain text for a Text or Choice column) |
+| `choice_field_equals_record_ref` | `choiceColumnId`, `recordColumnId` (both Ref to the same table) |
+| `choice_id_in_record_reflist` | `recordColumnId` (RefList to the dropdown table) |
+
+Conditions require a new `Ref` or `RefList` column and existing operand columns.
+Gia builds the native definition in the creation action and verifies the stable
+ID and persisted configuration. An exact existing definition is reconciled
+without another create. A conflicting existing column fails preflight. If Grist
+assigns a different ID or persisted state cannot be confirmed, reconcile the
+issued IDs before retrying. Native Form settings and dropdown conditions are
+stored separately from ACL enforcement. A stored dropdown predicate does not
+establish filtering behavior in a native Form or authorization of submissions.
+
 The bounded ACL condition input language is advertised using local JSON Schema `$defs`/`$ref` references for its finite depth levels. Clients must resolve these local references to discover the complete closed predicate variants; a client's flattened or `unknown` display is not evidence that Gia accepts arbitrary predicates. Server-side validation, depth/width/node bounds and closed actions remain unchanged. This is not a promise of support for every client's JSON Schema dialect.
+
+`grist_change_structure(action="update_form_column_options")` writes one
+existing stable column's Form question, required flag or URL-prefill flag, keeping
+all other native `widgetOptions` untouched, including protected dropdown/style
+configuration. It refuses malformed or truncated native state, verifies the
+complete persisted options, and returns an idempotent no-op on re-execution.
+`question:null` clears the question. This does **not** create, render, submit or
+publish forms, accept link-bearing question text, or change native sharing.
+
+`grist_change_structure(action="update_dropdown_condition")` applies or clears
+a typed native reference-dropdown predicate on one existing stable Ref/RefList
+column, reusing the same three closed forms supported by configured-column
+creation. `condition:null` clears the predicate. The operation validates the
+reference operands against fresh expanded schema, preserves all other native
+`widgetOptions`, refuses malformed existing native predicates, verifies the
+complete persisted options, and returns a no-op for identical requested state.
+It does not accept arbitrary expressions or establish Form visibility/ACL rights.
+
+`grist_change_ui(action="update_form_layout")` configures one existing
+native Form section with a bounded tree of typed paragraphs, field groups and a
+final submit element. All field references are supplied as stable column IDs and
+resolved to existing native section-field IDs server-side. The action is
+idempotent for an identical native layout. Omitted submission settings are
+retained. The action refuses opaque/malformed existing layout properties
+(including redirect URLs) and re-reads the persisted layout and stable field
+bindings. It does not add fields to native sections, create share links, publish,
+execute submissions or assert rendered behavior. To place a column not already
+present as a native section field, configure the widget fields separately first.
+
+`grist_change_ui(action="update_form_field_options")` targets one
+existing native Form section field by page/widget and stable column ID. It
+updates a nonempty subset of `question` (string or null to clear),
+`required`, and `acceptFromUrl`, preserving all unrelated native field
+widget options and column defaults. It requires a complete UI/field snapshot,
+validates the exact section-field reference and verifies all persisted
+field options after the write. An identical request returns no change. This
+does not create fields, render/publish forms or grant access.
 
 ### Individual document sharing (Owner-only)
 
@@ -47,6 +105,7 @@ confirms only the target role and native persistence. Native API grant
 verification is not evidence that all document ACLs were enforced or that
 an invitation email was delivered. An uncertain or unverified mutation must
 not be blindly retried. Publication is explicitly outside this operation.
+
 
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 

@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type { AuditLogger } from "../audit/auditLogger.js";
 import type { AuthorizationService } from "../auth/authorizationService.js";
 import type { GristCapability, Principal } from "../auth/principal.js";
@@ -71,6 +72,11 @@ import {
   resolveColumnSelectByAllowed,
   type ColumnSelectByInput
 } from "./selectBy.js";
+import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUpdateInput } from "./formColumnOptions.js";
+import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
+import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
+import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
+import { readFormFieldOptions, resolveFormFieldOptions, type FormFieldOptionsInput } from "./formFieldOptions.js";
 import { DocumentContextService } from "./documentContext.js";
 import { DocumentUiService, type DocumentUiContext } from "./documentUi.js";
 import {
@@ -79,10 +85,11 @@ import {
   projectPublicWidget,
   projectPublicTables
 } from "./publicMetadata.js";
-import type {
-  DocumentMetadataUpdateInput,
-  GristService,
-  QueryRecordsOptions
+import {
+  SchemaWriteVerificationError,
+  type DocumentMetadataUpdateInput,
+  type GristService,
+  type QueryRecordsOptions
 } from "./service.js";
 import {
   GristUiActionsAdapter,
@@ -94,6 +101,7 @@ import {
   type ResolvedWidgetSortSpec,
   type WidgetSortInput
 } from "./widgetSort.js";
+import { existingWidgetFields } from "./widgetFields.js";
 import {
   resolveWidgetFieldsUpdate,
   type WidgetFieldUpdateInput
@@ -750,6 +758,100 @@ export class AuthorizedGristService {
           "update_page_layout",
           error instanceof Error ? error.message : "Updated page layout could not be verified."
         );
+      }
+    });
+  }
+
+  async updateFormLayout(
+    documentIdOrUrl: string, pageId: number, widgetId: number,
+    layout: FormLayoutInput
+  ): Promise<unknown> {
+    if (!Number.isInteger(pageId) || pageId < 1 ||
+        !Number.isInteger(widgetId) || widgetId < 1) {
+      throw new Error("Form page and widget IDs must be positive integers.");
+    }
+    return this.execute("update_form_layout", documentIdOrUrl, 1, async (id) => {
+      const tables = await this.inner.listTables(id, { expandColumns: true });
+      const before = await this.loadDocumentUi(id, tables, true);
+      assertCompleteUiSnapshot(before);
+      const widget = before.pages.find(page => page.id === pageId)?.widgets
+        .find(item => item.id === widgetId);
+      if (!widget || widget.type !== "form") {
+        throw new Error("Target widget is not a verified native Form on the requested page.");
+      }
+      const fields = before[SECTION_FIELDS_METADATA];
+      const resolved = resolveFormLayoutUpdate(widget, tables, fields, layout);
+      const base = { documentId: id, pageId, widgetId };
+      if (sameJsonValue(widget.layoutSpec, resolved.layoutSpec)) {
+        return { ...base, changed: false, persistedLayoutVerified: true,
+          nativeFormSubmissionQualified: false };
+      }
+      await this.uiActions.updateFormLayout(id, widgetId, resolved.layoutSpecJson);
+      try {
+        const currentTables = await this.inner.listTables(id, { expandColumns: true });
+        const after = await this.loadDocumentUi(id, currentTables, true);
+        assertCompleteUiSnapshot(after);
+        const current = after.pages.find(page => page.id === pageId)?.widgets
+          .find(item => item.id === widgetId);
+        if (!current || current.type !== "form" ||
+            current.tableRef !== widget.tableRef || current.tableId !== widget.tableId ||
+            !sameJsonValue(current.layoutSpec, resolved.layoutSpec) ||
+            !sameJsonValue(resolveFormLayoutUpdate(current, currentTables,
+              after[SECTION_FIELDS_METADATA], layout).layoutSpec, resolved.layoutSpec)) {
+          throw new Error("Native Form layout differs from the requested persisted state.");
+        }
+        return { ...base, changed: true, persistedLayoutVerified: true,
+          nativeFormSubmissionQualified: false };
+      } catch (error) {
+        throw new UiWriteVerificationError("update_form_layout",
+          error instanceof Error ? error.message : "Native Form layout post-read failed.");
+      }
+    });
+  }
+
+  async updateFormFieldOptions(
+    documentIdOrUrl: string, pageId: number, widgetId: number,
+    columnId: string, update: FormFieldOptionsInput
+  ): Promise<unknown> {
+    if (!Number.isInteger(pageId) || pageId < 1 ||
+        !Number.isInteger(widgetId) || widgetId < 1 || !columnId.trim()) {
+      throw new Error("Form field update needs positive page/widget IDs and a stable column ID.");
+    }
+    return this.execute("update_form_field_options", documentIdOrUrl, 1, async (id) => {
+      const tables = await this.inner.listTables(id, { expandColumns: true });
+      const before = await this.loadDocumentUi(id, tables, true);
+      assertCompleteUiSnapshot(before);
+      const form = before.pages.find(page => page.id === pageId)?.widgets
+        .find(widget => widget.id === widgetId);
+      if (!form || form.type !== "form") {
+        throw new Error("Target is not a verified native Form on the requested page.");
+      }
+      const sectionFields = before[SECTION_FIELDS_METADATA];
+      const currentFields = existingWidgetFields(form, tables, sectionFields);
+      const target = currentFields?.find(field => field.columnId === columnId);
+      if (!target) {
+        throw new Error("Form column is not an existing uniquely resolved native section field.");
+      }
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = (response: unknown) => readFormFieldOptions(
+        response, widgetId, target.fieldId, target.columnRef, limit
+      );
+      const plan = resolveFormFieldOptions(read(sectionFields), update);
+      const base = { documentId: id, pageId, widgetId, columnId };
+      if (!plan.changed) return { ...base, changed: false,
+        persistedOptionsVerified: true, nativeFormRenderingQualified: false };
+      await this.uiActions.updateFormFieldOptions(id, target.fieldId, plan.widgetOptions);
+      try {
+        const after = await this.inner.queryRecords(id, "_grist_Views_section_field",
+          { limit, hidden: true });
+        if (!sameJsonValue(read(after), plan.options)) {
+          throw new Error("Native Form field options did not match the requested preserved state.");
+        }
+        return { ...base, changed: true, persistedOptionsVerified: true,
+          nativeFormRenderingQualified: false };
+      } catch (error) {
+        throw new UiWriteVerificationError("update_form_field_options",
+          error instanceof Error ? error.message : "Native Form field option post-read failed.");
       }
     });
   }
@@ -1464,6 +1566,80 @@ export class AuthorizedGristService {
     return this.execute("update_columns", documentIdOrUrl, columns.length, (id) => {
       assertPublicTableId(tableId);
       return this.inner.updateColumns(id, tableId, columns);
+    });
+  }
+
+  async updateFormColumnOptions(
+    documentIdOrUrl: string, tableId: string, columnId: string,
+    update: FormColumnOptionsUpdateInput
+  ): Promise<unknown> {
+    return this.execute("update_form_column_options", documentIdOrUrl, 1, async (id) => {
+      assertPublicTableId(tableId);
+      if (!columnId.trim()) throw new Error("Form option update requires a stable column ID.");
+      const read = async () => readFormColumnOptions(
+        await this.inner.listColumns(id, tableId, { hidden: true }), columnId,
+        this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000
+      );
+      const before = await read();
+      const plan = applyFormColumnOptions(before, update);
+      const base = { documentId: id, tableId, columnId };
+      if (!plan.changed) return { ...base, changed: false,
+        persistedOptionsVerified: true, nativeFormRenderingQualified: false };
+      await this.inner.updateColumns(id, tableId, [{
+        id: columnId, fields: { widgetOptions: plan.widgetOptions }
+      }]);
+      try {
+        if (!isDeepStrictEqual(await read(), plan.options)) {
+          throw new Error("Native Form options differ from requested preserved state.");
+        }
+      } catch (error) {
+        throw new SchemaWriteVerificationError("update_form_column_options",
+          error instanceof Error ? error.message : "Form option post-read failed.");
+      }
+      return { ...base, changed: true,
+        persistedOptionsVerified: true, nativeFormRenderingQualified: false };
+    });
+  }
+
+
+  async updateDropdownCondition(
+    documentIdOrUrl: string, tableId: string, columnId: string,
+    condition: DropdownConditionInput | null
+  ): Promise<unknown> {
+    return this.execute("update_dropdown_condition", documentIdOrUrl, 1, async (id) => {
+      assertPublicTableId(tableId);
+      if (!columnId.trim()) throw new Error("Dropdown update requires a stable column ID.");
+      const read = async () => {
+        const [tables, columns] = await Promise.all([
+          this.inner.listTables(id, { expandColumns: true }),
+          this.inner.listColumns(id, tableId, { hidden: true })
+        ]);
+        return {
+          options: readFormColumnOptions(columns, columnId,
+            this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000),
+          condition: resolveExistingDropdownCondition(tables, tableId, columnId, condition)
+        };
+      };
+      const before = await read();
+      const plan = planDropdownConditionUpdate(before.options, before.condition);
+      const base = { documentId: id, tableId, columnId };
+      if (!plan.changed) return { ...base, changed: false,
+        persistedOptionsVerified: true, nativeDropdownRenderingQualified: false };
+      await this.inner.updateColumns(id, tableId, [{
+        id: columnId, fields: { widgetOptions: plan.widgetOptions }
+      }]);
+      try {
+        const after = await read();
+        if (!isDeepStrictEqual(after.options, plan.options) ||
+            !isDeepStrictEqual(after.condition, before.condition)) {
+          throw new Error("Native dropdown options or reference schema differ from requested state.");
+        }
+      } catch (error) {
+        throw new SchemaWriteVerificationError("update_dropdown_condition",
+          error instanceof Error ? error.message : "Dropdown post-read failed.");
+      }
+      return { ...base, changed: true,
+        persistedOptionsVerified: true, nativeDropdownRenderingQualified: false };
     });
   }
 

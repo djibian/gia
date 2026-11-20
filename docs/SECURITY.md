@@ -162,6 +162,33 @@ actually exercised. A native API result applies to that API case. A LinkKey
 browser result applies to the tested web-client context. Native production
 qualification is read-only, and any unexercised case remains unqualified.
 
+Form-column writes are one-column, schema-gated, complete-snapshot
+read-modify-write operations, refusing ambiguous/truncated native metadata,
+preserving unrelated option keys and verifying exact persisted post-state.
+An uncertain post-state must not be blindly retried. Questions exclude
+link-bearing text, and Form publication/ACL behavior is not implied.
+
+Reference-dropdown condition updates accept only three validated typed predicates
+or explicit removal on an existing Ref/RefList column. The compiler is shared
+with column creation. The mutation refuses malformed native state, preserves
+untargeted options, verifies the complete post-read state, and does not claim
+that dropdown filtering is an authorization boundary.
+
+Form layout mutation accepts a finite, typed tree and server-side resolution of
+stable column identifiers to existing native section fields. A protected,
+unrecognized or partially readable existing layout refuses replacement rather
+than discarding unknown attributes; destination layout has no URL-bearing or
+arbitrary HTML elements. After write, the native persisted layout and stable
+field bindings must match or the outcome remains uncertain. Layout changes do
+not confer Form publication rights.
+
+Native Form field-override edits are scoped to an existing verified Form widget,
+column ID and unique native section field. A bounded complete metadata snapshot
+is required before mutation, and the native post-state must preserve all
+untargeted widget options. Input questions exclude URLs and link-like text.
+An uncertain post-state is not a no-effect guarantee; native publication and
+access privileges remain unchanged.
+
 Hidden fields and saved filters are presentation state. A generated summary
 table has its own native policy. Native roles, sharing and credential
 administration remain in Grist and its deployment.
