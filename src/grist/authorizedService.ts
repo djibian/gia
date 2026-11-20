@@ -1165,7 +1165,7 @@ export class AuthorizedGristService {
       sourceDocumentId = await this.authorization.assertDocumentAllowed(
         this.principal,
         sourceDocumentIdOrUrl,
-        "doc:read"
+        "doc:download"
       );
       // A full copy can include rows hidden by document ACLs. Require a fresh
       // native source Owner proof in addition to the bounded bridge grants.
