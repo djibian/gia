@@ -1241,6 +1241,21 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("update_form_field_options"),
+            documentId: documentIdSchema,
+            pageId: positiveIdSchema,
+            widgetId: positiveIdSchema,
+            columnId: columnIdSchema,
+            update: z.object({
+              question: z.string().trim().min(1).max(300).nullable().optional(),
+              required: z.boolean().optional(),
+              acceptFromUrl: z.boolean().optional()
+            }).strict().refine(value => Object.values(value).some(item => item !== undefined),
+              "At least one Form field option is required.")
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_widget"),
             documentId: documentIdSchema,
             pageId: positiveIdSchema,
@@ -1285,6 +1300,11 @@ export function registerLeanTools(
                 input.layout
               )
             );
+          case "update_form_field_options":
+            return textResult(await grist.updateFormFieldOptions(
+              input.documentId, input.pageId, input.widgetId,
+              input.columnId, input.update
+            ));
           case "update_widget":
             return textResult(
               await grist.updatePageWidget(
