@@ -140,6 +140,34 @@ test("malformed native dropdown predicates cannot be mistaken for an absent cond
   }
 });
 
+test("unknown native form field options are protected at both column and field origin", () => {
+  const secret = "synthetic-private-unprojected-form-option";
+  for (const origin of ["column", "field"] as const) {
+    const { tables, fields, inspect } = fixture();
+    tables.tables[0]!.columns[1]!.fields.widgetOptions = '{"formAcceptFromUrl":true}';
+    const baseline = inspect().widgets[0]?.form;
+    assert.equal(baseline?.status, "supported");
+
+    if (origin === "column") {
+      const native = tables.tables[0]!.columns[1]!.fields;
+      native.widgetOptions = JSON.stringify({
+        ...JSON.parse(native.widgetOptions), futureNativeFormOption: secret
+      });
+    } else {
+      const native = fields.records[0]!.fields;
+      native.widgetOptions = JSON.stringify({
+        ...JSON.parse(native.widgetOptions), futureNativeFormOption: secret
+      });
+    }
+
+    const form = inspect().widgets[0]?.form;
+    assert.equal(form?.status, "protected");
+    assert.deepEqual(form?.layout, baseline?.layout);
+    assert.deepEqual(form?.submission, baseline?.submission);
+    assert.doesNotMatch(JSON.stringify(form), /synthetic-private-unprojected-form-option/);
+  }
+});
+
 test("unknown native form layout properties are protected and never returned as reconstructible", () => {
   const secret = "synthetic-private-opaque-form-property";
   const inject = [
