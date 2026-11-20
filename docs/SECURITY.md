@@ -149,6 +149,12 @@ actually exercised. A native API result applies to that API case. A LinkKey
 browser result applies to the tested web-client context. Native production
 qualification is read-only, and any unexercised case remains unqualified.
 
+Form-column writes are one-column, schema-gated, complete-snapshot
+read-modify-write operations, refusing ambiguous/truncated native metadata,
+preserving unrelated option keys and verifying exact persisted post-state.
+An uncertain post-state must not be blindly retried. Questions exclude
+link-bearing text, and Form publication/ACL behavior is not implied.
+
 Native Form field-override edits are scoped to an existing verified Form widget,
 column ID and unique native section field. A bounded complete metadata snapshot
 is required before mutation, and the native post-state must preserve all

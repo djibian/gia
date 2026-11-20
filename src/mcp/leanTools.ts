@@ -1029,6 +1029,20 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("update_form_column_options"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            update: z.object({
+              question: z.string().trim().min(1).max(300).nullable().optional(),
+              required: z.boolean().optional(),
+              acceptFromUrl: z.boolean().optional()
+            }).strict().refine(value => Object.values(value).some(item => item !== undefined),
+              "At least one Form option is required.")
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("rename_column"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1095,6 +1109,10 @@ export function registerLeanTools(
                 input.columns
               )
             );
+          case "update_form_column_options":
+            return textResult(await grist.updateFormColumnOptions(
+              input.documentId, input.tableId, input.columnId, input.update
+            ));
           case "rename_column":
             return textResult(
               await grist.renameColumn(
