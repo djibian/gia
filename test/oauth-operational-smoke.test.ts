@@ -37,7 +37,7 @@ test("operational smoke validates only non-secret public OAuth surfaces", async 
       return response({
         resource: resourceUri,
         authorization_servers: ["https://auth.example.org/oidc"],
-        scopes_supported: ["doc:read", "doc:write", "doc.schema:write"]
+        scopes_supported: ["doc:read", "doc:write", "doc.schema:write", "doc:download"]
       });
     }
     if (url === resourceUri) {
