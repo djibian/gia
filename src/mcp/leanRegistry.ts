@@ -246,7 +246,8 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     request: [
       "create_document: {action,workspaceId:positiveInteger,name}; copy_document_as_template: {action,sourceDocumentId,workspaceId,name}; copy_document (native full data): {action,sourceDocumentId,workspaceId,name}",
       "create_tables: {action,documentId,tables:[{id,columns:[{id,fields?:{label?,type?,isFormula?,formula?,widgetOptions?}}]}]}; create_columns: {action,documentId,tableId,columns:[{id,fields?}]}",
-      "Each new table requires at least one column; creation does not accept update-only description or visibleColumnId."
+      "Each new table requires at least one column; creation does not accept update-only description or visibleColumnId.",
+      "For new configured columns, supply a homogeneous create_columns batch with {id,fields:{type,label?},configuration:{form?:{question?,required?,acceptFromUrl?},dropdownCondition?}}. Reference dropdown conditions use a typed choice/record predicate and existing operand column IDs."
     ],
     constraints: [
       "Destination workspace needs doc.schema:write; template source additionally needs doc:read.",
@@ -264,6 +265,11 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       { purpose: "Create a table with a real native initial column", arguments: {
         action: "create_tables", documentId: "synthetic-doc",
         tables: [{ id: "Items", columns: [{ id: "Name", fields: { type: "Text" } }] }]
+      } },
+      { purpose: "Create a required field with a native Form question", arguments: {
+        action: "create_columns", documentId: "synthetic-doc", tableId: "Items", columns: [
+          { id: "Contact", fields: { type: "Text" }, configuration: { form: { question: "Contact name", required: true } } }
+        ]
       } },
       { purpose: "Copy a separately authorized source as a template", arguments: {
         action: "copy_document_as_template", sourceDocumentId: "synthetic-source", workspaceId: 1,
@@ -327,9 +333,10 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     } }]
   },
   grist_change_ui: {
-    actions: ["rename_page", "delete_page", "reorder_pages", "delete_widget", "update_layout", "update_form_field_options", "update_widget"],
+    actions: ["rename_page", "delete_page", "reorder_pages", "delete_widget", "update_layout", "update_form_layout", "update_form_field_options", "update_widget"],
     request: [
       "rename_page: {action,documentId,pageId,name}; delete_page: {action,documentId,pageId}; delete_widget: {action,documentId,pageId,widgetId}.",
+      "update_form_layout: {action,documentId,pageId,widgetId,layout:{children:[paragraph|section(fields/paragraphs)|submit],submitText?,successText?,anotherResponse?}}; stable column IDs resolved server-side; no publish.",
       "update_form_field_options: {action,documentId,pageId,widgetId,columnId,update:{question?:string|null,required?:boolean,acceptFromUrl?:boolean}}; one existing native Form field, preserving unrelated options.",
       "reorder_pages: {action,documentId,pageIds:completeNavigationPageIds[]}; update_layout: {action,documentId,pageId,layout:{root:{kind:'widget',widgetId}|{kind:'group',children:[...]},collapsedWidgetIds?:positiveInteger[]}}",
       "update_widget: {action,documentId,pageId,widgetId,update:{calendarConfig?:{titleColumnId,startDateColumnId,endDateColumnId?,allDayColumnId?,typeColumnId?},visibleFields?,cardLayout?:{root:{kind:'field',columnId}|{kind:'group',children:[...]}},gridOptions?,filters?,sort?,...}}"

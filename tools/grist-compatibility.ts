@@ -256,6 +256,9 @@ function bridgeEnvironment(options: {
     GRIST_MAX_WRITE_RECORDS: String(COMPAT_TOOL_LIMITS.maxWriteRecords),
     GRIST_WRITE_BATCH_RECORDS: "25",
     GRIST_MAX_SCHEMA_ITEMS: String(COMPAT_TOOL_LIMITS.maxSchemaItems),
+    // Disposable comprehensive native matrix exceeds the default production
+    // request/minute ceiling. Dedicated rate limiter tests verify enforcement.
+    MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE: "1000",
     MCP_AUTH_MODE: "static",
     // Synthetic compatibility fixture explicitly opts into the sensitive source scope.
     MCP_CAPABILITIES: "doc:read,doc:write,doc.schema:write,doc:download",
@@ -2068,6 +2071,85 @@ async function run(): Promise<void> {
     const emptyDocumentId = createdDocumentId(emptyCreated, "create_document");
     assert(emptyDocumentId !== documentId, "empty_document_id_reused");
 
+    // Build the configuration fixture through Gia from the new empty document.
+    const createFixtureTable = (id: string, columns: Array<{ id: string; fields: { type: string } }>) =>
+      callTool(bridgeBaseUrl, "grist_add_structure", {
+        action: "create_tables", documentId: emptyDocumentId, tables: [{ id, columns }]
+      });
+    const columnOf = (id: string, type: string) => ({ id, fields: { type } });
+    await createFixtureTable("Classes", [columnOf("Name", "Text")]);
+    await createFixtureTable("Mentors", [columnOf("Status", "Text"), columnOf("Class", "Ref:Classes")]);
+    await createFixtureTable("Placements", [columnOf("Class", "Ref:Classes"),
+      columnOf("Eligible", "RefList:Mentors"), columnOf("Oracle", "Ref:Mentors")]);
+    const configuredRequest = {
+      action: "create_columns", documentId: emptyDocumentId, tableId: "Placements", columns: [
+        { ...columnOf("ActiveMentor", "Ref:Mentors"), configuration: {
+          form: { question: "Preferred mentor", required: true, acceptFromUrl: true },
+          dropdownCondition: { kind: "choice_field_equals_literal", choiceColumnId: "Status", value: "validé" }
+        } },
+        { ...columnOf("ClassMentor", "Ref:Mentors"), configuration: {
+          dropdownCondition: { kind: "choice_field_equals_record_ref", choiceColumnId: "Class", recordColumnId: "Class" }
+        } },
+        { ...columnOf("EligibleMentors", "RefList:Mentors"), configuration: {
+          dropdownCondition: { kind: "choice_id_in_record_reflist", recordColumnId: "Eligible" }
+        } }
+      ]
+    };
+    const configured = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", configuredRequest),
+      "configured_columns_create");
+    assert(configured.changed === true && configured.persistedOptionsVerified === true,
+      "configured_columns_writes_not_verified");
+    const replay = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", configuredRequest),
+      "configured_columns_replay");
+    assert(replay.changed === false && isDeepStrictEqual(replay.columns, configured.columns),
+      "configured_columns_replay_duplicated_schema");
+    await callToolExpectError(bridgeBaseUrl, "grist_add_structure", { ...configuredRequest, columns: [
+      { ...configuredRequest.columns[0], configuration: { form: { question: "Different question" } } }
+    ] });
+
+    const configuredDocPath = `/api/docs/${encodeURIComponent(emptyDocumentId)}`;
+    const columnPath = `${configuredDocPath}/tables/Placements/columns`;
+    const nativeColumns = await gristApi(gristBaseUrl, apiKey, columnPath) as {
+      columns: Array<{ id: string; fields: { colRef: number; widgetOptions: string } }>;
+    };
+    assert(nativeColumns.columns.length === 6, "configured_columns_replay_changed_count");
+    const oracle = nativeColumns.columns.find(column => column.id === "Oracle");
+    assert(oracle, "configured_native_parser_oracle_missing");
+    for (const [id, text] of [
+      ["ActiveMentor", 'choice.Status == "validé"'],
+      ["ClassMentor", "choice.Class == $Class"],
+      ["EligibleMentors", "choice.id in $Eligible"]
+    ]) {
+      const created = nativeColumns.columns.find(column => column.id === id);
+      assert(created, "configured_dropdown_column_missing");
+      const actual = JSON.parse(created.fields.widgetOptions).dropdownCondition;
+      assert(actual.text === text, "configured_dropdown_text_mismatch");
+      await gristApi(gristBaseUrl, apiKey, `${configuredDocPath}/apply`, {
+        method: "POST", body: JSON.stringify([["UpdateRecord", "_grist_Tables_column", oracle.fields.colRef,
+          { widgetOptions: JSON.stringify({ dropdownCondition: { text } }) }]])
+      });
+      const roundtrip = await gristApi(gristBaseUrl, apiKey, columnPath) as typeof nativeColumns;
+      const parsed = JSON.parse(roundtrip.columns.find(column => column.id === "Oracle")!.fields.widgetOptions)
+        .dropdownCondition.parsed;
+      assert(isDeepStrictEqual(JSON.parse(parsed), JSON.parse(actual.parsed)),
+        "configured_dropdown_differs_from_native_parser");
+    }
+
+    const configuredPage = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "create_page", documentId: emptyDocumentId, tableId: "Placements", name: "Applications"
+    }), "configured_form_page");
+    const configuredPageId = positiveResultId((configuredPage.page as { id: number }).id, "configured_form_page_id");
+    const newConfiguredForm = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "add_widget", documentId: emptyDocumentId, pageId: configuredPageId, tableId: "Placements", type: "form"
+    }), "configured_form");
+    const configuredFormId = positiveResultId((newConfiguredForm.widget as { id: number }).id, "configured_form_id");
+    const configuredFormPreview = await gristApi(gristBaseUrl, apiKey, `${configuredDocPath}/forms/${configuredFormId}`) as {
+      formFieldsById: Record<number, { colId: string; question: string; options: Record<string, unknown> }>;
+    };
+    const question = Object.values(configuredFormPreview.formFieldsById).find(field => field.colId === "ActiveMentor");
+    assert(question?.question === "Preferred mentor" && question.options.formRequired === true &&
+      question.options.formAcceptFromUrl === true, "configured_form_defaults_not_used_natively");
+
     const copied = resultJson(
       await callTool(bridgeBaseUrl, "grist_add_structure", {
         action: "copy_document_as_template",
@@ -2293,6 +2375,54 @@ async function run(): Promise<void> {
     }), "native_form_column_options_noop") as { changed: boolean };
     assert(repeatedForm.changed === false, "native_form_column_options_repeat_wrote");
 
+    // #295: native form layout creation from stable column IDs, after an
+    // explicit fixture-only removal of the protected legacy redirect URL.
+    const sanitizedFormLayout = JSON.parse(layoutSpec) as Record<string, unknown>;
+    delete sanitizedFormLayout.successURL;
+    sanitizedFormLayout.anotherResponse = false;
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
+      method: "POST",
+      body: JSON.stringify([["UpdateRecord", "_grist_Views_section", formSection.id, {
+        layoutSpec: JSON.stringify(sanitizedFormLayout)
+      }]])
+    });
+    const semanticFormLayout = {
+      children: [
+        { type: "paragraph", text: "Application du stage" },
+        { type: "section", children: [{ type: "field", columnId: "Name" }] },
+        { type: "submit" }
+      ],
+      submitText: "Envoyer"
+    };
+    const createdFormLayout = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_form_layout", documentId, pageId, widgetId: formSection.id,
+      layout: semanticFormLayout
+    }), "native_form_layout_write") as { changed: boolean; persistedLayoutVerified: boolean };
+    assert(createdFormLayout.changed && createdFormLayout.persistedLayoutVerified,
+      "native_form_layout_write_not_verified");
+    const persistedLayoutSections = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    const persistedFormLayout = JSON.parse(String(persistedLayoutSections.records.find(
+      row => row.id === formSection.id)?.fields.layoutSpec)) as {
+      children: Array<{children?: Array<{leaf?: number}>}>;
+      submitText?: string;
+      successText?: string;
+      anotherResponse?: boolean;
+    };
+    assert(persistedFormLayout.children[1]?.children?.[0]?.leaf === formField.id &&
+      persistedFormLayout.submitText === "Envoyer" && persistedFormLayout.successText === "Thank you" &&
+      persistedFormLayout.anotherResponse === false,
+      "native_form_layout_stable_field_reference_mismatch");
+    const repeatedLayout = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_form_layout", documentId, pageId, widgetId: formSection.id,
+      layout: semanticFormLayout
+    }), "native_form_layout_noop") as { changed: boolean };
+    assert(repeatedLayout.changed === false, "native_form_layout_repeat_wrote");
+    const formPreviewAfterWrite = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/forms/${formSection.id}`) as { formFieldsById: Record<number, { colId: string }> };
+    assert(formPreviewAfterWrite.formFieldsById[formField.id]?.colId === "Name",
+      "native_form_layout_broke_form_field");
+    
     // #295: change the Form's own field overrides without changing column defaults.
     const formFieldChange = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_form_field_options", documentId, pageId,

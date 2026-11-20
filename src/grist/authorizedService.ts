@@ -73,6 +73,7 @@ import {
   type ColumnSelectByInput
 } from "./selectBy.js";
 import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUpdateInput } from "./formColumnOptions.js";
+import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
 import { readFormFieldOptions, resolveFormFieldOptions, type FormFieldOptionsInput } from "./formFieldOptions.js";
 import { DocumentContextService } from "./documentContext.js";
 import { DocumentUiService, type DocumentUiContext } from "./documentUi.js";
@@ -706,6 +707,53 @@ export class AuthorizedGristService {
           "update_page_layout",
           error instanceof Error ? error.message : "Updated page layout could not be verified."
         );
+      }
+    });
+  }
+
+  async updateFormLayout(
+    documentIdOrUrl: string, pageId: number, widgetId: number,
+    layout: FormLayoutInput
+  ): Promise<unknown> {
+    if (!Number.isInteger(pageId) || pageId < 1 ||
+        !Number.isInteger(widgetId) || widgetId < 1) {
+      throw new Error("Form page and widget IDs must be positive integers.");
+    }
+    return this.execute("update_form_layout", documentIdOrUrl, 1, async (id) => {
+      const tables = await this.inner.listTables(id, { expandColumns: true });
+      const before = await this.loadDocumentUi(id, tables, true);
+      assertCompleteUiSnapshot(before);
+      const widget = before.pages.find(page => page.id === pageId)?.widgets
+        .find(item => item.id === widgetId);
+      if (!widget || widget.type !== "form") {
+        throw new Error("Target widget is not a verified native Form on the requested page.");
+      }
+      const fields = before[SECTION_FIELDS_METADATA];
+      const resolved = resolveFormLayoutUpdate(widget, tables, fields, layout);
+      const base = { documentId: id, pageId, widgetId };
+      if (sameJsonValue(widget.layoutSpec, resolved.layoutSpec)) {
+        return { ...base, changed: false, persistedLayoutVerified: true,
+          nativeFormSubmissionQualified: false };
+      }
+      await this.uiActions.updateFormLayout(id, widgetId, resolved.layoutSpecJson);
+      try {
+        const currentTables = await this.inner.listTables(id, { expandColumns: true });
+        const after = await this.loadDocumentUi(id, currentTables, true);
+        assertCompleteUiSnapshot(after);
+        const current = after.pages.find(page => page.id === pageId)?.widgets
+          .find(item => item.id === widgetId);
+        if (!current || current.type !== "form" ||
+            current.tableRef !== widget.tableRef || current.tableId !== widget.tableId ||
+            !sameJsonValue(current.layoutSpec, resolved.layoutSpec) ||
+            !sameJsonValue(resolveFormLayoutUpdate(current, currentTables,
+              after[SECTION_FIELDS_METADATA], layout).layoutSpec, resolved.layoutSpec)) {
+          throw new Error("Native Form layout differs from the requested persisted state.");
+        }
+        return { ...base, changed: true, persistedLayoutVerified: true,
+          nativeFormSubmissionQualified: false };
+      } catch (error) {
+        throw new UiWriteVerificationError("update_form_layout",
+          error instanceof Error ? error.message : "Native Form layout post-read failed.");
       }
     });
   }
