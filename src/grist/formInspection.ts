@@ -47,7 +47,7 @@ function publicationIntent(value: unknown): "requested" | "not_requested" | "unk
 
 /** Project the native layout elements qualified for application reconstruction. */
 export function inspectNativeForm(
-  widget: { id: number; tableRef: number; tableId?: string; layoutSpec?: unknown; formShareOptions?: unknown },
+  widget: { id: number; tableRef: number; tableId?: string; layoutSpec?: unknown; options?: unknown; formShareOptions?: unknown },
   tables: unknown,
   sectionFields: unknown,
   budget: { forms: number; nodes: number; text: number }
@@ -64,6 +64,10 @@ export function inspectNativeForm(
     anotherResponse?: boolean;
   };
 } {
+  // Unprojected native section options can affect form semantics. Treat
+  // malformed options as incomplete and unknown keys as protected, not absent.
+  const sectionOptions = widget.options === undefined ? {} : record(widget.options);
+  const hasProtectedSectionOptions = Object.keys(sectionOptions ?? {}).length > 0;
   const sectionPublicationIntent = publicationIntent(widget.formShareOptions);
   // Native share options may alter publication even when form/publish are known.
   // Report unknown keys as protected without returning their names or values.
@@ -71,7 +75,7 @@ export function inspectNativeForm(
     key => key !== "form" && key !== "publish");
   const common = { sectionPublicationIntent, publicationQualification: "not_tested" as const };
   const incomplete = { ...common, status: "incomplete" as const };
-  if (budget.forms <= 0 || budget.nodes <= 0) return incomplete;
+  if (!sectionOptions || budget.forms <= 0 || budget.nodes <= 0) return incomplete;
   budget.forms--;
   const fields = existingWidgetFields(widget, tables, sectionFields);
   const columns = tableColumnMaps(widget, tables);
@@ -227,7 +231,7 @@ export function inspectNativeForm(
     ...common, tableId: widget.tableId, layout, submission,
     status: sectionPublicationIntent === "unknown" ? "incomplete" :
       hasProtectedText || hasProtectedDropdownCondition || hasProtectedLayoutAttributes ||
-      hasProtectedFieldOptions || hasProtectedShareOptions || successURL
+      hasProtectedFieldOptions || hasProtectedShareOptions || hasProtectedSectionOptions || successURL
         ? "protected" : "supported"
   };
 }

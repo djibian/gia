@@ -168,6 +168,27 @@ test("unknown native form field options are protected at both column and field o
   }
 });
 
+test("opaque or malformed native section options cannot masquerade as a complete form", () => {
+  const { tables, section, inspect } = fixture();
+  tables.tables[0]!.columns[1]!.fields.widgetOptions = '{"formAcceptFromUrl":true}';
+  const baseline = inspect().widgets[0]?.form;
+  assert.equal(baseline?.status, "supported");
+
+  section.options = '{"futureNativeFormSetting":"synthetic-private-section-option"}';
+  const form = inspect().widgets[0]?.form;
+  assert.equal(form?.status, "protected");
+  assert.equal(form?.sectionPublicationIntent, "requested");
+  assert.deepEqual(form?.layout, baseline?.layout);
+  assert.deepEqual(form?.submission, baseline?.submission);
+  assert.doesNotMatch(JSON.stringify(form), /synthetic-private-section-option|futureNativeFormSetting/);
+
+  section.options = "{invalid-native-json";
+  const malformed = inspect().widgets[0]?.form;
+  assert.equal(malformed?.status, "incomplete");
+  assert.equal(malformed?.layout, undefined);
+  assert.doesNotMatch(JSON.stringify(malformed), /invalid-native-json/);
+});
+
 test("unprojected native form share attributes cannot masquerade as complete publication state", () => {
   const { tables, section, inspect } = fixture();
   tables.tables[0]!.columns[1]!.fields.widgetOptions = '{"formAcceptFromUrl":true}';
