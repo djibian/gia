@@ -164,6 +164,24 @@ export class GristClient {
     return createdDocumentId(response);
   }
 
+  async copyDocument(
+    sourceDocumentId: string,
+    workspaceId: number,
+    documentName: string
+  ): Promise<string> {
+    const response = await this.request("/api/docs", {
+      method: "POST",
+      body: JSON.stringify({
+        sourceDocumentId,
+        workspaceId,
+        documentName,
+        asTemplate: false
+      })
+    });
+    return createdDocumentId(response);
+  }
+
+
   async copyDocumentAsTemplate(
     sourceDocumentId: string,
     workspaceId: number,
