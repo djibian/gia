@@ -63,6 +63,21 @@ Form, and it is never an authorization boundary. The supported-version native
 Form behavioral limitation is recorded in #295; this read-only diagnostic
 does not qualify Form display or submission.
 
+Column discovery also projects `formColumnOptions` when a native column stores
+at least one of `question`, `formRequired` or `formAcceptFromUrl` in its
+persisted `widgetOptions`. It reports the normalized `question`, `required`
+and `acceptFromUrl` fields independently of Form widget existence.
+A link-bearing or oversized question is replaced with `{protected:true}`.
+`status:"supported"` means these present option values have supported types
+and no other option keys were found; `protected` indicates omitted question
+text or additional native options, and `incomplete` means malformed or
+oversized native options or invalid Form option values. Other section/field
+options may still override column values. Absence of this projection is not a
+complete Form-state guarantee. This additive preview does not change the
+existing MCP v2 raw `widgetOptions` compatibility output, whose removal or
+redaction requires a separate compatibility decision. It does not qualify
+native Form publication, filtering, submission or access control.
+
 ## Widget detail
 
 For native form widgets, read-only `grist_inspect(action="page_widgets")` adds
