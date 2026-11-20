@@ -99,3 +99,9 @@ test("rejects empty validated issuer or subject", () => {
       error instanceof OAuthPrincipalError && error.code === "invalid_subject"
   );
 });
+
+
+test("full-document download requires a literal verified OAuth doc:download scope", () => {
+  assert.equal(capabilitiesFromOAuthScope("doc:read doc.schema:write").includes("doc:download"), false);
+  assert.equal(capabilitiesFromOAuthScope("doc:read doc.schema:write doc:download").includes("doc:download"), true);
+});
