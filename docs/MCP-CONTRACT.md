@@ -325,6 +325,21 @@ and `not` over supported leaves, with at most 4 nesting levels, 20 total nodes
 and a serialized native formula of at most 2,048 characters. Nested `everyone`
 is invalid. Opaque or unsupported composite formulas remain protected.
 
+The `user_attribute_flag` leaf references an existing normalized user
+attribute and a native Bool field using `attributeName` and
+`attributeColumnId`. Grist evaluates the native `user.<attribute>.<field>`
+predicate. Use `not` to negate the flag. Gia verifies native parsed metadata
+and tracks the attribute field as a schema dependency. In a synthetic context,
+an absent or non-Bool value leaves the decision unknown.
+
+`record_in_user_attribute_ref_list` checks `in` or `not_in` against a verified
+user attribute's native RefList. The row operand is `id` of the target table
+or a stable Ref column targeting the same table as the RefList. Its optional
+`newRec` operand is limited to create/update permissions. Both stable field
+dependencies are tracked. The current synthetic input cannot represent lists,
+so symbolic evaluation leaves this predicate unknown and native testing
+supplies any access evidence.
+
 Success-only mutation results do not forward arbitrary upstream response bodies.
 Record-field, query-filter and custom-mapping dictionaries reject the own key
 `__proto__` before parsing, rather than silently dropping it. Other ordinary

@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 import { leanToolHelp } from "../src/mcp/leanRegistry.js";
+import { createTestApiKey, gristStatus } from "./grist-harness.js";
 import { makeReadinessRequest, matchReadinessSchemas, READINESS_PROTOCOL_VERSION } from "./mcp-readiness-schema.js";
 
 const STATIC_BEARER = "test-static-bearer-0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -2255,6 +2256,82 @@ async function run(): Promise<void> {
       `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
     assert(afterInspection.records.find(row => row.id === formSection.id)?.fields.layoutSpec === layoutSpec,
       "form_inspection_modified_native_layout");
+
+    // Qualify an actual Bool user attribute with two authenticated synthetic
+    // viewers. Both can read the control table, and only the true flag may
+    // read the protected table.
+    const allowedFlagEmail = "compat-flag-allowed@example.invalid";
+    const deniedFlagEmail = "compat-flag-denied@example.invalid";
+    const allowedFlagKey = await createTestApiKey(gristBaseUrl, allowedFlagEmail, "Flag Allowed");
+    const deniedFlagKey = await createTestApiKey(gristBaseUrl, deniedFlagEmail, "Flag Denied");
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/access`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        delta: { users: { [allowedFlagEmail]: "viewers", [deniedFlagEmail]: "viewers" } }
+      })
+    });
+    await gristApi(gristBaseUrl, apiKey, nativeRecordPath, {
+      method: "POST",
+      body: JSON.stringify({
+        records: [
+          { fields: { ShareToken: allowedFlagEmail, Enabled: true } },
+          { fields: { ShareToken: deniedFlagEmail, Enabled: false } }
+        ]
+      })
+    });
+    const flagTarget = { tableId: TABLE_ID };
+    const flagRule = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "create", target: flagTarget,
+      rules: [{
+        condition: { kind: "not", condition: {
+          kind: "user_attribute_flag", attributeName: "CompatMember", attributeColumnId: "Enabled"
+        } },
+        permissions: { read: "deny", update: "unspecified" }
+      }]
+    }), "native_bool_user_attribute_create");
+    assert(flagRule.persistedDefinitionVerified === true && flagRule.effectiveEnforcementVerified === false,
+      "native_bool_user_attribute_postcondition");
+    assert((await readNativeAcl()).some(row => row.fields.aclFormula === "not (user.CompatMember.Enabled)"),
+      "native_bool_user_attribute_formula_missing");
+    const controlPath = `${docPath}/tables/Compat_Events/records`;
+    const protectedPath = `${docPath}/tables/${TABLE_ID}/records`;
+    for (const key of [allowedFlagKey, deniedFlagKey]) {
+      assert(await gristStatus(gristBaseUrl, key, controlPath, { method: "GET" }) === 200,
+        "native_bool_user_attribute_viewer_control");
+    }
+    const authorizedFlagRows = await gristApi(gristBaseUrl, allowedFlagKey, protectedPath) as {
+      records: Array<{ id: number; fields: Record<string, unknown> }>;
+    };
+    const alpha = authorizedFlagRows.records.find(row => row.fields.Name === "Alpha");
+    assert(alpha, "native_bool_user_attribute_allowed_row_missing");
+    assert(await gristStatus(gristBaseUrl, deniedFlagKey, protectedPath, { method: "GET" }) === 403,
+      "native_bool_user_attribute_denial_missing");
+
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
+      method: "POST",
+      body: JSON.stringify([["AddColumn", ACL_TABLE_ID, "AllowedItems", {
+        type: `RefList:${TABLE_ID}`, isFormula: false
+      }]])
+    });
+    const principals = await gristApi(gristBaseUrl, apiKey, nativeRecordPath) as MetaRecords;
+    const allowedPrincipal = principals.records.find(row => row.fields.ShareToken === allowedFlagEmail);
+    assert(allowedPrincipal, "native_ref_list_user_attribute_fixture_missing");
+    await gristApi(gristBaseUrl, apiKey, nativeRecordPath, {
+      method: "PATCH",
+      body: JSON.stringify({ records: [{ id: allowedPrincipal.id, fields: { AllowedItems: ["L", alpha.id] } }] })
+    });
+    const membership = { kind: "record_in_user_attribute_ref_list", operator: "not_in", columnId: "id",
+      attributeName: "CompatMember", attributeColumnId: "AllowedItems" };
+    const memberRule = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "replace", target: flagTarget,
+      rules: [{ condition: membership, permissions: { read: "deny", update: "unspecified" } }]
+    }), "native_ref_list_user_attribute_replace");
+    assert(memberRule.persistedDefinitionVerified === true && memberRule.effectiveEnforcementVerified === false,
+      "native_ref_list_user_attribute_postcondition");
+    const allowedMembers = await gristApi(gristBaseUrl, allowedFlagKey, protectedPath) as MetaRecords;
+    const deniedMembers = await gristApi(gristBaseUrl, deniedFlagKey, protectedPath) as MetaRecords;
+    assert(allowedMembers.records.length === 1 && allowedMembers.records[0]?.id === alpha.id &&
+      deniedMembers.records.length === 0, "native_ref_list_user_attribute_row_filter_mismatch");
 
     console.log(`Grist Community ${version}: PASS`);
     console.log(

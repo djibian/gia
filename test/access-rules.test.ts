@@ -43,6 +43,68 @@ function snapshot(
   );
 }
 
+test("native Bool and RefList user attributes support typed ACL predicates and track dependencies", () => {
+  const target = { tableId: "Projects" };
+  const resources = [
+    { id: 1, fields: { tableId: "*", colIds: "*" } },
+    { id: 2, fields: { ...target, colIds: "*" } }
+  ];
+  const definition = { id: 10, fields: {
+    resource: 1, rulePos: 1, aclFormula: "", aclFormulaParsed: "", permissionsText: "",
+    userAttributes: JSON.stringify({
+      name: "Mentor", tableId: "Projects", lookupColId: "ShareToken", charId: "Email"
+    })
+  } };
+  const meta = baseMetadata();
+  meta.columns.records.push(
+    { id: 16, fields: { parentId: 1, colId: "Related", type: "Ref:Projects" } },
+    { id: 17, fields: { parentId: 1, colId: "AllowedProjects", type: "RefList:Projects" } }
+  );
+  const condition = { kind: "user_attribute_flag", attributeName: "Mentor", attributeColumnId: "Enabled" } as const;
+  const rules = [{ condition: { kind: "not", condition },
+    permissions: { read: "deny", update: "unspecified" } }] as const;
+  const plan = resolveAccessRuleMutation(snapshot(resources.slice(0, 1), [definition]), target, "create", rules);
+  assert.equal(plan.rules[0]?.aclFormula, "not (user.Mentor.Enabled)");
+  const withPersistedRule = (attributeField: string) => normalizeAccessRulesSnapshot(
+    { records: resources }, { records: [definition, { id: 20, fields: {
+    resource: 2, rulePos: 1, aclFormula: "not user.Mentor.Enabled", permissionsText: "-R",
+    aclFormulaParsed: JSON.stringify(["Not", ["Attr", ["Attr", ["Name", "user"], "Mentor"], attributeField]])
+  } }] }, meta.tables, meta.columns);
+  const roundtrip = withPersistedRule("Enabled");
+  assert.equal((projectAccessRules(roundtrip) as any).groups[0].editable, true);
+  assert.equal(resolveAccessRuleMutation(roundtrip, target, "replace", rules).mode, "noop");
+  const simulate = (state: typeof roundtrip, context: Parameters<typeof projectAccessRuleSimulation>[1]["context"]) =>
+    projectAccessRuleSimulation(state, { target, context }) as { ruleMatches: Array<{ match: string }> };
+  assert.equal(simulate(roundtrip, {}).ruleMatches[0]?.match, "unknown");
+  assert.equal(simulate(roundtrip, { userAttributes: [{
+    name: "Mentor", fields: [{ name: "Enabled", value: { kind: "boolean", value: false } }]
+  }] }).ruleMatches[0]?.match, "true");
+  assert.equal((projectAccessRules(withPersistedRule("Title")) as any).groups[0].editable, false);
+  assert.throws(() => resolveUserAttributeMutation(roundtrip, { userAttributeName: "Mentor" }, "delete"),
+    /references this attribute/);
+  assert.throws(() => resolveAccessRuleMutation(roundtrip, target, "replace", [{
+    ...rules[0], condition: { ...condition, attributeColumnId: "Title" }
+  }]), /native Bool/);
+
+  const membership = {
+    kind: "record_in_user_attribute_ref_list", operator: "not_in", columnId: "id",
+    attributeName: "Mentor", attributeColumnId: "AllowedProjects"
+  } as const;
+  const membershipRule = { condition: membership, permissions: rules[0].permissions };
+  const planFor = (columnId: string) => resolveAccessRuleMutation(roundtrip, target, "replace", [
+    { ...membershipRule, condition: { ...membership, columnId } }
+  ]);
+  assert.equal(planFor("id").rules[0]?.aclFormula, "rec.id not in user.Mentor.AllowedProjects");
+  assert.equal(planFor("Related").rules[0]?.aclFormula, "rec.Related not in user.Mentor.AllowedProjects");
+  assert.throws(() => planFor("UserId"), /RefList targeting the same table/);
+  const parsedMembership = normalizeAccessRulesSnapshot({ records: resources }, { records: [definition, { id: 20, fields: {
+    resource: 2, rulePos: 1, aclFormula: "rec.id not in user.Mentor.AllowedProjects", permissionsText: "-R",
+    aclFormulaParsed: '["NotIn",["Attr",["Name","rec"],"id"],["Attr",["Attr",["Name","user"],"Mentor"],"AllowedProjects"]]'
+  } }] }, meta.tables, meta.columns);
+  assert.equal(resolveAccessRuleMutation(parsedMembership, target, "replace", [membershipRule]).mode, "noop");
+  assert.equal(simulate(parsedMembership, {}).ruleMatches[0]?.match, "unknown");
+});
+
 test("native predicate metadata must agree before projecting, comparing or verifying a rule", () => {
   const target = { tableId: "Projects" };
   const resources = [{ id: 2, fields: { ...target, colIds: "*" } }];
