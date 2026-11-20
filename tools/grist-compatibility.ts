@@ -2271,6 +2271,37 @@ async function run(): Promise<void> {
     assert(afterInspection.records.find(row => row.id === formSection.id)?.fields.layoutSpec === layoutSpec,
       "form_inspection_modified_native_layout");
 
+    // #295: change the Form's own field overrides without changing column defaults.
+    const formFieldChange = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_form_field_options", documentId, pageId,
+      widgetId: formSection.id, columnId: "Name",
+      update: { question: "Participant name", required: true, acceptFromUrl: false }
+    }), "native_form_field_options_write") as {
+      changed: boolean; persistedOptionsVerified: boolean
+    };
+    assert(formFieldChange.changed && formFieldChange.persistedOptionsVerified,
+      "native_form_field_options_write_not_verified");
+    const nativeFieldOverrides = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Views_section_field/records?hidden=true`) as MetaRecords;
+    const persistedFieldOptions = JSON.parse(String(nativeFieldOverrides.records.find(
+      row => row.id === formField.id)?.fields.widgetOptions)) as Record<string, unknown>;
+    assert(persistedFieldOptions.question === "Participant name" &&
+      persistedFieldOptions.formRequired === true &&
+      persistedFieldOptions.formAcceptFromUrl === false,
+      "native_form_field_options_persistence_failed");
+    const repeatFieldChange = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_form_field_options", documentId, pageId,
+      widgetId: formSection.id, columnId: "Name",
+      update: { question: "Participant name", required: true, acceptFromUrl: false }
+    }), "native_form_field_options_noop") as { changed: boolean };
+    assert(repeatFieldChange.changed === false, "native_form_field_options_repeat_wrote");
+    const nativeFormPreviewAfterFieldUpdate = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/forms/${formSection.id}`) as {
+      formFieldsById: Record<number, { colId: string; question: string }>
+    };
+    assert(nativeFormPreviewAfterFieldUpdate.formFieldsById[formField.id]?.question === "Participant name",
+      "native_form_field_override_not_rendered_in_preview");
+
     // Confirm that a real native column-style rule is visible only as a safe
     // presence signal through the existing schema discovery surface.
     await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
