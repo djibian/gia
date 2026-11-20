@@ -68,9 +68,9 @@ makes the form `incomplete`. The projection includes supported submit and
 success text and whether a redirect is configured.
 
 `status: "protected"` identifies omitted text, an opaque dropdown condition,
-a protected redirect, or unprojected native form layout-node attributes. Such
-attributes remain private: a layout may be structurally readable without being
-fully reconstructible. Text
+a protected redirect, or unprojected native form layout-node or field-option
+attributes. Such attributes remain private: a layout may be structurally
+readable without being fully reconstructible. Text
 containing potential links is omitted entirely, including links in Markdown.
 The redirect URL and raw share options are never returned by this projection.
 `status: "incomplete"` covers unresolved field references, insufficient
