@@ -1,5 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod/v4";
+import { configuredColumnSchema } from "../grist/configuredColumns.js";
 
 import {
   ACCESS_POLICY_OPERATIONS,
@@ -968,7 +969,8 @@ export function registerLeanTools(
             action: z.literal("create_columns"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
-            columns: boundedArray(columnSpecSchema, limits.maxSchemaItems)
+            columns: z.union([boundedArray(columnSpecSchema, limits.maxSchemaItems),
+              boundedArray(configuredColumnSchema, limits.maxSchemaItems)])
           })
           .strict()
       ])
