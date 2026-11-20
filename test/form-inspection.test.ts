@@ -168,6 +168,29 @@ test("unknown native form field options are protected at both column and field o
   }
 });
 
+test("unprojected native form share attributes cannot masquerade as complete publication state", () => {
+  const { tables, section, inspect } = fixture();
+  tables.tables[0]!.columns[1]!.fields.widgetOptions = '{"formAcceptFromUrl":true}';
+  const baseline = inspect().widgets[0]?.form;
+  assert.equal(baseline?.status, "supported");
+
+  const secret = "synthetic-private-share-attribute";
+  section.shareOptions = JSON.stringify({ form: true, publish: true, linkId: secret });
+  const form = inspect().widgets[0]?.form;
+  assert.equal(form?.status, "protected");
+  assert.equal(form?.sectionPublicationIntent, "requested");
+  assert.equal(form?.publicationQualification, "not_tested");
+  assert.deepEqual(form?.layout, baseline?.layout);
+  assert.deepEqual(form?.submission, baseline?.submission);
+  assert.doesNotMatch(JSON.stringify(form), /synthetic-private-share-attribute|linkId/);
+
+  section.shareOptions = JSON.stringify({ form: "yes", publish: true, linkId: secret });
+  const malformed = inspect().widgets[0]?.form;
+  assert.equal(malformed?.status, "incomplete");
+  assert.equal(malformed?.sectionPublicationIntent, "unknown");
+  assert.doesNotMatch(JSON.stringify(malformed), /synthetic-private-share-attribute|linkId/);
+});
+
 test("unknown native form layout properties are protected and never returned as reconstructible", () => {
   const secret = "synthetic-private-opaque-form-property";
   const inject = [
