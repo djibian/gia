@@ -192,6 +192,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "symbolic field: {name,value:{kind:'symbol',symbol:'A'|'B'|'C'|'D'}|{kind:'boolean',value:boolean}|{kind:'flag',value:0|1}|{kind:'empty_text'}}; linkKeys allow symbols only"
     ],
     constraints: [
+      "Page widget inspection projects native form fields using stable table and column IDs. Persisted section publication intent does not establish public access.",
       "ACL inspection requires native Owner proof; optional schemaImpact identifies references, not effective security.",
       "Simulation evaluates one persisted group on invented symbolic context, not actual Grist enforcement or row confidentiality.",
       "Policy coverage classifies persisted components. An optional invented context asks for a bounded expected decision. Native qualification is untested."

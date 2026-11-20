@@ -45,6 +45,26 @@ Gia package/runtime version **0.11.0** implements MCP contract major **2**.
 
 ## Widget detail
 
+For native form widgets, read-only `grist_inspect(action="page_widgets")` adds
+the `form` result. Its bounded `layout` preserves ordered Layout, Section,
+Field, Paragraph and Submit nodes. The form's `tableId` and the field's
+`columnId` are stable IDs. Question, required and URL-prefill options retain
+their column and field origins. Native field options override the column
+options. A configured dropdown condition is indicated without returning its
+expression. The projection includes supported submit and success text and
+whether a redirect is configured.
+
+`status: "protected"` identifies omitted text or a protected redirect. Text
+containing potential links is omitted entirely, including links in Markdown.
+The redirect URL and raw share options are never returned by this projection.
+`status: "incomplete"` covers unresolved field references, insufficient
+metadata, unsupported layout and inspection bounds. An empty native section
+options object is valid. The result pairs `sectionPublicationIntent`
+(`requested`, `not_requested` or `unknown`) with
+`publicationQualification: "not_tested"`. Native share and page state also
+affect publication. Inspecting an intent does not perform an anonymous or
+authenticated form access test.
+
 Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect.page_widgets` returns a normalized `cardLayout` for native Card/Card List widgets, and `grist_change_ui.update_widget` accepts the corresponding complete stable-column layout tree. This is additive result/input detail inside the existing closed semantic action. Card layout inputs never accept private Grist field refs, raw BoxSpec JSON or raw UserActions.
 
 The pre-existing numeric `layoutSpec`, sort and identity read detail remains available for MCP v2 compatibility and is not the stable semantic contract for writes. Public `options` contains only present, valid supported display flags and custom-widget access/identity; arbitrary URL/plugin/configuration fields remain internal. Layouts with unsupported attributes and invalid raw sort tokens are omitted rather than forwarded. `compatibilityMetadataOmitted: true` identifies omitted detail. This security correction does not remove the promised supported numeric layout shape; removal of the remaining non-secret compatibility fields requires an incompatible MCP major-version decision. New clients should use normalized stable-ID fields.
