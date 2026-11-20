@@ -33,6 +33,15 @@ Both `grist_add_structure(create_tables)` and `grist_add_structure(create_column
 
 The bounded ACL condition input language is advertised using local JSON Schema `$defs`/`$ref` references for its finite depth levels. Clients must resolve these local references to discover the complete closed predicate variants; a client's flattened or `unknown` display is not evidence that Gia accepts arbitrary predicates. Server-side validation, depth/width/node bounds and closed actions remain unchanged. This is not a promise of support for every client's JSON Schema dialect.
 
+`grist_change_ui(action="update_form_field_options")` targets one
+existing native Form section field by page/widget and stable column ID. It
+updates a nonempty subset of `question` (string or null to clear),
+`required`, and `acceptFromUrl`, preserving all unrelated native field
+widget options and column defaults. It requires a complete UI/field snapshot,
+validates the exact section-field reference and verifies all persisted
+field options after the write. An identical request returns no change. This
+does not create fields, render/publish forms or grant access.
+
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
 Expanded column discovery (`grist_discover(columns)` and
