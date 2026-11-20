@@ -2139,10 +2139,10 @@ async function run(): Promise<void> {
       action: "create_page", documentId: emptyDocumentId, tableId: "Placements", name: "Applications"
     }), "configured_form_page");
     const configuredPageId = positiveResultId((configuredPage.page as { id: number }).id, "configured_form_page_id");
-    const configuredForm = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+    const newConfiguredForm = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
       action: "add_widget", documentId: emptyDocumentId, pageId: configuredPageId, tableId: "Placements", type: "form"
     }), "configured_form");
-    const configuredFormId = positiveResultId((configuredForm.widget as { id: number }).id, "configured_form_id");
+    const configuredFormId = positiveResultId((newConfiguredForm.widget as { id: number }).id, "configured_form_id");
     const configuredFormPreview = await gristApi(gristBaseUrl, apiKey, `${configuredDocPath}/forms/${configuredFormId}`) as {
       formFieldsById: Record<number, { colId: string; question: string; options: Record<string, unknown> }>;
     };
