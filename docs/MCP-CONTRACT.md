@@ -46,6 +46,19 @@ no signal, and absence of the native field is **not** proof that no styles
 exist. This additive diagnostic exposes no helper IDs or rule formulas and
 does not grant a conditional-style write operation.
 
+Column discovery independently reports `conditionalStyleOptions:
+{status:"protected"|"incomplete"}` when a nonempty native
+`widgetOptions.rulesOptions` style array is present, or when its
+metadata is malformed or exceeds a bound. A bounded array of objects
+is `protected`: styles, colors, formula helpers and option values are
+never reconstructed by this new diagnostic. Empty arrays produce no
+signal; missing metadata does not prove absence of style behavior.
+The separate native `fields.rules` diagnostic remains authoritative
+only for its own private helper-reference presence. Neither signal
+qualifies rendered styles nor grants style mutations. Existing raw
+`widgetOptions` remains MCP v2 compatibility output and is *not*
+redacted by this additive diagnostic.
+
 ## Versioning rule
 
 Increment the MCP contract major version when a model-facing change is incompatible, including removal/rename of a tool or action, incompatible input/output schema changes, or a materially changed semantic/safety meaning.
