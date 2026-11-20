@@ -179,7 +179,8 @@ test("public table and column discovery removes internal Grist metadata refs", a
               isFormula: false,
               formula: "",
               description: "Synthetic amount",
-              widgetOptions: "{}"
+              widgetOptions: "{}",
+              conditionalStyleRules: { status: "protected" }
             }
           }
         ]
