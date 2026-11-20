@@ -518,6 +518,28 @@ async function run(): Promise<void> {
     );
     assert(discovered.includes(documentId), "created_document_not_discovered");
 
+    // Discriminating native oracle: first check whether the current Grist
+    // version actually persists Accept-Language on POST /api/docs.
+    const direct = await gristApi(gristBaseUrl, apiKey, "/api/docs", {
+      method: "POST",
+      headers: { "Accept-Language": "fr-FR" },
+      body: JSON.stringify({ workspaceId, documentName: "Direct native locale check" })
+    });
+    const directId = typeof direct === "string" ? direct
+      : direct && typeof direct === "object" && !Array.isArray(direct)
+        ? (direct as {id?: unknown}).id : undefined;
+    assert(typeof directId === "string" && directId.length > 0,
+      "native_initial_locale_direct_document_id_missing");
+    const directSettings = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(directId)}/tables/_grist_DocInfo/records?hidden=true`) as {
+        records: Array<{id: number;fields: {documentSettings?: string;timezone?: string}}>;
+      };
+    const raw = directSettings.records.find(row => row.id === 1)?.fields.documentSettings;
+    const nativeLocale = typeof raw === "string" ?
+      (JSON.parse(raw) as {locale?: unknown}).locale : undefined;
+    assert(nativeLocale === "fr-FR",
+      "native_initial_locale_header_did_not_persist_" + String(nativeLocale));
+
     const initialLocaleCreated = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", {
       action: "create_document", workspaceId, name: "Fresh French Grist App", locale: "fr-FR"
     }), "native_create_document_locale");
