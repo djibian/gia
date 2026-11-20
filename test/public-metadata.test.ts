@@ -87,6 +87,46 @@ test("column projection keeps functional schema metadata and drops engine metada
   });
 });
 
+test("custom widget inspection distinguishes supported, opaque and incomplete native configuration", () => {
+  const base: GristPageWidget = {
+    id: 9, pageId: 3, tableRef: 1, tableId: "Items", type: "custom",
+    title: "Widget", customWidgetSettings: {
+      access: "read table", widgetId: "@example/widget", columnsMapping: { title: "Name" }
+    }
+  };
+  const settings = {
+    access: "read table", widgetId: "@example/widget", columnsMapping: { title: 11 }
+  };
+  const supported = projectPublicWidget({
+    ...base, options: { customView: settings }
+  });
+  assert.deepEqual(supported.customWidgetConfiguration, { status: "supported" });
+
+  const secret = "synthetic-private-custom-widget-option";
+  for (const options of [
+    { customView: { ...settings, widgetOptions: { private: secret } } },
+    { customView: { ...settings, url: "https://example.invalid/" + secret } },
+    { customView: settings, futureNativeOption: secret }
+  ]) {
+    const projected = projectPublicWidget({ ...base, options });
+    assert.deepEqual(projected.customWidgetConfiguration, { status: "protected" });
+    assert.equal(projected.compatibilityMetadataOmitted, true);
+    assert.doesNotMatch(JSON.stringify(projected), new RegExp(secret));
+    assert.deepEqual(projected.customWidgetSettings, base.customWidgetSettings);
+  }
+
+  for (const widget of [
+    { ...base, options: { customView: "not-json" }, customWidgetSettingsNormalizationIncomplete: true as const },
+    { ...base, options: { customView: settings }, customWidgetSettingsNormalizationIncomplete: true as const },
+    { ...base, options: undefined }
+  ]) {
+    assert.deepEqual(projectPublicWidget(widget).customWidgetConfiguration, {
+      status: "incomplete"
+    });
+  }
+  assert.equal(projectPublicWidget({ ...base, type: "record" }).customWidgetConfiguration, undefined);
+});
+
 test("conditional styles are signaled without exporting private helper references", () => {
   const project = (rules: unknown) => projectPublicColumns({
     columns: [{ id: "Name", fields: { type: "Text", rules } }]

@@ -89,6 +89,19 @@ The pre-existing numeric `layoutSpec`, sort and identity read detail remains ava
 
 Custom-widget access and column mappings accept native empty configuration and preserve every untargeted setting. Native JSON-encoded settings and already persisted object settings can be read; updates use native encoding. Missing, malformed or unresolved state still refuses unsafe updates. URLs, plugin configuration and raw mappings remain private.
 
+For native custom widgets, `grist_inspect(page_widgets)` also reports
+`customWidgetConfiguration: {status: "supported" | "protected" | "incomplete"}`.
+`supported` means the persisted outer section options and customView contain
+only the currently projected access, catalogue identity and stable-column
+mapping metadata; it does **not** prove the remote widget code exists or works.
+`protected` means non-projected native mode, URL, plugin, widget-owned
+options or unknown attributes could affect behavior; their names and values
+remain private. `incomplete` covers malformed, missing or unresolved native
+configuration. Normalized access and resolvable mappings may remain visible
+when other configuration is protected. None of these states authorizes installing
+or executing an external widget.
+
+
 ## Document metadata, relation display and calendars
 
 `grist_inspect(action="document")` adds `document.settings` for the persisted

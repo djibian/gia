@@ -68,6 +68,27 @@ function conditionalStyleRuleState(value: unknown): "protected" | "incomplete" |
   return refs.length ? "protected" : undefined;
 }
 
+/** Read-only completeness of the native custom-widget configuration, not remote code. */
+function customWidgetConfigurationStatus(
+  widget: GristPageWidget
+): "supported" | "protected" | "incomplete" | undefined {
+  if (widget.type !== "custom") return undefined;
+  if (widget.customWidgetSettingsNormalizationIncomplete || !widget.customWidgetSettings) {
+    return "incomplete";
+  }
+  const outer = record(widget.options);
+  const view = customViewOptions(widget.options);
+  if (!outer || !view) return "incomplete";
+  // Mode, URL, plugin options and future native attributes may affect behavior.
+  // Their names and values must not be projected as a reconstructible config.
+  if (Object.keys(outer).some(key => key !== "customView") ||
+      Object.keys(view).some(key =>
+        !["access", "widgetId", "columnsMapping"].includes(key))) {
+    return "protected";
+  }
+  return "supported";
+}
+
 /** Keep legacy numeric layout detail without forwarding arbitrary metadata. */
 export function projectPublicPage(page: GristPage) {
   const { widgets, layoutSpec, ...projected } = page;
@@ -110,6 +131,7 @@ export function projectPublicWidget(widget: GristPageWidget) {
       omitted = JSON.stringify(publicOptions) !== JSON.stringify(raw);
     }
   }
+  const customWidgetStatus = customWidgetConfigurationStatus(widget);
   const safeLayout = layoutSpec !== undefined && safeCompatibilityLayout(layoutSpec);
   if (layoutSpec !== undefined && !safeLayout) omitted = true;
   const safeSort = Array.isArray(sortColRefs) &&
@@ -122,6 +144,7 @@ export function projectPublicWidget(widget: GristPageWidget) {
   return {
     ...projected,
     ...(publicOptions !== undefined ? { options: publicOptions } : {}),
+    ...(customWidgetStatus ? { customWidgetConfiguration: { status: customWidgetStatus } } : {}),
     ...(safeLayout ? { layoutSpec } : {}),
     ...(safeSort ? { sortColRefs } : {}),
     ...(omitted ? { compatibilityMetadataOmitted: true as const } : {})
