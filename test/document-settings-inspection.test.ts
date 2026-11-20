@@ -97,3 +97,51 @@ test("document inspection retains independently readable settings and reports pr
   assert.deepEqual((await duplicateSettings.getDocumentMetadata("synthetic")).settings,
     { status: "incomplete" });
 });
+
+test("locale update preserves opaque native settings, verifies result and replays as no-op", async () => {
+  let documentSettings = JSON.stringify({ locale: "en-US", currency: "EUR",
+    nested: { data: ["synthetic", 1] } });
+  let writes = 0;
+  const app = service(async () => ({ records: [{ id: 1, fields: {
+    documentSettings, timezone: "Europe/Paris"
+  } }] }), async (_id, actions) => {
+    assert.equal(actions.length, 1);
+    assert.equal(actions[0]?.[1], "_grist_DocInfo");
+    assert.equal(actions[0]?.[2], 1);
+    const payload = actions[0]?.[3] as { documentSettings: string };
+    assert.deepEqual(Object.keys(payload), ["documentSettings"]);
+    assert.deepEqual(JSON.parse(payload.documentSettings), {
+      locale: "fr-FR", currency: "EUR", nested: { data: ["synthetic", 1] }
+    });
+    documentSettings = payload.documentSettings;
+    writes++;
+  });
+  const first = await app.updateDocument("synthetic", { locale: "fr-FR" }) as { changed: boolean };
+  const second = await app.updateDocument("synthetic", { locale: "fr-FR" }) as { changed: boolean };
+  assert.equal(first.changed, true);
+  assert.equal(second.changed, false);
+  assert.equal(writes, 1);
+});
+test("locale update refuses mixed and invalid settings, and never retries uncertain writes", async () => {
+  const app = service(async () => assert.fail("must reject before native read"));
+  await assert.rejects(() => app.updateDocument("synthetic", { locale: "de-DE" }), /en-US or fr-FR/);
+  await assert.rejects(() => app.updateDocument("synthetic", {
+    locale: "fr-FR", timezone: "UTC"
+  }), /separately/);
+  const invalid = service(async () => ({ records: [{ id: 1, fields: {
+    documentSettings: "{", timezone: "UTC"
+  } }] }));
+  await assert.rejects(() => invalid.updateDocument("synthetic", { locale: "fr-FR" }),
+    /malformed or protected/);
+  let writes = 0;
+  const uncertain = service(async () => nativeSettings("UTC"), async () => {
+    writes++;
+    throw new GristTransportError("response lost", "UNCERTAIN");
+  });
+  await assert.rejects(() => uncertain.updateDocument("synthetic", { locale: "en-US" }),
+    GristTransportError);
+  assert.equal(writes, 1);
+  const stale = service(async () => nativeSettings("UTC"), async () => undefined);
+  await assert.rejects(() => stale.updateDocument("synthetic", { locale: "en-US" }),
+    SchemaWriteVerificationError);
+});

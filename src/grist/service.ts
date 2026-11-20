@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { columnCreationFieldsSchema } from "../operations/schemaMutationContract.js";
 import { AccessPolicy } from "./accessPolicy.js";
 import {
@@ -22,11 +23,13 @@ import {
 export type PublicDocumentType = "normal" | "template" | "tutorial";
 
 export const DOCUMENT_TIMEZONE_CHOICES = ["UTC", "Europe/Paris"] as const;
+export const DOCUMENT_LOCALE_CHOICES = ["en-US", "fr-FR"] as const;
 
 export interface DocumentMetadataUpdateInput {
   name?: string;
   type?: PublicDocumentType;
   timezone?: string;
+  locale?: string;
 }
 
 export interface PublicDocumentMetadata {
@@ -401,6 +404,12 @@ export class GristService {
     update: DocumentMetadataUpdateInput
   ): Promise<unknown> {
     const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    if (update.locale !== undefined) {
+      if (update.name !== undefined || update.type !== undefined || update.timezone !== undefined) {
+        throw new Error("Send a locale update separately from other document changes.");
+      }
+      return this.updateDocumentLocale(documentId, update.locale);
+    }
     if (update.timezone !== undefined) {
       if (update.name !== undefined || update.type !== undefined) {
         throw new Error("Send a timezone update separately from a name or type update.");
@@ -459,6 +468,59 @@ export class GristService {
         error instanceof Error
           ? error.message
           : "Updated document metadata could not be verified."
+      );
+    }
+  }
+
+  private async updateDocumentLocale(documentId: string, value: string): Promise<unknown> {
+    const locale = DOCUMENT_LOCALE_CHOICES.find(choice => choice === value);
+    if (!locale) throw new Error("Locale must be en-US or fr-FR for the qualified native settings update.");
+    const read = () => this.client.queryRecords(documentId, "_grist_DocInfo", { limit: 2, hidden: true });
+    const before = await read();
+    const records = jsonRecord(before)?.records;
+    const row = Array.isArray(records) && records.length === 1 ? jsonRecord(records[0]) : null;
+    const fields = row?.id === 1 ? jsonRecord(row.fields) : null;
+    const raw = fields?.documentSettings;
+    if (typeof raw !== "string" || raw.length > 16_384 || !raw.length) {
+      throw new Error("Native document locale settings are missing or incomplete; refusing overwrite.");
+    }
+    let options: JsonRecord | null;
+    try { options = jsonRecord(JSON.parse(raw) as unknown); }
+    catch { options = null; }
+    const previous = projectDocumentSettings(before);
+    if (!options || previous.status !== "supported" || typeof options.locale !== "string") {
+      throw new Error("Native document locale settings are malformed or protected; refusing overwrite.");
+    }
+    if (options.locale === locale) return { documentId, settings: previous, changed: false };
+    const expected = { ...options, locale };
+    const serialized = JSON.stringify(expected);
+    if (serialized.length > 16_384) throw new Error("Updated document settings exceed the native bound.");
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_DocInfo", 1, { documentSettings: serialized }]
+    ]);
+    try {
+      const after = await read();
+      const afterRecords = jsonRecord(after)?.records;
+      const afterRow = Array.isArray(afterRecords) && afterRecords.length === 1
+        ? jsonRecord(afterRecords[0]) : null;
+      const afterFields = afterRow?.id === 1 ? jsonRecord(afterRow.fields) : null;
+      const stored = afterFields?.documentSettings;
+      if (typeof stored !== "string" || stored.length > 16_384) {
+        throw new Error("Native document settings post-read is incomplete.");
+      }
+      let result: JsonRecord | null;
+      try { result = jsonRecord(JSON.parse(stored) as unknown); }
+      catch { result = null; }
+      const settings = projectDocumentSettings(after);
+      if (!result || !isDeepStrictEqual(result, expected) ||
+          afterFields?.timezone !== fields.timezone || settings.locale !== locale ||
+          settings.status !== "supported") {
+        throw new Error("Locale or preserved document settings did not match the requested state.");
+      }
+      return { documentId, settings, changed: true };
+    } catch {
+      throw new SchemaWriteVerificationError(
+        "update_document", "The Grist locale or preserved document settings could not be verified."
       );
     }
   }
