@@ -1,4 +1,5 @@
 import { columnCreationFieldsSchema } from "../operations/schemaMutationContract.js";
+import { planConfiguredColumns } from "./configuredColumns.js";
 import { AccessPolicy } from "./accessPolicy.js";
 import {
   GristApiError,
@@ -562,6 +563,28 @@ export class GristService {
     this.assertIdentifier(tableId, "Table ID");
     this.assertSchemaCount(columns.length);
     this.assertUniqueStrings(columns.map((column) => column.id), "Column IDs");
+    if (columns.some(column => "configuration" in column)) {
+      const read = () => this.client.listTables(documentId, { expandColumns: true });
+      const missing = planConfiguredColumns(await read(), tableId, columns);
+      if (missing.length > 0) {
+        const response = await this.client.createColumns(documentId, tableId, missing);
+        const created = projectCreatedItems(response, "columns", missing.length, "string");
+        try {
+          const result = jsonRecord(created);
+          const actualIds = (result?.columns as { id: string }[]).map(column => column.id);
+          if (result?.resultNormalizationIncomplete ||
+              actualIds.some((id, index) => id !== missing[index]?.id) ||
+              planConfiguredColumns(await read(), tableId, columns).length !== 0) {
+            throw new Error("Native configured column identity or options did not match.");
+          }
+        } catch (error) {
+          throw new UncertainWriteError("create_columns", 0, 0, 1, missing.length, 0, 0,
+            [created], error);
+        }
+      }
+      return { columns: columns.map(({ id }) => ({ id })), changed: missing.length > 0,
+        persistedOptionsVerified: true };
+    }
     for (const column of columns) {
       this.assertIdentifier(column.id, "Column ID");
       this.assertCreationColumnFields(column);

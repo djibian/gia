@@ -2068,6 +2068,85 @@ async function run(): Promise<void> {
     const emptyDocumentId = createdDocumentId(emptyCreated, "create_document");
     assert(emptyDocumentId !== documentId, "empty_document_id_reused");
 
+    // Build the configuration fixture through Gia from the new empty document.
+    const createFixtureTable = (id: string, columns: Array<{ id: string; fields: { type: string } }>) =>
+      callTool(bridgeBaseUrl, "grist_add_structure", {
+        action: "create_tables", documentId: emptyDocumentId, tables: [{ id, columns }]
+      });
+    const columnOf = (id: string, type: string) => ({ id, fields: { type } });
+    await createFixtureTable("Classes", [columnOf("Name", "Text")]);
+    await createFixtureTable("Mentors", [columnOf("Status", "Text"), columnOf("Class", "Ref:Classes")]);
+    await createFixtureTable("Placements", [columnOf("Class", "Ref:Classes"),
+      columnOf("Eligible", "RefList:Mentors"), columnOf("Oracle", "Ref:Mentors")]);
+    const configuredRequest = {
+      action: "create_columns", documentId: emptyDocumentId, tableId: "Placements", columns: [
+        { ...columnOf("ActiveMentor", "Ref:Mentors"), configuration: {
+          form: { question: "Preferred mentor", required: true, acceptFromUrl: true },
+          dropdownCondition: { kind: "choice_field_equals_literal", choiceColumnId: "Status", value: "validé" }
+        } },
+        { ...columnOf("ClassMentor", "Ref:Mentors"), configuration: {
+          dropdownCondition: { kind: "choice_field_equals_record_ref", choiceColumnId: "Class", recordColumnId: "Class" }
+        } },
+        { ...columnOf("EligibleMentors", "RefList:Mentors"), configuration: {
+          dropdownCondition: { kind: "choice_id_in_record_reflist", recordColumnId: "Eligible" }
+        } }
+      ]
+    };
+    const configured = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", configuredRequest),
+      "configured_columns_create");
+    assert(configured.changed === true && configured.persistedOptionsVerified === true,
+      "configured_columns_writes_not_verified");
+    const replay = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", configuredRequest),
+      "configured_columns_replay");
+    assert(replay.changed === false && isDeepStrictEqual(replay.columns, configured.columns),
+      "configured_columns_replay_duplicated_schema");
+    await callToolExpectError(bridgeBaseUrl, "grist_add_structure", { ...configuredRequest, columns: [
+      { ...configuredRequest.columns[0], configuration: { form: { question: "Different question" } } }
+    ] });
+
+    const configuredDocPath = `/api/docs/${encodeURIComponent(emptyDocumentId)}`;
+    const columnPath = `${configuredDocPath}/tables/Placements/columns`;
+    const nativeColumns = await gristApi(gristBaseUrl, apiKey, columnPath) as {
+      columns: Array<{ id: string; fields: { colRef: number; widgetOptions: string } }>;
+    };
+    assert(nativeColumns.columns.length === 6, "configured_columns_replay_changed_count");
+    const oracle = nativeColumns.columns.find(column => column.id === "Oracle");
+    assert(oracle, "configured_native_parser_oracle_missing");
+    for (const [id, text] of [
+      ["ActiveMentor", 'choice.Status == "validé"'],
+      ["ClassMentor", "choice.Class == $Class"],
+      ["EligibleMentors", "choice.id in $Eligible"]
+    ]) {
+      const created = nativeColumns.columns.find(column => column.id === id);
+      assert(created, "configured_dropdown_column_missing");
+      const actual = JSON.parse(created.fields.widgetOptions).dropdownCondition;
+      assert(actual.text === text, "configured_dropdown_text_mismatch");
+      await gristApi(gristBaseUrl, apiKey, `${configuredDocPath}/apply`, {
+        method: "POST", body: JSON.stringify([["UpdateRecord", "_grist_Tables_column", oracle.fields.colRef,
+          { widgetOptions: JSON.stringify({ dropdownCondition: { text } }) }]])
+      });
+      const roundtrip = await gristApi(gristBaseUrl, apiKey, columnPath) as typeof nativeColumns;
+      const parsed = JSON.parse(roundtrip.columns.find(column => column.id === "Oracle")!.fields.widgetOptions)
+        .dropdownCondition.parsed;
+      assert(isDeepStrictEqual(JSON.parse(parsed), JSON.parse(actual.parsed)),
+        "configured_dropdown_differs_from_native_parser");
+    }
+
+    const configuredPage = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "create_page", documentId: emptyDocumentId, tableId: "Placements", name: "Applications"
+    }), "configured_form_page");
+    const configuredPageId = positiveResultId((configuredPage.page as { id: number }).id, "configured_form_page_id");
+    const configuredForm = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "add_widget", documentId: emptyDocumentId, pageId: configuredPageId, tableId: "Placements", type: "form"
+    }), "configured_form");
+    const configuredFormId = positiveResultId((configuredForm.widget as { id: number }).id, "configured_form_id");
+    const configuredFormPreview = await gristApi(gristBaseUrl, apiKey, `${configuredDocPath}/forms/${configuredFormId}`) as {
+      formFieldsById: Record<number, { colId: string; question: string; options: Record<string, unknown> }>;
+    };
+    const question = Object.values(configuredFormPreview.formFieldsById).find(field => field.colId === "ActiveMentor");
+    assert(question?.question === "Preferred mentor" && question.options.formRequired === true &&
+      question.options.formAcceptFromUrl === true, "configured_form_defaults_not_used_natively");
+
     const copied = resultJson(
       await callTool(bridgeBaseUrl, "grist_add_structure", {
         action: "copy_document_as_template",
