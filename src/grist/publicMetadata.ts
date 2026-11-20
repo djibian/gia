@@ -1,7 +1,7 @@
 import type { GristPage, GristPageWidget } from "./documentUi.js";
 import { stableVisibleColumnId } from "./referenceDisplay.js";
 import { customViewOptions } from "./customWidgetSettings.js";
-import { nativeDropdownConditionState } from "./formInspection.js";
+import { nativeDropdownConditionState, safeNativeFormText } from "./formInspection.js";
 import {
   MAX_NORMALIZED_LAYOUT_DEPTH,
   MAX_NORMALIZED_LAYOUT_NODES
@@ -79,6 +79,34 @@ function columnDropdownConditionState(value: unknown): "protected" | "incomplete
   if (!parsed) return "incomplete";
   if (!Object.prototype.hasOwnProperty.call(parsed, "dropdownCondition")) return undefined;
   return nativeDropdownConditionState(parsed.dropdownCondition);
+}
+
+/** Column-level native Form metadata is independent of any Form section.
+ * This is only a safe option preview, never a complete rendering guarantee. */
+function columnFormOptionsState(value: unknown): JsonRecord | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (typeof value !== "string" || value.length > 16_384) return { status: "incomplete" };
+  let parsed: JsonRecord | null = null;
+  try { parsed = record(JSON.parse(value)); } catch { /* incomplete native options */ }
+  if (!parsed) return { status: "incomplete" };
+  const keys = ["question", "formRequired", "formAcceptFromUrl"] as const;
+  if (!keys.some(key => Object.prototype.hasOwnProperty.call(parsed, key))) return undefined;
+  const { question, formRequired, formAcceptFromUrl } = parsed;
+  if ((question !== undefined && typeof question !== "string") ||
+      (formRequired !== undefined && typeof formRequired !== "boolean") ||
+      (formAcceptFromUrl !== undefined && typeof formAcceptFromUrl !== "boolean")) {
+    return { status: "incomplete" };
+  }
+  const safeQuestion = typeof question === "string"
+    ? safeNativeFormText(question, 1000) : undefined;
+  const protectedOptions = Object.keys(parsed).some(key => !keys.includes(key as typeof keys[number])) ||
+    (safeQuestion !== undefined && typeof safeQuestion !== "string");
+  return {
+    status: protectedOptions ? "protected" : "supported",
+    ...(safeQuestion !== undefined ? { question: safeQuestion } : {}),
+    ...(typeof formRequired === "boolean" ? { required: formRequired } : {}),
+    ...(typeof formAcceptFromUrl === "boolean" ? { acceptFromUrl: formAcceptFromUrl } : {})
+  };
 }
 
 /** Read-only completeness of the native custom-widget configuration, not remote code. */
@@ -182,6 +210,8 @@ function publicColumn(
   if (typeof fields.formula === "string") projected.formula = fields.formula;
   if (typeof fields.description === "string") projected.description = fields.description;
   if (typeof fields.widgetOptions === "string") projected.widgetOptions = fields.widgetOptions;
+  const formColumnOptions = columnFormOptionsState(fields.widgetOptions);
+  if (formColumnOptions) projected.formColumnOptions = formColumnOptions;
   const dropdownCondition = columnDropdownConditionState(fields.widgetOptions);
   if (dropdownCondition) projected.dropdownCondition = { status: dropdownCondition };
   const conditionalStyleRules = conditionalStyleRuleState(fields.rules);
