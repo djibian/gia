@@ -2263,6 +2263,9 @@ async function run(): Promise<void> {
     }>).find(item => item.id === "Name");
     assert(isDeepStrictEqual(discoveredName?.fields.dropdownCondition, { status: "protected" }),
       "native_dropdown_column_presence_missing");
+    assert(isDeepStrictEqual(discoveredName?.fields.formColumnOptions, {
+      status: "protected", question: "Your name", required: true, acceptFromUrl: true
+    }), "native_form_column_options_projection_mismatch");
     const afterInspection = await gristApi(gristBaseUrl, apiKey,
       `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
     assert(afterInspection.records.find(row => row.id === formSection.id)?.fields.layoutSpec === layoutSpec,

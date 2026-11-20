@@ -47,6 +47,13 @@ export function nativeDropdownConditionState(value: unknown): "protected" | "inc
     ? "protected" : "incomplete";
 }
 
+/** Redact link-bearing native Form prose instead of returning potential tokens/URLs. */
+export function safeNativeFormText(value: string, maxLength: number): FormText {
+  const linkLike = /[:/\\@<>{}\[\]=&%]|[\p{L}\d]\.[\p{L}\d]/u;
+  return value.length > Math.min(1000, maxLength) || linkLike.test(value)
+    ? { protected: true } : value;
+}
+
 function publicationIntent(value: unknown): "requested" | "not_requested" | "unknown" {
   if (value === undefined) return "unknown";
   const parsed = options(value);
@@ -118,15 +125,13 @@ export function inspectNativeForm(
     }
   };
   const safeText = (value: string): FormText => {
-    // Free-text links may embed LinkKeys or tokens, including relative URLs
-    // inside Markdown. Keep plain prose and omit the whole link-bearing value.
-    const linkLike = /[:/\\@<>{}\[\]=&%]|[\p{L}\d]\.[\p{L}\d]/u;
-    if (value.length > Math.min(1000, budget.text) || linkLike.test(value)) {
+    const safe = safeNativeFormText(value, budget.text);
+    if (typeof safe !== "string") {
       hasProtectedText = true;
-      return { protected: true };
+      return safe;
     }
     budget.text -= value.length;
-    return value;
+    return safe;
   };
   const fieldOptions = (parsed: JsonRecord): FormOptions | undefined => {
     const { question, formRequired, formAcceptFromUrl } = parsed;

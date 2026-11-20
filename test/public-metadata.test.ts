@@ -193,6 +193,51 @@ test("column discovery classifies native dropdown condition presence without pro
   assert.deepEqual(expanded.tables[0]?.columns[0]?.fields.dropdownCondition, { status: "protected" });
 });
 
+test("column discovery projects native Form flags and redacts link-bearing questions", () => {
+  const fields = (widgetOptions: unknown) => (projectPublicColumns({
+    columns: [{ id: "Name", fields: { type: "Text", widgetOptions } }]
+  }) as { columns: Array<{ fields: Record<string, unknown> }> }).columns[0]!.fields;
+  assert.deepEqual(fields(JSON.stringify({
+    question: "Votre nom", formRequired: true, formAcceptFromUrl: false
+  })).formColumnOptions, {
+    status: "supported", question: "Votre nom", required: true, acceptFromUrl: false
+  });
+  assert.deepEqual(fields(JSON.stringify({
+    question: "Nom", formRequired: false, dropdownCondition: { text: "synthetic" }
+  })).formColumnOptions, {
+    status: "protected", question: "Nom", required: false
+  });
+  const secret = "synthetic-private-link-key";
+  const redacted = fields(JSON.stringify({
+    question: "https://example.invalid/?LinkKey=" + secret, formRequired: true
+  }));
+  assert.deepEqual(redacted.formColumnOptions, {
+    status: "protected", question: { protected: true }, required: true
+  });
+  // Existing raw widgetOptions is still MCP v2 compatibility output. Only the
+  // NEW normalized preview promises redaction; removal needs a major decision.
+  assert.doesNotMatch(JSON.stringify(redacted.formColumnOptions), /synthetic-private-link-key/);
+  for (const bad of [
+    "{", "null", JSON.stringify({ question: null }),
+    JSON.stringify({ formRequired: 1 }),
+    JSON.stringify({ formAcceptFromUrl: "yes" }), "x".repeat(16_385)
+  ]) {
+    assert.deepEqual(fields(bad).formColumnOptions, { status: "incomplete" });
+  }
+  for (const absent of [undefined, "", JSON.stringify({ numMode: "decimal" })]) {
+    assert.equal(fields(absent).formColumnOptions, undefined);
+  }
+  const expanded = projectPublicTables({ tables: [{
+    id: "Students", fields: { tableRef: 8 }, columns: [
+      { id: "Name", fields: { colRef: 9,
+        widgetOptions: JSON.stringify({ formRequired: true }) } }
+    ]
+  }] }) as { tables: Array<{ columns: Array<{ fields: Record<string, unknown> }> }> };
+  assert.deepEqual(expanded.tables[0]!.columns[0]!.fields.formColumnOptions, {
+    status: "supported", required: true
+  });
+});
+
 test("unexpected upstream metadata shapes fail closed", () => {
   assert.throws(() => projectPublicTables({ tables: [{ fields: {} }] }), /table metadata shape/);
   assert.throws(() => projectPublicColumns({ columns: [{ id: "A" }] }), /column metadata shape/);
