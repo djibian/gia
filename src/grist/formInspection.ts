@@ -90,6 +90,7 @@ export function inspectNativeForm(
   let hasProtectedText = false;
   let hasProtectedDropdownCondition = false;
   let hasProtectedLayoutAttributes = false;
+  let hasProtectedFieldOptions = false;
   const markUnprojectedAttributes = (node: JsonRecord, supported: readonly string[]): void => {
     if (Object.keys(node).some(key => !supported.includes(key))) {
       // Native form presentation may be meaningful even when we cannot safely
@@ -162,6 +163,12 @@ export function inspectNativeForm(
       const column = fieldOptions(columnRaw);
       const override = fieldOptions(fieldRaw);
       if (!column || !override) return undefined;
+      // Native widget options can alter form rendering or behavior. An option
+      // Gia has not projected must not silently appear absent to a builder.
+      if ([columnRaw, fieldRaw].some(source => Object.keys(source).some(key =>
+        !["question", "formRequired", "formAcceptFromUrl", "dropdownCondition"].includes(key)))) {
+        hasProtectedFieldOptions = true;
+      }
       // The native predicate is not yet normalized into a supported, stable-ID
       // contract. Report its presence as protected, never as reconstructible.
       const configured = [columnRaw, fieldRaw].some(source =>
@@ -215,7 +222,8 @@ export function inspectNativeForm(
   return {
     ...common, tableId: widget.tableId, layout, submission,
     status: sectionPublicationIntent === "unknown" ? "incomplete" :
-      hasProtectedText || hasProtectedDropdownCondition || hasProtectedLayoutAttributes || successURL
+      hasProtectedText || hasProtectedDropdownCondition || hasProtectedLayoutAttributes ||
+      hasProtectedFieldOptions || successURL
         ? "protected" : "supported"
   };
 }
