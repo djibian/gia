@@ -33,6 +33,14 @@ Both `grist_add_structure(create_tables)` and `grist_add_structure(create_column
 
 The bounded ACL condition input language is advertised using local JSON Schema `$defs`/`$ref` references for its finite depth levels. Clients must resolve these local references to discover the complete closed predicate variants; a client's flattened or `unknown` display is not evidence that Gia accepts arbitrary predicates. Server-side validation, depth/width/node bounds and closed actions remain unchanged. This is not a promise of support for every client's JSON Schema dialect.
 
+`grist_change_structure(action="update_form_column_options")` writes one
+existing stable column's Form question, required flag or URL-prefill flag, keeping
+all other native `widgetOptions` untouched, including protected dropdown/style
+configuration. It refuses malformed or truncated native state, verifies the
+complete persisted options, and returns an idempotent no-op on re-execution.
+`question:null` clears the question. This does **not** create, render, submit or
+publish forms, accept link-bearing question text, or change native sharing.
+
 `grist_change_ui(action="update_form_layout")` configures one existing
 native Form section with a bounded tree of typed paragraphs, field groups and a
 final submit element. All field references are supplied as stable column IDs and

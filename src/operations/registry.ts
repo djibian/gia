@@ -18,6 +18,7 @@ const OPERATION_CAPABILITIES = new Map<string, GristCapability>([
   ["delete_table", "doc.schema:write"],
   ["create_columns", "doc.schema:write"],
   ["update_columns", "doc.schema:write"],
+  ["update_form_column_options", "doc.schema:write"],
   ["rename_column", "doc.schema:write"],
   ["change_access_rule_group", "doc.schema:write"],
   ["delete_columns", "doc.schema:write"],

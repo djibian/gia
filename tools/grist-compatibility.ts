@@ -2271,6 +2271,28 @@ async function run(): Promise<void> {
     assert(afterInspection.records.find(row => row.id === formSection.id)?.fields.layoutSpec === layoutSpec,
       "form_inspection_modified_native_layout");
 
+    // #295: write Form column options and preserve an existing opaque dropdown condition.
+    const configuredForm = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "update_form_column_options", documentId, tableId: TABLE_ID, columnId: "Name",
+      update: { question: "Contact name", required: false, acceptFromUrl: false }
+    }), "native_form_column_options_write") as { changed: boolean; persistedOptionsVerified: boolean };
+    assert(configuredForm.changed && configuredForm.persistedOptionsVerified,
+      "native_form_column_options_not_verified");
+    const persistedFormColumn = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const persistedFormOptions = JSON.parse(String(persistedFormColumn.records.find(
+      row => row.id === column.id)?.fields.widgetOptions)) as Record<string, unknown>;
+    assert(persistedFormOptions.question === "Contact name" &&
+      persistedFormOptions.formRequired === false &&
+      persistedFormOptions.formAcceptFromUrl === false &&
+      (persistedFormOptions.dropdownCondition as { text: string }).text === 'choice.Status == "active"',
+      "native_form_column_options_preservation_failed");
+    const repeatedForm = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "update_form_column_options", documentId, tableId: TABLE_ID, columnId: "Name",
+      update: { question: "Contact name", required: false, acceptFromUrl: false }
+    }), "native_form_column_options_noop") as { changed: boolean };
+    assert(repeatedForm.changed === false, "native_form_column_options_repeat_wrote");
+
     // #295: native form layout creation from stable column IDs, after an
     // explicit fixture-only removal of the protected legacy redirect URL.
     const sanitizedFormLayout = JSON.parse(layoutSpec) as Record<string, unknown>;
