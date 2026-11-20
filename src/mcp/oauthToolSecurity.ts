@@ -35,7 +35,7 @@ export function actionScopeRequirementsForTool(
   if (name !== "grist_add_structure") return undefined;
   return {
     copy_document_as_template: ["doc.schema:write", "doc:read"],
-    copy_document: ["doc.schema:write", "doc:read"]
+    copy_document: ["doc.schema:write", "doc:download"]
   };
 }
 
