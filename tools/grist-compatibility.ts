@@ -2375,6 +2375,54 @@ async function run(): Promise<void> {
     }), "native_form_column_options_noop") as { changed: boolean };
     assert(repeatedForm.changed === false, "native_form_column_options_repeat_wrote");
 
+    // #295: native form layout creation from stable column IDs, after an
+    // explicit fixture-only removal of the protected legacy redirect URL.
+    const sanitizedFormLayout = JSON.parse(layoutSpec) as Record<string, unknown>;
+    delete sanitizedFormLayout.successURL;
+    sanitizedFormLayout.anotherResponse = false;
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
+      method: "POST",
+      body: JSON.stringify([["UpdateRecord", "_grist_Views_section", formSection.id, {
+        layoutSpec: JSON.stringify(sanitizedFormLayout)
+      }]])
+    });
+    const semanticFormLayout = {
+      children: [
+        { type: "paragraph", text: "Application du stage" },
+        { type: "section", children: [{ type: "field", columnId: "Name" }] },
+        { type: "submit" }
+      ],
+      submitText: "Envoyer"
+    };
+    const createdFormLayout = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_form_layout", documentId, pageId, widgetId: formSection.id,
+      layout: semanticFormLayout
+    }), "native_form_layout_write") as { changed: boolean; persistedLayoutVerified: boolean };
+    assert(createdFormLayout.changed && createdFormLayout.persistedLayoutVerified,
+      "native_form_layout_write_not_verified");
+    const persistedLayoutSections = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    const persistedFormLayout = JSON.parse(String(persistedLayoutSections.records.find(
+      row => row.id === formSection.id)?.fields.layoutSpec)) as {
+      children: Array<{children?: Array<{leaf?: number}>}>;
+      submitText?: string;
+      successText?: string;
+      anotherResponse?: boolean;
+    };
+    assert(persistedFormLayout.children[1]?.children?.[0]?.leaf === formField.id &&
+      persistedFormLayout.submitText === "Envoyer" && persistedFormLayout.successText === "Thank you" &&
+      persistedFormLayout.anotherResponse === false,
+      "native_form_layout_stable_field_reference_mismatch");
+    const repeatedLayout = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_form_layout", documentId, pageId, widgetId: formSection.id,
+      layout: semanticFormLayout
+    }), "native_form_layout_noop") as { changed: boolean };
+    assert(repeatedLayout.changed === false, "native_form_layout_repeat_wrote");
+    const formPreviewAfterWrite = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/forms/${formSection.id}`) as { formFieldsById: Record<number, { colId: string }> };
+    assert(formPreviewAfterWrite.formFieldsById[formField.id]?.colId === "Name",
+      "native_form_layout_broke_form_field");
+    
     // Confirm that a real native column-style rule is visible only as a safe
     // presence signal through the existing schema discovery surface.
     await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {

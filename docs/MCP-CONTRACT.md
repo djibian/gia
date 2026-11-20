@@ -62,6 +62,17 @@ complete persisted options, and returns an idempotent no-op on re-execution.
 `question:null` clears the question. This does **not** create, render, submit or
 publish forms, accept link-bearing question text, or change native sharing.
 
+`grist_change_ui(action="update_form_layout")` configures one existing
+native Form section with a bounded tree of typed paragraphs, field groups and a
+final submit element. All field references are supplied as stable column IDs and
+resolved to existing native section-field IDs server-side. The action is
+idempotent for an identical native layout. Omitted submission settings are
+retained. The action refuses opaque/malformed existing layout properties
+(including redirect URLs) and re-reads the persisted layout and stable field
+bindings. It does not add fields to native sections, create share links, publish,
+execute submissions or assert rendered behavior. To place a column not already
+present as a native section field, configure the widget fields separately first.
+
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
 Expanded column discovery (`grist_discover(columns)` and

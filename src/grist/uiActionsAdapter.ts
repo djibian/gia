@@ -499,6 +499,22 @@ export class GristUiActionsAdapter {
     ]);
   }
 
+  async updateFormLayout(
+    documentId: string, widgetId: number, layoutSpecJson: string
+  ): Promise<void> {
+    assertPositiveId(widgetId, "Grist Form widget ID");
+    let raw: unknown;
+    try { raw = JSON.parse(layoutSpecJson) as unknown; }
+    catch { throw new Error("Trusted Form layout must be valid JSON."); }
+    const layout = record(raw);
+    if (!layout || layout.type !== "Layout" || !Array.isArray(layout.children)) {
+      throw new Error("Trusted Form layout must be a native Layout.");
+    }
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Views_section", widgetId, { layoutSpec: layoutSpecJson }]
+    ]);
+  }
+
   async updatePageWidget(
     documentId: string,
     widgetId: number,

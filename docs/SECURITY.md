@@ -155,6 +155,14 @@ preserving unrelated option keys and verifying exact persisted post-state.
 An uncertain post-state must not be blindly retried. Questions exclude
 link-bearing text, and Form publication/ACL behavior is not implied.
 
+Form layout mutation accepts a finite, typed tree and server-side resolution of
+stable column identifiers to existing native section fields. A protected,
+unrecognized or partially readable existing layout refuses replacement rather
+than discarding unknown attributes; destination layout has no URL-bearing or
+arbitrary HTML elements. After write, the native persisted layout and stable
+field bindings must match or the outcome remains uncertain. Layout changes do
+not confer Form publication rights.
+
 Hidden fields and saved filters are presentation state. A generated summary
 table has its own native policy. Native roles, sharing and credential
 administration remain in Grist and its deployment.
