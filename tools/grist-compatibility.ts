@@ -2275,6 +2275,7 @@ async function run(): Promise<void> {
     // explicit fixture-only removal of the protected legacy redirect URL.
     const sanitizedFormLayout = JSON.parse(layoutSpec) as Record<string, unknown>;
     delete sanitizedFormLayout.successURL;
+    sanitizedFormLayout.anotherResponse = false;
     await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
       method: "POST",
       body: JSON.stringify([["UpdateRecord", "_grist_Views_section", formSection.id, {
@@ -2287,7 +2288,7 @@ async function run(): Promise<void> {
         { type: "section", children: [{ type: "field", columnId: "Name" }] },
         { type: "submit" }
       ],
-      submitText: "Envoyer", successText: "Merci"
+      submitText: "Envoyer"
     };
     const createdFormLayout = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_form_layout", documentId, pageId, widgetId: formSection.id,
@@ -2301,9 +2302,12 @@ async function run(): Promise<void> {
       row => row.id === formSection.id)?.fields.layoutSpec)) as {
       children: Array<{children?: Array<{leaf?: number}>}>;
       submitText?: string;
+      successText?: string;
+      anotherResponse?: boolean;
     };
     assert(persistedFormLayout.children[1]?.children?.[0]?.leaf === formField.id &&
-      persistedFormLayout.submitText === "Envoyer",
+      persistedFormLayout.submitText === "Envoyer" && persistedFormLayout.successText === "Thank you" &&
+      persistedFormLayout.anotherResponse === false,
       "native_form_layout_stable_field_reference_mismatch");
     const repeatedLayout = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_form_layout", documentId, pageId, widgetId: formSection.id,

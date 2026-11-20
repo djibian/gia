@@ -31,16 +31,32 @@ test("Form layout resolves stable column IDs to private native section field IDs
   assert.deepEqual(result.layoutSpec, {
     id: "gia_root", type: "Layout", submitText: "Envoyer",
     successText: "Merci", anotherResponse: false, children: [
-      { id: "gia_0", type: "Paragraph", text: "Application" },
-      { id: "gia_1", type: "Section", children: [
-        { id: "gia_1_0", type: "Paragraph", text: "Votre profil" },
-        { id: "gia_1_1", type: "Field", leaf: 77 },
-        { id: "gia_1_2", type: "Field", leaf: 78 }
-      ] }, { id: "gia_2", type: "Submit" }
+      { id: "gia_paragraph_0", type: "Paragraph", text: "Application", alignment: "left" },
+      { id: "gia_section_1", type: "Section", children: [
+        { id: "gia_paragraph_1_0", type: "Paragraph", text: "Votre profil", alignment: "left" },
+        { id: "gia_field_77", type: "Field", leaf: 77 },
+        { id: "gia_field_78", type: "Field", leaf: 78 }
+      ] }, { id: "gia_submit", type: "Submit" }
     ]
   });
   assert.deepEqual(resolveFormLayoutUpdate(widget(result.layoutSpec), tables, fields, requested).layoutSpec,
     result.layoutSpec);
+});
+
+test("Form layout preserves omitted submission settings and uses IDs compatible with native reconciliation", () => {
+  const first = resolveFormLayoutUpdate(widget(), tables, fields, requested).layoutSpec;
+  const layout: FormLayoutInput = { children: [requested.children[1]!, requested.children[0]!,
+    requested.children[2]!] };
+  const second = resolveFormLayoutUpdate(widget({ ...first, id: "native-root" }), tables, fields, layout).layoutSpec;
+  assert.equal(second.id, "native-root");
+  assert.equal(second.submitText, "Envoyer");
+  assert.equal(second.successText, "Merci");
+  assert.equal(second.anotherResponse, false);
+  const previousNodes = first.children as { id: string }[];
+  const currentNodes = second.children as { id: string }[];
+  assert.notEqual(currentNodes[0]?.id, previousNodes[0]?.id);
+  assert.notEqual(currentNodes[1]?.id, previousNodes[1]?.id);
+  assert.deepEqual(resolveFormLayoutUpdate(widget(second), tables, fields, layout).layoutSpec, second);
 });
 
 test("Form layout refuses unknown, duplicate or computed fields and absent submit", () => {

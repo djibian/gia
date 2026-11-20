@@ -732,12 +732,16 @@ export class AuthorizedGristService {
       }
       await this.uiActions.updateFormLayout(id, widgetId, resolved.layoutSpecJson);
       try {
-        const after = await this.loadDocumentUi(id);
+        const currentTables = await this.inner.listTables(id, { expandColumns: true });
+        const after = await this.loadDocumentUi(id, currentTables, true);
         assertCompleteUiSnapshot(after);
         const current = after.pages.find(page => page.id === pageId)?.widgets
           .find(item => item.id === widgetId);
         if (!current || current.type !== "form" ||
-            !sameJsonValue(current.layoutSpec, resolved.layoutSpec)) {
+            current.tableRef !== widget.tableRef || current.tableId !== widget.tableId ||
+            !sameJsonValue(current.layoutSpec, resolved.layoutSpec) ||
+            !sameJsonValue(resolveFormLayoutUpdate(current, currentTables,
+              after[SECTION_FIELDS_METADATA], layout).layoutSpec, resolved.layoutSpec)) {
           throw new Error("Native Form layout differs from the requested persisted state.");
         }
         return { ...base, changed: true, persistedLayoutVerified: true,

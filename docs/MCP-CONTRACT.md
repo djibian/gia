@@ -37,9 +37,10 @@ The bounded ACL condition input language is advertised using local JSON Schema `
 native Form section with a bounded tree of typed paragraphs, field groups and a
 final submit element. All field references are supplied as stable column IDs and
 resolved to existing native section-field IDs server-side. The action is
-idempotent for an identical native layout, refuses opaque/malformed existing
-layout properties (including redirect URLs) and verifies persisted layout on
-re-read. It does not add fields to native sections, create share links, publish,
+idempotent for an identical native layout. Omitted submission settings are
+retained. The action refuses opaque/malformed existing layout properties
+(including redirect URLs) and re-reads the persisted layout and stable field
+bindings. It does not add fields to native sections, create share links, publish,
 execute submissions or assert rendered behavior. To place a column not already
 present as a native section field, configure the widget fields separately first.
 

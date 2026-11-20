@@ -35,7 +35,7 @@ function safeText(value: unknown, label: string): string {
 }
 
 /** Refuse to replace unsupported native attributes, links or unresolvable field references. */
-function assertSafePreviousLayout(value: unknown, knownFields: ReadonlySet<number>): void {
+function safePreviousLayout(value: unknown, knownFields: ReadonlySet<number>): JsonRecord | undefined {
   if (value === undefined) return;
   const root = record(value);
   if (!root) throw new Error("Native Form layout is opaque or malformed; refusing overwrite.");
@@ -63,7 +63,7 @@ function assertSafePreviousLayout(value: unknown, knownFields: ReadonlySet<numbe
       }
       visitedIds.add(node.id);
     }
-    if (node.type === "Layout" || node.type === "Section") {
+    if ((node.type === "Layout" && depth === 0) || node.type === "Section") {
       if (!keys(node, node.type === "Layout"
           ? ["id", "type", "children", "submitText", "successText", "anotherResponse"]
           : ["id", "type", "children"]) ||
@@ -101,6 +101,7 @@ function assertSafePreviousLayout(value: unknown, knownFields: ReadonlySet<numbe
     }
   };
   walk(root, 0);
+  return root;
 }
 
 export function resolveFormLayoutUpdate(
@@ -115,22 +116,21 @@ export function resolveFormLayoutUpdate(
     throw new Error("Native Form field metadata is incomplete; refusing layout write.");
   }
   const fieldsByColumnId = new Map(fields.map(field => [field.columnId, field.fieldId]));
-  assertSafePreviousLayout(widget.layoutSpec, new Set(fields.map(field => field.fieldId)));
+  const previous = safePreviousLayout(widget.layoutSpec, new Set(fields.map(field => field.fieldId)));
   if (!Array.isArray(input.children) || !input.children.length || input.children.length > MAX_CHILDREN) {
     throw new Error("Form layout requires a bounded nonempty root.");
   }
   const used = new Set<string>();
   let count = 1, submits = 0;
   const children: JsonRecord[] = [];
-  const paragraph = (node: FormParagraph, id: string): JsonRecord => {
-    return { id, type: "Paragraph", text: safeText(node.text, "Form paragraph"),
-      ...(node.alignment !== undefined ? { alignment: node.alignment } : {}) };
-  };
+  const paragraph = (node: FormParagraph, position: string): JsonRecord => ({
+    id: "gia_paragraph_" + position, type: "Paragraph",
+    text: safeText(node.text, "Form paragraph"), alignment: node.alignment ?? "left"
+  });
   for (const [index, node] of input.children.entries()) {
     if (++count > MAX_NODES) throw new Error("Form layout exceeds the node budget.");
-    const id = "gia_" + index;
     if (node.type === "paragraph") {
-      children.push(paragraph(node, id));
+      children.push(paragraph(node, String(index)));
     } else if (node.type === "section") {
       if (!Array.isArray(node.children) || !node.children.length ||
           node.children.length > MAX_CHILDREN) throw new Error("Form section must contain bounded fields.");
@@ -138,7 +138,7 @@ export function resolveFormLayoutUpdate(
       for (const [inner, child] of node.children.entries()) {
         if (++count > MAX_NODES) throw new Error("Form layout exceeds the node budget.");
         if (child.type === "paragraph") {
-          section.push(paragraph(child, id + "_" + inner));
+          section.push(paragraph(child, index + "_" + inner));
           continue;
         }
         if (child.type !== "field" || !child.columnId || used.has(child.columnId)) {
@@ -152,23 +152,26 @@ export function resolveFormLayoutUpdate(
           throw new Error("Form field is unavailable or a computed column.");
         }
         used.add(child.columnId);
-        section.push({ id: id + "_" + inner, type: "Field", leaf: ref });
+        section.push({ id: "gia_field_" + ref, type: "Field", leaf: ref });
       }
-      children.push({ id, type: "Section", children: section });
+      children.push({ id: "gia_section_" + index, type: "Section", children: section });
     } else if (node.type === "submit") {
       submits++;
       if (index !== input.children.length - 1) throw new Error("Form Submit must be the final node.");
-      children.push({ id, type: "Submit" });
+      children.push({ id: "gia_submit", type: "Submit" });
     } else {
       throw new Error("Unsupported Form node.");
     }
   }
   if (!used.size || submits !== 1) throw new Error("Form needs a field and exactly one final Submit.");
+  const submitText = input.submitText ?? previous?.submitText;
+  const successText = input.successText ?? previous?.successText;
+  const anotherResponse = input.anotherResponse ?? previous?.anotherResponse;
   const layoutSpec: JsonRecord = {
-    id: "gia_root", type: "Layout", children,
-    ...(input.submitText !== undefined ? { submitText: safeText(input.submitText, "Form submit text") } : {}),
-    ...(input.successText !== undefined ? { successText: safeText(input.successText, "Form success text") } : {}),
-    ...(input.anotherResponse !== undefined ? { anotherResponse: input.anotherResponse } : {})
+    id: previous?.id ?? "gia_root", type: "Layout", children,
+    ...(submitText !== undefined ? { submitText: safeText(submitText, "Form submit text") } : {}),
+    ...(successText !== undefined ? { successText: safeText(successText, "Form success text") } : {}),
+    ...(anotherResponse !== undefined ? { anotherResponse } : {})
   };
   const layoutSpecJson = JSON.stringify(layoutSpec);
   if (layoutSpecJson.length > 16_384) throw new Error("Form layout exceeds the native payload bound.");
