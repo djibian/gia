@@ -74,6 +74,7 @@ import {
 } from "./selectBy.js";
 import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUpdateInput } from "./formColumnOptions.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
+import { readFormFieldOptions, resolveFormFieldOptions, type FormFieldOptionsInput } from "./formFieldOptions.js";
 import { DocumentContextService } from "./documentContext.js";
 import { DocumentUiService, type DocumentUiContext } from "./documentUi.js";
 import {
@@ -98,6 +99,7 @@ import {
   type ResolvedWidgetSortSpec,
   type WidgetSortInput
 } from "./widgetSort.js";
+import { existingWidgetFields } from "./widgetFields.js";
 import {
   resolveWidgetFieldsUpdate,
   type WidgetFieldUpdateInput
@@ -752,6 +754,53 @@ export class AuthorizedGristService {
       } catch (error) {
         throw new UiWriteVerificationError("update_form_layout",
           error instanceof Error ? error.message : "Native Form layout post-read failed.");
+      }
+    });
+  }
+
+  async updateFormFieldOptions(
+    documentIdOrUrl: string, pageId: number, widgetId: number,
+    columnId: string, update: FormFieldOptionsInput
+  ): Promise<unknown> {
+    if (!Number.isInteger(pageId) || pageId < 1 ||
+        !Number.isInteger(widgetId) || widgetId < 1 || !columnId.trim()) {
+      throw new Error("Form field update needs positive page/widget IDs and a stable column ID.");
+    }
+    return this.execute("update_form_field_options", documentIdOrUrl, 1, async (id) => {
+      const tables = await this.inner.listTables(id, { expandColumns: true });
+      const before = await this.loadDocumentUi(id, tables, true);
+      assertCompleteUiSnapshot(before);
+      const form = before.pages.find(page => page.id === pageId)?.widgets
+        .find(widget => widget.id === widgetId);
+      if (!form || form.type !== "form") {
+        throw new Error("Target is not a verified native Form on the requested page.");
+      }
+      const sectionFields = before[SECTION_FIELDS_METADATA];
+      const currentFields = existingWidgetFields(form, tables, sectionFields);
+      const target = currentFields?.find(field => field.columnId === columnId);
+      if (!target) {
+        throw new Error("Form column is not an existing uniquely resolved native section field.");
+      }
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = (response: unknown) => readFormFieldOptions(
+        response, widgetId, target.fieldId, target.columnRef, limit
+      );
+      const plan = resolveFormFieldOptions(read(sectionFields), update);
+      const base = { documentId: id, pageId, widgetId, columnId };
+      if (!plan.changed) return { ...base, changed: false,
+        persistedOptionsVerified: true, nativeFormRenderingQualified: false };
+      await this.uiActions.updateFormFieldOptions(id, target.fieldId, plan.widgetOptions);
+      try {
+        const after = await this.inner.queryRecords(id, "_grist_Views_section_field",
+          { limit, hidden: true });
+        if (!sameJsonValue(read(after), plan.options)) {
+          throw new Error("Native Form field options did not match the requested preserved state.");
+        }
+        return { ...base, changed: true, persistedOptionsVerified: true,
+          nativeFormRenderingQualified: false };
+      } catch (error) {
+        throw new UiWriteVerificationError("update_form_field_options",
+          error instanceof Error ? error.message : "Native Form field option post-read failed.");
       }
     });
   }

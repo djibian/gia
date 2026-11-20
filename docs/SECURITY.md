@@ -163,6 +163,13 @@ arbitrary HTML elements. After write, the native persisted layout and stable
 field bindings must match or the outcome remains uncertain. Layout changes do
 not confer Form publication rights.
 
+Native Form field-override edits are scoped to an existing verified Form widget,
+column ID and unique native section field. A bounded complete metadata snapshot
+is required before mutation, and the native post-state must preserve all
+untargeted widget options. Input questions exclude URLs and link-like text.
+An uncertain post-state is not a no-effect guarantee; native publication and
+access privileges remain unchanged.
+
 Hidden fields and saved filters are presentation state. A generated summary
 table has its own native policy. Native roles, sharing and credential
 administration remain in Grist and its deployment.

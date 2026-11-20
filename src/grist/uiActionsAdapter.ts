@@ -515,6 +515,19 @@ export class GristUiActionsAdapter {
     ]);
   }
 
+  async updateFormFieldOptions(
+    documentId: string, fieldId: number, widgetOptions: string
+  ): Promise<void> {
+    assertPositiveId(fieldId, "Grist Form field ID");
+    let raw: unknown;
+    try { raw = JSON.parse(widgetOptions) as unknown; }
+    catch { throw new Error("Trusted native Form field options must be JSON."); }
+    if (!record(raw)) throw new Error("Trusted Form field options must be an object.");
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Views_section_field", fieldId, { widgetOptions }]
+    ]);
+  }
+
   async updatePageWidget(
     documentId: string,
     widgetId: number,
