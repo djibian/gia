@@ -58,6 +58,16 @@ function safeCompatibilityLayout(value: unknown): boolean {
   return walk(value, 0, true);
 }
 
+/** Conditional style helper references are private; expose presence, never IDs or formula text. */
+function conditionalStyleRuleState(value: unknown): "protected" | "incomplete" | undefined {
+  if (value === undefined) return undefined; // Absence in a response is not a native no-rules proof.
+  if (!Array.isArray(value) || value[0] !== "L" || value.length > 33) return "incomplete";
+  const refs = value.slice(1);
+  if (refs.some(ref => positiveInteger(ref) === undefined) ||
+      new Set(refs).size !== refs.length) return "incomplete";
+  return refs.length ? "protected" : undefined;
+}
+
 /** Keep legacy numeric layout detail without forwarding arbitrary metadata. */
 export function projectPublicPage(page: GristPage) {
   const { widgets, layoutSpec, ...projected } = page;
@@ -136,6 +146,8 @@ function publicColumn(
   if (typeof fields.formula === "string") projected.formula = fields.formula;
   if (typeof fields.description === "string") projected.description = fields.description;
   if (typeof fields.widgetOptions === "string") projected.widgetOptions = fields.widgetOptions;
+  const conditionalStyleRules = conditionalStyleRuleState(fields.rules);
+  if (conditionalStyleRules) projected.conditionalStyleRules = { status: conditionalStyleRules };
   if (visibleColumnId !== undefined) projected.visibleColumnId = visibleColumnId;
 
   return { id, fields: projected };
