@@ -2708,6 +2708,75 @@ async function run(): Promise<void> {
     assert(allowedMembers.records.length === 1 && allowedMembers.records[0]?.id === alpha.id &&
       deniedMembers.records.length === 0, "native_ref_list_user_attribute_row_filter_mismatch");
 
+    // Fixed native -S policy is independent of ordinary typed table/column ACLs.
+    // Exercise a real editor schema mutation BEFORE the guard and its denial AFTER.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "ensure_owner_schema_guard", documentId, confirmSchemaRestriction: false
+    });
+    const schemaEditor = "compat-schema-editor@example.invalid";
+    const schemaEditorKey = await createTestApiKey(gristBaseUrl, schemaEditor, "Schema Editor");
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/access`, {
+      method: "PATCH", body: JSON.stringify({
+        delta: { users: { [schemaEditor]: "editors" } }
+      })
+    });
+    const schemaWrite = (name: string) => ({
+      method: "POST", body: JSON.stringify([
+        ["AddColumn", "Compat_Events", name, { type: "Text" }]
+      ])
+    });
+    const editorBefore = await gristStatus(gristBaseUrl, schemaEditorKey,
+      `${docPath}/apply`, schemaWrite("BeforeSchemaGuard"));
+    assert(editorBefore === 200, `native_schema_editor_baseline:${editorBefore}`);
+    const priorRules = await readNativeAcl();
+    let guardResult: unknown;
+    try {
+      guardResult = await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "ensure_owner_schema_guard", documentId, confirmSchemaRestriction: true
+      });
+    } catch (error) {
+      // Only the synthetic fixed special-rule metadata, never other ACL
+      // formulas, user-attribute values, URLs or share keys, enters CI logs.
+      const diagnostics = await readNativeAcl();
+      const special = diagnostics.filter(rule => rule.fields.permissionsText === "-S");
+      console.error("schema_guard_native_diagnostic", JSON.stringify({
+        beforeCount: priorRules.length, afterCount: diagnostics.length,
+        special: special.map(rule => ({
+          formulaMatches: rule.fields.aclFormula === "user.Access != OWNER",
+          formulaParsed: rule.fields.aclFormulaParsed, rulePos: rule.fields.rulePos,
+          keys: Object.keys(rule.fields).sort()
+        }))
+      }));
+      throw error;
+    }
+    const nativeSchemaGuard = resultJson(guardResult, "native_owner_schema_guard_create") as {
+        changed: boolean; persistedDefinitionVerified: boolean;
+        effectiveEnforcementVerified: boolean;
+      };
+    assert(nativeSchemaGuard.changed && nativeSchemaGuard.persistedDefinitionVerified &&
+      nativeSchemaGuard.effectiveEnforcementVerified === false,
+      "native_schema_guard_created_without_proof");
+    const currentRules = await readNativeAcl();
+    const nativeGuard = currentRules.filter(rule =>
+      rule.fields.aclFormula === "user.Access != OWNER" &&
+      rule.fields.permissionsText === "-S");
+    assert(nativeGuard.length === 1 &&
+      currentRules.length === priorRules.length + 1,
+      "native_special_acl_not_uniquely_persisted");
+    assert(priorRules.every(original => currentRules.some(row =>
+      row.id === original.id && isDeepStrictEqual(row.fields, original.fields))),
+      "native_special_acl_modified_other_rules");
+    const repeatedSchemaGuard = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "ensure_owner_schema_guard", documentId, confirmSchemaRestriction: true
+      }), "native_owner_schema_guard_idempotent") as { changed: boolean };
+    assert(repeatedSchemaGuard.changed === false, "native_schema_guard_repeat_modified_policy");
+    const editorAfter = await gristStatus(gristBaseUrl, schemaEditorKey,
+      `${docPath}/apply`, schemaWrite("DeniedAfterSchemaGuard"));
+    assert(editorAfter === 403, `native_schema_guard_editor_not_denied:${editorAfter}`);
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`,
+      schemaWrite("OwnerAfterSchemaGuard"));
+
     console.log(`Grist Community ${version}: PASS`);
     console.log(
       `document=${documentId} workspace=${workspaceId} table=${TABLE_ID} page=${PAGE_NAME} empty=${emptyDocumentId} template=${copiedDocumentId}`

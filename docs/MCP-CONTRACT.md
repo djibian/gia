@@ -269,6 +269,22 @@ Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect(action="access_r
 
 Targets use stable table/column IDs; private ACL resource/rule row IDs remain bridge-internal. Writable conditions are a deliberately small typed subset with no arbitrary literal or formula text: everyone, one native Grist role comparison or a bounded two/three-role `user.Access in/not in` membership, a `user.IsLoggedIn` equality/inequality against a native boolean literal, one same-table record-column comparison with a bounded built-in user property, or one equality/inequality comparison between a stable Text/Any record column and a bounded safe `user.LinkKey.<name>` reference, or a same-column equality/inequality comparison of `rec` and `newRec` for update-only decisions, or a Bool column compared with a native boolean `True`/`False` literal, or an existing Int column compared with the finite numeric flag `0`/`1`, or an existing Text column compared with an exact empty string.  The existing `match_user`, `match_link_key` and Bool-literal `match_boolean` leaves accept an optional `record: "newRec"` to compare the proposed post-change row instead of the current `rec` row. It is valid only for create/update permissions (read/delete must be unspecified). Absence of `record` retains the original `rec` form and normalized shape. These leaves may be combined through finite `all` / `any` / `not` boolean trees; other operand pairs, string/numeric literals and non-role membership forms remain unsupported. LinkKey names are structural policy metadata; LinkKey values and secret-bearing URLs are never accepted or returned. Both native operand orders for the supported LinkKey comparison normalize to the same public `match_link_key` condition, while writes use one canonical formula form. Permissions are explicit `allow|deny|unspecified`; native `S`, `all` and `none` forms are outside the writable subset.
 
+A **separate, fixed** special-rule action,
+`grist_change_structure(action="ensure_owner_schema_guard",
+confirmSchemaRestriction:true)`, is the only writable exception for native
+schema-edit permission `S`. It requires document `doc.schema:write`,
+fresh native Owner proof and a complete unambiguous default ACL resource.
+It can **only add** `user.Access != OWNER` with `permissionsText:"-S"`,
+or report an exact idempotent no-op. It never accepts a caller-defined ACL
+expression, permission set or target; it refuses unknown or conflicting default
+rules and preserves any supported native user-attribute definitions. Before
+mutating it checks the complete default policy; afterwards it verifies the
+exact native formula, parsed predicate, rule identity and preservation of every
+unrelated ACL resource and rule. This establishes only stored definition, not
+effective native permission enforcement or safe concurrent browser edits.
+Uncertain effects require reinspection, not blind replay. The ordinary
+`access_rule_group` action still cannot write `S` rules.
+
 The same Owner-gated `grist_inspect(action="access_rules")` additionally
 returns `userAttributes: {definitions, protectedDefinitionCount}`.
 The inspection operation itself is read-only. Each definition reports
