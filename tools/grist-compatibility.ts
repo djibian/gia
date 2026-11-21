@@ -1193,7 +1193,7 @@ async function run(): Promise<void> {
     assert(installed.changed && installed.persistedWidgetVerified &&
       installed.remoteCodeExecutionQualified === false, "trusted_widget_install_unverified");
     const trustedNative = await gristApi(gristBaseUrl, apiKey,
-      docPath + "/tables/_grist_Views_section/records?hidden=true") as MetaRecords;
+      "/api/docs/" + encodeURIComponent(documentId) + "/tables/_grist_Views_section/records?hidden=true") as MetaRecords;
     const trustedRow = trustedNative.records.find(row => row.id === trustedId);
     const trustedView = JSON.parse(JSON.parse(trustedRow?.fields.options as string).customView);
     assert(trustedView.widgetId === "@test/compat" && trustedView.access === "none" &&
