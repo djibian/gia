@@ -348,7 +348,8 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "Reordering needs the exact eligible navigationPageIds from fresh page inspection; preserve page hierarchy.",
       "A page layout accounts for each current widget exactly once in root or collapsedWidgetIds. A Card/Card List layout places every current visible field exactly once. Update visibleFields and cardLayout separately (visible fields first). Hidden fields/filters are UI, not ACLs.",
       "calendarConfig applies to a calendar widget and uses stable IDs on its table: Date/DateTime start/end, Bool all-day, Text/Any title, Choice/ChoiceList/Any type.",
-      "calendarConfig replaces the mapping set. Omitting endDateColumnId, allDayColumnId or typeColumnId clears that mapping. Carry forward each optional mapping you want to keep. Other widget settings are preserved."
+      "calendarConfig replaces the mapping set. Omitting endDateColumnId, allDayColumnId or typeColumnId clears that mapping. Carry forward each optional mapping you want to keep. Other widget settings are preserved.",
+      "customWidgetSettings.optionsPatch changes only bounded inert option keys on an already identified custom widget. It cannot install widgets, set URLs or authorize full access; other settings stay intact."
     ],
     examples: [
       { purpose: "Set all mappings for a calendar with text, date, Boolean and choice columns", arguments: {
