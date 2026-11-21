@@ -2289,6 +2289,22 @@ async function run(): Promise<void> {
       assert(computed.records[0]?.fields.TimezoneOffset === (timezone === "UTC" ? 0 : 3600),
         "native_document_timezone_formula_mismatch");
     }
+    // #295: synthetic native locale updates must preserve unprojected settings.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "update_document", documentId, update: { locale: "de-DE" }
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "update_document", documentId, update: { locale: "en-US", timezone: "UTC" }
+    });
+    for (const [locale, changed] of [["en-US", true], ["en-US", false], ["fr-FR", true]] as const) {
+      const result = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+        action: "update_document", documentId, update: { locale }
+      }), "native_document_locale_write") as { changed: boolean; settings: {
+        locale: string; timezone: string
+      } };
+      assert(result.changed === changed && result.settings.locale === locale &&
+        result.settings.timezone === "Europe/Paris", "native_document_locale_postcondition");
+    }
     const docInfo = await gristApi(gristBaseUrl, apiKey,
       `${settingsDocPath}/tables/_grist_DocInfo/records?hidden=true`) as {
         records: Array<{ id: number; fields: Record<string, unknown> }>;

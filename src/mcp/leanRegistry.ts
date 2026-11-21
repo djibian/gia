@@ -281,7 +281,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     actions: ["update_document", "update_tables", "delete_table", "update_columns", "update_form_column_options", "update_dropdown_condition",
       "rename_column", "delete_columns", "access_rule_group"],
     request: [
-      "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}}",
+      "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}|{locale:'fr-FR'|'en-US'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
       "update_form_column_options: {action,documentId,tableId,columnId,update:{question?:string|null,required?:boolean,acceptFromUrl?:boolean}}; preserves other native options.",
       "update_dropdown_condition: {action,documentId,tableId,columnId,condition:null|{kind:'choice_field_equals_literal',choiceColumnId,value}|{kind:'choice_field_equals_record_ref',choiceColumnId,recordColumnId}|{kind:'choice_id_in_record_reflist',recordColumnId}}; typed native Ref/RefList predicate, null removes it.",
@@ -296,7 +296,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "user_access_membership: {kind,operator:'in'|'not_in',roles:[2..3 distinct owner/editor/viewer roles]}; all/any: {kind,conditions:[2..6 conditions]}; not: {kind,condition}"
     ],
     constraints: [
-      "Supply timezone alone. Name and type use a separate native document path. Verify the persisted timezone after updating.",
+      "Supply locale or timezone alone. Name/type use a separate path. Preserve and re-read native document settings after locale changes.",
       "Table/column targets forbid definition and require rules for create/replace. User-attribute targets forbid rules and require definition for create/replace. Delete forbids both. Native Owner + doc.schema:write required.",
       "Column groups only set read/update. Each rule must allow or deny at least one permitted operation. Rules cannot repeat. An everyone rule is allowed only as the last top-level rule, outside all/any/not.",
       "ACL fixed bounds: <=20 rules/group, tree depth <=4, <=20 nodes, all/any width 2..6; unknown predicates and literals are rejected.",

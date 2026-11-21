@@ -35,6 +35,7 @@ import {
 } from "../grist/pageLayout.js";
 import { MAX_SUMMARY_GROUP_BY_COLUMNS } from "../grist/summaryTables.js";
 import { DOCUMENT_TIMEZONE_CHOICES } from "../grist/service.js";
+import { DOCUMENT_LOCALE_CHOICES } from "../grist/documentLocale.js";
 import { NATIVE_WIDGET_TYPES } from "../grist/uiActionsAdapter.js";
 import {
   MAX_WIDGET_SORT_COLUMNS,
@@ -698,14 +699,16 @@ export function registerLeanTools(
     .object({
       name: documentNameSchema.optional(),
       type: z.enum(["normal", "template", "tutorial"]).optional(),
-      timezone: z.enum(DOCUMENT_TIMEZONE_CHOICES).optional()
+      timezone: z.enum(DOCUMENT_TIMEZONE_CHOICES).optional(),
+      locale: z.enum(DOCUMENT_LOCALE_CHOICES).optional()
     })
     .strict()
     .refine(
-      (value) => value.timezone !== undefined
-        ? value.name === undefined && value.type === undefined
+      (value) => value.timezone !== undefined || value.locale !== undefined
+        ? value.name === undefined && value.type === undefined &&
+          !(value.timezone !== undefined && value.locale !== undefined)
         : value.name !== undefined || value.type !== undefined,
-      "Supply a timezone alone or at least one of name and type."
+      "Supply locale or timezone separately, or name/type metadata."
     );
 
   server.registerTool(
@@ -1123,6 +1126,9 @@ export function registerLeanTools(
                   : {}),
                 ...(input.update.timezone !== undefined
                   ? { timezone: input.update.timezone }
+                  : {}),
+                ...(input.update.locale !== undefined
+                  ? { locale: input.update.locale }
                   : {})
               })
             );
