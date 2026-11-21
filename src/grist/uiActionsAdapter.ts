@@ -608,7 +608,8 @@ export class GristUiActionsAdapter {
     let parsed: unknown;
     try { parsed = JSON.parse(widgetOptions) as unknown; }
     catch { throw new Error("Trusted conditional style options are not JSON."); }
-    if (!record(parsed) || !Array.isArray(parsed.rulesOptions)) {
+    const validated = record(parsed);
+    if (!validated || !Array.isArray(validated.rulesOptions)) {
       throw new Error("Trusted conditional style options lack the native rule list.");
     }
     await this.client.applyUserActions(documentId, [
