@@ -2365,6 +2365,46 @@ async function run(): Promise<void> {
         }]
       ])
     });
+    // #295: publish a real native Form only after explicit confirmation and Owner proof.
+    // Start from a synthetic unpublished Form, without changing any user document.
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
+      method: "POST",
+      body: JSON.stringify([["UpdateRecord", "_grist_Views_section", formSection.id, {
+        shareOptions: '{"form":true,"publish":false}'
+      }]])
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "publish_form", documentId, pageId, widgetId: formSection.id
+    });
+    const publishedForm = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "publish_form", documentId, pageId, widgetId: formSection.id, confirmPublic: true
+    }), "native_publish_form") as {
+      changed: boolean; publicationRequested: boolean; persistedPublicationIntentVerified: boolean;
+      persistedPageShareVerified: boolean; publicSubmissionQualified: boolean
+    };
+    assert(publishedForm.changed && publishedForm.publicationRequested &&
+      publishedForm.persistedPublicationIntentVerified && publishedForm.persistedPageShareVerified &&
+      publishedForm.publicSubmissionQualified === false,
+      "native_form_publication_not_verified");
+    const publishedFormRecords = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    assert(JSON.parse(String(publishedFormRecords.records.find(
+      row => row.id === formSection.id)?.fields.shareOptions)).publish === true,
+      "native_form_publication_not_persisted");
+    const [publishedPages, publishedShares] = await Promise.all(
+      ["_grist_Pages", "_grist_Shares"].map(table => gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/${table}/records?hidden=true`) as Promise<MetaRecords>)
+    );
+    assert(publishedPages && publishedShares, "native_form_share_snapshot_unavailable");
+    const pageShareRef = publishedPages.records.find(row => row.fields.viewRef === pageId)?.fields.shareRef;
+    assert(typeof pageShareRef === "number" && pageShareRef > 0 &&
+      publishedShares.records.some(row => row.id === pageShareRef &&
+        JSON.parse(String(row.fields.options)).publish === true &&
+        typeof row.fields.linkId === "string"), "native_published_form_missing_page_share");
+    const repeatedPublish = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "publish_form", documentId, pageId, widgetId: formSection.id, confirmPublic: true
+    }), "native_publish_form_replay") as { changed: boolean };
+    assert(repeatedPublish.changed === false, "native_form_publication_replay_wrote");
     const nativePreview = await gristApi(gristBaseUrl, apiKey, `${docPath}/forms/${formSection.id}`) as {
       formTableId: string;
       formFieldsById: Record<number, { colId: string; question: string }>;

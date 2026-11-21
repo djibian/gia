@@ -167,6 +167,19 @@ post-write JSON. Missing, malformed or over-budget metadata refuses mutation;
 uncertain writes cannot be blindly retried. Unprojected values never appear in
 the model output.
 
+Native Form publication is a separate bounded write, requiring an explicit
+`confirmPublic:true`, Gia `doc.schema:write` and fresh upstream Owner proof.
+Only an existing native Form's two recognized `shareOptions` flags may be
+published, together with its required native page share. The fixed private
+creation bundle uses a generated unpredictable link ID and a private
+cross-action negative reference; none of these identifiers appears in MCP
+output. Existing shares are accepted only when already published and uniquely
+linked to the page; ambiguous, shared, unknown or unpublished native state
+refuses mutation. Form layout, fields and document ACL state remain untargeted.
+Readback verifies the native page/section/share graph, never anonymous
+reachability or permission enforcement. Lost or unverified publication is uncertain; the
+caller must not blindly replay it.
+
 Form layout mutation accepts a finite, typed tree and server-side resolution of
 stable column identifiers to existing native section fields. A protected,
 unrecognized or partially readable existing layout refuses replacement rather

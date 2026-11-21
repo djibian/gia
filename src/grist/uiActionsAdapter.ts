@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { GristClient } from "./client.js";
 import type { AccessRuleMutationPlan, AccessUserAttributeMutationPlan } from "./accessRules.js";
 import { GRIST_CHART_TYPES, type GristChartType } from "./chartTypes.js";
@@ -513,6 +514,34 @@ export class GristUiActionsAdapter {
     await this.client.applyUserActions(documentId, [
       ["UpdateRecord", "_grist_Views_section", widgetId, { layoutSpec: layoutSpecJson }]
     ]);
+  }
+
+  async publishForm(
+    documentId: string, widgetId: number, pageRecordId: number,
+    shareOptions: string, createPageShare: boolean
+  ): Promise<void> {
+    assertPositiveId(widgetId, "Grist Form widget ID");
+    assertPositiveId(pageRecordId, "Grist Form page record ID");
+    let raw: unknown;
+    try { raw = JSON.parse(shareOptions) as unknown; }
+    catch { throw new Error("Trusted Form publication must be valid JSON."); }
+    const state = record(raw);
+    if (!state || Object.keys(state).some(key => !["form", "publish"].includes(key)) ||
+        state.form !== true || state.publish !== true) {
+      throw new Error("Trusted native publication requires the two explicit Form flags.");
+    }
+    const actions: unknown[][] = [];
+    if (createPageShare) {
+      // Native Grist's negative reference convention keeps the share creation,
+      // page linkage and Form publication in a single fixed /apply action list.
+      // The unpredictable linkId is private, never echoed to the model.
+      actions.push(["AddRecord", "_grist_Shares", -1, {
+        linkId: randomUUID(), options: JSON.stringify({ publish: true })
+      }]);
+      actions.push(["UpdateRecord", "_grist_Pages", pageRecordId, { shareRef: -1 }]);
+    }
+    actions.push(["UpdateRecord", "_grist_Views_section", widgetId, { shareOptions }]);
+    await this.client.applyUserActions(documentId, actions);
   }
 
   async updateFormFieldOptions(
