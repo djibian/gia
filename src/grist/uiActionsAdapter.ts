@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { GristClient } from "./client.js";
 import type { AccessRuleMutationPlan, AccessUserAttributeMutationPlan } from "./accessRules.js";
 import { GRIST_CHART_TYPES, type GristChartType } from "./chartTypes.js";
+import { OWNER_SCHEMA_FORMULA, type OwnerSchemaGuardPlan } from "./schemaEditGuard.js";
 import {
   MAX_PAGE_ORDER_PAGES,
   type PageOrderWrite
@@ -192,6 +193,24 @@ export class GristUiActionsAdapter {
       );
     });
     return legacyCalendarAvailable ? "custom.calendar" : "calendar";
+  }
+
+  async ensureOwnerSchemaGuard(documentId: string, plan: OwnerSchemaGuardPlan): Promise<void> {
+    if (plan.mode === "noop") return;
+    const actions: unknown[][] = [];
+    if (plan.createDefaultResource) {
+      actions.push(["AddRecord", "_grist_ACLResources", -1,
+        { tableId: "*", colIds: "*" }]);
+    }
+    const resource = plan.createDefaultResource ? -1 : plan.defaultResourceId;
+    if (resource === undefined || !Number.isSafeInteger(plan.rulePos) || plan.rulePos < 1) {
+      throw new Error("Native schema permission plan is incomplete.");
+    }
+    actions.push(["AddRecord", "_grist_ACLRules", null, {
+      resource, aclFormula: OWNER_SCHEMA_FORMULA,
+      permissionsText: "-S", rulePos: plan.rulePos
+    }]);
+    await this.client.applyUserActions(documentId, actions);
   }
 
   async mutateUserAttribute(
