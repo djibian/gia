@@ -214,7 +214,7 @@ test("bounded widget-owned option patches preserve identity, mappings and unrela
 });
 
 test("widget-owned options reject absent identity, opaque state, URLs and executable or secret values", () => {
-  const update = (patch: Record<string, unknown>, altered: typeof widget = widget) =>
+  const update = (patch: Record<string, unknown>, altered: Parameters<typeof resolveCustomWidgetSettingsUpdate>[0] = widget) =>
     resolveCustomWidgetSettingsUpdate(altered, expandedTables, { optionsPatch: patch as never });
   for (const patch of [
     {}, { token: "abc" }, { apiKey: "abc" },
