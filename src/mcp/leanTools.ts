@@ -338,15 +338,28 @@ const calendarConfigSchema = z
   })
   .strict();
 
+const customWidgetOptionScalar = z.union([
+  z.string().max(160),
+  z.number().finite().min(-1_000_000).max(1_000_000),
+  z.boolean()
+]);
+const customWidgetOptionValue = z.union([
+  customWidgetOptionScalar,
+  z.array(z.union([z.string().max(160),
+    z.number().finite().min(-1_000_000).max(1_000_000)])).max(20),
+  z.null()
+]);
 const customWidgetSettingsUpdateSchema = z
   .object({
     access: z.enum(["none", "read table", "full"]).optional(),
-    columnsMapping: customWidgetColumnsMappingSchema.nullable().optional()
+    columnsMapping: customWidgetColumnsMappingSchema.nullable().optional(),
+    optionsPatch: dictionarySchema(customWidgetOptionValue, 1).optional()
   })
   .strict()
   .refine(
-    (value) => value.access !== undefined || value.columnsMapping !== undefined,
-    "At least one of access or columnsMapping must be supplied."
+    (value) => value.access !== undefined || value.columnsMapping !== undefined ||
+      value.optionsPatch !== undefined,
+    "At least one of access, columnsMapping or optionsPatch must be supplied."
   );
 
 const widgetVisibleFieldsSchema = z
@@ -589,6 +602,9 @@ function normalizeWidgetUpdate(
                   columnsMapping:
                     update.customWidgetSettings.columnsMapping
                 }
+              : {}),
+            ...(update.customWidgetSettings.optionsPatch !== undefined
+              ? { optionsPatch: update.customWidgetSettings.optionsPatch }
               : {})
           }
         }

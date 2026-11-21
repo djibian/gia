@@ -240,3 +240,13 @@ audit sinks, and test native account rotation/revocation without logging keys.
 No log backend, alert transport or secret database is embedded in the product.
 Applicable hosted-service obligations remain in [Privacy](../PRIVACY.md),
 [Terms](../TERMS.md) and [Support](../SUPPORT.md).
+
+## Existing custom widget options
+
+An additive bounded update can patch only inert literal `widgetOptions` keys
+on an already identified custom widget. The native section and customView
+identity, URL, access, mappings, and unrelated settings are preserved and
+verified after write. URL, HTML/script, credential-like option names, nested
+JSON and absent widget identity are rejected. This does not install or
+approve a publisher, grant access, or verify remote widget execution. Lost
+responses require read/reconciliation, not a blind replay.

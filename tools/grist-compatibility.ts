@@ -1203,6 +1203,34 @@ async function run(): Promise<void> {
     const afterCustom = JSON.parse(afterOptions.customView as string) as Record<string, unknown>;
     assert(afterOptions.keepCanary === true && afterCustom.url === nativeCustomView.url && afterCustom.pluginId === nativeCustomView.pluginId, "native_custom_untargeted_settings_changed");
 
+    // Exercise only inert existing-widget option writes in this disposable document.
+    afterCustom.widgetId = "@synthetic/fixture-widget";
+    afterCustom.widgetOptions = { untouchedFixture: "keep" };
+    afterOptions.customView = JSON.stringify(afterCustom);
+    await gristApi(gristBaseUrl, apiKey, "/api/docs/" + encodeURIComponent(documentId) + "/apply", {
+      method: "POST", body: JSON.stringify([["UpdateRecord", "_grist_Views_section", customWidgetId,
+        { options: JSON.stringify(afterOptions) }]])
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: customWidgetId,
+      update: { customWidgetSettings: { optionsPatch: { endpoint: "https://unsafe.example.invalid" } } }
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: customWidgetId,
+      update: { customWidgetSettings: { optionsPatch: { departments: ["29", "35"], active: true } } }
+    });
+    const optionSections = await gristApi(gristBaseUrl, apiKey,
+      "/api/docs/" + encodeURIComponent(documentId) + "/tables/_grist_Views_section/records") as typeof sections;
+    const optionSection = optionSections.records.find(section => section.id === customWidgetId);
+    const optionsOuter = JSON.parse(optionSection?.fields.options as string) as Record<string, unknown>;
+    const optionsInner = JSON.parse(optionsOuter.customView as string) as Record<string, unknown>;
+    assert(JSON.stringify(optionsInner.widgetOptions) === JSON.stringify({
+      untouchedFixture: "keep", departments: ["29", "35"], active: true
+    }), "native_custom_widget_owned_options_not_persisted_or_preserved");
+    assert(optionsInner.widgetId === "@synthetic/fixture-widget" &&
+      optionsInner.url === nativeCustomView.url && optionsInner.pluginId === nativeCustomView.pluginId &&
+      optionsOuter.keepCanary === true, "native_custom_widget_identity_or_unrelated_options_changed");
+
     const navigation = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", { action: "pages", documentId }), "navigation");
     assert(Array.isArray(navigation.navigationPageIds), "navigation_ids_missing");
     const requestedOrder = [...navigation.navigationPageIds].reverse();

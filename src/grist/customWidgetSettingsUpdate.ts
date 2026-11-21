@@ -7,9 +7,13 @@ import {
   type CustomWidgetColumnMapping
 } from "./customWidgetSettings.js";
 
+export type CustomWidgetOptionValue = string | number | boolean | (string | number)[] | null;
+export type CustomWidgetOptionsPatch = Record<string, CustomWidgetOptionValue>;
+
 export interface CustomWidgetSettingsUpdateInput {
   access?: CustomWidgetAccessLevel | undefined;
   columnsMapping?: CustomWidgetColumnMapping | null | undefined;
+  optionsPatch?: CustomWidgetOptionsPatch | undefined;
 }
 
 export interface ResolvedCustomWidgetSettingsUpdate {
@@ -112,11 +116,53 @@ function cloneJsonRecord(value: JsonRecord): JsonRecord {
   return JSON.parse(JSON.stringify(value)) as JsonRecord;
 }
 
-/**
- * Resolve a bounded custom-widget settings update to the exact section `options`
- * JSON to persist. Only `customView.access` and `customView.columnsMapping` may be
- * changed. Every other existing option/customView field is preserved.
- */
+
+/** Patches inert values of an existing widget, never its identity, URL or access. */
+function applyWidgetOptionsPatch(customView: JsonRecord, patch: CustomWidgetOptionsPatch): void {
+  if (typeof customView.widgetId !== "string" || !customView.widgetId.trim()) {
+    throw new Error("Widget option changes require an already identified custom widget.");
+  }
+  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
+    throw new Error("Widget option patch must be an object.");
+  }
+  const entries = Object.entries(patch);
+  if (entries.length < 1 || entries.length > 24) {
+    throw new Error("Widget option patch must contain 1 to 24 keys.");
+  }
+  const current = customView.widgetOptions;
+  if (current !== undefined && current !== null && !record(current)) {
+    throw new Error("Existing widget-owned options are opaque; refusing overwrite.");
+  }
+  const options = cloneJsonRecord(record(current) ?? {});
+  const simple = (item: unknown): boolean => {
+    if (typeof item === "string") {
+      return item.length <= 160 && !/[<>\x00-\x1f]/.test(item) &&
+        !/(?:https?|javascript|data|file):/i.test(item);
+    }
+    return typeof item === "number" ? Number.isFinite(item) && Math.abs(item) <= 1_000_000
+      : typeof item === "boolean";
+  };
+  for (const [key, value] of entries) {
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key) ||
+        ["__proto__", "constructor", "prototype"].includes(key) ||
+        /(?:token|secret|password|credential|apikey|authorization)/i.test(key)) {
+      throw new Error("Widget option key is protected or invalid.");
+    }
+    if (value !== null && !(Array.isArray(value) ?
+        value.length <= 20 && value.every(item =>
+          (typeof item === "string" || typeof item === "number") && simple(item))
+        : simple(value))) {
+      throw new Error("Widget option values must be bounded, inert literals.");
+    }
+    options[key] = value;
+  }
+  if (JSON.stringify(options).length > 4096) {
+    throw new Error("Widget-owned options exceed the payload limit.");
+  }
+  customView.widgetOptions = options;
+}
+
+/** Resolve a bounded update, preserving identity, URL and untargeted options. */
 export function resolveCustomWidgetSettingsUpdate(
   widget: WidgetSettingsUpdateTarget,
   tableResponse: unknown,
@@ -125,7 +171,8 @@ export function resolveCustomWidgetSettingsUpdate(
   if (widget.type !== "custom") {
     throw new Error(`Grist widget ${widget.id} is not a custom widget.`);
   }
-  if (update.access === undefined && update.columnsMapping === undefined) {
+  if (update.access === undefined && update.columnsMapping === undefined &&
+      update.optionsPatch === undefined) {
     throw new Error("At least one custom widget setting must be supplied.");
   }
 
@@ -152,6 +199,10 @@ export function resolveCustomWidgetSettingsUpdate(
       update.columnsMapping === null
         ? null
         : resolveMappings(widget, tableResponse, update.columnsMapping);
+  }
+
+  if (update.optionsPatch !== undefined) {
+    applyWidgetOptionsPatch(customView, update.optionsPatch);
   }
 
   options.customView = JSON.stringify(customView);

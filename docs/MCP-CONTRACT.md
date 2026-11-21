@@ -118,6 +118,15 @@ validates the exact section-field reference and verifies all persisted
 field options after the write. An identical request returns no change. This
 does not create fields, render/publish forms or grant access.
 
+`grist_change_ui(action="update_widget", update:{customWidgetSettings:{optionsPatch}})`
+can patch 1–24 inert literal options of an **already identified** native custom
+widget. Only the supplied nested `customView.widgetOptions` keys change;
+unrelated keys, widget identity, URL, access and mappings are preserved and
+re-read. Values are bounded strings, numbers, booleans, string/number lists
+or null. URLs, executable markup, secret-bearing keys, arbitrary objects and
+prototype keys are rejected. This neither installs a widget nor establishes
+publisher provenance, version pinning, or safe remote widget execution.
+
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
 Expanded column discovery (`grist_discover(columns)` and
