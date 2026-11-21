@@ -106,6 +106,22 @@ validates the exact section-field reference and verifies all persisted
 field options after the write. An identical request returns no change. This
 does not create fields, render/publish forms or grant access.
 
+### Individual document sharing (Owner-only)
+
+`grist_change_structure(action="grant_document_user")` adds only one explicit
+`email` as a `viewers` or `editors` member through native
+`PATCH /api/docs/:docId/access` with `delta.users[email]`. The operation
+requires Gia `doc.schema:write` and fresh native Grist Owner authority.
+A current direct grant of exactly the same role is a no-op; an existing
+different or inherited grant is protected and refused. No removal, public
+access, owner creation, inherited role ceiling change, wildcard or bulk
+grant is supported. The full native access list stays server-side; output
+confirms only the target role and native persistence. Native API grant
+verification is not evidence that all document ACLs were enforced or that
+an invitation email was delivered. An uncertain or unverified mutation must
+not be blindly retried. Publication is explicitly outside this operation.
+
+
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
 Expanded column discovery (`grist_discover(columns)` and

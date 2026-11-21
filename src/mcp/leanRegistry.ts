@@ -101,7 +101,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: true,
     title: "Change existing Grist structure",
     description:
-      "Update bounded document name/type metadata, update/rename/delete explicitly identified tables or columns (including stable-ID Ref/RefList display selection), or create/replace/delete one bounded persisted table/column access-rule group. ACL mutations use stable identifiers and a secret-safe condition subset including typed LinkKey-name-to-record comparisons, preserve untargeted policy, require doc.schema:write, never accept LinkKey values, and remain subject to Grist Owner enforcement. Exactly one bounded destructive schema action is performed per invocation."
+      "Update bounded document metadata, update/rename/delete explicitly identified tables/columns, grant one individual viewer/editor document share via native per-user delta, or change one bounded access-rule group. ACL mutations use stable identifiers and a secret-safe condition subset including typed LinkKey-name-to-record comparisons, preserve untargeted policy, require doc.schema:write, never accept LinkKey values, and remain subject to Grist Owner enforcement. Exactly one bounded destructive schema action is performed per invocation."
   },
   {
     name: "grist_add_ui",
@@ -279,13 +279,14 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
   },
   grist_change_structure: {
     actions: ["update_document", "update_tables", "delete_table", "update_columns", "update_form_column_options", "update_dropdown_condition",
-      "rename_column", "delete_columns", "access_rule_group"],
+      "rename_column", "delete_columns", "access_rule_group", "grant_document_user"],
     request: [
       "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}|{locale:'fr-FR'|'en-US'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
       "update_form_column_options: {action,documentId,tableId,columnId,update:{question?:string|null,required?:boolean,acceptFromUrl?:boolean}}; preserves other native options.",
       "update_dropdown_condition: {action,documentId,tableId,columnId,condition:null|{kind:'choice_field_equals_literal',choiceColumnId,value}|{kind:'choice_field_equals_record_ref',choiceColumnId,recordColumnId}|{kind:'choice_id_in_record_reflist',recordColumnId}}; typed native Ref/RefList predicate, null removes it.",
       "update_tables: {action,documentId,tables:[{id,fields}]}; delete_table: {action,documentId,tableId}; rename_column: {action,documentId,tableId,oldColumnId,newColumnId}; delete_columns: {action,documentId,tableId,columnIds}",
+      "grant_document_user: {action,documentId,email:normalizedIndividualAddress,role:'viewers'|'editors'}; Owner proof required; target absent or identical; no role changes, removal or public access.",
       "access_rule_group: {action,documentId,mode:'create'|'replace'|'delete',target:{tableId,columnIds?:string[]}|{userAttributeName},rules?:[{condition,permissions:{read,update,create?,delete?}}],definition?:{tableId,lookupColId,source:{kind:'user_property',property}|{kind:'link_key',name}}}",
       "permissions: 'allow'|'deny'|'unspecified'; condition leaves: everyone,user_access,user_access_membership,user_login_status,user_attribute_flag,record_in_user_attribute_ref_list,match_user,match_link_key,match_user_attribute,match_boolean,match_integer_flag,match_empty_text,column_change",
       "Comparison leaves take operator:'equals'|'not_equals'. Required fields by kind: user_access {role}; user_login_status {value:boolean}; column_change {columnId}; everyone takes no other field.",

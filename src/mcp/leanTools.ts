@@ -1102,6 +1102,14 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("grant_document_user"),
+            documentId: documentIdSchema,
+            email: z.string().max(254),
+            role: z.enum(["viewers", "editors"])
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("access_rule_group"),
             documentId: documentIdSchema,
             mode: z.enum(["create", "replace", "delete"]),
@@ -1173,6 +1181,10 @@ export function registerLeanTools(
                 input.columnIds
               )
             );
+          case "grant_document_user":
+            return textResult(await grist.grantDocumentUser(
+              input.documentId, input.email, input.role
+            ));
           case "access_rule_group":
             return textResult(
               await grist.changeAccessRuleGroup(

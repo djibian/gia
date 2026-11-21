@@ -519,6 +519,26 @@ async function run(): Promise<void> {
     );
     assert(discovered.includes(documentId), "created_document_not_discovered");
 
+    const grantRecipient = "gia-synthetic-reader@example.invalid";
+    const firstGrant = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "grant_document_user", documentId, email: grantRecipient, role: "viewers"
+    }), "native_grant_single_viewer");
+    assert(firstGrant.changed === true && firstGrant.persistedGrantVerified === true &&
+      firstGrant.effectiveAclVerified === false, "native_grant_not_verified");
+    const nativeGrant = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?: string;access?: string}>;
+      };
+    assert(nativeGrant.users.some(row => row.email === grantRecipient && row.access === "viewers"),
+      "native_grant_role_not_persisted");
+    const repeatedGrant = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "grant_document_user", documentId, email: grantRecipient, role: "viewers"
+    }), "native_grant_repeated");
+    assert(repeatedGrant.changed === false, "native_grant_repeat_not_idempotent");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "grant_document_user", documentId, email: grantRecipient, role: "editors"
+    });
+
     const templateMetadata = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "update_document",
