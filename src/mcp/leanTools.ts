@@ -1311,6 +1311,15 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("publish_form"),
+            documentId: documentIdSchema,
+            pageId: positiveIdSchema,
+            widgetId: positiveIdSchema,
+            confirmPublic: z.literal(true)
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_form_field_options"),
             documentId: documentIdSchema,
             pageId: positiveIdSchema,
@@ -1373,6 +1382,10 @@ export function registerLeanTools(
           case "update_form_layout":
             return textResult(await grist.updateFormLayout(
               input.documentId, input.pageId, input.widgetId, input.layout
+            ));
+          case "publish_form":
+            return textResult(await grist.publishForm(
+              input.documentId, input.pageId, input.widgetId, input.confirmPublic
             ));
           case "update_form_field_options":
             return textResult(await grist.updateFormFieldOptions(

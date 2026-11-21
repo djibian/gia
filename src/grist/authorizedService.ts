@@ -76,6 +76,7 @@ import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUp
 import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
+import { planFormPublication, readNativeFormPageShare } from "./formPublication.js";
 import { readFormFieldOptions, resolveFormFieldOptions, type FormFieldOptionsInput } from "./formFieldOptions.js";
 import { DocumentContextService } from "./documentContext.js";
 import { DocumentUiService, type DocumentUiContext } from "./documentUi.js";
@@ -709,6 +710,65 @@ export class AuthorizedGristService {
           "update_page_layout",
           error instanceof Error ? error.message : "Updated page layout could not be verified."
         );
+      }
+    });
+  }
+
+  async publishForm(
+    documentIdOrUrl: string, pageId: number, widgetId: number,
+    confirmPublic: true
+  ): Promise<unknown> {
+    if (confirmPublic !== true ||
+        !Number.isInteger(pageId) || pageId < 1 ||
+        !Number.isInteger(widgetId) || widgetId < 1) {
+      throw new Error("Explicit public Form confirmation and positive target IDs are required.");
+    }
+    return this.execute("publish_form", documentIdOrUrl, 1, async (id) => {
+      // Local doc.schema:write is necessary but not sufficient: Grist Owner is also required.
+      await this.inner.assertDocumentOwner(id);
+      const before = await this.loadDocumentUi(id);
+      assertCompleteUiSnapshot(before);
+      const page = before.pages.find(page => page.id === pageId);
+      const widget = page?.widgets.find(item => item.id === widgetId);
+      if (!page || !widget || widget.type !== "form") {
+        throw new Error("Target must be an existing native Form on the selected page.");
+      }
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const nativeShare = async () => {
+        const [pages, shares] = await Promise.all([
+          this.inner.queryRecords(id, "_grist_Pages", { limit, hidden: true }),
+          this.inner.queryRecords(id, "_grist_Shares", { limit, hidden: true })
+        ]);
+        return readNativeFormPageShare(pages, shares, page.pageRecordId, pageId, limit);
+      };
+      const originalShare = await nativeShare();
+      const plan = planFormPublication(widget.formShareOptions);
+      const base = { documentId: id, pageId, widgetId, publicationRequested: true };
+      if (!plan.changed && originalShare === "published") return { ...base,
+        changed: false, persistedPublicationIntentVerified: true,
+        persistedPageShareVerified: true, publicSubmissionQualified: false };
+      // One native action bundle creates the share and links the page before
+      // publishing the Form. No generated link identifier enters the MCP result.
+      await this.uiActions.publishForm(
+        id, widgetId, page.pageRecordId, plan.shareOptions, originalShare === "missing"
+      );
+      try {
+        const [after, share] = await Promise.all([this.loadDocumentUi(id), nativeShare()]);
+        assertCompleteUiSnapshot(after);
+        const current = after.pages.find(candidate => candidate.id === pageId)?.widgets
+          .find(item => item.id === widgetId);
+        if (!current || current.type !== "form" ||
+            current.tableRef !== widget.tableRef || current.tableId !== widget.tableId ||
+            !sameJsonValue(current.layoutSpec, widget.layoutSpec) ||
+            !sameJsonValue(current.options, widget.options) ||
+            planFormPublication(current.formShareOptions).changed || share !== "published") {
+          throw new Error("Native Form publication or page share failed verification.");
+        }
+        return { ...base, changed: true, persistedPublicationIntentVerified: true,
+          persistedPageShareVerified: true, publicSubmissionQualified: false };
+      } catch (error) {
+        throw new UiWriteVerificationError("publish_form",
+          error instanceof Error ? error.message : "Form publication state could not be reread.");
       }
     });
   }

@@ -71,6 +71,21 @@ reference operands against fresh expanded schema, preserves all other native
 complete persisted options, and returns a no-op for identical requested state.
 It does not accept arbitrary expressions or establish Form visibility/ACL rights.
 
+`grist_change_ui(action="publish_form")` publishes one existing native Form widget and its
+page-linked native share through a private fixed Grist action bundle. The request must
+include `confirmPublic:true`, a `doc.schema:write` grant and fresh native
+Grist document Owner proof. The operation accepts only the two native boolean
+`shareOptions` flags (`form:true,publish:true`). A page without a share gains
+a new native share and page reference atomically using Grist's internal native
+actions and a server-generated unpredictable private link identifier. An
+existing share is reused only when already published, unambiguous and not
+reused by other pages; other existing share states are protected. All
+relevant native records are reread and checked; layout/widget options and
+document ACLs remain untouched. A repeated call is a no-op. Link identifiers
+are never exposed to the model. Native persisted publication and page linkage
+do not prove anonymous browsing or submission; those require separate
+native acceptance checks.
+
 `grist_change_ui(action="update_form_layout")` configures one existing
 native Form section with a bounded tree of typed paragraphs, field groups and a
 final submit element. All field references are supplied as stable column IDs and
