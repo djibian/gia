@@ -2464,6 +2464,36 @@ async function run(): Promise<void> {
       publishedShares.records.some(row => row.id === pageShareRef &&
         JSON.parse(String(row.fields.options)).publish === true &&
         typeof row.fields.linkId === "string"), "native_published_form_missing_page_share");
+    // Native _grist_Shares.linkId is an internal document-local ID, not the
+    // public capability key created separately in Grist's home database.
+    // Never construct an anonymous Form URL from this metadata-only identifier.
+    const internalLinkId = publishedShares.records.find(row => row.id === pageShareRef)?.fields.linkId;
+    assert(typeof internalLinkId === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(internalLinkId),
+      "native_form_internal_link_id_missing");
+    const internalLinkPath = "/api/s/" + internalLinkId;
+    const wrongPublicRead = await fetch(
+      new URL(internalLinkPath + "/forms/" + formSection.id, gristBaseUrl), {
+        redirect: "manual", signal: AbortSignal.timeout(20_000)
+      }
+    );
+    assert(wrongPublicRead.status === 404,
+      "native_internal_link_id_must_not_be_used_as_public_share_key");
+    const wrongPublicWrite = await fetch(
+      new URL(internalLinkPath + "/tables/" + TABLE_ID + "/records", gristBaseUrl), {
+        method: "POST", redirect: "manual",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ records: [{ fields: { Name: "gia-wrong-form-key-negative" } }] }),
+        signal: AbortSignal.timeout(20_000)
+      }
+    );
+    assert(wrongPublicWrite.status === 404,
+      "native_internal_link_id_record_write_must_be_denied");
+    const publicNegativeRecords = await gristApi(gristBaseUrl, apiKey,
+      docPath + "/tables/" + TABLE_ID + "/records") as MetaRecords;
+    assert(!publicNegativeRecords.records.some(row =>
+      row.fields.Name === "gia-wrong-form-key-negative"),
+      "native_internal_link_id_attempt_mutated_synthetic_table");
+
     const repeatedPublish = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "publish_form", documentId, pageId, widgetId: formSection.id, confirmPublic: true
     }), "native_publish_form_replay") as { changed: boolean };
