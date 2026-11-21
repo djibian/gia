@@ -1131,6 +1131,13 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("ensure_owner_schema_guard"),
+            documentId: documentIdSchema,
+            confirmSchemaRestriction: z.literal(true)
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("access_rule_group"),
             documentId: documentIdSchema,
             mode: z.enum(["create", "replace", "delete"]),
@@ -1208,6 +1215,10 @@ export function registerLeanTools(
                 input.columnIds
               )
             );
+          case "ensure_owner_schema_guard":
+            return textResult(await grist.ensureOwnerSchemaGuard(
+              input.documentId, input.confirmSchemaRestriction
+            ));
           case "access_rule_group":
             return textResult(
               await grist.changeAccessRuleGroup(
