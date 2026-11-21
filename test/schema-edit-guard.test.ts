@@ -41,6 +41,10 @@ test("Owner-only schema guard creates on a clean native default and preserves us
   const repeated = planOwnerSchemaGuard(after);
   assert.equal(repeated.mode, "noop");
   assert.equal(verifyOwnerSchemaGuard(after, after, repeated).changed, false);
+  const nativeWhitespace = { ...guard(), fields: { ...guard().fields,
+    aclFormulaParsed: JSON.stringify(JSON.parse(guard().fields.aclFormulaParsed as string), null, 2)
+  } };
+  assert.equal(planOwnerSchemaGuard(snapshot([resource], [attribute, nativeWhitespace])).mode, "noop");
 });
 
 test("Owner-only guard creates a single default resource from empty native ACL metadata", () => {
