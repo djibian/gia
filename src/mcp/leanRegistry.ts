@@ -279,7 +279,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
   },
   grist_change_structure: {
     actions: ["update_document", "update_tables", "delete_table", "update_columns", "update_form_column_options", "update_dropdown_condition",
-      "style_rules", "rename_column", "delete_columns", "access_rule_group"],
+      "style_rules", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard"],
     request: [
       "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}|{locale:'fr-FR'|'en-US'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
@@ -288,6 +288,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "style_rules: {action,documentId,tableId,columnId,conditionFormula:GristPython,style:{fillColor?:'#RRGGBB',textColor?:'#RRGGBB'}}; create or replace one native column style rule, preserve other options; no arbitrary ACL formula.",
       "update_tables: {action,documentId,tables:[{id,fields}]}; delete_table: {action,documentId,tableId}; rename_column: {action,documentId,tableId,oldColumnId,newColumnId}; delete_columns: {action,documentId,tableId,columnIds}",
       "access_rule_group: {action,documentId,mode:'create'|'replace'|'delete',target:{tableId,columnIds?:string[]}|{userAttributeName},rules?:[{condition,permissions:{read,update,create?,delete?}}],definition?:{tableId,lookupColId,source:{kind:'user_property',property}|{kind:'link_key',name}}}",
+      "ensure_owner_schema_guard: {action,documentId,confirmSchemaRestriction:true}; adds only canonical user.Access != OWNER / -S on the native default ACL resource.",
       "permissions: 'allow'|'deny'|'unspecified'; condition leaves: everyone,user_access,user_access_membership,user_login_status,user_attribute_flag,record_in_user_attribute_ref_list,match_user,match_link_key,match_user_attribute,match_boolean,match_integer_flag,match_empty_text,column_change",
       "Comparison leaves take operator:'equals'|'not_equals'. Required fields by kind: user_access {role}; user_login_status {value:boolean}; column_change {columnId}; everyone takes no other field.",
       "user_attribute_flag: {kind,attributeName,attributeColumnId}; uses a verified user attribute's Bool field. Use a not node to negate it.",
@@ -299,6 +300,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     constraints: [
       "Supply locale or timezone alone. Name/type use a separate path. Preserve and re-read native document settings after locale changes.",
       "Table/column targets forbid definition and require rules for create/replace. User-attribute targets forbid rules and require definition for create/replace. Delete forbids both. Native Owner + doc.schema:write required.",
+      "The special schema guard requires explicit confirmation, native Owner and doc.schema:write; rejects unknown/default ACL rules, never replaces any other default rule, and does not claim effective enforcement.",
       "Column groups only set read/update. Each rule must allow or deny at least one permitted operation. Rules cannot repeat. An everyone rule is allowed only as the last top-level rule, outside all/any/not.",
       "ACL fixed bounds: <=20 rules/group, tree depth <=4, <=20 nodes, all/any width 2..6; unknown predicates and literals are rejected.",
       "newRec leaves only control create/update (read/delete unspecified); column_change only update, not create. Never include LinkKey values or raw formulas.",
@@ -307,6 +309,10 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "Stable IDs and postconditions are authoritative; no-op/write may be uncertain; do not blindly replay."
     ],
     examples: [
+      { purpose: "Add the fixed Owner-only native schema-edit denial", arguments: {
+        action: "ensure_owner_schema_guard", documentId: "synthetic-doc",
+        confirmSchemaRestriction: true
+      } },
       { purpose: "Create one typed ACL rule comparing a LinkKey name, never a value", arguments: {
         action: "access_rule_group", documentId: "synthetic-doc", mode: "create",
         target: { tableId: "Items" },
