@@ -161,6 +161,14 @@ with column creation. The mutation refuses malformed native state, preserves
 untargeted options, verifies the complete post-read state, and does not claim
 that dropdown filtering is an authorization boundary.
 
+Native conditional-format changes require doc.schema:write and target only one
+verified public column. Formula text is a Grist column formula, not an ACL
+condition. A fixed private `AddEmptyRule` plus paired native formula/style
+updates creates one conditional rule; existing opaque/multiple rule states are
+protected. The operation preserves unrelated widget options and refuses
+malformed helpers or incomplete metadata. Partial or ambiguous writes are
+reported uncertain and must be inspected before replay, never blindly retried.
+
 The separate locale operation accepts only two qualified canonical locales,
 preserves unprojected native documentSettings keys and verifies the entire
 post-write JSON. Missing, malformed or over-budget metadata refuses mutation;

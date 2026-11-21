@@ -544,6 +544,40 @@ export class GristUiActionsAdapter {
     await this.client.applyUserActions(documentId, actions);
   }
 
+  async addColumnStyleRule(documentId: string, tableId: string, columnRef: number): Promise<number> {
+    assertPositiveId(columnRef, "Native conditional style owner");
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(tableId)) {
+      throw new Error("Conditional style table must be a stable ID.");
+    }
+    const raw = await this.client.applyUserActions(documentId, [
+      ["AddEmptyRule", tableId, null, columnRef]
+    ]);
+    const returned = singleReturnValue(raw, "AddEmptyRule");
+    const ref = returned.colRef;
+    if (typeof ref !== "number" || !Number.isInteger(ref) || ref < 1) {
+      throw new Error("Native conditional rule helper ref unavailable.");
+    }
+    return ref;
+  }
+
+  async writeColumnStyleRule(
+    documentId: string, ownerRef: number, helperRef: number,
+    formula: string, widgetOptions: string
+  ): Promise<void> {
+    assertPositiveId(ownerRef, "Conditional style owner");
+    assertPositiveId(helperRef, "Conditional style helper");
+    if (ownerRef === helperRef || typeof formula !== "string" || !formula.trim() ||
+        formula.length > 4096 || typeof widgetOptions !== "string" ||
+        widgetOptions.length > 16_384) {
+      throw new Error("Trusted conditional style write is malformed.");
+    }
+    // Fixed private native bundle. No arbitrary Grist action enters MCP.
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Tables_column", helperRef, { formula }],
+      ["UpdateRecord", "_grist_Tables_column", ownerRef, { widgetOptions }]
+    ]);
+  }
+
   async updateFormFieldOptions(
     documentId: string, fieldId: number, widgetOptions: string
   ): Promise<void> {

@@ -71,6 +71,18 @@ reference operands against fresh expanded schema, preserves all other native
 complete persisted options, and returns a no-op for identical requested state.
 It does not accept arbitrary expressions or establish Form visibility/ACL rights.
 
+`grist_change_structure(action="style_rules")` creates or changes **one** native
+column conditional-format rule (one rule maximum on the column). The Grist
+Python `conditionFormula` uses the existing authorized formula capability,
+never an ACL predicate; colors are closed `#RRGGBB` style fields. Gia resolves
+stable table/column IDs to private native refs, uses Grist `AddEmptyRule` to
+construct the formula helper and its owner link, then applies formula plus
+`rulesOptions` in one fixed native bundle. Existing nonstyle widget options
+are preserved, helpers are never exposed, exact native readback is required,
+and identical requests are no-ops. Unknown/multiple rules and malformed
+metadata refuse mutation. A partial/transport-uncertain creation is not blindly
+replayed: the caller must inspect the column state and reconcile before retry.
+
 `grist_change_ui(action="publish_form")` publishes one existing native Form widget and its
 page-linked native share through a private fixed Grist action bundle. The request must
 include `confirmPublic:true`, a `doc.schema:write` grant and fresh native
