@@ -1103,6 +1103,19 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("append_style_rule"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            conditionFormula: z.string().min(1).max(4096),
+            style: z.object({
+              fillColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+              textColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional()
+            }).strict().refine(value => Object.keys(value).length > 0, "Supply at least one color.")
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_form_column_options"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1199,6 +1212,12 @@ export function registerLeanTools(
             ));
           case "style_rules":
             return textResult(await grist.changeColumnStyleRule(
+              input.documentId, input.tableId, input.columnId, {
+                conditionFormula: input.conditionFormula, style: input.style
+              }
+            ));
+          case "append_style_rule":
+            return textResult(await grist.appendColumnStyleRule(
               input.documentId, input.tableId, input.columnId, {
                 conditionFormula: input.conditionFormula, style: input.style
               }

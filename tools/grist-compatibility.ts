@@ -2646,6 +2646,37 @@ async function run(): Promise<void> {
       conditionFormula: "$Qty >= 10", style: { fillColor: "#112233", textColor: "#FFFFFF" }
     }), "native_style_rule_modify") as {changed:boolean};
     assert(styleModified.changed, "native_style_rule_change_not_persisted");
+    const styleAppended = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "append_style_rule", documentId, tableId: TABLE_ID, columnId: "Name",
+      conditionFormula: "$Qty < 0", style: { fillColor: "#ABCDEF" }
+    }), "native_style_rule_append") as {changed:boolean;persistedStyleVerified:boolean;styleRuleCount:number};
+    assert(styleAppended.changed && styleAppended.persistedStyleVerified &&
+      styleAppended.styleRuleCount === 2, "native_style_append_not_verified");
+    const twoRuleColumns = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const twoRuleOwner = twoRuleColumns.records.find(row => row.id === column.id);
+    const twoRuleRefs = twoRuleOwner?.fields.rules;
+    assert(Array.isArray(twoRuleRefs) && twoRuleRefs[0] === "L" &&
+      twoRuleRefs.length === 3 && twoRuleRefs[1] === nativeStyleRules[1],
+      "native_style_append_replaced_prior_helper");
+    const appendedHelper = twoRuleColumns.records.find(row => row.id === twoRuleRefs[2]);
+    assert(appendedHelper?.fields.formula === "$Qty < 0",
+      "native_style_append_formula_missing");
+    const newOptions = JSON.parse(twoRuleOwner?.fields.widgetOptions as string);
+    assert(newOptions.rulesOptions.length === 2 &&
+      newOptions.rulesOptions[0].textColor === "#FFFFFF" &&
+      newOptions.rulesOptions[1].fillColor === "#ABCDEF",
+      "native_style_append_failed_to_preserve_existing_colors");
+    const repeatedAppend = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "append_style_rule", documentId, tableId: TABLE_ID, columnId: "Name",
+      conditionFormula: "$Qty < 0", style: { fillColor: "#ABCDEF" }
+    }), "native_style_append_idempotent") as {changed:boolean};
+    assert(!repeatedAppend.changed, "native_style_append_replayed");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "append_style_rule", documentId, tableId: TABLE_ID, columnId: "Name",
+      conditionFormula: "$Qty < 0", style: { textColor: "#000000" }
+    });
+
     const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
       action: "columns", documentId, tableId: TABLE_ID
     }), "native_conditional_style_inspection");

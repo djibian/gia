@@ -51,10 +51,18 @@ function parseOptions(value: unknown): JsonRecord {
   return result;
 }
 
-/** Strictly one column-scoped native rule, never a row or view-field rule. */
-export function readNativeColumnStyle(
-  tableResponse: unknown, columnResponse: unknown, tableId: string, columnId: string, limit: number
-): NativeStyleState {
+export const MAX_CONDITIONAL_STYLE_RULES = 8;
+export interface NativeStyleSequence {
+  ownerRef: number;
+  options: JsonRecord;
+  rules: Array<{ helperRef: number; formula: string; style: JsonRecord }>;
+}
+
+/** Native _grist_Tables_column rules and rulesOptions are paired in order. */
+export function readNativeColumnStyleSequence(
+  tableResponse: unknown, columnResponse: unknown,
+  tableId: string, columnId: string, limit: number
+): NativeStyleSequence {
   if (!IDENTIFIER.test(tableId) || !IDENTIFIER.test(columnId) ||
       columnId.startsWith("gristHelper_")) {
     throw new Error("Style target requires stable public table and column IDs.");
@@ -71,41 +79,92 @@ export function readNativeColumnStyle(
   const rawRules = target.fields.rules;
   const refs = rawRules === null || rawRules === undefined
     ? [] : Array.isArray(rawRules) && rawRules[0] === "L" ? rawRules.slice(1) : undefined;
-  if (!refs || refs.length > 1 || refs.some(ref =>
-    typeof ref !== "number" || !Number.isInteger(ref) || ref < 1)) {
-    throw new Error("Existing conditional style rule state is protected.");
+  if (!refs || refs.length > MAX_CONDITIONAL_STYLE_RULES || new Set(refs).size !== refs.length ||
+      refs.some(ref => typeof ref !== "number" || !Number.isInteger(ref) || ref < 1)) {
+    throw new Error("Native conditional style rule state is protected.");
   }
   const options = parseOptions(target.fields.widgetOptions);
-  const styleOptions = options.rulesOptions;
-  if (styleOptions !== undefined && (!Array.isArray(styleOptions) ||
-      styleOptions.length > 1 || styleOptions.some(item => !object(item)))) {
-    throw new Error("Existing conditional style options are protected.");
+  const rawStyles = options.rulesOptions;
+  if (rawStyles !== undefined && (!Array.isArray(rawStyles) ||
+      rawStyles.length > refs.length || rawStyles.some(item => !object(item)))) {
+    throw new Error("Native conditional style options are protected.");
   }
-  if (refs.length === 0 && Array.isArray(styleOptions) && styleOptions.length) {
-    throw new Error("Unlinked conditional style metadata is protected.");
-  }
-  const existingStyle = Array.isArray(styleOptions) ? object(styleOptions[0]) ?? {} : {};
-  if (Object.keys(existingStyle).some(key => !["fillColor", "textColor"].includes(key)) ||
-      Object.values(existingStyle).some(value => typeof value !== "string" || !COLOR.test(value))) {
+  const styles: JsonRecord[] = Array.isArray(rawStyles) ? rawStyles as JsonRecord[] : [];
+  if (styles.some(style => Object.keys(style).some(key =>
+        !["fillColor", "textColor"].includes(key)) ||
+      Object.values(style).some(value =>
+        typeof value !== "string" || !COLOR.test(value)))) {
     throw new Error("Unknown or malformed native style attributes are protected.");
   }
-  if (!refs.length) return { ownerRef: target.id, options, existingStyle };
-  const helperRef = refs[0] as number;
-  const helpers = columns.filter(row => row.id === helperRef);
-  const helper = helpers[0];
-  if (helpers.length !== 1 || !helper ||
-      helper.fields.parentId !== tableRef ||
-      typeof helper.fields.colId !== "string" ||
-      !/^gristHelper_ConditionalRule\d*$/.test(helper.fields.colId) ||
-      helper.fields.type !== "Any" || helper.fields.isFormula !== true ||
-      typeof helper.fields.formula !== "string") {
-    throw new Error("Native conditional style helper cannot be verified.");
+  const rules = refs.map((ref, index) => {
+    const helpers = columns.filter(row => row.id === ref);
+    const helper = helpers[0];
+    if (helpers.length !== 1 || !helper ||
+        helper.fields.parentId !== tableRef ||
+        typeof helper.fields.colId !== "string" ||
+        !/^gristHelper_ConditionalRule\d*$/.test(helper.fields.colId) ||
+        helper.fields.type !== "Any" || helper.fields.isFormula !== true ||
+        typeof helper.fields.formula !== "string") {
+      throw new Error("Native conditional style helper cannot be verified.");
+    }
+    return {
+      helperRef: ref as number,
+      formula: helper.fields.formula as string,
+      style: styles[index] ?? {}
+    };
+  });
+  return { ownerRef: target.id, options, rules };
+}
+
+/** Preserve old one-rule semantics, including refusing any native multi-rule target. */
+export function readNativeColumnStyle(
+  tableResponse: unknown, columnResponse: unknown,
+  tableId: string, columnId: string, limit: number
+): NativeStyleState {
+  const sequence = readNativeColumnStyleSequence(
+    tableResponse, columnResponse, tableId, columnId, limit
+  );
+  if (sequence.rules.length > 1) {
+    throw new Error("Existing conditional style rule state is protected.");
   }
+  const rule = sequence.rules[0];
   return {
-    ownerRef: target.id, helperRef,
-    formula: helper.fields.formula as string, options, existingStyle
+    ownerRef: sequence.ownerRef,
+    ...(rule ? { helperRef: rule.helperRef, formula: rule.formula } : {}),
+    options: sequence.options, existingStyle: rule?.style ?? {}
   };
 }
+
+export function planAppendColumnStyleRule(
+  sequence: NativeStyleSequence, input: ColumnStyleInput
+): { changed: boolean; options?: JsonRecord; widgetOptions?: string } {
+  const validated = planColumnStyle(
+    { ownerRef: sequence.ownerRef, options: {}, existingStyle: {} }, input
+  );
+  const style = (validated.options.rulesOptions as JsonRecord[])[0]!;
+  if (sequence.rules.some(rule => !rule.formula.trim() || Object.keys(rule.style).length === 0)) {
+    throw new Error("An existing conditional style is unconfigured; refusing append.");
+  }
+  for (const rule of sequence.rules) {
+    if (rule.formula === input.conditionFormula) {
+      if (isDeepStrictEqual(rule.style, style)) return { changed: false };
+      throw new Error("Existing conditional style has the same formula but different colors.");
+    }
+  }
+  if (sequence.rules.length >= MAX_CONDITIONAL_STYLE_RULES) {
+    throw new Error("Conditional style rule count exceeds the bounded maximum.");
+  }
+  const options: JsonRecord = {
+    ...sequence.options,
+    rulesOptions: [...sequence.rules.map(rule => rule.style), style]
+  };
+  const widgetOptions = JSON.stringify(options);
+  if (widgetOptions.length > MAX_OPTIONS) {
+    throw new Error("Conditional style options exceed the native payload bound.");
+  }
+  return { changed: true, options, widgetOptions };
+}
+
 export function planColumnStyle(state: NativeStyleState, input: ColumnStyleInput) {
   const { conditionFormula, style } = input;
   if (typeof conditionFormula !== "string" || !conditionFormula.trim() ||
