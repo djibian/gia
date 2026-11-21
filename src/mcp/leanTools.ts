@@ -352,6 +352,7 @@ const customWidgetOptionValue = z.union([
 const customWidgetSettingsUpdateSchema = z
   .object({
     access: z.enum(["none", "read table", "full"]).optional(),
+    confirmDataAccess: z.literal(true).optional(),
     columnsMapping: customWidgetColumnsMappingSchema.nullable().optional(),
     optionsPatch: dictionarySchema(customWidgetOptionValue, 1).optional()
   })
@@ -360,6 +361,11 @@ const customWidgetSettingsUpdateSchema = z
     (value) => value.access !== undefined || value.columnsMapping !== undefined ||
       value.optionsPatch !== undefined,
     "At least one of access, columnsMapping or optionsPatch must be supplied."
+  )
+  .refine(
+    (value) => value.access === undefined || value.access === "none" ||
+      value.confirmDataAccess === true,
+    "Granting custom widget data access requires confirmDataAccess:true."
   );
 
 const widgetVisibleFieldsSchema = z
@@ -596,6 +602,9 @@ function normalizeWidgetUpdate(
           customWidgetSettings: {
             ...(update.customWidgetSettings.access !== undefined
               ? { access: update.customWidgetSettings.access }
+              : {}),
+            ...(update.customWidgetSettings.confirmDataAccess === true
+              ? { confirmDataAccess: true as const }
               : {}),
             ...(update.customWidgetSettings.columnsMapping !== undefined
               ? {

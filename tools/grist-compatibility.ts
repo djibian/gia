@@ -1224,9 +1224,13 @@ async function run(): Promise<void> {
     await gristApi(gristBaseUrl, apiKey, `/api/docs/${encodeURIComponent(documentId)}/apply`, {
       method: "POST", body: JSON.stringify([["UpdateRecord", "_grist_Views_section", customWidgetId, { options: JSON.stringify(nativeOptions) }]])
     });
-    const customUpdated = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
       action: "update_widget", documentId, pageId, widgetId: customWidgetId,
       update: { customWidgetSettings: { access: "read table" } }
+    });
+    const customUpdated = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: customWidgetId,
+      update: { customWidgetSettings: { access: "read table", confirmDataAccess: true } }
     }), "native_custom_update");
     assert(!JSON.stringify(customUpdated).includes("private-canary") && !JSON.stringify(customUpdated).includes("private-plugin-canary"), "custom_private_settings_leaked");
     const afterSections = await gristApi(gristBaseUrl, apiKey, `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Views_section/records`) as typeof sections;
