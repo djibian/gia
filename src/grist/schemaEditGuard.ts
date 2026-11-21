@@ -23,10 +23,19 @@ function userAttributeOnly(rule: NativeRule): boolean {
     rule.permissionsText === "";
 }
 
+function canonicalNativePredicate(raw: unknown): boolean {
+  if (typeof raw !== "string" || raw.length > 4096) return false;
+  try {
+    // Grist serializes native parsed predicates with insignificant spaces.
+    // The exact closed tree, not its JSON typography, defines this rule.
+    return JSON.stringify(JSON.parse(raw) as unknown) === PARSED;
+  } catch { return false; }
+}
+
 function exactGuard(rule: NativeRule): boolean {
   return rule.aclFormula === OWNER_SCHEMA_FORMULA &&
     rule.permissionsText === SCHEMA_PERMISSION &&
-    rule.aclFormulaParsed === PARSED &&
+    canonicalNativePredicate(rule.aclFormulaParsed) &&
     Number.isSafeInteger(rule.rulePos) && (rule.rulePos ?? 0) > 0 &&
     (rule.fields.userAttributes === "" ||
       rule.fields.userAttributes === null ||
