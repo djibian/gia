@@ -193,3 +193,44 @@ test("sameJsonValue compares objects structurally but preserves array order", ()
   );
   assert.equal(sameJsonValue({ a: [1, 2] }, { a: [2, 1] }), false);
 });
+
+
+test("bounded widget-owned option patches preserve identity, mappings and unrelated options", () => {
+  const result = resolveCustomWidgetSettingsUpdate(widget, expandedTables, {
+    optionsPatch: { departments: ["29", "35"], internshipSupervisorAssignmentV11: true }
+  });
+  const native = JSON.parse(result.options.customView as string);
+  assert.deepEqual(native.widgetOptions, {
+    arbitrary: [1, 2, 3], departments: ["29", "35"], internshipSupervisorAssignmentV11: true
+  });
+  assert.equal(native.widgetId, "@example/people-widget");
+  assert.equal(native.url, widget.options.customView.url);
+  assert.equal(native.access, "none");
+  assert.deepEqual(native.columnsMapping, { title: 11 });
+  assert.deepEqual(resolveCustomWidgetSettingsUpdate(
+    { ...widget, options: result.options }, expandedTables,
+    { optionsPatch: { departments: ["29", "35"], internshipSupervisorAssignmentV11: true } }
+  ).options, result.options);
+});
+
+test("widget-owned options reject absent identity, opaque state, URLs and executable or secret values", () => {
+  const update = (patch: Record<string, unknown>, altered: typeof widget = widget) =>
+    resolveCustomWidgetSettingsUpdate(altered, expandedTables, { optionsPatch: patch as never });
+  for (const patch of [
+    {}, { token: "abc" }, { apiKey: "abc" },
+    { endpoint: "https://example.invalid/attack" },
+    { script: "<script>run()</script>" },
+    { arbitrary: { code: "run()" } },
+    { large: "x".repeat(161) },
+    JSON.parse('{"__proto__":"override"}'),
+    { tooMany: Array.from({ length: 21 }, () => "a") },
+    { constructor: "hack" }
+  ]) assert.throws(() => update(patch));
+  assert.throws(() => update({ departments: ["29"] }, {
+    ...widget, options: { customView: { ...widget.options.customView, widgetId: "" } }
+  }));
+  assert.throws(() => update({ departments: ["29"] }, {
+    ...widget, options: { customView: { ...widget.options.customView, widgetOptions: "{opaque" } }
+  }));
+  assert.deepEqual(widget.options.customView.widgetOptions, { arbitrary: [1, 2, 3] });
+});
