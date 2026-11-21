@@ -2549,38 +2549,40 @@ async function run(): Promise<void> {
     assert(nativeFormPreviewAfterFieldUpdate.formFieldsById[formField.id]?.question === "Participant name",
       "native_form_field_override_not_rendered_in_preview");
 
-    // Confirm that a real native column-style rule is visible only as a safe
-    // presence signal through the existing schema discovery surface.
-    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
-      method: "POST",
-      body: JSON.stringify([["AddEmptyRule", TABLE_ID, null, column.id]])
+    // #295: construct a real native conditional-format rule from an existing column.
+    // Use the same formula capability as Grist columns, never ACL formulas.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "style_rules", documentId, tableId: TABLE_ID, columnId: "Name",
+      conditionFormula: "$Qty > 10", style: { fillColor: "red" }
     });
-    const nativeStyledColumns = await gristApi(gristBaseUrl, apiKey,
-      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
-    const nativeStyleRules = nativeStyledColumns.records.find(
-      row => row.id === column.id)?.fields.rules;
-    assert(Array.isArray(nativeStyleRules) && nativeStyleRules[0] === "L" &&
-      nativeStyleRules.length === 2, "native_conditional_style_rule_not_persisted");
-    // Populate column style settings through native metadata in this disposable
-    // fixture only. Preserve the existing Form/dropdown options while proving
-    // that Gia diagnoses both independent conditional-style native surfaces.
-    const persistedStyledColumn = nativeStyledColumns.records.find(row => row.id === column.id);
-    const currentWidgetOptions = persistedStyledColumn?.fields.widgetOptions;
-    assert(typeof currentWidgetOptions === "string", "native_style_widget_options_missing");
-    const parsedWidgetOptions = JSON.parse(currentWidgetOptions) as Record<string, unknown>;
-    const nativeStyleOptions = JSON.stringify({
-      ...parsedWidgetOptions, rulesOptions: [{ fillColor: "#112233" }]
-    });
-    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
-      method: "POST",
-      body: JSON.stringify([["UpdateRecord", "_grist_Tables_column", column.id, {
-        widgetOptions: nativeStyleOptions
-      }]])
-    });
+    const styleCreated = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "style_rules", documentId, tableId: TABLE_ID, columnId: "Name",
+      conditionFormula: "$Qty > 10", style: { fillColor: "#112233" }
+    }), "native_style_rule_create") as {changed:boolean;persistedStyleVerified:boolean};
+    assert(styleCreated.changed && styleCreated.persistedStyleVerified,
+      "native_style_rule_create_not_verified");
     const rereadStyleColumns = await gristApi(gristBaseUrl, apiKey,
       `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
-    assert(rereadStyleColumns.records.find(row => row.id === column.id)?.fields.widgetOptions === nativeStyleOptions,
-      "native_style_options_not_persisted");
+    const styledColumn = rereadStyleColumns.records.find(row => row.id === column.id);
+    const nativeStyleRules = styledColumn?.fields.rules;
+    assert(Array.isArray(nativeStyleRules) && nativeStyleRules[0] === "L" &&
+      nativeStyleRules.length === 2, "native_conditional_style_rule_not_persisted");
+    const helper = rereadStyleColumns.records.find(row => row.id === nativeStyleRules[1]);
+    assert(helper?.fields.formula === "$Qty > 10", "native_style_formula_not_persisted");
+    const nativeStyleOptions = styledColumn?.fields.widgetOptions;
+    assert(typeof nativeStyleOptions === "string" &&
+      JSON.parse(nativeStyleOptions).rulesOptions?.[0]?.fillColor === "#112233",
+      "native_conditional_style_options_missing");
+    const styleRepeated = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "style_rules", documentId, tableId: TABLE_ID, columnId: "Name",
+      conditionFormula: "$Qty > 10", style: { fillColor: "#112233" }
+    }), "native_style_rule_noop") as {changed:boolean};
+    assert(styleRepeated.changed === false, "native_style_rule_idempotence_failed");
+    const styleModified = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "style_rules", documentId, tableId: TABLE_ID, columnId: "Name",
+      conditionFormula: "$Qty >= 10", style: { fillColor: "#112233", textColor: "#FFFFFF" }
+    }), "native_style_rule_modify") as {changed:boolean};
+    assert(styleModified.changed, "native_style_rule_change_not_persisted");
     const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
       action: "columns", documentId, tableId: TABLE_ID
     }), "native_conditional_style_inspection");

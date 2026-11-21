@@ -75,6 +75,7 @@ import {
 import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUpdateInput } from "./formColumnOptions.js";
 import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
+import { readNativeColumnStyle, planColumnStyle, type ColumnStyleInput } from "./styleRules.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
 import { planFormPublication, readNativeFormPageShare } from "./formPublication.js";
 import { readFormFieldOptions, resolveFormFieldOptions, type FormFieldOptionsInput } from "./formFieldOptions.js";
@@ -1604,6 +1605,66 @@ export class AuthorizedGristService {
       }
       return { ...base, changed: true,
         persistedOptionsVerified: true, nativeDropdownRenderingQualified: false };
+    });
+  }
+
+  async changeColumnStyleRule(
+    documentIdOrUrl: string, tableId: string, columnId: string, input: ColumnStyleInput
+  ): Promise<unknown> {
+    return this.execute("style_rules", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = async () => {
+        const [tables, columns] = await Promise.all([
+          this.inner.queryRecords(id, "_grist_Tables", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Tables_column", { hidden: true, limit })
+        ]);
+        return readNativeColumnStyle(tables, columns, tableId, columnId, limit);
+      };
+      const initial = await read();
+      const planned = planColumnStyle(initial, input);
+      const base = { documentId: id, tableId, columnId };
+      if (!planned.changed) return {
+        ...base, changed: false, persistedStyleVerified: true
+      };
+      let state = initial;
+      // Native AddEmptyRule creates and links a real conditional formula helper.
+      // Re-read before the second action. A lost response is never replayed.
+      if (state.helperRef === undefined) {
+        try {
+          const addedRef = await this.uiActions.addColumnStyleRule(id, tableId, state.ownerRef);
+          state = await read();
+          if (state.ownerRef !== initial.ownerRef || state.helperRef !== addedRef ||
+              state.formula !== "") {
+            throw new Error("Created native style helper is not uniquely linked.");
+          }
+        } catch (error) {
+          throw new SchemaWriteVerificationError("style_rules",
+            "Native rule creation may have occurred; inspect before retry: " +
+            (error instanceof Error ? error.message : "unknown result"));
+        }
+      }
+      if (state.helperRef === undefined) {
+        throw new SchemaWriteVerificationError("style_rules", "Native helper unresolved.");
+      }
+      const next = planColumnStyle(state, input);
+      try {
+        await this.uiActions.writeColumnStyleRule(
+          id, state.ownerRef, state.helperRef,
+          input.conditionFormula, next.widgetOptions
+        );
+        const after = await read();
+        if (after.ownerRef !== state.ownerRef || after.helperRef !== state.helperRef ||
+            after.formula !== input.conditionFormula ||
+            !isDeepStrictEqual(after.options, next.options)) {
+          throw new Error("Conditional style formula, linkage or options not persisted.");
+        }
+      } catch (error) {
+        throw new SchemaWriteVerificationError("style_rules",
+          "Conditional style effect uncertain; inspect before replay: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
+      return { ...base, changed: true, persistedStyleVerified: true };
     });
   }
 
