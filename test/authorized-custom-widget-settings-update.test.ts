@@ -223,11 +223,16 @@ test("widget data access requires explicit consent and native Owner before write
     /Native Grist Owner required/
   );
   assert.equal(notOwner.writes.length, 0);
-  const denied = harness(true, undefined, false);
-  await denied.service.updatePageWidget("doc-1", 7, 21, {
+  const schemaOnly = harness(true, undefined, false);
+  await schemaOnly.service.updatePageWidget("doc-1", 7, 21, {
     customWidgetSettings: { access: "none" }
   });
-  assert.equal(denied.writes.length, 0);
+  // A harmless native encoding rewrite is allowed; no Owner escalation.
+  assert.equal(schemaOnly.writes.length, 1);
+  assert.equal(
+    JSON.parse(schemaOnly.currentOptions().customView as string).access,
+    "none"
+  );
 });
 
 test("registered inspect and change callbacks never return private custom options", async () => {
