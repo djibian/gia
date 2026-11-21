@@ -335,7 +335,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     } }]
   },
   grist_change_ui: {
-    actions: ["rename_page", "delete_page", "reorder_pages", "delete_widget", "update_layout", "update_form_layout", "publish_form", "update_form_field_options", "update_widget"],
+    actions: ["rename_page", "delete_page", "reorder_pages", "delete_widget", "update_layout", "update_form_layout", "publish_form", "update_form_field_options", "update_widget", "install_trusted_widget"],
     request: [
       "rename_page: {action,documentId,pageId,name}; delete_page: {action,documentId,pageId}; delete_widget: {action,documentId,pageId,widgetId}.",
       "update_form_layout: {action,documentId,pageId,widgetId,layout:{children:[paragraph|section(fields/paragraphs)|submit],submitText?,successText?,anotherResponse?}}; stable column IDs resolved server-side; no publish.",
@@ -349,7 +349,8 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "A page layout accounts for each current widget exactly once in root or collapsedWidgetIds. A Card/Card List layout places every current visible field exactly once. Update visibleFields and cardLayout separately (visible fields first). Hidden fields/filters are UI, not ACLs.",
       "calendarConfig applies to a calendar widget and uses stable IDs on its table: Date/DateTime start/end, Bool all-day, Text/Any title, Choice/ChoiceList/Any type.",
       "calendarConfig replaces the mapping set. Omitting endDateColumnId, allDayColumnId or typeColumnId clears that mapping. Carry forward each optional mapping you want to keep. Other widget settings are preserved.",
-      "customWidgetSettings.optionsPatch changes only bounded inert option keys on an already identified custom widget. It cannot install widgets, set URLs or authorize full access; other settings stay intact."
+      "customWidgetSettings.optionsPatch changes only bounded inert option keys on an already identified custom widget. It cannot install widgets, set URLs or authorize full access; other settings stay intact.",
+      "install_trusted_widget uses a deployment-approved key from GIA_TRUSTED_CUSTOM_WIDGETS_JSON, confirms external code, requires native Owner and starts with access:none; no arbitrary widget URL can enter MCP."
     ],
     examples: [
       { purpose: "Set all mappings for a calendar with text, date, Boolean and choice columns", arguments: {

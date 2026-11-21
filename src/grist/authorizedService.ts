@@ -104,6 +104,7 @@ import {
   type WidgetSortInput
 } from "./widgetSort.js";
 import { existingWidgetFields } from "./widgetFields.js";
+import { approvedWidgets, planTrustedWidgetInstall } from "./trustedWidgetInstall.js";
 import {
   resolveWidgetFieldsUpdate,
   type WidgetFieldUpdateInput
@@ -864,6 +865,51 @@ export class AuthorizedGristService {
       } catch (error) {
         throw new UiWriteVerificationError("update_form_field_options",
           error instanceof Error ? error.message : "Native Form field option post-read failed.");
+      }
+    });
+  }
+
+  async installTrustedWidget(
+    documentIdOrUrl: string, pageId: number, widgetId: number,
+    trustedKey: string, confirmExternalWidget: true
+  ): Promise<unknown> {
+    if (confirmExternalWidget !== true) throw new Error("External widget confirmation required.");
+    if (!Number.isInteger(pageId) || pageId < 1 ||
+        !Number.isInteger(widgetId) || widgetId < 1) {
+      throw new Error("Page and widget IDs must be positive integers.");
+    }
+    const approved = approvedWidgets(
+      process.env.GIA_TRUSTED_CUSTOM_WIDGETS_JSON, process.env.GRIST_BASE_URL ?? ""
+    ).find(entry => entry.key === trustedKey);
+    if (!approved) throw new Error("Widget key is not operator-approved.");
+    return this.execute("install_trusted_widget", documentIdOrUrl, 1, async id => {
+      await this.inner.assertDocumentOwner(id);
+      const before = await this.loadDocumentUi(id);
+      assertCompleteUiSnapshot(before);
+      const widget = before.pages.find(p => p.id === pageId)
+        ?.widgets.find(w => w.id === widgetId);
+      if (!widget) throw new Error("Widget does not exist on requested page.");
+      const plan = planTrustedWidgetInstall(widget, approved);
+      const base = { documentId: id, pageId, widgetId, trustedKey };
+      if (!plan.changed) return { ...base, changed: false, persistedWidgetVerified: true };
+      try {
+        await this.uiActions.updatePageWidget(id, widgetId, { optionsJson: plan.optionsJson });
+        const after = await this.loadDocumentUi(id);
+        assertCompleteUiSnapshot(after);
+        const installed = after.pages.find(p => p.id === pageId)
+          ?.widgets.find(w => w.id === widgetId);
+        if (!installed || !sameJsonValue(installed.options, plan.options) ||
+            installed.customWidgetSettingsNormalizationIncomplete ||
+            installed.customWidgetSettings?.widgetId !== approved.widgetId ||
+            installed.customWidgetSettings?.access !== "none") {
+          throw new Error("Native widget identity or initial zero access could not be verified.");
+        }
+        return { ...base, changed: true, persistedWidgetVerified: true,
+          remoteCodeExecutionQualified: false, widget: projectPublicWidget(installed) };
+      } catch (error) {
+        throw new UiWriteVerificationError("install_trusted_widget",
+          "Native trusted widget effect uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
       }
     });
   }

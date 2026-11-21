@@ -438,9 +438,13 @@ async function run(): Promise<void> {
 
   const port = await freePort();
   const bridgeBaseUrl = `http://127.0.0.1:${port}`;
-  const bridge = startBridge(
-    bridgeEnvironment({ gristBaseUrl, apiKey, documentId, workspaceId, port })
-  );
+  const bridge = startBridge({
+    ...bridgeEnvironment({ gristBaseUrl, apiKey, documentId, workspaceId, port }),
+    GIA_TRUSTED_CUSTOM_WIDGETS_JSON: JSON.stringify([{
+      key: "compat", name: "Compatibility widget", widgetId: "@test/compat",
+      revision: "v1.0.0", url: "https://widgets.example.org/compat/v1.0.0/index.html"
+    }])
+  });
 
   try {
     await waitForUrl(`${bridgeBaseUrl}/healthz`);
@@ -1174,6 +1178,33 @@ async function run(): Promise<void> {
       action: "add_widget", documentId, pageId, tableId: TABLE_ID, type: "custom"
     }), "custom_widget");
     const customWidgetId = positiveResultId((custom.widget as Record<string, unknown>)?.id, "custom_widget_id");
+    const trusted = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "add_widget", documentId, pageId, tableId: TABLE_ID, type: "custom"
+    }), "new_trusted_widget");
+    const trustedId = positiveResultId((trusted.widget as Record<string, unknown>)?.id, "trusted_id");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "install_trusted_widget", documentId, pageId, widgetId: trustedId,
+      trustedKey: "unapproved", confirmExternalWidget: true
+    });
+    const installed = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "install_trusted_widget", documentId, pageId, widgetId: trustedId,
+      trustedKey: "compat", confirmExternalWidget: true
+    }), "trusted_install") as {changed:boolean;persistedWidgetVerified:boolean;remoteCodeExecutionQualified:boolean};
+    assert(installed.changed && installed.persistedWidgetVerified &&
+      installed.remoteCodeExecutionQualified === false, "trusted_widget_install_unverified");
+    const trustedNative = await gristApi(gristBaseUrl, apiKey,
+      docPath + "/tables/_grist_Views_section/records?hidden=true") as MetaRecords;
+    const trustedRow = trustedNative.records.find(row => row.id === trustedId);
+    const trustedView = JSON.parse(JSON.parse(trustedRow?.fields.options as string).customView);
+    assert(trustedView.widgetId === "@test/compat" && trustedView.access === "none" &&
+      trustedView.widgetDef.url === "https://widgets.example.org/compat/v1.0.0/index.html",
+      "trusted_widget_native_identity_or_zero_access_missing");
+    const repeatedInstall = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "install_trusted_widget", documentId, pageId, widgetId: trustedId,
+      trustedKey: "compat", confirmExternalWidget: true
+    }), "trusted_install_idempotent") as {changed:boolean};
+    assert(!repeatedInstall.changed, "trusted_widget_install_repeated");
+
     const configuredCustom = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_widget", documentId, pageId, widgetId: customWidgetId,
       update: { customWidgetSettings: { access: "none", columnsMapping: { title: "Name" } } }
