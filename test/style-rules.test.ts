@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readNativeColumnStyle, planColumnStyle } from "../src/grist/styleRules.js";
+import { readNativeColumnStyle, planColumnStyle, readNativeColumnStyleSequence,
+  planAppendColumnStyleRule } from "../src/grist/styleRules.js";
 
 const tables = {records:[{id:1,fields:{tableId:"Items"}}]};
 const columns = (rules: unknown, options: unknown, formula = "") => ({
@@ -41,4 +42,48 @@ test("Style formulas and colors are bounded while ACL rules remain separate", ()
   assert.throws(()=>planColumnStyle(state,{...wanted,conditionFormula:"x".repeat(4100)}));
   assert.throws(()=>planColumnStyle(state,{...wanted,style:{fillColor:"javascript:1"}}));
   assert.throws(()=>planColumnStyle(state,{...wanted,style:{}}));
+});
+
+test("Bounded append preserves ordered native style helpers and avoids duplicate rules", () => {
+  const two = {records:[
+    {id:4,fields:{parentId:1,colId:"Name",rules:["L",6,8],
+      widgetOptions:JSON.stringify({formRequired:true,rulesOptions:[
+        {fillColor:"#123456"},{textColor:"#FFFFFF"}]})}},
+    {id:6,fields:{parentId:1,colId:"gristHelper_ConditionalRule",type:"Any",
+      isFormula:true,formula:"$Qty > 2"}},
+    {id:8,fields:{parentId:1,colId:"gristHelper_ConditionalRule2",type:"Any",
+      isFormula:true,formula:"$Qty < 0"}}
+  ]};
+  const initial = readNativeColumnStyleSequence(tables,two,"Items","Name",20);
+  assert.equal(initial.rules.length,2);
+  assert.throws(()=>readNativeColumnStyle(tables,two,"Items","Name",20));
+  const duplicate = planAppendColumnStyleRule(initial,{
+    conditionFormula:"$Qty > 2",style:{fillColor:"#123456"}
+  });
+  assert.deepEqual(duplicate,{changed:false});
+  const result = planAppendColumnStyleRule(initial,{
+    conditionFormula:"$Qty == 0",style:{fillColor:"#AABBCC"}
+  });
+  assert.equal(result.changed,true);
+  assert.deepEqual(result.options,{
+    formRequired:true,rulesOptions:[
+      {fillColor:"#123456"},{textColor:"#FFFFFF"},{fillColor:"#AABBCC"}
+    ]
+  });
+  assert.throws(()=>planAppendColumnStyleRule(initial,{
+    conditionFormula:"$Qty > 2",style:{textColor:"#123456"}
+  }));
+  assert.throws(()=>planAppendColumnStyleRule(initial,{
+    conditionFormula:"$Qty == 0",style:{fillColor:"red"}
+  }));
+});
+
+test("Style append rejects malformed, opaque and unfinished native rule sequences", () => {
+  const malformed = columns(["L",6], JSON.stringify({rulesOptions:[{fillColor:"bad"}]}), "$Qty > 2");
+  assert.throws(()=>readNativeColumnStyleSequence(tables,malformed,"Items","Name",20));
+  const pending = readNativeColumnStyleSequence(
+    tables,columns(["L",6],"{}",""),"Items","Name",20);
+  assert.throws(()=>planAppendColumnStyleRule(pending,wanted));
+  assert.throws(()=>readNativeColumnStyleSequence(
+    tables,columns(["L",6,6],"{}"),"Items","Name",20));
 });

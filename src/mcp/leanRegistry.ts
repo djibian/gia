@@ -279,13 +279,14 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
   },
   grist_change_structure: {
     actions: ["update_document", "update_tables", "delete_table", "update_columns", "update_form_column_options", "update_dropdown_condition",
-      "style_rules", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard"],
+      "style_rules", "append_style_rule", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard"],
     request: [
       "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}|{locale:'fr-FR'|'en-US'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
       "update_form_column_options: {action,documentId,tableId,columnId,update:{question?:string|null,required?:boolean,acceptFromUrl?:boolean}}; preserves other native options.",
       "update_dropdown_condition: {action,documentId,tableId,columnId,condition:null|{kind:'choice_field_equals_literal',choiceColumnId,value}|{kind:'choice_field_equals_record_ref',choiceColumnId,recordColumnId}|{kind:'choice_id_in_record_reflist',recordColumnId}}; typed native Ref/RefList predicate, null removes it.",
       "style_rules: {action,documentId,tableId,columnId,conditionFormula:GristPython,style:{fillColor?:'#RRGGBB',textColor?:'#RRGGBB'}}; create or replace one native column style rule, preserve other options; no arbitrary ACL formula.",
+      "append_style_rule: same fields as style_rules; appends one native column style (max 8), preserving existing ordered rules; identical rule is a no-op, conflicting duplicate formula is refused.",
       "update_tables: {action,documentId,tables:[{id,fields}]}; delete_table: {action,documentId,tableId}; rename_column: {action,documentId,tableId,oldColumnId,newColumnId}; delete_columns: {action,documentId,tableId,columnIds}",
       "access_rule_group: {action,documentId,mode:'create'|'replace'|'delete',target:{tableId,columnIds?:string[]}|{userAttributeName},rules?:[{condition,permissions:{read,update,create?,delete?}}],definition?:{tableId,lookupColId,source:{kind:'user_property',property}|{kind:'link_key',name}}}",
       "ensure_owner_schema_guard: {action,documentId,confirmSchemaRestriction:true}; adds only canonical user.Access != OWNER / -S on the native default ACL resource.",
