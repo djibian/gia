@@ -67,7 +67,7 @@ function defaultPolicy(snapshot: AccessRulesSnapshot): {
     rule.resourceId !== resource?.id && !snapshot.resources.some(res => res.id === rule.resourceId))) {
     throw new Error("Native ACL contains orphaned rules; refusing schema guard.");
   }
-  return { resource, rules, ...(guard ? { guard } : {}) };
+  return { ...(resource ? { resource } : {}), rules, ...(guard ? { guard } : {}) };
 }
 
 /** Fail closed unless the existing default policy can be preserved exactly. */
