@@ -1370,6 +1370,16 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("install_trusted_widget"),
+            documentId: documentIdSchema,
+            pageId: positiveIdSchema,
+            widgetId: positiveIdSchema,
+            trustedKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/),
+            confirmExternalWidget: z.literal(true)
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_widget"),
             documentId: documentIdSchema,
             pageId: positiveIdSchema,
@@ -1426,6 +1436,11 @@ export function registerLeanTools(
             return textResult(await grist.updateFormFieldOptions(
               input.documentId, input.pageId, input.widgetId,
               input.columnId, input.update
+            ));
+          case "install_trusted_widget":
+            return textResult(await grist.installTrustedWidget(
+              input.documentId, input.pageId, input.widgetId,
+              input.trustedKey, input.confirmExternalWidget
             ));
           case "update_widget":
             return textResult(
