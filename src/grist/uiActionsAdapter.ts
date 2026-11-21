@@ -597,6 +597,25 @@ export class GristUiActionsAdapter {
     ]);
   }
 
+
+  async updateColumnStyleOptions(
+    documentId: string, ownerRef: number, widgetOptions: string
+  ): Promise<void> {
+    assertPositiveId(ownerRef, "Conditional style owner");
+    if (typeof widgetOptions !== "string" || widgetOptions.length > 16_384) {
+      throw new Error("Trusted conditional style options exceed their bound.");
+    }
+    let parsed: unknown;
+    try { parsed = JSON.parse(widgetOptions) as unknown; }
+    catch { throw new Error("Trusted conditional style options are not JSON."); }
+    if (!record(parsed) || !Array.isArray(parsed.rulesOptions)) {
+      throw new Error("Trusted conditional style options lack the native rule list.");
+    }
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Tables_column", ownerRef, { widgetOptions }]
+    ]);
+  }
+
   async updateFormFieldOptions(
     documentId: string, fieldId: number, widgetOptions: string
   ): Promise<void> {

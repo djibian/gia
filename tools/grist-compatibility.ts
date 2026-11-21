@@ -2707,6 +2707,40 @@ async function run(): Promise<void> {
       conditionFormula: "$Qty < 0", style: { textColor: "#000000" }
     });
 
+
+    const multiRuleStyleUpdated = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "style_rules", documentId, tableId: TABLE_ID, columnId: "Name",
+      conditionFormula: "$Qty >= 10",
+      style: { fillColor: "#445566", textColor: "#FFFFFF" }
+    }), "native_multi_style_update") as {
+      changed: boolean; persistedStyleVerified: boolean; styleRuleCount: number
+    };
+    assert(multiRuleStyleUpdated.changed && multiRuleStyleUpdated.persistedStyleVerified &&
+      multiRuleStyleUpdated.styleRuleCount === 2, "native_multi_style_update_unverified");
+    const updatedMultiRuleColumns = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const updatedMultiRuleOwner = updatedMultiRuleColumns.records.find(row => row.id === column.id);
+    const updatedRefs = updatedMultiRuleOwner?.fields.rules;
+    assert(Array.isArray(updatedRefs) && updatedRefs.length === 3 &&
+      updatedRefs[1] === twoRuleRefs[1] && updatedRefs[2] === twoRuleRefs[2],
+      "native_multi_style_update_changed_helper_order");
+    const updatedOptions = JSON.parse(updatedMultiRuleOwner?.fields.widgetOptions as string);
+    assert(updatedOptions.rulesOptions.length === 2 &&
+      updatedOptions.rulesOptions[0].fillColor === "#445566" &&
+      updatedOptions.rulesOptions[0].textColor === "#FFFFFF" &&
+      updatedOptions.rulesOptions[1].fillColor === "#ABCDEF",
+      "native_multi_style_update_changed_other_rule");
+    const repeatedStyleUpdate = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "style_rules", documentId, tableId: TABLE_ID, columnId: "Name",
+      conditionFormula: "$Qty >= 10",
+      style: { fillColor: "#445566", textColor: "#FFFFFF" }
+    }), "native_multi_style_update_repeat") as {changed:boolean};
+    assert(!repeatedStyleUpdate.changed, "native_multi_style_update_not_idempotent");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "style_rules", documentId, tableId: TABLE_ID, columnId: "Name",
+      conditionFormula: "$Qty === 17", style: {fillColor:"#112233"}
+    });
+
     const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
       action: "columns", documentId, tableId: TABLE_ID
     }), "native_conditional_style_inspection");

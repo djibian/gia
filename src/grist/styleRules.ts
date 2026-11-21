@@ -135,6 +135,35 @@ export function readNativeColumnStyle(
   };
 }
 
+
+/** Modify the colors of exactly one existing formula without touching native helper identity or order. */
+export function planExistingColumnStyleUpdate(
+  sequence: NativeStyleSequence, conditionFormula: string, style: ColumnStyleInput["style"]
+): { changed: boolean; options?: JsonRecord; widgetOptions?: string } {
+  const validated = planColumnStyle(
+    { ownerRef: sequence.ownerRef, options: {}, existingStyle: {} },
+    { conditionFormula, style }
+  );
+  const wanted = (validated.options.rulesOptions as JsonRecord[])[0]!;
+  if (sequence.rules.some(rule => !rule.formula.trim() || !Object.keys(rule.style).length)) {
+    throw new Error("An existing conditional style is incomplete; refusing update.");
+  }
+  const matches = sequence.rules.flatMap((rule, index) =>
+    rule.formula === conditionFormula ? [index] : []);
+  if (matches.length !== 1) {
+    throw new Error("Conditional style formula is absent or ambiguous; select an existing unique formula.");
+  }
+  const index = matches[0]!;
+  if (isDeepStrictEqual(sequence.rules[index]!.style, wanted)) return { changed: false };
+  const options: JsonRecord = {
+    ...sequence.options,
+    rulesOptions: sequence.rules.map((rule, i) => i === index ? wanted : rule.style)
+  };
+  const widgetOptions = JSON.stringify(options);
+  if (widgetOptions.length > MAX_OPTIONS) throw new Error("Conditional style options exceed the native bound.");
+  return { changed: true, options, widgetOptions };
+}
+
 export function planAppendColumnStyleRule(
   sequence: NativeStyleSequence, input: ColumnStyleInput
 ): { changed: boolean; options?: JsonRecord; widgetOptions?: string } {
