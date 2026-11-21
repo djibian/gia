@@ -76,6 +76,7 @@ import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUp
 import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
 import { readNativeColumnStyle, planColumnStyle, type ColumnStyleInput } from "./styleRules.js";
+import { planOwnerSchemaGuard, verifyOwnerSchemaGuard } from "./schemaEditGuard.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
 import { planFormPublication, readNativeFormPageShare } from "./formPublication.js";
 import { readFormFieldOptions, resolveFormFieldOptions, type FormFieldOptionsInput } from "./formFieldOptions.js";
@@ -1411,6 +1412,27 @@ export class AuthorizedGristService {
         assertPublicTableId(table.id);
       }
       return this.inner.createTables(id, tables);
+    });
+  }
+
+  async ensureOwnerSchemaGuard(documentIdOrUrl: string, confirmed: true): Promise<unknown> {
+    if (confirmed !== true) throw new Error("Explicit Owner-only schema guard confirmation required.");
+    return this.execute("ensure_owner_schema_guard", documentIdOrUrl, 1, async id => {
+      await this.inner.assertDocumentOwner(id);
+      const before = await this.loadAccessRulesSnapshot(id);
+      const plan = planOwnerSchemaGuard(before);
+      const base = { documentId: id, policy: "owner_only_schema" };
+      if (plan.mode === "noop") {
+        return { ...base, ...verifyOwnerSchemaGuard(before, before, plan) };
+      }
+      await this.uiActions.ensureOwnerSchemaGuard(id, plan);
+      try {
+        const after = await this.loadAccessRulesSnapshot(id);
+        return { ...base, ...verifyOwnerSchemaGuard(before, after, plan) };
+      } catch (error) {
+        throw new AccessRuleWriteVerificationError(error instanceof Error
+          ? error.message : "Native schema guard could not be verified.");
+      }
     });
   }
 
