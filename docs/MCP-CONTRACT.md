@@ -129,6 +129,16 @@ or null. URLs, executable markup, secret-bearing keys, arbitrary objects and
 prototype keys are rejected. This neither installs a widget nor establishes
 publisher provenance, version pinning, or safe remote widget execution.
 
+`grist_change_ui(action="update_widget", update:{customWidgetSettings:{access}})`
+accepts the native levels `none`, `read table`, and `full`. Granting either
+non-`none` level requires `confirmDataAccess:true`, `doc.schema:write` and a
+fresh **native Grist document Owner** proof, even when the selected level is
+already persisted. Omission of confirmation rejects before any write. Reducing
+access to `none`, changing mappings or patching inert widget-owned options
+does not demand Owner on top of the normal schema grant. The confirmation
+is not stored in the document or echoed as evidence of widget-code integrity;
+remote widget execution and effective access must be qualified separately.
+
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
 Expanded column discovery (`grist_discover(columns)` and

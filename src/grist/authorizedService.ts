@@ -946,6 +946,11 @@ export class AuthorizedGristService {
         "visibleFields and cardLayout are separate bounded intentions; update visible fields first, then set the card layout."
       );
     }
+    const grantsWidgetData = update.customWidgetSettings?.access !== undefined &&
+      update.customWidgetSettings.access !== "none";
+    if (grantsWidgetData && update.customWidgetSettings?.confirmDataAccess !== true) {
+      throw new Error("Granting custom widget data access requires confirmDataAccess:true.");
+    }
 
     return this.execute("update_page_widget", documentIdOrUrl, 1, async (id) => {
       const usesColumnSelectBy =
@@ -977,6 +982,10 @@ export class AuthorizedGristService {
       const target = page.widgets.find((candidate) => candidate.id === widgetId);
       if (!target) {
         throw new Error(`Grist widget ${widgetId} does not exist on page ${pageId}.`);
+      }
+      if (grantsWidgetData) {
+        // Native Owner authority is mandatory even for an already granted level.
+        await this.inner.assertDocumentOwner(id);
       }
       if (update.chartType !== undefined && target.type !== "chart") {
         throw new Error(`Grist widget ${widgetId} is not a chart widget.`);

@@ -350,6 +350,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "calendarConfig applies to a calendar widget and uses stable IDs on its table: Date/DateTime start/end, Bool all-day, Text/Any title, Choice/ChoiceList/Any type.",
       "calendarConfig replaces the mapping set. Omitting endDateColumnId, allDayColumnId or typeColumnId clears that mapping. Carry forward each optional mapping you want to keep. Other widget settings are preserved.",
       "customWidgetSettings.optionsPatch changes only bounded inert option keys on an already identified custom widget. It cannot install widgets, set URLs or authorize full access; other settings stay intact.",
+      "customWidgetSettings.access read table|full needs confirmDataAccess:true and fresh native document Owner proof, in addition to doc.schema:write. Access none and inert settings updates do not increase widget data authority. Persisted settings are not evidence that remote code is trustworthy.",
       "install_trusted_widget uses a deployment-approved key from GIA_TRUSTED_CUSTOM_WIDGETS_JSON, confirms external code, requires native Owner and starts with access:none; no arbitrary widget URL can enter MCP."
     ],
     examples: [

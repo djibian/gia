@@ -12,6 +12,8 @@ export type CustomWidgetOptionsPatch = Record<string, CustomWidgetOptionValue>;
 
 export interface CustomWidgetSettingsUpdateInput {
   access?: CustomWidgetAccessLevel | undefined;
+  /** Explicit authorization of a data-bearing remote widget; never persisted in Grist. */
+  confirmDataAccess?: true | undefined;
   columnsMapping?: CustomWidgetColumnMapping | null | undefined;
   optionsPatch?: CustomWidgetOptionsPatch | undefined;
 }

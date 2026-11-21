@@ -12,7 +12,7 @@ import { registerLeanTools } from "../src/mcp/leanTools.js";
 
 const PRIVATE_URL = "https://widget.example.invalid/private?apiKey=synthetic-secret-marker";
 
-function harness(applyWrite = true, initialOptions?: unknown) {
+function harness(applyWrite = true, initialOptions?: unknown, nativeOwner = true) {
   let options: unknown = initialOptions ?? {
     unrelated: { keep: true },
     customView: JSON.stringify({
@@ -31,6 +31,9 @@ function harness(applyWrite = true, initialOptions?: unknown) {
     maxWriteRecords: 500,
     writeBatchRecords: 200,
     maxSchemaItems: 100,
+    assertDocumentOwner: async () => {
+      if (!nativeOwner) throw new Error("Native Grist Owner required.");
+    },
     getDocumentMetadata: async () => ({
       id: "doc-1",
       name: "Test document",
@@ -129,6 +132,7 @@ test("authorized custom widget update resolves stable IDs and preserves complete
   const result = await service.updatePageWidget("doc-1", 7, 21, {
     customWidgetSettings: {
       access: "read table",
+      confirmDataAccess: true,
       columnsMapping: {
         title: "Name",
         contacts: ["Email"],
@@ -189,7 +193,7 @@ test("custom widget post-write divergence is non-retryable verification failure"
   await assert.rejects(
     () =>
       service.updatePageWidget("doc-1", 7, 21, {
-        customWidgetSettings: { access: "full" }
+        customWidgetSettings: { access: "full", confirmDataAccess: true }
       }),
     (error: unknown) => {
       assert.ok(error instanceof Error);
@@ -199,6 +203,31 @@ test("custom widget post-write divergence is non-retryable verification failure"
       return true;
     }
   );
+});
+
+test("widget data access requires explicit consent and native Owner before write", async () => {
+  const missing = harness();
+  await assert.rejects(
+    () => missing.service.updatePageWidget("doc-1", 7, 21, {
+      customWidgetSettings: { access: "full" }
+    }),
+    /confirmDataAccess:true/
+  );
+  assert.equal(missing.writes.length, 0);
+
+  const notOwner = harness(true, undefined, false);
+  await assert.rejects(
+    () => notOwner.service.updatePageWidget("doc-1", 7, 21, {
+      customWidgetSettings: { access: "full", confirmDataAccess: true }
+    }),
+    /Native Grist Owner required/
+  );
+  assert.equal(notOwner.writes.length, 0);
+  const denied = harness(true, undefined, false);
+  await denied.service.updatePageWidget("doc-1", 7, 21, {
+    customWidgetSettings: { access: "none" }
+  });
+  assert.equal(denied.writes.length, 0);
 });
 
 test("registered inspect and change callbacks never return private custom options", async () => {
@@ -228,7 +257,7 @@ test("registered inspect and change callbacks never return private custom option
     documentId: "doc-1",
     pageId: 7,
     widgetId: 21,
-    update: { customWidgetSettings: { access: "read table" } }
+    update: { customWidgetSettings: { access: "read table", confirmDataAccess: true } }
   });
   assert.equal(result.isError, undefined);
   assert.equal(JSON.stringify(result).includes("synthetic-secret-marker"), false);
