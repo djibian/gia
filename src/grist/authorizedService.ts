@@ -1615,6 +1615,60 @@ export class AuthorizedGristService {
     });
   }
 
+  /** Change only one confirmed, existing direct document role: never invite an unknown identity. */
+  async changeDocumentUserRole(
+    documentIdOrUrl: string, email: string,
+    expectedRole: "viewers" | "editors", role: "viewers" | "editors",
+    confirmRoleChange: true
+  ): Promise<unknown> {
+    assertIndividualGrantEmail(email);
+    if (!(["viewers", "editors"] as const).includes(expectedRole) ||
+        !(["viewers", "editors"] as const).includes(role) || expectedRole === role) {
+      throw new Error("Role change requires distinct, exact viewer/editor prior and target roles.");
+    }
+    if (confirmRoleChange !== true) {
+      throw new Error("Role change requires explicit confirmation.");
+    }
+    return this.execute("change_document_user_role", documentIdOrUrl, 1, async id => {
+      await this.inner.assertDocumentOwner(id);
+      const before = documentGrantSnapshot(await this.inner.listDocumentAccess(id));
+      const target = before.users.find(user => user.email === email);
+      if (!target || (target.parentAccess !== null && target.parentAccess !== undefined) ||
+          (target.access !== "viewers" && target.access !== "editors")) {
+        throw new Error("Target must have an existing direct, non-inherited viewer/editor role.");
+      }
+      if (target.access === role) {
+        return {documentId: id, role, changed: false, persistedRoleVerified: true,
+          effectiveAclVerified: false};
+      }
+      if (target.access !== expectedRole) {
+        throw new Error("Target role differs from the expected previous direct role.");
+      }
+      try {
+        // Existing known native user ID: one per-user delta, not a new invitation.
+        await this.inner.grantDocumentUser(id, email, role);
+        const after = documentGrantSnapshot(await this.inner.listDocumentAccess(id));
+        const updated = after.users.find(user => user.email === email);
+        const unrelated = (users: readonly DocumentGrantUser[]) => users
+          .filter(user => user.email !== email).map(user => JSON.stringify(user)).sort();
+        if (!updated || updated.id !== target.id || updated.access !== role ||
+            updated.parentAccess !== target.parentAccess ||
+            updated.isMember !== target.isMember ||
+            before.maxInheritedRole !== after.maxInheritedRole ||
+            !isDeepStrictEqual(unrelated(before.users), unrelated(after.users))) {
+          throw new Error("Native Grist role change or unrelated access changed unexpectedly.");
+        }
+        return {documentId: id, role, changed: true, persistedRoleVerified: true,
+          effectiveAclVerified: false};
+      } catch (error) {
+        throw new DocumentGrantVerificationError(
+          "Native document role change may be partial or uncertain: " +
+          (error instanceof Error ? error.message : "unknown result")
+        );
+      }
+    });
+  }
+
   async revokeDocumentUser(
     documentIdOrUrl: string, email: string,
     expectedRole: "viewers" | "editors", confirmRevocation: true

@@ -580,6 +580,56 @@ async function run(): Promise<void> {
       action: "grant_document_user", documentId, email: grantRecipient, role: "editors"
     });
 
+    // Change an already verified existing direct grant, without inviting a user
+    // or rewriting any other direct/inherited share. Test both directions.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "change_document_user_role", documentId, email: grantRecipient,
+      expectedRole: "editors", role: "viewers", confirmRoleChange: true
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "change_document_user_role", documentId, email: grantRecipient,
+      expectedRole: "viewers", role: "editors", confirmRoleChange: false
+    });
+    const beforeRoleChange = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?:string;access?:string|null;id?:number;parentAccess?:string|null}>;
+        maxInheritedRole?:string|null;
+      };
+    const roleChanged = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "change_document_user_role", documentId, email: grantRecipient,
+      expectedRole: "viewers", role: "editors", confirmRoleChange: true
+    }), "native_document_user_role_change") as {
+      changed:boolean;persistedRoleVerified:boolean;effectiveAclVerified:boolean
+    };
+    assert(roleChanged.changed && roleChanged.persistedRoleVerified &&
+      roleChanged.effectiveAclVerified === false,"native_role_change_not_verified");
+    const afterRoleChange = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?:string;access?:string|null;id?:number;parentAccess?:string|null}>;
+        maxInheritedRole?:string|null;
+      };
+    const originalTarget = beforeRoleChange.users.find(u=>u.email===grantRecipient);
+    const changedTarget = afterRoleChange.users.find(u=>u.email===grantRecipient);
+    assert(changedTarget && changedTarget.id===originalTarget?.id &&
+      changedTarget.access==="editors" &&
+      changedTarget.parentAccess===originalTarget?.parentAccess,
+      "native_role_change_target_identity_or_role_changed");
+    assert(beforeRoleChange.maxInheritedRole===afterRoleChange.maxInheritedRole &&
+      isDeepStrictEqual(beforeRoleChange.users.filter(u=>u.email!==grantRecipient),
+        afterRoleChange.users.filter(u=>u.email!==grantRecipient)),
+      "native_role_change_unrelated_access_changed");
+    const repeatedRole = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "change_document_user_role", documentId, email: grantRecipient,
+      expectedRole: "viewers", role: "editors", confirmRoleChange: true
+    }), "native_document_user_role_replay") as {changed:boolean};
+    assert(!repeatedRole.changed,"native_role_change_replay_mutated");
+    const restoredRole = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "change_document_user_role", documentId, email: grantRecipient,
+      expectedRole: "editors", role: "viewers", confirmRoleChange: true
+    }), "native_document_user_role_restore") as {changed:boolean;persistedRoleVerified:boolean};
+    assert(restoredRole.changed && restoredRole.persistedRoleVerified,
+      "native_role_change_restore_failed");
+
     // Revoke only the existing direct document grant. Never delete the user,
     // broaden inherited access or touch other document recipients.
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
