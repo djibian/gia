@@ -99,6 +99,20 @@ unverified effects must be reconciled rather than replayed. The original
 zero/one-rule owner; multiple-rule owners can update colors only by exact
 existing formula match. Neither action accepts ACL predicates or raw native actions.
 
+A separate `grist_change_structure(action="replace_style_formula")` updates the
+condition of **one unique existing** native column conditional-format rule.
+The client supplies the stable table/column IDs, exact `previousFormula` and
+bounded `conditionFormula`. Gia resolves the private helper ID from a complete
+native snapshot and applies a single fixed helper formula update, without
+rewriting owner `widgetOptions` or any other rule, style, order or auxiliary.
+An absent/ambiguous previous formula, a formula collision, unconfigured rule
+or incomplete native metadata is refused. An identical old/new formula is a
+verified no-op. The entire rule sequence and owner options are reread to check
+the postcondition. An uncertain write must be reconciled before retrying; this
+is not a native atomic compare-and-swap, so concurrent native edits still
+require external serialization. Formulas use the already authorized Grist Python
+capability, never raw ACL expressions. No MCP tool is added.
+
 An operator-approved `grist_change_ui(action="install_trusted_widget")` selects one revisioned HTTPS custom widget on an empty native Custom section. The model provides only a `trustedKey` and `confirmExternalWidget:true`, never arbitrary URL/code. Deployment must configure `GIA_TRUSTED_CUSTOM_WIDGETS_JSON` as a bounded JSON list of `{key,name,widgetId,revision,url}`, with each HTTPS URL on a distinct host and including the revision in its path. Default is deny. Native Owner plus `doc.schema:write` are required. Selection is saved as Grist `customView`, with initial `access:none`, preserving unrelated section options and refusing occupied/customized widgets. Post-read confirms saved identity and access, with uncertain effects never blindly replayed. This is metadata persistence, not a verification of remotely served JavaScript or its subresources: operators must independently audit and host immutable code.
 
 `grist_change_ui(action="publish_form")` publishes one existing native Form widget and its

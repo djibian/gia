@@ -2798,6 +2798,42 @@ async function run(): Promise<void> {
       conditionFormula: "$Qty === 17", style: {fillColor:"#112233"}
     });
 
+    // Replace one predicate among two native conditional rules without rewriting
+    // the owner column's options or changing either helper identity.
+    const replacedStyleFormula = resultJson(await callTool(
+      bridgeBaseUrl, "grist_change_structure", {
+        action: "replace_style_formula", documentId, tableId: TABLE_ID, columnId: "Name",
+        previousFormula: "$Qty >= 10", conditionFormula: "$Qty > 20"
+      }), "native_style_formula_replacement") as {
+        changed: boolean; persistedStyleVerified: boolean; styleRuleCount: number
+      };
+    assert(replacedStyleFormula.changed && replacedStyleFormula.persistedStyleVerified &&
+      replacedStyleFormula.styleRuleCount === 2, "native_style_formula_replacement_not_verified");
+    const formulaReplacedColumns = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const replacedOwner = formulaReplacedColumns.records.find(row => row.id === column.id);
+    const replacementRefs = replacedOwner?.fields.rules;
+    assert(isDeepStrictEqual(replacementRefs, updatedRefs),
+      "native_formula_replacement_changed_helper_order");
+    assert(replacedOwner?.fields.widgetOptions === updatedMultiRuleOwner?.fields.widgetOptions,
+      "native_formula_replacement_changed_owner_options");
+    assert(formulaReplacedColumns.records.find(row => row.id === updatedRefs[1])?.fields.formula === "$Qty > 20" &&
+      formulaReplacedColumns.records.find(row => row.id === updatedRefs[2])?.fields.formula === "$Qty < 0",
+      "native_formula_replacement_changed_other_predicate");
+    const repeatedFormula = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "replace_style_formula", documentId, tableId: TABLE_ID, columnId: "Name",
+      previousFormula: "$Qty > 20", conditionFormula: "$Qty > 20"
+    }), "native_style_formula_noop") as {changed:boolean};
+    assert(!repeatedFormula.changed, "native_style_formula_noop_failed");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "replace_style_formula", documentId, tableId: TABLE_ID, columnId: "Name",
+      previousFormula: "$Qty >= 10", conditionFormula: "$Qty == 0"
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "replace_style_formula", documentId, tableId: TABLE_ID, columnId: "Name",
+      previousFormula: "$Qty > 20", conditionFormula: "$Qty < 0"
+    });
+
     const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
       action: "columns", documentId, tableId: TABLE_ID
     }), "native_conditional_style_inspection");
