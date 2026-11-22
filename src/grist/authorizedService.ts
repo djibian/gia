@@ -60,6 +60,7 @@ import {
 import {
   normalizePageOrderSnapshot,
   resolvePageOrderUpdate,
+  resolvePageNestingUpdate,
   samePageOrderSnapshot,
   type PageOrderSnapshot
 } from "./pageOrder.js";
@@ -643,6 +644,33 @@ export class AuthorizedGristService {
           "delete_page",
           error instanceof Error ? error.message : "Deleted page could not be verified."
         );
+      }
+    });
+  }
+
+  /** Create one native page-parent relation without moving or deleting pages. */
+  async nestPage(
+    documentIdOrUrl: string, pageId: number, parentPageId: number
+  ): Promise<unknown> {
+    return this.execute("nest_page", documentIdOrUrl, 1, async id => {
+      const before = await this.loadPageOrderSnapshot(id);
+      const plan = resolvePageNestingUpdate(before, pageId, parentPageId);
+      const result = {documentId:id,pageId,parentPageId};
+      if (!plan.changed) return {...result,changed:false,nativeHierarchyVerified:true};
+      if (!isDeepStrictEqual(await this.loadPageOrderSnapshot(id), before)) {
+        throw new Error("Native page hierarchy changed before nesting; reconcile first.");
+      }
+      try {
+        await this.uiActions.nestPage(id, plan.pageRecordId, plan.indentation);
+        const after = await this.loadPageOrderSnapshot(id);
+        if (!isDeepStrictEqual(after, plan.expected)) {
+          throw new Error("Native page nesting altered unrelated hierarchy, visibility or positions.");
+        }
+        return {...result,changed:true,nativeHierarchyVerified:true};
+      } catch(error) {
+        throw new UiWriteVerificationError("nest_page",
+          "Native page nesting effect uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
       }
     });
   }

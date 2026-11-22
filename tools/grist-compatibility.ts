@@ -1442,6 +1442,48 @@ async function run(): Promise<void> {
     const reordered = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", { action: "reorder_pages", documentId, pageIds: requestedOrder }), "native_page_reorder");
     assert(JSON.stringify(reordered.pageIds) === JSON.stringify(requestedOrder), "native_page_order_not_verified");
 
+    // Construct a real parent/child navigation relation from two freshly
+    // created native flat pages. No source document import or copy.
+    const nestedParent = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "create_page", documentId, tableId: TABLE_ID, name: "Gia Nested Parent"
+    }), "native_nesting_parent") as {page:{id:number}};
+    const nestedChild = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "create_page", documentId, tableId: TABLE_ID, name: "Gia Nested Child"
+    }), "native_nesting_child") as {page:{id:number}};
+    const nativeParentPageId = positiveResultId(nestedParent.page.id, "native_nesting_parent_id");
+    const nativeChildPageId = positiveResultId(nestedChild.page.id, "native_nesting_child_id");
+    const beforeNestingPages = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Pages/records?hidden=true`) as MetaRecords;
+    const parentPageRow = beforeNestingPages.records.find(row => row.fields.viewRef === nativeParentPageId);
+    const childPageRow = beforeNestingPages.records.find(row => row.fields.viewRef === nativeChildPageId);
+    assert(parentPageRow && childPageRow &&
+      parentPageRow.fields.indentation === 0 && childPageRow.fields.indentation === 0,
+      "native_nesting_fixture_pages_not_flat");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "nest_page", documentId, pageId:nativeChildPageId, parentPageId:nativeChildPageId
+    });
+    const nestedResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "nest_page", documentId, pageId:nativeChildPageId, parentPageId:nativeParentPageId
+    }), "native_page_nest") as {changed:boolean;nativeHierarchyVerified:boolean};
+    assert(nestedResult.changed && nestedResult.nativeHierarchyVerified,
+      "native_page_nesting_not_verified");
+    const afterNestingPages = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Pages/records?hidden=true`) as MetaRecords;
+    const afterChildRow = afterNestingPages.records.find(row=>row.id===childPageRow.id);
+    assert(afterChildRow?.fields.indentation === 1 &&
+      afterChildRow.fields.pagePos === childPageRow.fields.pagePos &&
+      afterNestingPages.records.filter(row=>row.id!==childPageRow.id).every(row =>
+        isDeepStrictEqual(row, beforeNestingPages.records.find(before=>before.id===row.id))),
+      "native_nesting_modified_other_pages_or_positions");
+    const repeatedNesting = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "nest_page", documentId, pageId:nativeChildPageId, parentPageId:nativeParentPageId
+    }), "native_nesting_repeat") as {changed:boolean};
+    assert(!repeatedNesting.changed, "native_page_nesting_repeated_write");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "nest_page", documentId, pageId:nativeParentPageId, parentPageId:nativeChildPageId
+    });
+
+
     const accessRules = resultJson(
       await callTool(bridgeBaseUrl, "grist_inspect", {
         action: "access_rules",
