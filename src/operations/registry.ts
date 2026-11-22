@@ -49,6 +49,7 @@ const OPERATION_CAPABILITIES = new Map<string, GristCapability>([
   ["unpublish_form", "doc.schema:write"],
   ["update_page_widget", "doc.schema:write"],
   ["install_trusted_widget", "doc.schema:write"],
+  ["update_trusted_widget_revision", "doc.schema:write"],
   ["update_form_field_options", "doc.schema:write"],
   ["delete_page", "doc.schema:write"],
   ["delete_page_widget", "doc.schema:write"],

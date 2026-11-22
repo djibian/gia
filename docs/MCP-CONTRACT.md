@@ -182,6 +182,20 @@ persistence is not proof of browser rendering.
 
 An operator-approved `grist_change_ui(action="install_trusted_widget")` selects one revisioned HTTPS custom widget on an empty native Custom section. The model provides only a `trustedKey` and `confirmExternalWidget:true`, never arbitrary URL/code. Deployment must configure `GIA_TRUSTED_CUSTOM_WIDGETS_JSON` as a bounded JSON list of `{key,name,widgetId,revision,url}`, with each HTTPS URL on a distinct host and including the revision in its path. Default is deny. Native Owner plus `doc.schema:write` are required. Selection is saved as Grist `customView`, with initial `access:none`, preserving unrelated section options and refusing occupied/customized widgets. Post-read confirms saved identity and access, with uncertain effects never blindly replayed. This is metadata persistence, not a verification of remotely served JavaScript or its subresources: operators must independently audit and host immutable code.
 
+A separate `grist_change_ui(action="update_trusted_widget_revision")` replaces
+one previously approved immutable custom-widget revision with another approved
+revision **of the same widget and asset at the same origin**. The model supplies
+`previousTrustedKey`, `trustedKey`, stable page/widget IDs and
+`confirmExternalWidget:true`; no URL or code enters the call. Native Owner
+and `doc.schema:write` remain mandatory. The persisted widget must exactly
+match its approved source definition and have `access:none`, no column
+mappings, no widget-owned options, and no active rendering. Gia preserves all
+unrelated section options, verifies the full resulting metadata and treats
+repeated completed upgrades as no-ops. Configured/data-bearing widgets are
+refused: operators must explicitly deactivate and clear their settings before
+an approved revision update. This does not prove the remote code is safe,
+nor provide an external compare-and-set or a blind retry guarantee.
+
 `grist_change_ui(action="publish_form")` publishes one existing native Form widget and its
 page-linked native share through a private fixed Grist action bundle. The request must
 include `confirmPublic:true`, a `doc.schema:write` grant and fresh native

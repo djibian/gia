@@ -1559,6 +1559,15 @@ export function registerLeanTools(
             confirmExternalWidget: z.literal(true)
           })
           .strict(),
+        z.object({
+          action: z.literal("update_trusted_widget_revision"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema,
+          widgetId: positiveIdSchema,
+          previousTrustedKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/),
+          trustedKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/),
+          confirmExternalWidget: z.literal(true)
+        }).strict(),
         z
           .object({
             action: z.literal("update_widget"),
@@ -1626,6 +1635,11 @@ export function registerLeanTools(
             return textResult(await grist.installTrustedWidget(
               input.documentId, input.pageId, input.widgetId,
               input.trustedKey, input.confirmExternalWidget
+            ));
+          case "update_trusted_widget_revision":
+            return textResult(await grist.updateTrustedWidgetRevision(
+              input.documentId, input.pageId, input.widgetId,
+              input.previousTrustedKey, input.trustedKey, input.confirmExternalWidget
             ));
           case "update_widget":
             return textResult(
