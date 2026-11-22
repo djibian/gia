@@ -279,7 +279,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
   },
   grist_change_structure: {
     actions: ["update_document", "update_tables", "delete_table", "update_columns", "update_form_column_options", "update_dropdown_condition",
-      "style_rules", "append_style_rule", "append_row_style_rule", "update_row_style_rule", "replace_row_style_formula", "replace_style_formula", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard", "grant_document_user", "revoke_document_user"],
+      "style_rules", "append_style_rule", "append_row_style_rule", "update_row_style_rule", "replace_row_style_formula", "replace_style_formula", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard", "grant_document_user", "revoke_document_user", "change_document_user_role"],
     request: [
       "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}|{locale:'fr-FR'|'en-US'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
@@ -294,6 +294,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "update_tables: {action,documentId,tables:[{id,fields}]}; delete_table: {action,documentId,tableId}; rename_column: {action,documentId,tableId,oldColumnId,newColumnId}; delete_columns: {action,documentId,tableId,columnIds}",
       "grant_document_user: {action,documentId,email:normalizedIndividualAddress,role:'viewers'|'editors'}; Owner proof + existing Owner-visible org-member user ID required; unknown targets refused before native write; no role changes, removal or public access.",
       "revoke_document_user: {action,documentId,email:normalizedIndividualAddress,expectedRole:'viewers'|'editors',confirmRevocation:true}; remove one verified existing direct document grant, not a user or inherited role; native Owner and doc.schema:write required.",
+      "change_document_user_role: {action,documentId,email:normalizedIndividualAddress,expectedRole:'viewers'|'editors',role:'viewers'|'editors',confirmRoleChange:true}; change only one existing direct role, preserving recipient identity and unrelated grants; Owner + doc.schema:write.",
       "access_rule_group: {action,documentId,mode:'create'|'replace'|'delete',target:{tableId,columnIds?:string[]}|{userAttributeName},rules?:[{condition,permissions:{read,update,create?,delete?}}],definition?:{tableId,lookupColId,source:{kind:'user_property',property}|{kind:'link_key',name}}}",
       "ensure_owner_schema_guard: {action,documentId,confirmSchemaRestriction:true}; adds only canonical user.Access != OWNER / -S on the native default ACL resource.",
       "permissions: 'allow'|'deny'|'unspecified'; condition leaves: everyone,user_access,user_access_membership,user_login_status,user_attribute_flag,record_in_user_attribute_ref_list,match_user,match_link_key,match_user_attribute,match_boolean,match_integer_flag,match_empty_text,column_change",

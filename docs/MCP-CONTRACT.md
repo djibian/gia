@@ -250,6 +250,22 @@ Effects that cannot be read back are uncertain and must not be replayed
 blindly. This is not a general user-management API, nor a proof of
 end-to-end authenticated access enforcement.
 
+A separately confirmed `grist_change_structure(action="change_document_user_role")`
+changes only an **existing direct** document viewer/editor grant to the other
+role. The caller supplies a normalized individual email, `expectedRole`, the
+distinct desired `role`, and `confirmRoleChange:true`. Local
+`doc.schema:write` plus a fresh native Owner proof are mandatory. A complete
+native access snapshot must identify the existing target by positive user ID,
+with neither inherited access nor a protected direct role. Gia sends only
+`PermissionDelta.users[email]=role`, never a whole-list write or a new
+identity. A previously completed transition is a no-op when the target already
+has the desired direct role. After the write Gia verifies the same target ID,
+desired role, unchanged membership/inherited state and identical unrelated
+recipients and inherited-role ceiling. Failed or ambiguous effects are
+uncertain and not blindly retryable; non-CAS native sharing changes must
+be serialized and reconciled. No native authorization decision or invitation
+delivery is certified by this persisted write.
+
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
 Expanded column discovery (`grist_discover(columns)` and
