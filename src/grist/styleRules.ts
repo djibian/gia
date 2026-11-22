@@ -192,6 +192,9 @@ export function planReorderRowStyleRules(
   return { changed: true, rules: ordered, refs: ordered.map(rule => rule.helperRef), options, optionsJson };
 }
 
+/** Both native column and raw-row style owners have identical paired rule semantics. */
+export const planReorderColumnStyleRules = planReorderRowStyleRules;
+
 /** Change only a uniquely identified native rule's predicate, never its helper, colors or order. */
 export function planExistingStyleFormulaReplacement(
   sequence: NativeStyleSequence, previousFormula: string, conditionFormula: string

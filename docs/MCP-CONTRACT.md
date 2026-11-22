@@ -143,6 +143,17 @@ writers must be serialized and uncertain effects reconciled, not replayed.
 No new MCP tool or widget/publication authority is introduced.
 
 
+`grist_change_structure(action="reorder_column_style_rules")` reorders two to eight
+existing, fully configured native column conditional styles. The complete
+`orderedFormulas` permutation selects unique existing formula helpers. Gia pairs
+each helper with its closed colors using the verified row-style ordering planner;
+a fixed owner-column native update changes only ordered `rules` and the paired
+`widgetOptions.rulesOptions`. Native helpers/formulas and unrelated column
+options remain intact. Fresh before/after reads enforce exact preservation;
+missing, duplicate, opaque or incomplete rules are refused. Repeating the same
+order is a no-op, and unverified writes require reconciliation, not blind replay.
+Neither external CAS nor browser-visible precedence is claimed.
+
 `grist_change_structure(action="reorder_row_style_rules")` reorders two to eight
 **existing, fully configured raw-table row conditional styles**. The caller supplies
 the stable `tableId` and `orderedFormulas` containing every existing unique

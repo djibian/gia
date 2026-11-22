@@ -25,6 +25,7 @@ const OPERATION_CAPABILITIES = new Map<string, GristCapability>([
   ["append_row_style_rule", "doc.schema:write"],
   ["update_row_style_rule", "doc.schema:write"],
   ["reorder_row_style_rules", "doc.schema:write"],
+  ["reorder_column_style_rules", "doc.schema:write"],
   ["replace_row_style_formula", "doc.schema:write"],
   ["replace_style_formula", "doc.schema:write"],
   ["grant_document_user", "doc.schema:write"],

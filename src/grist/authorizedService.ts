@@ -77,7 +77,7 @@ import { resolveExistingDropdownCondition, type DropdownConditionInput } from ".
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
 import { planColumnStyle, readNativeColumnStyleSequence, readNativeRowStyleSequence,
   planAppendColumnStyleRule, planExistingColumnStyleUpdate,
-  planExistingStyleFormulaReplacement, planReorderRowStyleRules, type ColumnStyleInput } from "./styleRules.js";
+  planExistingStyleFormulaReplacement, planReorderRowStyleRules, planReorderColumnStyleRules, type ColumnStyleInput } from "./styleRules.js";
 import { planOwnerSchemaGuard, verifyOwnerSchemaGuard } from "./schemaEditGuard.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
 import { planFormPublication, planFormUnpublication, readNativeFormPageShare } from "./formPublication.js";
@@ -2267,6 +2267,48 @@ export class AuthorizedGristService {
   }
 
 
+
+  /** Reorder existing native column-style helpers and their paired colors only. */
+  async reorderColumnStyleRules(
+    documentIdOrUrl: string, tableId: string, columnId: string,
+    orderedFormulas: readonly string[]
+  ): Promise<unknown> {
+    return this.execute("reorder_column_style_rules", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = async () => {
+        const [tables, columns] = await Promise.all([
+          this.inner.queryRecords(id, "_grist_Tables", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Tables_column", { hidden: true, limit })
+        ]);
+        return readNativeColumnStyleSequence(tables, columns, tableId, columnId, limit);
+      };
+      const before = await read();
+      const plan = planReorderColumnStyleRules(before, orderedFormulas);
+      const result = { documentId: id, tableId, columnId };
+      if (!plan.changed) return { ...result, changed: false, persistedStyleVerified: true };
+      if (!isDeepStrictEqual(await read(), before)) {
+        throw new Error("Native column-style sequence changed before reorder; reconcile first.");
+      }
+      try {
+        await this.uiActions.reorderColumnStyleRules(
+          id, before.ownerRef, plan.refs!, plan.optionsJson!
+        );
+        const after = await read();
+        if (after.ownerRef !== before.ownerRef ||
+            !isDeepStrictEqual(after.rules, plan.rules) ||
+            !isDeepStrictEqual(after.options, plan.options)) {
+          throw new Error("Reordered column-style helpers or paired colors failed postconditions.");
+        }
+        return { ...result, changed: true, persistedStyleVerified: true,
+          styleRuleCount: after.rules.length };
+      } catch (error) {
+        throw new SchemaWriteVerificationError("reorder_column_style_rules",
+          "Native column-style reorder may be uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
 
   /** Change native row-style priority by exact existing formula order only. */
   async reorderRowStyleRules(

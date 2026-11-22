@@ -680,6 +680,33 @@ export class GristUiActionsAdapter {
     ]);
   }
 
+  /** Fixed native owner-column write pairs existing helpers with their colors. */
+  async reorderColumnStyleRules(
+    documentId: string, ownerRef: number, refs: readonly number[], options: string
+  ): Promise<void> {
+    assertPositiveId(ownerRef, "Native conditional style column");
+    if (!Array.isArray(refs) || refs.length < 2 || refs.length > 8 ||
+        new Set(refs).size !== refs.length ||
+        refs.some(ref => !Number.isSafeInteger(ref) || ref < 1 || ref === ownerRef) ||
+        typeof options !== "string" || options.length > 16_384) {
+      throw new Error("Trusted column-style reorder payload is malformed.");
+    }
+    let parsed: unknown;
+    try { parsed = JSON.parse(options) as unknown; }
+    catch { throw new Error("Trusted column-style reorder options are not JSON."); }
+    const state = record(parsed);
+    if (!state || !Array.isArray(state.rulesOptions) ||
+        state.rulesOptions.length !== refs.length ||
+        state.rulesOptions.some(item => !record(item) || !Object.keys(record(item)!).length)) {
+      throw new Error("Trusted column-style reorder lacks a matching style sequence.");
+    }
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Tables_column", ownerRef, {
+        rules: ["L", ...refs], widgetOptions: options
+      }]
+    ]);
+  }
+
   async writeColumnStyleRule(
     documentId: string, ownerRef: number, helperRef: number,
     formula: string, widgetOptions: string
