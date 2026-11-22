@@ -3035,6 +3035,36 @@ async function run(): Promise<void> {
       isDeepStrictEqual(JSON.parse(restoredColumnOwner?.fields.widgetOptions as string),updatedOptions),
       "native_column_style_reorder_restore_mismatch");
 
+    // Remove exactly one existing column conditional rule via the bounded
+    // Grist RemoveColumn helper action and preserve all surviving state.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "remove_column_style_rule", documentId, tableId: TABLE_ID,
+      columnId: "Name", conditionFormula: "$Qty == 999", confirmRemoveRule: true
+    });
+    const removed = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "remove_column_style_rule", documentId, tableId: TABLE_ID,
+      columnId: "Name", conditionFormula: "$Qty < 0", confirmRemoveRule: true
+    }), "native_column_style_remove") as {
+      changed: boolean; persistedStyleVerified: boolean; remainingStyleRuleCount: number
+    };
+    assert(removed.changed && removed.persistedStyleVerified &&
+      removed.remainingStyleRuleCount === 1, "native_column_style_remove_unverified");
+    const columnsAfterRemove = await gristApi(gristBaseUrl, apiKey,
+      docPath + "/tables/_grist_Tables_column/records?hidden=true") as MetaRecords;
+    const remainingOwner = columnsAfterRemove.records.find(row => row.id === column.id);
+    const remainingOptions = JSON.parse(remainingOwner?.fields.widgetOptions as string);
+    assert(isDeepStrictEqual(remainingOwner?.fields.rules, ["L", updatedRefs[1]]) &&
+      remainingOptions.rulesOptions.length === 1 &&
+      remainingOptions.rulesOptions[0].fillColor === "#445566" &&
+      remainingOptions.rulesOptions[0].textColor === "#FFFFFF" &&
+      !columnsAfterRemove.records.some(row => row.id === updatedRefs[2]),
+      "native_column_style_remove_broke_survivor_or_left_helper");
+    const originalOtherOptions = { ...updatedOptions };
+    delete originalOtherOptions.rulesOptions;
+    delete remainingOptions.rulesOptions;
+    assert(isDeepStrictEqual(originalOtherOptions, remainingOptions),
+      "native_column_style_remove_broke_unrelated_options");
+
     // Native raw-row style: AddEmptyRule(tableId, null, null) must attach to
     // _grist_Tables.rawViewSectionRef, not to any visible grid or column.
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {

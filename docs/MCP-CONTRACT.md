@@ -143,6 +143,17 @@ writers must be serialized and uncertain effects reconciled, not replayed.
 No new MCP tool or widget/publication authority is introduced.
 
 
+`grist_change_structure(action="remove_column_style_rule")` removes exactly one
+uniquely selected native column conditional style from a complete 2–8-rule
+owner. It requires stable table/column IDs, exact existing `conditionFormula`,
+and `confirmRemoveRule:true`. Gia verifies that the private hidden helper is
+exclusively owned by that column and is not referenced by another column,
+section or field. Grist receives only a fixed bundled removal of the paired
+style option and the native helper `RemoveColumn`; remaining helpers, their
+formulas and colors, and all other owner options are re-verified. Missing,
+duplicate, shared, malformed or incomplete state refuses deletion. No arbitrary
+column deletion, unconditional retry, external CAS or ACL authority is granted.
+
 `grist_change_structure(action="reorder_column_style_rules")` reorders two to eight
 existing, fully configured native column conditional styles. The complete
 `orderedFormulas` permutation selects unique existing formula helpers. Gia pairs

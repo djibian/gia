@@ -1147,6 +1147,14 @@ export function registerLeanTools(
                 "Column-style formulas must be unique.")
           })
           .strict(),
+        z.object({
+          action: z.literal("remove_column_style_rule"),
+          documentId: documentIdSchema,
+          tableId: tableIdSchema,
+          columnId: columnIdSchema,
+          conditionFormula: z.string().min(1).max(4096),
+          confirmRemoveRule: z.literal(true)
+        }).strict(),
         z
           .object({
             action: z.literal("reorder_row_style_rules"),
@@ -1327,6 +1335,11 @@ export function registerLeanTools(
           case "reorder_column_style_rules":
             return textResult(await grist.reorderColumnStyleRules(
               input.documentId, input.tableId, input.columnId, input.orderedFormulas
+            ));
+          case "remove_column_style_rule":
+            return textResult(await grist.removeColumnStyleRule(
+              input.documentId, input.tableId, input.columnId,
+              input.conditionFormula, input.confirmRemoveRule
             ));
           case "reorder_row_style_rules":
             return textResult(await grist.reorderRowStyleRules(

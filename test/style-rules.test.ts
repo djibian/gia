@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readNativeColumnStyle, planColumnStyle, readNativeColumnStyleSequence,
   planAppendColumnStyleRule, planExistingColumnStyleUpdate,
-  planExistingStyleFormulaReplacement, planReorderRowStyleRules, planReorderColumnStyleRules, readNativeRowStyleSequence } from "../src/grist/styleRules.js";
+  planExistingStyleFormulaReplacement, planReorderRowStyleRules, planReorderColumnStyleRules,
+  planRemoveColumnStyleRule, exclusiveNativeColumnStyleHelper, readNativeRowStyleSequence } from "../src/grist/styleRules.js";
 
 
 test("Column-style priority reorders helpers and colors without changing other options", () => {
@@ -312,4 +313,51 @@ test("Replacing one native row formula retains raw-section options and sibling r
   assert.throws(()=>planExistingStyleFormulaReplacement({...state,rules:[
     state.rules[0]!,{...state.rules[1]!,formula:"$Qty > 2"}
   ]},"$Qty > 2","$Qty > 3"),/absent or ambiguous/);
+});
+
+test("Deleting one native column style preserves sibling colors and rejects shared helper ownership", () => {
+  const original = {
+    ownerRef: 4,
+    options: { theme: "dark", rulesOptions: [
+      { fillColor: "#112233" }, { textColor: "#AABBCC" }
+    ] },
+    rules: [
+      { helperRef: 6, formula: "$Qty > 2", style: { fillColor: "#112233" } },
+      { helperRef: 8, formula: "$Qty < 0", style: { textColor: "#AABBCC" } }
+    ]
+  };
+  const plan = planRemoveColumnStyleRule(original, "$Qty > 2");
+  assert.equal(plan.helperRef, 6);
+  assert.deepEqual(plan.remainingRules, [original.rules[1]]);
+  assert.deepEqual(plan.options, { theme: "dark", rulesOptions: [
+    { textColor: "#AABBCC" }
+  ] });
+  assert.throws(() => planRemoveColumnStyleRule(original, "$Qty == 0"));
+  assert.throws(() => planRemoveColumnStyleRule(
+    { ...original, rules: [original.rules[0]!] }, "$Qty > 2"));
+  assert.throws(() => planRemoveColumnStyleRule(
+    { ...original, rules: [
+      original.rules[0]!, { ...original.rules[1]!, formula: "$Qty > 2" }
+    ] }, "$Qty > 2"));
+  const columns = { records: [
+    { id: 4, fields: { rules: ["L", 6, 8] } },
+    { id: 6, fields: { parentId: 1, colId: "gristHelper_ConditionalRule", type: "Any", isFormula: true } },
+    { id: 8, fields: { parentId: 1, colId: "gristHelper_ConditionalRule2", type: "Any", isFormula: true } }
+  ] };
+  const sections = { records: [{ id: 3, fields: { rules: null } }] };
+  const fields = { records: [{ id: 5, fields: { rules: ["L"] } }] };
+  assert.equal(exclusiveNativeColumnStyleHelper(
+    columns, sections, fields, 4, 6, 20), "gristHelper_ConditionalRule");
+  assert.throws(() => exclusiveNativeColumnStyleHelper(
+    columns, { records: [{ id: 3, fields: { rules: ["L", 6] } }] },
+    fields, 4, 6, 20));
+  assert.throws(() => exclusiveNativeColumnStyleHelper(
+    { records: [...columns.records, { id: 9, fields: { rules: ["L", 6] } }] },
+    sections, fields, 4, 6, 20));
+  assert.throws(() => exclusiveNativeColumnStyleHelper(
+    columns, sections, { records: [{ id: 5, fields: { rules: ["L", 6] } }] },
+    4, 6, 20));
+  assert.throws(() => exclusiveNativeColumnStyleHelper(
+    columns, sections, { records: [{ id: 5, fields: { rules: "opaque" } }] },
+    4, 6, 20));
 });
