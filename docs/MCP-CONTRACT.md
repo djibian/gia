@@ -186,6 +186,18 @@ are never exposed to the model. Native persisted publication and page linkage
 do not prove anonymous browsing or submission; those require separate
 native acceptance checks.
 
+`grist_change_ui(action="unpublish_form")` disables the native publication
+flags of one previously published Form section. Exact existing page/widget IDs
+and `confirmUnpublish:true` are required, together with `doc.schema:write`
+and fresh upstream Grist document Owner authority. A uniquely verified native
+published page share is required. One fixed native section update changes only
+`shareOptions` to `{form:true,publish:false}`; it preserves page/share
+metadata, Form layout and options, and unrelated native permissions. Before/after
+reads verify this intention; a repeat is a no-op, and uncertain writes must be
+reconciled, never blindly retried. Existing public home-database Share.keys
+are **not** deleted or attested revoked. Disabling the section does not qualify
+effective anonymous access revocation; that is a separate native boundary.
+
 `grist_change_ui(action="update_form_layout")` configures one existing
 native Form section with a bounded tree of typed paragraphs, field groups and a
 final submit element. All field references are supplied as stable column IDs and

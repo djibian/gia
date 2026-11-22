@@ -86,6 +86,21 @@ export function readNativeFormPageShare(
   return "published";
 }
 
+/** Turn off one native Form's publication flag without altering its existing page share.
+ * This does not attest revocation of Grist's separate public home-db share key. */
+export function planFormUnpublication(raw: unknown): {
+  shareOptions: string; changed: boolean;
+} {
+  const before = readNativeShareOptions(raw);
+  if (before.form !== true || typeof before.publish !== "boolean") {
+    throw new Error("Only an explicitly configured native Form can be unpublished.");
+  }
+  return {
+    shareOptions: JSON.stringify({ form: true, publish: false }),
+    changed: before.publish
+  };
+}
+
 /** Only a separately confirmed, Owner-gated publication intention is writable. */
 export function planFormPublication(raw: unknown): {
   shareOptions: string; expected: ShareOptions; changed: boolean;

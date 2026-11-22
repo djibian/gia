@@ -563,6 +563,24 @@ export class GristUiActionsAdapter {
     await this.client.applyUserActions(documentId, actions);
   }
 
+  /** Fixed native section update; never delete or mutate page/share references. */
+  async unpublishForm(
+    documentId: string, widgetId: number, shareOptions: string
+  ): Promise<void> {
+    assertPositiveId(widgetId, "Grist Form widget ID");
+    let raw: unknown;
+    try { raw = JSON.parse(shareOptions) as unknown; }
+    catch { throw new Error("Trusted Form unpublication options must be JSON."); }
+    const state = record(raw);
+    if (!state || Object.keys(state).some(key => !["form", "publish"].includes(key)) ||
+        state.form !== true || state.publish !== false) {
+      throw new Error("Trusted native unpublication requires form:true,publish:false.");
+    }
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Views_section", widgetId, { shareOptions }]
+    ]);
+  }
+
   async addColumnStyleRule(documentId: string, tableId: string, columnRef: number): Promise<number> {
     assertPositiveId(columnRef, "Native conditional style owner");
     if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(tableId)) {

@@ -2643,6 +2643,43 @@ async function run(): Promise<void> {
       action: "publish_form", documentId, pageId, widgetId: formSection.id, confirmPublic: true
     }), "native_publish_form_replay") as { changed: boolean };
     assert(repeatedPublish.changed === false, "native_form_publication_replay_wrote");
+    // Native reversible Form disablement: preserve the existing page share and ACLs.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "unpublish_form", documentId, pageId, widgetId: formSection.id
+    });
+    const unpublished = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "unpublish_form", documentId, pageId, widgetId: formSection.id,
+      confirmUnpublish: true
+    }), "native_form_unpublication") as {
+      changed:boolean; persistedUnpublicationIntentVerified:boolean;
+      nativePageSharePreserved:boolean; publicAccessRevocationQualified:boolean
+    };
+    assert(unpublished.changed && unpublished.persistedUnpublicationIntentVerified &&
+      unpublished.nativePageSharePreserved && !unpublished.publicAccessRevocationQualified,
+      "native_form_unpublication_not_verified");
+    const [unpublishedSections, unpublishedPages, unpublishedShares] = await Promise.all(
+      ["_grist_Views_section", "_grist_Pages", "_grist_Shares"].map(table =>
+        gristApi(gristBaseUrl, apiKey,
+          `${docPath}/tables/${table}/records?hidden=true`) as Promise<MetaRecords>)
+    );
+    assert(isDeepStrictEqual(unpublishedPages, publishedPages) &&
+      isDeepStrictEqual(unpublishedShares, publishedShares),
+      "native_unpublication_changed_page_or_share");
+    const unpublishedFlags = JSON.parse(String(unpublishedSections?.records.find(
+      row => row.id === formSection.id)?.fields.shareOptions));
+    assert(unpublishedFlags.form === true && unpublishedFlags.publish === false,
+      "native_form_unpublication_flag_not_persisted");
+    const repeatedUnpublish = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "unpublish_form", documentId, pageId, widgetId: formSection.id,
+      confirmUnpublish: true
+    }), "native_form_unpublication_noop") as { changed:boolean };
+    assert(!repeatedUnpublish.changed, "native_form_unpublication_noop_wrote");
+    const republished = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "publish_form", documentId, pageId, widgetId: formSection.id,
+      confirmPublic: true
+    }), "native_republish_existing_form") as { changed:boolean };
+    assert(republished.changed, "native_republication_did_not_change");
+
     const nativePreview = await gristApi(gristBaseUrl, apiKey, `${docPath}/forms/${formSection.id}`) as {
       formTableId: string;
       formFieldsById: Record<number, { colId: string; question: string }>;
