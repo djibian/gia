@@ -1159,6 +1159,15 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("revoke_document_user"),
+            documentId: documentIdSchema,
+            email: z.string().min(6).max(280),
+            expectedRole: z.enum(["viewers", "editors"]),
+            confirmRevocation: z.literal(true)
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_form_column_options"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1319,6 +1328,10 @@ export function registerLeanTools(
           case "ensure_owner_schema_guard":
             return textResult(await grist.ensureOwnerSchemaGuard(
               input.documentId, input.confirmSchemaRestriction
+            ));
+          case "revoke_document_user":
+            return textResult(await grist.revokeDocumentUser(
+              input.documentId, input.email, input.expectedRole, input.confirmRevocation
             ));
           case "grant_document_user":
             return textResult(await grist.grantDocumentUser(

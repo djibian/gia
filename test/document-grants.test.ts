@@ -47,3 +47,14 @@ test("grant parser rejects malformed or ambiguous native sharing snapshots", asy
   const {service} = fixture([{email:"owner@example.invalid",access:"owners"}]);
   await assert.rejects(() => service.grantDocumentUser("synthetic", "reader@invalid", "viewers"));
 });
+
+test("revoke requires explicit confirmed matching role and an individual email before authorization", async () => {
+  const {service, getOwnerChecks} = fixture([]);
+  await assert.rejects(() => service.revokeDocumentUser(
+    "synthetic","reader@example.invalid","viewers",false as true), /confirmation/);
+  await assert.rejects(() => service.revokeDocumentUser(
+    "synthetic","everyone@getgrist.com","viewers",true), /normalized/);
+  await assert.rejects(() => service.revokeDocumentUser(
+    "synthetic","reader@example.invalid","owners" as "viewers",true), /exact prior/);
+  assert.equal(getOwnerChecks(),0);
+});

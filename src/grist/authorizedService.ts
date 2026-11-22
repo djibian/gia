@@ -205,6 +205,14 @@ type DocumentGrantUser = {
   parentAccess?: string | null | undefined;
   isMember?: boolean | null | undefined;
 };
+/** Exact individual only; never let native share delta accept public pseudo-identities. */
+function assertIndividualGrantEmail(email: string): void {
+  if (!/^[a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9][a-z0-9.-]{0,190}\.[a-z]{2,24}$/.test(email) ||
+      ["everyone@getgrist.com", "anonymous@getgrist.com", "previewer@getgrist.com", "support@getgrist.com"].includes(email)) {
+    throw new Error("A normalized, explicit individual email is required.");
+  }
+}
+
 export class DocumentGrantVerificationError extends Error {
   constructor(message: string) {
     super(message + " The effect is uncertain; do not replay blindly.");
@@ -1556,10 +1564,7 @@ export class AuthorizedGristService {
     email: string,
     role: "viewers" | "editors"
   ): Promise<unknown> {
-    if (!/^[a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9][a-z0-9.-]{0,190}\.[a-z]{2,24}$/.test(email) ||
-        ["everyone@getgrist.com", "anonymous@getgrist.com", "previewer@getgrist.com", "support@getgrist.com"].includes(email)) {
-      throw new Error("A normalized, explicit individual email is required.");
-    }
+    assertIndividualGrantEmail(email);
     if (role !== "viewers" && role !== "editors") {
       throw new Error("Only individual viewer/editor grants are supported.");
     }
@@ -1605,6 +1610,60 @@ export class AuthorizedGristService {
       } catch {
         throw new DocumentGrantVerificationError(
           "Document sharing was acknowledged but its native persisted grant could not be verified."
+        );
+      }
+    });
+  }
+
+  async revokeDocumentUser(
+    documentIdOrUrl: string, email: string,
+    expectedRole: "viewers" | "editors", confirmRevocation: true
+  ): Promise<unknown> {
+    assertIndividualGrantEmail(email);
+    if (expectedRole !== "viewers" && expectedRole !== "editors") {
+      throw new Error("Revocation requires the exact prior direct viewer/editor role.");
+    }
+    if (confirmRevocation !== true) {
+      throw new Error("Revocation requires explicit confirmation.");
+    }
+    return this.execute("revoke_document_user", documentIdOrUrl, 1, async id => {
+      await this.inner.assertDocumentOwner(id);
+      const before = documentGrantSnapshot(await this.inner.listDocumentAccess(id));
+      const target = before.users.find(user => user.email === email);
+      if (!target) {
+        throw new Error("The target is not present in the native document access snapshot.");
+      }
+      if (target.parentAccess !== null && target.parentAccess !== undefined) {
+        throw new Error("Inherited document access cannot be revoked by this action.");
+      }
+      if (target.access === null) {
+        return { documentId: id, changed: false, persistedRevocationVerified: true,
+          effectiveAclVerified: false };
+      }
+      if (target.access !== expectedRole) {
+        throw new Error("Target direct access differs from the explicitly expected viewer/editor role.");
+      }
+      try {
+        // Native Grist PermissionDelta maps an email to null to remove direct
+        // access, never to delete a user or manipulate workspace membership.
+        await this.inner.revokeDocumentUser(id, email);
+        const after = documentGrantSnapshot(await this.inner.listDocumentAccess(id));
+        const updated = after.users.find(user => user.email === email);
+        const unrelated = (users: readonly DocumentGrantUser[]) =>
+          users.filter(user => user.email !== email)
+            .map(user => JSON.stringify(user)).sort();
+        if ((updated && (updated.id !== target.id || updated.access !== null ||
+              updated.parentAccess !== target.parentAccess)) ||
+            before.maxInheritedRole !== after.maxInheritedRole ||
+            !isDeepStrictEqual(unrelated(before.users), unrelated(after.users))) {
+          throw new Error("Native Grist revocation or unrelated access changed unexpectedly.");
+        }
+        return { documentId: id, changed: true, persistedRevocationVerified: true,
+          effectiveAclVerified: false };
+      } catch (error) {
+        throw new DocumentGrantVerificationError(
+          "Native document revocation may be partial or uncertain: " +
+          (error instanceof Error ? error.message : "unknown result")
         );
       }
     });

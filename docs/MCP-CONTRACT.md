@@ -232,6 +232,24 @@ an invitation email was delivered. An uncertain or unverified mutation must
 not be blindly retried. Publication is explicitly outside this operation.
 
 
+A separately confirmed `grist_change_structure(action="revoke_document_user")`
+removes **one existing direct** Grist document `viewers` or `editors` grant.
+The client supplies an exact individual normalized email, the
+`expectedRole` and `confirmRevocation:true`. Gia requires
+`doc.schema:write` and fresh native document Owner authority. It refuses
+public pseudo-users, unknown or ambiguous identities, inherited access,
+other direct roles (including owners), or unexpected current roles.
+Native `PermissionDelta.users[email]=null` removes direct document access,
+not the Grist account, a workspace grant or any inherited permission.
+The complete native access snapshot is checked before and after; unrelated
+recipients and inherited-role ceiling must remain unchanged. A target
+remaining visible with null direct access, or disappearing from the
+document membership list, is consistent with native revocation. An
+already-absent direct grant on a still-visible known user is a no-op.
+Effects that cannot be read back are uncertain and must not be replayed
+blindly. This is not a general user-management API, nor a proof of
+end-to-end authenticated access enforcement.
+
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
 Expanded column discovery (`grist_discover(columns)` and

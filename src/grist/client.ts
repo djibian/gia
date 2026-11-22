@@ -153,6 +153,16 @@ export class GristClient {
     });
   }
 
+  async revokeDocumentUser(
+    documentIdOrUrl: string, email: string
+  ): Promise<unknown> {
+    const id = this.normalizeDocumentId(documentIdOrUrl);
+    return this.request(`/api/docs/${encodeURIComponent(id)}/access`, {
+      method: "PATCH",
+      body: JSON.stringify({ delta: { users: { [email]: null } } })
+    });
+  }
+
   async updateDocument(
     documentIdOrUrl: string,
     update: GristDocumentUpdate

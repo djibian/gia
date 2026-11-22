@@ -580,6 +580,44 @@ async function run(): Promise<void> {
       action: "grant_document_user", documentId, email: grantRecipient, role: "editors"
     });
 
+    // Revoke only the existing direct document grant. Never delete the user,
+    // broaden inherited access or touch other document recipients.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "revoke_document_user", documentId, email: grantRecipient,
+      expectedRole: "editors", confirmRevocation: true
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "revoke_document_user", documentId, email: grantRecipient,
+      expectedRole: "viewers", confirmRevocation: false
+    });
+    const beforeRevocation = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?:string;access?:string|null;id?:number}>;
+        maxInheritedRole?: string|null;
+      };
+    const grantUserId = beforeRevocation.users.find(u=>u.email===grantRecipient)?.id;
+    const revoked = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "revoke_document_user", documentId, email: grantRecipient,
+      expectedRole: "viewers", confirmRevocation: true
+    }), "native_document_user_revoke") as {
+      changed:boolean; persistedRevocationVerified:boolean; effectiveAclVerified:boolean
+    };
+    assert(revoked.changed && revoked.persistedRevocationVerified &&
+      revoked.effectiveAclVerified === false,"native_revoke_not_verified");
+    const afterRevocation = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?:string;access?:string|null;id?:number}>;
+        maxInheritedRole?: string|null;
+      };
+    const revokedUser = afterRevocation.users.find(u=>u.email===grantRecipient);
+    assert(!revokedUser || (revokedUser.access===null && revokedUser.id===grantUserId),
+      "native_revoke_left_direct_access");
+    assert(beforeRevocation.maxInheritedRole===afterRevocation.maxInheritedRole,
+      "native_revoke_changed_inherited_ceiling");
+    assert(isDeepStrictEqual(beforeRevocation.users.filter(u=>u.email!==grantRecipient),
+      afterRevocation.users.filter(u=>u.email!==grantRecipient)),
+      "native_revoke_changed_unrelated_access");
+
     const templateMetadata = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "update_document",

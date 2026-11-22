@@ -377,6 +377,13 @@ export class GristService {
     return this.client.grantDocumentUser(id, email, role);
   }
 
+  async revokeDocumentUser(
+    documentIdOrUrl: string, email: string
+  ): Promise<unknown> {
+    const id = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    return this.client.revokeDocumentUser(id, email);
+  }
+
   async assertDocumentOwner(documentIdOrUrl: string): Promise<void> {
     const documentId = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
     const document = await this.client.getDocument(documentId);
