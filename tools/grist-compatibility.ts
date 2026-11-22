@@ -443,6 +443,9 @@ async function run(): Promise<void> {
     GIA_TRUSTED_CUSTOM_WIDGETS_JSON: JSON.stringify([{
       key: "compat", name: "Compatibility widget", widgetId: "@test/compat",
       revision: "v1.0.0", url: "https://widgets.example.org/compat/v1.0.0/index.html"
+    },{
+      key: "compat-v2", name: "Compatibility widget", widgetId: "@test/compat",
+      revision: "v1.0.1", url: "https://widgets.example.org/compat/v1.0.1/index.html"
     }])
   });
 
@@ -1349,6 +1352,28 @@ async function run(): Promise<void> {
       trustedKey: "compat", confirmExternalWidget: true
     }), "trusted_install_idempotent") as {changed:boolean};
     assert(!repeatedInstall.changed, "trusted_widget_install_repeated");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_trusted_widget_revision", documentId, pageId, widgetId: trustedId,
+      previousTrustedKey: "unapproved", trustedKey: "compat-v2", confirmExternalWidget: true
+    });
+    const upgraded = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_trusted_widget_revision", documentId, pageId, widgetId: trustedId,
+      previousTrustedKey: "compat", trustedKey: "compat-v2", confirmExternalWidget: true
+    }), "trusted_revision_upgrade") as {changed:boolean;persistedWidgetVerified:boolean};
+    assert(upgraded.changed && upgraded.persistedWidgetVerified,
+      "trusted_revision_not_verified");
+    const upgradedRows = await gristApi(gristBaseUrl, apiKey,
+      "/api/docs/" + encodeURIComponent(documentId) + "/tables/_grist_Views_section/records?hidden=true") as MetaRecords;
+    const upgradedRow = upgradedRows.records.find(row => row.id === trustedId);
+    const upgradedView = JSON.parse(JSON.parse(upgradedRow?.fields.options as string).customView);
+    assert(upgradedView.widgetDef.url === "https://widgets.example.org/compat/v1.0.1/index.html" &&
+      upgradedView.widgetId === "@test/compat" && upgradedView.access === "none" &&
+      upgradedView.columnsMapping == null, "trusted_revision_native_state_wrong");
+    const repeatUpgrade = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_trusted_widget_revision", documentId, pageId, widgetId: trustedId,
+      previousTrustedKey: "compat", trustedKey: "compat-v2", confirmExternalWidget: true
+    }), "trusted_revision_repeat") as {changed:boolean};
+    assert(!repeatUpgrade.changed, "trusted_revision_repeated");
 
     const configuredCustom = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_widget", documentId, pageId, widgetId: customWidgetId,

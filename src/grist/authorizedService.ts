@@ -107,7 +107,7 @@ import {
   type WidgetSortInput
 } from "./widgetSort.js";
 import { existingWidgetFields } from "./widgetFields.js";
-import { approvedWidgets, planTrustedWidgetInstall } from "./trustedWidgetInstall.js";
+import { approvedWidgets, planTrustedWidgetInstall, planTrustedWidgetRevisionUpdate } from "./trustedWidgetInstall.js";
 import {
   resolveWidgetFieldsUpdate,
   type WidgetFieldUpdateInput
@@ -1050,6 +1050,59 @@ export class AuthorizedGristService {
       } catch (error) {
         throw new UiWriteVerificationError("install_trusted_widget",
           "Native trusted widget effect uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
+
+
+  /** Change only a fully approved immutable widget revision before any data access. */
+  async updateTrustedWidgetRevision(
+    documentIdOrUrl: string, pageId: number, widgetId: number,
+    previousTrustedKey: string, trustedKey: string, confirmExternalWidget: true
+  ): Promise<unknown> {
+    if (confirmExternalWidget !== true ||
+        !Number.isSafeInteger(pageId) || pageId < 1 ||
+        !Number.isSafeInteger(widgetId) || widgetId < 1) {
+      throw new Error("Trusted widget revision requires confirmation and stable page/widget IDs.");
+    }
+    const registry = approvedWidgets(
+      process.env.GIA_TRUSTED_CUSTOM_WIDGETS_JSON, process.env.GRIST_BASE_URL ?? ""
+    );
+    const previous = registry.find(entry => entry.key === previousTrustedKey);
+    const next = registry.find(entry => entry.key === trustedKey);
+    if (!previous || !next) throw new Error("Both widget revisions must be operator-approved.");
+    return this.execute("update_trusted_widget_revision", documentIdOrUrl, 1, async id => {
+      await this.inner.assertDocumentOwner(id);
+      const read = async () => {
+        const snapshot = await this.loadDocumentUi(id);
+        assertCompleteUiSnapshot(snapshot);
+        const widget = snapshot.pages.find(page => page.id === pageId)
+          ?.widgets.find(candidate => candidate.id === widgetId);
+        if (!widget) throw new Error("Native widget is absent from its intended page.");
+        return widget;
+      };
+      const before = await read();
+      const plan = planTrustedWidgetRevisionUpdate(before, previous, next);
+      const result = {documentId:id,pageId,widgetId,previousTrustedKey,trustedKey};
+      if (!plan.changed) return {...result,changed:false,persistedWidgetVerified:true};
+      if (!sameJsonValue((await read()).options,before.options)) {
+        throw new Error("Native widget changed before revision update; reconcile first.");
+      }
+      try {
+        await this.uiActions.updatePageWidget(id,widgetId,{optionsJson:plan.optionsJson});
+        const after = await read();
+        if (!sameJsonValue(after.options,plan.options) ||
+            after.customWidgetSettingsNormalizationIncomplete ||
+            after.customWidgetSettings?.widgetId !== next.widgetId ||
+            after.customWidgetSettings?.access !== "none") {
+          throw new Error("Trusted widget revision postconditions not verified.");
+        }
+        return {...result,changed:true,persistedWidgetVerified:true,
+          remoteCodeExecutionQualified:false,widget:projectPublicWidget(after)};
+      } catch(error) {
+        throw new UiWriteVerificationError("update_trusted_widget_revision",
+          "Native widget revision effect uncertain; inspect before retry: " +
           (error instanceof Error ? error.message : "unknown result"));
       }
     });

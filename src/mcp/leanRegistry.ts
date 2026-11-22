@@ -351,7 +351,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     } }]
   },
   grist_change_ui: {
-    actions: ["rename_page", "delete_page", "reorder_pages", "delete_widget", "update_layout", "update_form_layout", "publish_form", "unpublish_form", "update_form_field_options", "update_widget", "install_trusted_widget"],
+    actions: ["rename_page", "delete_page", "reorder_pages", "delete_widget", "update_layout", "update_form_layout", "publish_form", "unpublish_form", "update_form_field_options", "update_widget", "install_trusted_widget", "update_trusted_widget_revision"],
     request: [
       "rename_page: {action,documentId,pageId,name}; delete_page: {action,documentId,pageId}; delete_widget: {action,documentId,pageId,widgetId}.",
       "update_form_layout: {action,documentId,pageId,widgetId,layout:{children:[paragraph|section(fields/paragraphs)|submit],submitText?,successText?,anotherResponse?}}; stable column IDs resolved server-side; no publish.",
@@ -368,7 +368,8 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "calendarConfig replaces the mapping set. Omitting endDateColumnId, allDayColumnId or typeColumnId clears that mapping. Carry forward each optional mapping you want to keep. Other widget settings are preserved.",
       "customWidgetSettings.optionsPatch changes only bounded inert option keys on an already identified custom widget. It cannot install widgets, set URLs or authorize full access; other settings stay intact.",
       "customWidgetSettings.access read table|full needs confirmDataAccess:true and fresh native document Owner proof, in addition to doc.schema:write. Access none and inert settings updates do not increase widget data authority. Persisted settings are not evidence that remote code is trustworthy.",
-      "install_trusted_widget uses a deployment-approved key from GIA_TRUSTED_CUSTOM_WIDGETS_JSON, confirms external code, requires native Owner and starts with access:none; no arbitrary widget URL can enter MCP."
+      "install_trusted_widget uses a deployment-approved key from GIA_TRUSTED_CUSTOM_WIDGETS_JSON, confirms external code, requires native Owner and starts with access:none; no arbitrary widget URL can enter MCP.",
+      "update_trusted_widget_revision: {action,documentId,pageId,widgetId,previousTrustedKey,trustedKey,confirmExternalWidget:true}; both revisions must be operator-approved for the same widget/asset/origin, current state must match the approved source with access:none and no mapping/options; exact post-read and no-blind-retry."
     ],
     examples: [
       { purpose: "Set all mappings for a calendar with text, date, Boolean and choice columns", arguments: {
