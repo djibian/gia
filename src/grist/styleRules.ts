@@ -172,7 +172,7 @@ export function planReorderRowStyleRules(
       orderedFormulas.length !== current.length ||
       orderedFormulas.some(formula =>
         typeof formula !== "string" || !formula.trim() ||
-        formula.length > MAX_FORMULA || formula.includes("\\0")) ||
+        formula.length > MAX_FORMULA || formula.includes("\0")) ||
       new Set(orderedFormulas).size !== orderedFormulas.length ||
       new Set(current.map(rule => rule.formula)).size !== current.length ||
       current.some(rule => !rule.formula.trim() || !Object.keys(rule.style).length)) {
