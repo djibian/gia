@@ -2,8 +2,35 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readNativeColumnStyle, planColumnStyle, readNativeColumnStyleSequence,
   planAppendColumnStyleRule, planExistingColumnStyleUpdate,
-  planExistingStyleFormulaReplacement, planReorderRowStyleRules, readNativeRowStyleSequence } from "../src/grist/styleRules.js";
+  planExistingStyleFormulaReplacement, planReorderRowStyleRules, planReorderColumnStyleRules, readNativeRowStyleSequence } from "../src/grist/styleRules.js";
 
+
+test("Column-style priority reorders helpers and colors without changing other options", () => {
+  const owner = {
+    ownerRef: 4, options: { formRequired: true, rulesOptions: [
+      {fillColor:"#112233"},{textColor:"#AABBCC"}] },
+    rules: [
+      {helperRef:6,formula:"$Qty > 2",style:{fillColor:"#112233"}},
+      {helperRef:8,formula:"$Qty < 0",style:{textColor:"#AABBCC"}}
+    ]
+  };
+  const plan = planReorderColumnStyleRules(owner,["$Qty < 0","$Qty > 2"]);
+  assert.equal(plan.changed,true);
+  assert.deepEqual(plan.refs,[8,6]);
+  assert.deepEqual(plan.options,{formRequired:true,rulesOptions:[
+    {textColor:"#AABBCC"},{fillColor:"#112233"}]});
+  const reordered = {...owner,rules:plan.rules!,options:plan.options!};
+  assert.deepEqual(planReorderColumnStyleRules(reordered,["$Qty < 0","$Qty > 2"]),{changed:false});
+  for (const order of [["$Qty > 2"],["$Qty > 2","$Qty > 2"],
+    ["$Qty > 2","$Qty == 0"],["$Qty > 2","$Qty < 0\\0"]]) {
+    assert.throws(()=>planReorderColumnStyleRules(owner,order));
+  }
+  assert.throws(()=>planReorderColumnStyleRules({...owner,rules:[
+    owner.rules[0]!,{...owner.rules[1]!,style:{}}]},["$Qty < 0","$Qty > 2"]));
+  assert.throws(()=>planReorderColumnStyleRules({...owner,rules:[
+    owner.rules[0]!,{...owner.rules[1]!,formula:"$Qty > 2"}]},
+    ["$Qty < 0","$Qty > 2"]));
+});
 
 test("Reordering existing raw-row styles preserves helper/color pairing and rejects lossy requests", () => {
   const before = {

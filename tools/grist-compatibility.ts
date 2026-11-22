@@ -2959,6 +2959,57 @@ async function run(): Promise<void> {
       previousFormula: "$Qty > 20", conditionFormula: "$Qty < 0"
     });
 
+    // Reorder the two already qualified column rules while preserving each
+    // immutable helper/formula identity, paired colors and unrelated options.
+    await callToolExpectError(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_column_style_rules",documentId,tableId:TABLE_ID,columnId:"Name",
+      orderedFormulas:["$Qty < 0","$Qty < 0"]
+    });
+    await callToolExpectError(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_column_style_rules",documentId,tableId:TABLE_ID,columnId:"Name",
+      orderedFormulas:["$Qty < 0","$Qty == 999"]
+    });
+    const reorderedColumn = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_column_style_rules",documentId,tableId:TABLE_ID,columnId:"Name",
+      orderedFormulas:["$Qty < 0","$Qty > 20"]
+    }),"native_column_style_reorder") as {changed:boolean;persistedStyleVerified:boolean;styleRuleCount:number};
+    assert(reorderedColumn.changed && reorderedColumn.persistedStyleVerified &&
+      reorderedColumn.styleRuleCount===2,"native_column_style_reorder_not_verified");
+    const columnAfterReorder = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const reorderedOwner = columnAfterReorder.records.find(row=>row.id===column.id);
+    assert(isDeepStrictEqual(reorderedOwner?.fields.rules,["L",updatedRefs[2],updatedRefs[1]]),
+      "native_column_style_reorder_did_not_change_refs");
+    const reorderedColumnOptions = JSON.parse(reorderedOwner?.fields.widgetOptions as string);
+    const oldOptionsWithoutRules = {...updatedOptions};
+    const newOptionsWithoutRules = {...reorderedColumnOptions};
+    delete oldOptionsWithoutRules.rulesOptions;
+    delete newOptionsWithoutRules.rulesOptions;
+    assert(isDeepStrictEqual(oldOptionsWithoutRules,newOptionsWithoutRules) &&
+      reorderedColumnOptions.rulesOptions[0].fillColor==="#ABCDEF" &&
+      reorderedColumnOptions.rulesOptions[1].fillColor==="#445566" &&
+      reorderedColumnOptions.rulesOptions[1].textColor==="#FFFFFF",
+      "native_column_style_reorder_broke_color_pairing_or_options");
+    assert(columnAfterReorder.records.find(row=>row.id===updatedRefs[1])?.fields.formula==="$Qty > 20" &&
+      columnAfterReorder.records.find(row=>row.id===updatedRefs[2])?.fields.formula==="$Qty < 0",
+      "native_column_style_reorder_mutated_helper_formulas");
+    const repeatedColumn = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_column_style_rules",documentId,tableId:TABLE_ID,columnId:"Name",
+      orderedFormulas:["$Qty < 0","$Qty > 20"]
+    }),"native_column_style_reorder_noop") as {changed:boolean};
+    assert(repeatedColumn.changed===false,"native_column_style_reorder_noop_wrote");
+    const restoredColumn = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_column_style_rules",documentId,tableId:TABLE_ID,columnId:"Name",
+      orderedFormulas:["$Qty > 20","$Qty < 0"]
+    }),"native_column_style_reorder_restore") as {changed:boolean};
+    assert(restoredColumn.changed,"native_column_style_reorder_restore_failed");
+    const restoredColumnRows = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const restoredColumnOwner = restoredColumnRows.records.find(row=>row.id===column.id);
+    assert(isDeepStrictEqual(restoredColumnOwner?.fields.rules,updatedRefs) &&
+      isDeepStrictEqual(JSON.parse(restoredColumnOwner?.fields.widgetOptions as string),updatedOptions),
+      "native_column_style_reorder_restore_mismatch");
+
     // Native raw-row style: AddEmptyRule(tableId, null, null) must attach to
     // _grist_Tables.rawViewSectionRef, not to any visible grid or column.
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
