@@ -71,16 +71,19 @@ reference operands against fresh expanded schema, preserves all other native
 complete persisted options, and returns a no-op for identical requested state.
 It does not accept arbitrary expressions or establish Form visibility/ACL rights.
 
-`grist_change_structure(action="style_rules")` creates or changes **one** native
-column conditional-format rule (one rule maximum on the column). The Grist
+`grist_change_structure(action="style_rules")` creates or replaces one native
+column conditional-format rule on a column with zero/one rule. With **multiple**
+existing rules, the same closed action only replaces the colors of a **unique
+existing exact `conditionFormula`**, preserving each helper formula, order and
+all other styles; absent/duplicate formula or incomplete state is refused. The Grist
 Python `conditionFormula` uses the existing authorized formula capability,
 never an ACL predicate; colors are closed `#RRGGBB` style fields. Gia resolves
 stable table/column IDs to private native refs, uses Grist `AddEmptyRule` to
 construct the formula helper and its owner link, then applies formula plus
 `rulesOptions` in one fixed native bundle. Existing nonstyle widget options
 are preserved, helpers are never exposed, exact native readback is required,
-and identical requests are no-ops. Unknown/multiple rules and malformed
-metadata refuse mutation. A partial/transport-uncertain creation is not blindly
+and identical requests are no-ops. Unrecognized or malformed
+native rule metadata refuses mutation. A partial/transport-uncertain creation is not blindly
 replayed: the caller must inspect the column state and reconcile before retry.
 
 A separate `grist_change_structure(action="append_style_rule")` accepts the
@@ -92,8 +95,9 @@ blocks the append. The adapter uses Grist `AddEmptyRule` and a fixed native
 formula/style write, preserves ordered prior helpers, their formulas and styles,
 and all nonstyle options, then rereads the full resulting sequence. Lost or
 unverified effects must be reconciled rather than replayed. The original
-`style_rules` single-rule replacement retains its legacy one-rule boundary;
-neither action accepts ACL predicates or raw native actions.
+`style_rules` retains its legacy ability to replace a formula only for a
+zero/one-rule owner; multiple-rule owners can update colors only by exact
+existing formula match. Neither action accepts ACL predicates or raw native actions.
 
 An operator-approved `grist_change_ui(action="install_trusted_widget")` selects one revisioned HTTPS custom widget on an empty native Custom section. The model provides only a `trustedKey` and `confirmExternalWidget:true`, never arbitrary URL/code. Deployment must configure `GIA_TRUSTED_CUSTOM_WIDGETS_JSON` as a bounded JSON list of `{key,name,widgetId,revision,url}`, with each HTTPS URL on a distinct host and including the revision in its path. Default is deny. Native Owner plus `doc.schema:write` are required. Selection is saved as Grist `customView`, with initial `access:none`, preserving unrelated section options and refusing occupied/customized widgets. Post-read confirms saved identity and access, with uncertain effects never blindly replayed. This is metadata persistence, not a verification of remotely served JavaScript or its subresources: operators must independently audit and host immutable code.
 

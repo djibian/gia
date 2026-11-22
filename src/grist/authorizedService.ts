@@ -75,8 +75,8 @@ import {
 import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUpdateInput } from "./formColumnOptions.js";
 import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
-import { readNativeColumnStyle, planColumnStyle, readNativeColumnStyleSequence,
-  planAppendColumnStyleRule, type ColumnStyleInput } from "./styleRules.js";
+import { planColumnStyle, readNativeColumnStyleSequence,
+  planAppendColumnStyleRule, planExistingColumnStyleUpdate, type ColumnStyleInput } from "./styleRules.js";
 import { planOwnerSchemaGuard, verifyOwnerSchemaGuard } from "./schemaEditGuard.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
 import { planFormPublication, readNativeFormPageShare } from "./formPublication.js";
@@ -1692,14 +1692,62 @@ export class AuthorizedGristService {
     return this.execute("style_rules", documentIdOrUrl, 1, async id => {
       assertPublicTableId(tableId);
       const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
-      const read = async () => {
+      const readSequence = async () => {
         const [tables, columns] = await Promise.all([
           this.inner.queryRecords(id, "_grist_Tables", { hidden: true, limit }),
           this.inner.queryRecords(id, "_grist_Tables_column", { hidden: true, limit })
         ]);
-        return readNativeColumnStyle(tables, columns, tableId, columnId, limit);
+        return readNativeColumnStyleSequence(tables, columns, tableId, columnId, limit);
       };
-      const initial = await read();
+      const before = await readSequence();
+      // A multi-rule owner may change colors only for an existing unique formula.
+      // Formula, native helper IDs, order and all unrelated column options are retained.
+      if (before.rules.length > 1) {
+        const plan = planExistingColumnStyleUpdate(
+          before, input.conditionFormula, input.style
+        );
+        const base = { documentId: id, tableId, columnId };
+        if (!plan.changed) return {
+          ...base, changed: false, persistedStyleVerified: true
+        };
+        const latest = await readSequence();
+        if (!isDeepStrictEqual(latest, before)) {
+          throw new Error("Native conditional style state changed before update; reconcile first.");
+        }
+        try {
+          await this.uiActions.updateColumnStyleOptions(
+            id, before.ownerRef, plan.widgetOptions!
+          );
+          const after = await readSequence();
+          const identity = (snapshot: typeof before) =>
+            snapshot.rules.map(rule => ({ helperRef: rule.helperRef, formula: rule.formula }));
+          if (after.ownerRef !== before.ownerRef ||
+              !isDeepStrictEqual(identity(after), identity(before)) ||
+              !isDeepStrictEqual(after.options, plan.options)) {
+            throw new Error("Native conditional rule update did not preserve other rules.");
+          }
+          return { ...base, changed: true, persistedStyleVerified: true,
+            styleRuleCount: after.rules.length };
+        } catch (error) {
+          throw new SchemaWriteVerificationError("style_rules",
+            "Native multi-rule style update may be uncertain; inspect before retry: " +
+            (error instanceof Error ? error.message : "unknown result"));
+        }
+      }
+      const single = (snapshot: typeof before) => {
+        if (snapshot.rules.length > 1) {
+          throw new Error("Concurrent native multi-rule style change; reconcile first.");
+        }
+        const rule = snapshot.rules[0];
+        return {
+          ownerRef: snapshot.ownerRef,
+          ...(rule ? { helperRef: rule.helperRef, formula: rule.formula } : {}),
+          options: snapshot.options,
+          existingStyle: rule?.style ?? {}
+        };
+      };
+      const read = async () => single(await readSequence());
+      const initial = single(before);
       const planned = planColumnStyle(initial, input);
       const base = { documentId: id, tableId, columnId };
       if (!planned.changed) return {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readNativeColumnStyle, planColumnStyle, readNativeColumnStyleSequence,
-  planAppendColumnStyleRule } from "../src/grist/styleRules.js";
+  planAppendColumnStyleRule, planExistingColumnStyleUpdate } from "../src/grist/styleRules.js";
 
 const tables = {records:[{id:1,fields:{tableId:"Items"}}]};
 const columns = (rules: unknown, options: unknown, formula = "") => ({
@@ -87,3 +87,33 @@ test("Style append rejects malformed, opaque and unfinished native rule sequence
   assert.throws(()=>readNativeColumnStyleSequence(
     tables,columns(["L",6,6],"{}"),"Items","Name",20));
 });
+
+test("Existing multi-rule style update changes one matching formula, preserving other rules", () => {
+  const two = {records:[
+    {id:4,fields:{parentId:1,colId:"Name",rules:["L",6,8],
+      widgetOptions:JSON.stringify({formRequired:true,rulesOptions:[
+        {fillColor:"#123456"},{textColor:"#FFFFFF"}]})}},
+    {id:6,fields:{parentId:1,colId:"gristHelper_ConditionalRule",type:"Any",
+      isFormula:true,formula:"$Qty > 2"}},
+    {id:8,fields:{parentId:1,colId:"gristHelper_ConditionalRule2",type:"Any",
+      isFormula:true,formula:"$Qty < 0"}}
+  ]};
+  const sequence = readNativeColumnStyleSequence(tables,two,"Items","Name",20);
+  const changed = planExistingColumnStyleUpdate(sequence,"$Qty > 2",{fillColor:"#ABCDEF"});
+  assert.equal(changed.changed,true);
+  assert.deepEqual(changed.options,{
+    formRequired:true,rulesOptions:[{fillColor:"#ABCDEF"},{textColor:"#FFFFFF"}]
+  });
+  assert.deepEqual(planExistingColumnStyleUpdate(sequence,"$Qty < 0",
+    {textColor:"#FFFFFF"}),{changed:false});
+  assert.throws(()=>planExistingColumnStyleUpdate(sequence,"$Qty == 0",
+    {fillColor:"#AABBCC"}),/absent or ambiguous/);
+  assert.throws(()=>planExistingColumnStyleUpdate(sequence,"$Qty > 2",
+    {fillColor:"red"}));
+  const duplicate = { ...sequence, rules: [...sequence.rules, {
+    helperRef:10,formula:"$Qty > 2",style:{fillColor:"#112233"}
+  }] };
+  assert.throws(()=>planExistingColumnStyleUpdate(duplicate,"$Qty > 2",
+    {fillColor:"#ABCDEF"}),/absent or ambiguous/);
+});
+
