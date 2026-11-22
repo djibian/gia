@@ -75,7 +75,7 @@ import {
 import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUpdateInput } from "./formColumnOptions.js";
 import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
-import { planColumnStyle, readNativeColumnStyleSequence,
+import { planColumnStyle, readNativeColumnStyleSequence, readNativeRowStyleSequence,
   planAppendColumnStyleRule, planExistingColumnStyleUpdate,
   planExistingStyleFormulaReplacement, type ColumnStyleInput } from "./styleRules.js";
 import { planOwnerSchemaGuard, verifyOwnerSchemaGuard } from "./schemaEditGuard.js";
@@ -2013,6 +2013,69 @@ export class AuthorizedGristService {
       } catch (error) {
         throw new SchemaWriteVerificationError("append_style_rule",
           "Native style append effect may be partial or uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
+
+  /** Add one native raw-row conditional style, preserving column and visible-section styles. */
+  async appendRowStyleRule(
+    documentIdOrUrl: string, tableId: string, input: ColumnStyleInput
+  ): Promise<unknown> {
+    return this.execute("append_row_style_rule", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = async () => {
+        const [tables, sections, columns] = await Promise.all([
+          this.inner.queryRecords(id, "_grist_Tables", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Views_section", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Tables_column", { hidden: true, limit })
+        ]);
+        return readNativeRowStyleSequence(tables, sections, columns, tableId, limit);
+      };
+      const before = await read();
+      const plan = planAppendColumnStyleRule(before, input);
+      const base = { documentId: id, tableId };
+      if (!plan.changed) return { ...base, changed: false, persistedStyleVerified: true };
+      const expectedOptions = plan.options!;
+      const nativeOptions = plan.widgetOptions!;
+      const unchangedRules = (after: typeof before) =>
+        after.ownerRef === before.ownerRef &&
+        isDeepStrictEqual(after.rules.slice(0, before.rules.length), before.rules);
+      const nonRuleOptions = (options: Record<string, unknown>) => {
+        const { rulesOptions: _rules, ...others } = options;
+        return others;
+      };
+      try {
+        const newHelperRef = await this.uiActions.addRowStyleRule(id, tableId);
+        const staged = await read();
+        if (!unchangedRules(staged) ||
+            staged.rules.length !== before.rules.length + 1 ||
+            staged.rules.at(-1)?.helperRef !== newHelperRef ||
+            staged.rules.at(-1)?.formula !== "" ||
+            !isDeepStrictEqual(nonRuleOptions(staged.options), nonRuleOptions(before.options))) {
+          throw new Error("Added native conditional helper did not preserve the original rules.");
+        }
+        await this.uiActions.writeRowStyleRule(
+          id, before.ownerRef, newHelperRef, input.conditionFormula, nativeOptions
+        );
+        const after = await read();
+        if (!unchangedRules(after) ||
+            after.rules.length !== before.rules.length + 1 ||
+            after.rules.at(-1)?.helperRef !== newHelperRef ||
+            after.rules.at(-1)?.formula !== input.conditionFormula ||
+            !isDeepStrictEqual(after.rules.at(-1)?.style,
+              (expectedOptions.rulesOptions as Record<string, unknown>[]).at(-1)) ||
+            !isDeepStrictEqual(after.options, expectedOptions)) {
+          throw new Error("Appended native conditional style or preserved state was not verified.");
+        }
+        return {
+          ...base, changed: true, persistedStyleVerified: true,
+          styleRuleCount: after.rules.length
+        };
+      } catch (error) {
+        throw new SchemaWriteVerificationError("append_row_style_rule",
+          "Native row-style append effect may be partial or uncertain; inspect before retry: " +
           (error instanceof Error ? error.message : "unknown result"));
       }
     });

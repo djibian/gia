@@ -58,32 +58,18 @@ export interface NativeStyleSequence {
   rules: Array<{ helperRef: number; formula: string; style: JsonRecord }>;
 }
 
-/** Native _grist_Tables_column rules and rulesOptions are paired in order. */
-export function readNativeColumnStyleSequence(
-  tableResponse: unknown, columnResponse: unknown,
-  tableId: string, columnId: string, limit: number
+/** Shared verified native rule sequence, on either a column or a raw table section. */
+function readVerifiedStyleSequence(
+  ownerRef: number, rawRules: unknown, rawOptions: unknown,
+  columns: ReturnType<typeof nativeRows>, tableRef: number, helperName: RegExp
 ): NativeStyleSequence {
-  if (!IDENTIFIER.test(tableId) || !IDENTIFIER.test(columnId) ||
-      columnId.startsWith("gristHelper_")) {
-    throw new Error("Style target requires stable public table and column IDs.");
-  }
-  const tables = nativeRows(tableResponse, "Table", limit);
-  const matchingTables = tables.filter(row => row.fields.tableId === tableId);
-  if (matchingTables.length !== 1) throw new Error("Style table identity missing or ambiguous.");
-  const tableRef = matchingTables[0]!.id;
-  const columns = nativeRows(columnResponse, "Column", limit);
-  const matches = columns.filter(row =>
-    row.fields.parentId === tableRef && row.fields.colId === columnId);
-  if (matches.length !== 1) throw new Error("Style column identity missing or ambiguous.");
-  const target = matches[0]!;
-  const rawRules = target.fields.rules;
   const refs = rawRules === null || rawRules === undefined
     ? [] : Array.isArray(rawRules) && rawRules[0] === "L" ? rawRules.slice(1) : undefined;
   if (!refs || refs.length > MAX_CONDITIONAL_STYLE_RULES || new Set(refs).size !== refs.length ||
       refs.some(ref => typeof ref !== "number" || !Number.isInteger(ref) || ref < 1)) {
     throw new Error("Native conditional style rule state is protected.");
   }
-  const options = parseOptions(target.fields.widgetOptions);
+  const options = parseOptions(rawOptions);
   const rawStyles = options.rulesOptions;
   if (rawStyles !== undefined && (!Array.isArray(rawStyles) ||
       rawStyles.length > refs.length || rawStyles.some(item => !object(item)))) {
@@ -102,7 +88,7 @@ export function readNativeColumnStyleSequence(
     if (helpers.length !== 1 || !helper ||
         helper.fields.parentId !== tableRef ||
         typeof helper.fields.colId !== "string" ||
-        !/^gristHelper_ConditionalRule\d*$/.test(helper.fields.colId) ||
+        !helperName.test(helper.fields.colId) ||
         helper.fields.type !== "Any" || helper.fields.isFormula !== true ||
         typeof helper.fields.formula !== "string") {
       throw new Error("Native conditional style helper cannot be verified.");
@@ -113,7 +99,59 @@ export function readNativeColumnStyleSequence(
       style: styles[index] ?? {}
     };
   });
-  return { ownerRef: target.id, options, rules };
+  return { ownerRef, options, rules };
+}
+
+
+/** Native _grist_Tables_column rules and rulesOptions are paired in order. */
+export function readNativeColumnStyleSequence(
+  tableResponse: unknown, columnResponse: unknown,
+  tableId: string, columnId: string, limit: number
+): NativeStyleSequence {
+  if (!IDENTIFIER.test(tableId) || !IDENTIFIER.test(columnId) ||
+      columnId.startsWith("gristHelper_")) {
+    throw new Error("Style target requires stable public table and column IDs.");
+  }
+  const tables = nativeRows(tableResponse, "Table", limit);
+  const matchingTables = tables.filter(row => row.fields.tableId === tableId);
+  if (matchingTables.length !== 1) throw new Error("Style table identity missing or ambiguous.");
+  const tableRef = matchingTables[0]!.id;
+  const columns = nativeRows(columnResponse, "Column", limit);
+  const matches = columns.filter(row =>
+    row.fields.parentId === tableRef && row.fields.colId === columnId);
+  if (matches.length !== 1) throw new Error("Style column identity missing or ambiguous.");
+  const target = matches[0]!;
+  return readVerifiedStyleSequence(
+    target.id, target.fields.rules, target.fields.widgetOptions,
+    columns, tableRef, /^gristHelper_ConditionalRule\d*$/
+  );
+}
+
+/** Row formatting belongs to the table's native raw view section, not its visible grid widgets. */
+export function readNativeRowStyleSequence(
+  tableResponse: unknown, sectionResponse: unknown, columnResponse: unknown,
+  tableId: string, limit: number
+): NativeStyleSequence {
+  if (!IDENTIFIER.test(tableId) || tableId.startsWith("_")) {
+    throw new Error("Row style target requires a stable public table ID.");
+  }
+  const tables = nativeRows(tableResponse, "Table", limit);
+  const matches = tables.filter(row => row.fields.tableId === tableId);
+  if (matches.length !== 1) throw new Error("Row style table identity missing or ambiguous.");
+  const table = matches[0]!;
+  const rawRef = table.fields.rawViewSectionRef;
+  if (typeof rawRef !== "number" || !Number.isInteger(rawRef) || rawRef < 1) {
+    throw new Error("Native raw view section is unavailable.");
+  }
+  const sections = nativeRows(sectionResponse, "Section", limit);
+  const owners = sections.filter(row => row.id === rawRef && row.fields.tableRef === table.id);
+  if (owners.length !== 1) throw new Error("Native raw view section is missing or ambiguous.");
+  const owner = owners[0]!;
+  return readVerifiedStyleSequence(
+    owner.id, owner.fields.rules, owner.fields.options,
+    nativeRows(columnResponse, "Column", limit), table.id,
+    /^gristHelper_RowConditionalRule\d*$/
+  );
 }
 
 /** Change only a uniquely identified native rule's predicate, never its helper, colors or order. */
