@@ -650,6 +650,23 @@ All three creation paths are non-idempotent. After a known created ID is returne
 
 Template mode removes user-table data, attachment rows/blobs and history according to native Grist behavior, while retaining substantial document metadata. It is therefore a bootstrap primitive, not a privacy scrub or a guarantee that copied application access rules remain operational after referenced data is removed.
 
+## Creating native page hierarchy from an empty document
+
+`grist_change_ui(action="nest_page")` accepts an existing stable `pageId` and
+`parentPageId` in the same document. The child must be a visible leaf sibling
+immediately following the complete existing child subtree of the intended
+visible parent, at the same current indentation. This enables new Grist pages
+to be organized as nested navigation after native creation without reordering
+other pages or editing private page record IDs. Grist's native
+`_grist_Pages.indentation` is updated only for that one verified leaf; the
+position, existing parents, visible-page list and special/censored rows must
+remain unchanged. Nested existing children are no-ops. Other nesting shapes,
+invisible/protected pages and depth beyond eight levels fail closed. Fresh
+re-read precedes the write, and the exact normalized native tree, including
+positions, must match postconditions. There is no external atomic CAS; uncertain
+effects require inspection rather than blind replay. This operation changes
+navigation only, not permissions or user records. Ten MCP v2 tools remain.
+
 ## Safety invariants
 
 MCP v2 does not expose generic HTTP forwarding, raw SQL, arbitrary Grist `/apply`, arbitrary UserActions or heterogeneous multi-action transactions. Grist remains authoritative for upstream permissions; the bridge may only reduce authority. Partial/ambiguous writes are not blindly replayed, private Grist references remain server-side where practical, and principal-derived state must not cross principal boundaries.

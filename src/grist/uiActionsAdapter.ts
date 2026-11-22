@@ -454,6 +454,17 @@ export class GristUiActionsAdapter {
     ]);
   }
 
+  /** Change only one verified native page indentation; no reordering. */
+  async nestPage(documentId: string, pageRecordId: number, indentation: number): Promise<void> {
+    assertPositiveId(pageRecordId, "Native page record");
+    if (!Number.isSafeInteger(indentation) || indentation < 1 || indentation > 8) {
+      throw new Error("Native page depth must be between one and eight.");
+    }
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Pages", pageRecordId, { indentation }]
+    ]);
+  }
+
   async reorderPages(
     documentId: string,
     updates: readonly PageOrderWrite[]
