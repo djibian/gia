@@ -681,6 +681,16 @@ positions, must match postconditions. There is no external atomic CAS; uncertain
 effects require inspection rather than blind replay. This operation changes
 navigation only, not permissions or user records. Ten MCP v2 tools remain.
 
+`grist_change_ui(action="unnest_page")` promotes one *visible, last-leaf*
+nested page to the indentation of its current parent. It accepts only its stable
+`pageId`; page position is not changed, and no other page, parent relation or
+visibility may change. A root page is an idempotent no-op. Non-last children,
+pages with descendants, protected ancestors and incomplete native trees fail
+closed. A fresh pre-write snapshot and exact post-read protect concurrent
+edits; an uncertain effect requires inspection before retry. This is the
+bounded inverse of leaf nesting, not an arbitrary page-move or raw metadata
+operation.
+
 ## Safety invariants
 
 MCP v2 does not expose generic HTTP forwarding, raw SQL, arbitrary Grist `/apply`, arbitrary UserActions or heterogeneous multi-action transactions. Grist remains authoritative for upstream permissions; the bridge may only reduce authority. Partial/ambiguous writes are not blindly replayed, private Grist references remain server-side where practical, and principal-derived state must not cross principal boundaries.

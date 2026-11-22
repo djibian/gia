@@ -61,6 +61,7 @@ import {
   normalizePageOrderSnapshot,
   resolvePageOrderUpdate,
   resolvePageNestingUpdate,
+  resolvePageUnnestUpdate,
   samePageOrderSnapshot,
   type PageOrderSnapshot
 } from "./pageOrder.js";
@@ -662,7 +663,7 @@ export class AuthorizedGristService {
         throw new Error("Native page hierarchy changed before nesting; reconcile first.");
       }
       try {
-        await this.uiActions.nestPage(id, plan.pageRecordId, plan.indentation);
+        await this.uiActions.updatePageIndentation(id, plan.pageRecordId, plan.indentation);
         const after = await this.loadPageOrderSnapshot(id);
         if (!isDeepStrictEqual(after, plan.expected)) {
           throw new Error("Native page nesting altered unrelated hierarchy, visibility or positions.");
@@ -671,6 +672,31 @@ export class AuthorizedGristService {
       } catch(error) {
         throw new UiWriteVerificationError("nest_page",
           "Native page nesting effect uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
+
+  /** Promote a verified last nested leaf to its parent's level without reordering. */
+  async unnestPage(documentIdOrUrl: string, pageId: number): Promise<unknown> {
+    return this.execute("unnest_page", documentIdOrUrl, 1, async id => {
+      const before = await this.loadPageOrderSnapshot(id);
+      const plan = resolvePageUnnestUpdate(before, pageId);
+      const result = {documentId:id,pageId};
+      if (!plan.changed) return {...result,changed:false,nativeHierarchyVerified:true};
+      if (!isDeepStrictEqual(await this.loadPageOrderSnapshot(id), before)) {
+        throw new Error("Native page hierarchy changed before unnesting; reconcile first.");
+      }
+      try {
+        await this.uiActions.updatePageIndentation(id, plan.pageRecordId, plan.indentation);
+        const after = await this.loadPageOrderSnapshot(id);
+        if (!isDeepStrictEqual(after, plan.expected)) {
+          throw new Error("Native page unnesting altered unrelated hierarchy, visibility or positions.");
+        }
+        return {...result,changed:true,nativeHierarchyVerified:true};
+      } catch(error) {
+        throw new UiWriteVerificationError("unnest_page",
+          "Native page unnesting effect uncertain; inspect before retry: " +
           (error instanceof Error ? error.message : "unknown result"));
       }
     });

@@ -46,6 +46,7 @@ const OPERATION_CAPABILITIES = new Map<string, GristCapability>([
   ["rename_page", "doc.schema:write"],
   ["reorder_pages", "doc.schema:write"],
   ["nest_page", "doc.schema:write"],
+  ["unnest_page", "doc.schema:write"],
   ["update_page_layout", "doc.schema:write"],
   ["update_form_layout", "doc.schema:write"],
   ["publish_form", "doc.schema:write"],

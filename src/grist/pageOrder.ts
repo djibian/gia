@@ -413,3 +413,49 @@ export function resolvePageNestingUpdate(
   return {changed:true,pageRecordId:child.pageRecordId,
     indentation:child.indentation+1,expected};
 }
+
+/** Promote a last nested leaf without moving a page or reparenting siblings. */
+export function resolvePageUnnestUpdate(
+  current: PageOrderSnapshot, pageId: number
+): {changed:boolean; pageRecordId:number; indentation:number; expected:PageOrderSnapshot} {
+  if (!Number.isSafeInteger(pageId) || pageId < 1 ||
+      current.pages.length > MAX_PAGE_ORDER_PAGES ||
+      !current.visiblePageIds.includes(pageId)) {
+    throw new Error("Unnesting requires one existing visible stable page ID.");
+  }
+  const pages=current.pages;
+  const index=pages.findIndex(page=>page.pageId===pageId);
+  const child=pages[index]!;
+  if (child.isCensored || child.isSpecial || child.indentation > 8) {
+    throw new Error("Unnesting cannot target a protected or unsupported page.");
+  }
+  if (child.indentation === 0) {
+    return {changed:false,pageRecordId:child.pageRecordId,indentation:0,expected:current};
+  }
+  const parentIndex=pages.findIndex(page=>page.pageId===child.parentPageId);
+  const parent=pages[parentIndex];
+  if (!parent || parentIndex >= index || parent.isCensored || parent.isSpecial ||
+      !current.visiblePageIds.includes(parent.pageId) ||
+      pages.slice(parentIndex,index+1).some(page=>page.isCensored || page.isSpecial)) {
+    throw new Error("Unnesting requires an unprotected existing visible ancestor.");
+  }
+  // A following child or same-depth sibling would be silently reparented.
+  if (index+1 < pages.length && pages[index+1]!.indentation >= child.indentation) {
+    throw new Error("Unnesting requires the last leaf in the current parent subtree.");
+  }
+  const expected=finalizeSnapshot(pages.map(page=>({
+    pageId:page.pageId,pageRecordId:page.pageRecordId,
+    indentation:page.pageId===pageId?page.indentation-1:page.indentation,
+    pagePos:page.pagePos,isCensored:page.isCensored,isSpecial:page.isSpecial
+  })));
+  const oldById=new Map(pages.map(page=>[page.pageId,page]));
+  if (expected.visiblePageIds.length!==current.visiblePageIds.length ||
+      expected.visiblePageIds.some((id,i)=>id!==current.visiblePageIds[i]) ||
+      expected.pages.some(page=>page.pageId!==pageId &&
+        page.parentPageId!==oldById.get(page.pageId)?.parentPageId) ||
+      expected.pages.find(page=>page.pageId===pageId)?.parentPageId!==parent.parentPageId) {
+    throw new Error("Unnesting would alter unrelated native page hierarchy.");
+  }
+  return {changed:true,pageRecordId:child.pageRecordId,
+    indentation:child.indentation-1,expected};
+}

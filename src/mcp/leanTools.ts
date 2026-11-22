@@ -1521,6 +1521,11 @@ export function registerLeanTools(
           pageId: positiveIdSchema,
           parentPageId: positiveIdSchema
         }).strict(),
+        z.object({
+          action: z.literal("unnest_page"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema
+        }).strict(),
         z
           .object({
             action: z.literal("delete_widget"),
@@ -1631,6 +1636,10 @@ export function registerLeanTools(
           case "nest_page":
             return textResult(await grist.nestPage(
               input.documentId, input.pageId, input.parentPageId
+            ));
+          case "unnest_page":
+            return textResult(await grist.unnestPage(
+              input.documentId, input.pageId
             ));
           case "delete_widget":
             return textResult(
