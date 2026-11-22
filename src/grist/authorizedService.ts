@@ -197,6 +197,64 @@ function exposeUiSnapshotCompleteness(
   };
 }
 
+type DocumentGrantUser = {
+  id: number;
+  email: string;
+  access: string | null;
+  parentAccess?: string | null | undefined;
+  isMember?: boolean | null | undefined;
+};
+export class DocumentGrantVerificationError extends Error {
+  constructor(message: string) {
+    super(message + " The effect is uncertain; do not replay blindly.");
+    this.name = "DocumentGrantVerificationError";
+  }
+}
+
+function documentGrantSnapshot(raw: unknown): {
+  maxInheritedRole: unknown; users: DocumentGrantUser[];
+} {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("Native Grist sharing snapshot is unavailable.");
+  }
+  const root = raw as Record<string, unknown>;
+  if (!Array.isArray(root.users) || root.users.length > 1000) {
+    throw new Error("Native Grist sharing snapshot is incomplete or exceeds its limit.");
+  }
+  const users: DocumentGrantUser[] = [];
+  const seen = new Set<string>();
+  const seenIds = new Set<number>();
+  for (const entry of root.users) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error("Native Grist sharing entry is malformed.");
+    }
+    const row = entry as Record<string, unknown>;
+    if (!Number.isSafeInteger(row.id) || (row.id as number) < 1 ||
+        typeof row.email !== "string" || !row.email ||
+        typeof row.access !== "string" && row.access !== null ||
+        row.parentAccess !== undefined &&
+          typeof row.parentAccess !== "string" && row.parentAccess !== null ||
+        row.isMember !== undefined && row.isMember !== null &&
+          typeof row.isMember !== "boolean") {
+      throw new Error("Native Grist sharing identity or role is incomplete.");
+    }
+    const canonical = row.email.toLowerCase();
+    if (seen.has(canonical) || seenIds.has(row.id as number)) {
+      throw new Error("Duplicate native sharing identity; refusing modification.");
+    }
+    seen.add(canonical);
+    seenIds.add(row.id as number);
+    users.push({
+      id: row.id as number, email: canonical, access: row.access as string | null,
+      ...(row.parentAccess !== undefined
+        ? { parentAccess: row.parentAccess as string | null } : {}),
+      ...(row.isMember !== undefined
+        ? { isMember: row.isMember as boolean | null } : {})
+    });
+  }
+  return { maxInheritedRole: root.maxInheritedRole, users };
+}
+
 export class DocumentBootstrapVerificationError extends Error {
   constructor(
     public readonly createdDocumentId: string,
@@ -1488,6 +1546,65 @@ export class AuthorizedGristService {
       } catch (error) {
         throw new AccessRuleWriteVerificationError(error instanceof Error
           ? error.message : "Native schema guard could not be verified.");
+      }
+    });
+  }
+
+  async grantDocumentUser(
+    documentIdOrUrl: string,
+    email: string,
+    role: "viewers" | "editors"
+  ): Promise<unknown> {
+    if (!/^[a-z0-9][a-z0-9._%+-]{0,63}@[a-z0-9][a-z0-9.-]{0,190}\.[a-z]{2,24}$/.test(email) ||
+        ["everyone@getgrist.com", "anonymous@getgrist.com", "previewer@getgrist.com", "support@getgrist.com"].includes(email)) {
+      throw new Error("A normalized, explicit individual email is required.");
+    }
+    if (role !== "viewers" && role !== "editors") {
+      throw new Error("Only individual viewer/editor grants are supported.");
+    }
+    return this.execute("grant_document_user", documentIdOrUrl, 1, async (id) => {
+      await this.inner.assertDocumentOwner(id);
+      const before = documentGrantSnapshot(await this.inner.listDocumentAccess(id));
+      const target = before.users.find(user => user.email === email);
+      // Grist's native share delta creates a home-db account for an unknown email.
+      // A native Owner-visible org member with a stable user ID is the bounded
+      // proof of an existing principal; never attempt an arbitrary invitation.
+      if (!target) {
+        throw new Error("Recipient is not an existing Owner-visible Grist document/org user; refusing account creation.");
+      }
+      if (target.access === role) {
+        if (target.parentAccess !== null && target.parentAccess !== undefined) {
+          throw new Error("Existing inherited document access is protected.");
+        }
+        return { documentId: id, role, changed: false, persistedGrantVerified: true,
+          effectiveAclVerified: false };
+      }
+      if (target.access !== null || target.isMember !== true ||
+          target.parentAccess !== null && target.parentAccess !== undefined) {
+        throw new Error("Recipient must be a known org member without direct or inherited document access.");
+      }
+      // This documented native Grist user ID already exists, so no new Grist
+      // account is created by the one-address document-scoped access delta.
+      await this.inner.grantDocumentUser(id, email, role);
+      try {
+        const after = documentGrantSnapshot(await this.inner.listDocumentAccess(id));
+        const granted = after.users.filter(user => user.email === email);
+        const unrelated = (users: readonly DocumentGrantUser[]) =>
+          users.filter(user => user.email !== email)
+            .map(user => JSON.stringify(user)).sort();
+        if (granted.length !== 1 || granted[0]?.access !== role ||
+            granted[0]?.id !== target.id || granted[0]?.isMember !== true ||
+            granted[0]?.parentAccess !== target.parentAccess ||
+            before.maxInheritedRole !== after.maxInheritedRole ||
+            JSON.stringify(unrelated(before.users)) !== JSON.stringify(unrelated(after.users))) {
+          throw new Error("Grist document grant or unrelated grants changed unexpectedly.");
+        }
+        return { documentId: id, role, changed: true,
+          persistedGrantVerified: true, effectiveAclVerified: false };
+      } catch {
+        throw new DocumentGrantVerificationError(
+          "Document sharing was acknowledged but its native persisted grant could not be verified."
+        );
       }
     });
   }
