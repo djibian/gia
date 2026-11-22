@@ -2883,6 +2883,38 @@ async function run(): Promise<void> {
       conditionFormula: "$Qty > 10", style: { fillColor: "#445566" }
     });
 
+
+    // Changing one verified raw-row style must retain the native formula helper.
+    const changedRowStyle = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "update_row_style_rule", documentId, tableId: TABLE_ID,
+        conditionFormula: "$Qty > 10", style: { fillColor: "#556677" }
+      }), "native_row_style_color_update") as {
+        changed: boolean; persistedStyleVerified: boolean; styleRuleCount: number
+      };
+    assert(changedRowStyle.changed && changedRowStyle.persistedStyleVerified &&
+      changedRowStyle.styleRuleCount === 1, "native_row_style_color_update_unverified");
+    const sectionAfterColor = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    const ownerAfterColor = sectionAfterColor.records.find(row => row.id === rawSectionRef);
+    assert(isDeepStrictEqual(ownerAfterColor?.fields.rules, rowRefs),
+      "native_row_style_color_update_changed_helper_refs");
+    const optionsAfterColor = JSON.parse(String(ownerAfterColor?.fields.options)) as {
+      rulesOptions?: Array<{fillColor?:string}>
+    };
+    assert(optionsAfterColor.rulesOptions?.[0]?.fillColor === "#556677",
+      "native_row_style_color_update_did_not_persist");
+    const rowNoop = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "update_row_style_rule", documentId, tableId: TABLE_ID,
+        conditionFormula: "$Qty > 10", style: { fillColor: "#556677" }
+      }), "native_row_style_color_noop") as {changed:boolean};
+    assert(rowNoop.changed === false, "native_row_style_color_repeat_wrote");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "update_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty == 0", style: {fillColor:"#556677"}
+    });
+
     const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
       action: "columns", documentId, tableId: TABLE_ID
     }), "native_conditional_style_inspection");

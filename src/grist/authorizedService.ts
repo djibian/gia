@@ -2081,6 +2081,53 @@ export class AuthorizedGristService {
     });
   }
 
+
+  /** Change colors of one existing native raw-row conditional style by exact formula. */
+  async updateRowStyleRule(
+    documentIdOrUrl: string, tableId: string, input: ColumnStyleInput
+  ): Promise<unknown> {
+    return this.execute("update_row_style_rule", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = async () => {
+        const [tables, sections, columns] = await Promise.all([
+          this.inner.queryRecords(id, "_grist_Tables", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Views_section", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Tables_column", { hidden: true, limit })
+        ]);
+        return readNativeRowStyleSequence(tables, sections, columns, tableId, limit);
+      };
+      const before = await read();
+      const plan = planExistingColumnStyleUpdate(
+        before, input.conditionFormula, input.style
+      );
+      const result = { documentId: id, tableId };
+      if (!plan.changed) {
+        return { ...result, changed: false, persistedStyleVerified: true };
+      }
+      if (!isDeepStrictEqual(await read(), before)) {
+        throw new Error("Native row style changed before write; reconcile first.");
+      }
+      try {
+        await this.uiActions.updateRowStyleOptions(id, before.ownerRef, plan.widgetOptions!);
+        const after = await read();
+        const identities = (snapshot: typeof before) =>
+          snapshot.rules.map(rule => ({ helperRef: rule.helperRef, formula: rule.formula }));
+        if (after.ownerRef !== before.ownerRef ||
+            !isDeepStrictEqual(identities(after), identities(before)) ||
+            !isDeepStrictEqual(after.options, plan.options)) {
+          throw new Error("Native row style update did not preserve rule identities or options.");
+        }
+        return { ...result, changed: true, persistedStyleVerified: true,
+          styleRuleCount: after.rules.length };
+      } catch (error) {
+        throw new SchemaWriteVerificationError("update_row_style_rule",
+          "Native row-style update may be uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
+
   async renameColumn(
     documentIdOrUrl: string,
     tableId: string,
