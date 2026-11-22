@@ -3285,6 +3285,44 @@ async function run(): Promise<void> {
     assert(restoredRow.changed && restoredRow.persistedStyleVerified,
       "native_row_style_reorder_restore_unverified");
 
+    // Native raw-row conditional helper removal: exact owner, stable surviving
+    // color/formula pair, absent helper and preserved unrelated section options.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "remove_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty < 0"
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "remove_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty == 999", confirmRemoveRule: true
+    });
+    const removedRowStyle = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "remove_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty < 0", confirmRemoveRule: true
+    }), "native_row_style_remove") as {
+      changed: boolean; persistedStyleVerified: boolean; remainingStyleRuleCount: number
+    };
+    assert(removedRowStyle.changed && removedRowStyle.persistedStyleVerified &&
+      removedRowStyle.remainingStyleRuleCount === 1,
+      "native_row_style_remove_unverified");
+    const [removedRowSections, removedRowColumns] = await Promise.all([
+      gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Views_section/records?hidden=true`) as Promise<MetaRecords>,
+      gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as Promise<MetaRecords>
+    ]);
+    const sectionAfterRemove = removedRowSections.records.find(row => row.id === rawSectionRef);
+    const rowOptionsAfterRemove = JSON.parse(String(sectionAfterRemove?.fields.options));
+    assert(isDeepStrictEqual(sectionAfterRemove?.fields.rules, ["L", originalRefs[1]]) &&
+      isDeepStrictEqual(rowOptionsAfterRemove.rulesOptions, [originalOptions.rulesOptions[0]]) &&
+      removedRowColumns.records.some(row => row.id === originalRefs[1]) &&
+      !removedRowColumns.records.some(row => row.id === originalRefs[2]),
+      "native_row_style_remove_lost_survivor_or_left_helper");
+    assert(isDeepStrictEqual(
+      Object.fromEntries(Object.entries(rowOptionsAfterRemove).filter(([key]) => key !== "rulesOptions")),
+      Object.fromEntries(Object.entries(originalOptions).filter(([key]) => key !== "rulesOptions"))
+    ), "native_row_style_remove_changed_unrelated_options");
+
+
     const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
       action: "columns", documentId, tableId: TABLE_ID
     }), "native_conditional_style_inspection");

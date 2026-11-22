@@ -79,7 +79,8 @@ import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
 import { planColumnStyle, readNativeColumnStyleSequence, readNativeRowStyleSequence,
   planAppendColumnStyleRule, planExistingColumnStyleUpdate,
   planExistingStyleFormulaReplacement, planReorderRowStyleRules, planReorderColumnStyleRules,
-  planRemoveColumnStyleRule, exclusiveNativeColumnStyleHelper, type ColumnStyleInput } from "./styleRules.js";
+  planRemoveColumnStyleRule, exclusiveNativeColumnStyleHelper,
+  planRemoveRowStyleRule, exclusiveNativeRowStyleHelper, type ColumnStyleInput } from "./styleRules.js";
 import { planOwnerSchemaGuard, verifyOwnerSchemaGuard } from "./schemaEditGuard.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
 import { planFormPublication, planFormUnpublication, readNativeFormPageShare } from "./formPublication.js";
@@ -2450,6 +2451,67 @@ export class AuthorizedGristService {
       } catch (error) {
         throw new SchemaWriteVerificationError("remove_column_style_rule",
           "Native style removal may be uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
+
+  /** Delete exactly one exclusive native raw-table row conditional-format helper. */
+  async removeRowStyleRule(
+    documentIdOrUrl: string, tableId: string,
+    conditionFormula: string, confirmRemoveRule: true
+  ): Promise<unknown> {
+    if (confirmRemoveRule !== true) {
+      throw new Error("Explicit raw-row conditional-style deletion confirmation is required.");
+    }
+    return this.execute("remove_row_style_rule", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = async () => {
+        const [tables, sections, columns, fields] = await Promise.all([
+          this.inner.queryRecords(id, "_grist_Tables", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Views_section", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Tables_column", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Views_section_field", { hidden: true, limit })
+        ]);
+        return {
+          sequence: readNativeRowStyleSequence(tables, sections, columns, tableId, limit),
+          sections, columns, fields
+        };
+      };
+      const before = await read();
+      const plan = planRemoveRowStyleRule(before.sequence, conditionFormula);
+      const helperColumnId = exclusiveNativeRowStyleHelper(
+        before.columns, before.sections, before.fields,
+        before.sequence.ownerRef, plan.helperRef, limit
+      );
+      const fresh = await read();
+      if (!isDeepStrictEqual(fresh, before) ||
+          exclusiveNativeRowStyleHelper(
+            fresh.columns, fresh.sections, fresh.fields,
+            fresh.sequence.ownerRef, plan.helperRef, limit
+          ) !== helperColumnId) {
+        throw new Error("Native raw-row helper ownership changed before deletion; reconcile first.");
+      }
+      try {
+        await this.uiActions.removeRowStyleRule(
+          id, tableId, before.sequence.ownerRef, plan.helperRef,
+          helperColumnId, plan.optionsJson
+        );
+        const after = await read();
+        const columnsAfter = (after.columns as {records?: Array<{id: number}>}).records;
+        if (after.sequence.ownerRef !== before.sequence.ownerRef ||
+            !isDeepStrictEqual(after.sequence.rules, plan.remainingRules) ||
+            !isDeepStrictEqual(after.sequence.options, plan.options) ||
+            !Array.isArray(columnsAfter) ||
+            columnsAfter.some(column => column.id === plan.helperRef)) {
+          throw new Error("Native row style deletion postconditions failed.");
+        }
+        return { documentId: id, tableId, changed: true,
+          persistedStyleVerified: true, remainingStyleRuleCount: after.sequence.rules.length };
+      } catch (error) {
+        throw new SchemaWriteVerificationError("remove_row_style_rule",
+          "Native row-style removal effect uncertain; inspect before retry: " +
           (error instanceof Error ? error.message : "unknown result"));
       }
     });

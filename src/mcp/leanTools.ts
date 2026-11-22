@@ -1155,6 +1155,13 @@ export function registerLeanTools(
           conditionFormula: z.string().min(1).max(4096),
           confirmRemoveRule: z.literal(true)
         }).strict(),
+        z.object({
+          action: z.literal("remove_row_style_rule"),
+          documentId: documentIdSchema,
+          tableId: tableIdSchema,
+          conditionFormula: z.string().min(1).max(4096),
+          confirmRemoveRule: z.literal(true)
+        }).strict(),
         z
           .object({
             action: z.literal("reorder_row_style_rules"),
@@ -1340,6 +1347,10 @@ export function registerLeanTools(
             return textResult(await grist.removeColumnStyleRule(
               input.documentId, input.tableId, input.columnId,
               input.conditionFormula, input.confirmRemoveRule
+            ));
+          case "remove_row_style_rule":
+            return textResult(await grist.removeRowStyleRule(
+              input.documentId, input.tableId, input.conditionFormula, input.confirmRemoveRule
             ));
           case "reorder_row_style_rules":
             return textResult(await grist.reorderRowStyleRules(

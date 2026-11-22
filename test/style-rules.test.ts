@@ -3,7 +3,7 @@ import test from "node:test";
 import { readNativeColumnStyle, planColumnStyle, readNativeColumnStyleSequence,
   planAppendColumnStyleRule, planExistingColumnStyleUpdate,
   planExistingStyleFormulaReplacement, planReorderRowStyleRules, planReorderColumnStyleRules,
-  planRemoveColumnStyleRule, exclusiveNativeColumnStyleHelper, readNativeRowStyleSequence } from "../src/grist/styleRules.js";
+  planRemoveColumnStyleRule, exclusiveNativeColumnStyleHelper, planRemoveRowStyleRule, exclusiveNativeRowStyleHelper, readNativeRowStyleSequence } from "../src/grist/styleRules.js";
 
 
 test("Column-style priority reorders helpers and colors without changing other options", () => {
@@ -313,6 +313,50 @@ test("Replacing one native row formula retains raw-section options and sibling r
   assert.throws(()=>planExistingStyleFormulaReplacement({...state,rules:[
     state.rules[0]!,{...state.rules[1]!,formula:"$Qty > 2"}
   ]},"$Qty > 2","$Qty > 3"),/absent or ambiguous/);
+});
+
+
+test("Native raw-row style removal keeps sibling colors and refuses unsafe helper ownership", () => {
+  const state = {
+    ownerRef: 11, options: { theme: "dark", rulesOptions: [
+      { fillColor: "#ABCDEF" }, { textColor: "#123456" }
+    ] },
+    rules: [
+      { helperRef: 21, formula: "$Qty > 10", style: { fillColor: "#ABCDEF" } },
+      { helperRef: 22, formula: "$Qty < 0", style: { textColor: "#123456" } }
+    ]
+  };
+  const plan = planRemoveRowStyleRule(state, "$Qty < 0");
+  assert.equal(plan.helperRef, 22);
+  assert.deepEqual(plan.remainingRules, [state.rules[0]]);
+  assert.deepEqual(plan.options, {theme:"dark",rulesOptions:[{fillColor:"#ABCDEF"}]});
+  assert.throws(() => planRemoveRowStyleRule(state, "$Qty == 9"), /absent/);
+  assert.throws(() => planRemoveRowStyleRule({...state,rules:[state.rules[0]!] },
+    "$Qty > 10"), /two to eight/);
+  assert.throws(() => planRemoveRowStyleRule({...state,rules:[
+    state.rules[0]!, {...state.rules[1]!,formula:"$Qty > 10"}]},
+    "$Qty > 10"), /unique/);
+  const columns = {records:[
+    {id:21,fields:{parentId:3,colId:"gristHelper_RowConditionalRule",type:"Any",isFormula:true,formula:"$Qty > 10",rules:null}},
+    {id:22,fields:{parentId:3,colId:"gristHelper_RowConditionalRule2",type:"Any",isFormula:true,formula:"$Qty < 0",rules:null}}
+  ]};
+  const sections = {records:[{id:11,fields:{tableRef:3,rules:["L",21,22]}},
+    {id:12,fields:{tableRef:3,rules:["L"]}}]};
+  const fields = {records:[{id:31,fields:{rules:["L"]}}]};
+  assert.equal(exclusiveNativeRowStyleHelper(columns,sections,fields,11,22,50),
+    "gristHelper_RowConditionalRule2");
+  assert.throws(() => exclusiveNativeRowStyleHelper(columns,
+    {records:[...sections.records,{id:13,fields:{tableRef:3,rules:["L",22]}}]},
+    fields,11,22,50), /shared or foreign/);
+  assert.throws(() => exclusiveNativeRowStyleHelper(
+    {records:[...columns.records,{id:23,fields:{rules:["L",22]}}]},
+    sections,fields,11,22,50), /shared or foreign/);
+  assert.throws(() => exclusiveNativeRowStyleHelper(columns,sections,
+    {records:[{id:31,fields:{rules:["L",22]}}]},11,22,50), /shared or foreign/);
+  assert.throws(() => exclusiveNativeRowStyleHelper(columns,sections,
+    {records:[{id:31,fields:{rules:"opaque"}}]},11,22,50), /Malformed/);
+  assert.throws(() => exclusiveNativeRowStyleHelper(columns,sections,fields,11,22,2),
+    /truncated/);
 });
 
 test("Deleting one native column style preserves sibling colors and rejects shared helper ownership", () => {
