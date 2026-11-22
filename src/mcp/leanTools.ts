@@ -525,16 +525,22 @@ const formParagraphSchema = z.object({
 const formFieldSchema = z.object({
   type: z.literal("field"), columnId: columnIdSchema
 }).strict();
+const formLinkSchema = z.object({
+  type: z.literal("form_link"), label: z.string().min(1).max(100),
+  targetPageId: positiveIdSchema, targetWidgetId: positiveIdSchema,
+  alignment: z.enum(["left", "center", "right"]).optional()
+}).strict();
 const formSectionSchema = z.object({
   type: z.literal("section"),
-  children: z.array(z.discriminatedUnion("type", [formParagraphSchema, formFieldSchema]))
+  children: z.array(z.discriminatedUnion("type", [formParagraphSchema, formFieldSchema, formLinkSchema]))
     .min(1).max(40)
 }).strict();
 const formSubmitSchema = z.object({ type: z.literal("submit") }).strict();
 const formLayoutUpdateSchema = z.object({
   children: z.array(z.discriminatedUnion("type", [
-    formParagraphSchema, formSectionSchema, formSubmitSchema
+    formParagraphSchema, formLinkSchema, formSectionSchema, formSubmitSchema
   ])).min(2).max(40),
+  confirmPublicLink: z.literal(true).optional(),
   submitText: z.string().max(300).optional(),
   successText: z.string().max(300).optional(),
   anotherResponse: z.boolean().optional()

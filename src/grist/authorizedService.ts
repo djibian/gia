@@ -80,7 +80,7 @@ import { planColumnStyle, readNativeColumnStyleSequence, readNativeRowStyleSeque
   planExistingStyleFormulaReplacement, type ColumnStyleInput } from "./styleRules.js";
 import { planOwnerSchemaGuard, verifyOwnerSchemaGuard } from "./schemaEditGuard.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
-import { planFormPublication, readNativeFormPageShare } from "./formPublication.js";
+import { planFormPublication, readNativeFormPageShare, resolvePublishedFormRelativePath } from "./formPublication.js";
 import { readFormFieldOptions, resolveFormFieldOptions, type FormFieldOptionsInput } from "./formFieldOptions.js";
 import { DocumentContextService } from "./documentContext.js";
 import { DocumentUiService, type DocumentUiContext } from "./documentUi.js";
@@ -845,6 +845,15 @@ export class AuthorizedGristService {
       throw new Error("Form page and widget IDs must be positive integers.");
     }
     return this.execute("update_form_layout", documentIdOrUrl, 1, async (id) => {
+      const linkedTargets = layout.children.flatMap(node =>
+        node.type === "form_link" ? [node] :
+        node.type === "section" ? node.children.filter(child => child.type === "form_link") : []
+      );
+      if (linkedTargets.length > 8) throw new Error("At most eight Form links per layout.");
+      if (linkedTargets.length) {
+        if (layout.confirmPublicLink !== true) throw new Error("Form links need confirmPublicLink:true.");
+        await this.inner.assertDocumentOwner(id);
+      }
       const tables = await this.inner.listTables(id, { expandColumns: true });
       const before = await this.loadDocumentUi(id, tables, true);
       assertCompleteUiSnapshot(before);
@@ -853,8 +862,29 @@ export class AuthorizedGristService {
       if (!widget || widget.type !== "form") {
         throw new Error("Target widget is not a verified native Form on the requested page.");
       }
+      const pathsFor = async (context: CompletenessAwareDocumentUiContext) => {
+        const paths = new Map<string, string>();
+        if (!linkedTargets.length) return paths;
+        const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+        const [pages, shares] = await Promise.all([
+          this.inner.queryRecords(id, "_grist_Pages", { limit, hidden: true }),
+          this.inner.queryRecords(id, "_grist_Shares", { limit, hidden: true })
+        ]);
+        for (const link of linkedTargets) {
+          const targetPage = context.pages.find(p => p.id === link.targetPageId);
+          const target = targetPage?.widgets.find(w => w.id === link.targetWidgetId);
+          if (!targetPage || !target || target.type !== "form" ||
+              planFormPublication(target.formShareOptions).changed) {
+            throw new Error("Link target must be an already published Form in the document.");
+          }
+          paths.set(link.targetPageId + ":" + link.targetWidgetId,
+            resolvePublishedFormRelativePath(pages, shares,
+              targetPage.pageRecordId, targetPage.id, target.id, limit));
+        }
+        return paths;
+      };
       const fields = before[SECTION_FIELDS_METADATA];
-      const resolved = resolveFormLayoutUpdate(widget, tables, fields, layout);
+      const resolved = resolveFormLayoutUpdate(widget, tables, fields, layout, await pathsFor(before));
       const base = { documentId: id, pageId, widgetId };
       if (sameJsonValue(widget.layoutSpec, resolved.layoutSpec)) {
         return { ...base, changed: false, persistedLayoutVerified: true,
@@ -871,7 +901,7 @@ export class AuthorizedGristService {
             current.tableRef !== widget.tableRef || current.tableId !== widget.tableId ||
             !sameJsonValue(current.layoutSpec, resolved.layoutSpec) ||
             !sameJsonValue(resolveFormLayoutUpdate(current, currentTables,
-              after[SECTION_FIELDS_METADATA], layout).layoutSpec, resolved.layoutSpec)) {
+              after[SECTION_FIELDS_METADATA], layout, await pathsFor(after)).layoutSpec, resolved.layoutSpec)) {
           throw new Error("Native Form layout differs from the requested persisted state.");
         }
         return { ...base, changed: true, persistedLayoutVerified: true,

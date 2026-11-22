@@ -157,6 +157,14 @@ bindings. It does not add fields to native sections, create share links, publish
 execute submissions or assert rendered behavior. To place a column not already
 present as a native section field, configure the widget fields separately first.
 
+A closed `{type:"form_link",label,targetPageId,targetWidgetId}` paragraph
+links to an already published native Form in the **same document**. The caller
+must provide `confirmPublicLink:true` and hold `doc.schema:write` plus fresh
+native Owner authority. Gia checks a unique published page share, generates a
+root-relative Markdown link from its private `linkId`, and verifies persistence.
+It never accepts a caller-supplied URL or echoes the share key. Form inspection
+redacts the link paragraph; actual browser navigation is not yet qualified.
+
 `grist_change_ui(action="update_form_field_options")` targets one
 existing native Form section field by page/widget and stable column ID. It
 updates a nonempty subset of `question` (string or null to clear),

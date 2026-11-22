@@ -59,6 +59,26 @@ test("Form layout preserves omitted submission settings and uses IDs compatible 
   assert.deepEqual(resolveFormLayoutUpdate(widget(second), tables, fields, layout).layoutSpec, second);
 });
 
+test("Typed Form links require confirmation and a verified private native share path", () => {
+  const link = {type:"form_link" as const,label:"Second step",targetPageId:9,targetWidgetId:17};
+  const layout: FormLayoutInput = { children:[link,requested.children[1]!,{type:"submit"}],
+    confirmPublicLink:true };
+  const paths = new Map([["9:17","/forms/syntheticShareKey/17"]]);
+  const resolved = resolveFormLayoutUpdate(widget(),tables,fields,layout,paths);
+  assert.equal((resolved.layoutSpec.children as Array<{text?:string}>)[0]?.text,
+    "[Second step](/forms/syntheticShareKey/17)");
+  assert.deepEqual(resolveFormLayoutUpdate(widget(resolved.layoutSpec),tables,fields,layout,paths).layoutSpec,
+    resolved.layoutSpec);
+  assert.throws(()=>resolveFormLayoutUpdate(widget(),tables,fields,
+    {...layout,confirmPublicLink:undefined},paths),/confirmPublicLink/);
+  assert.throws(()=>resolveFormLayoutUpdate(widget(),tables,fields,layout),/not resolved/);
+  assert.throws(()=>resolveFormLayoutUpdate(widget(),tables,fields,layout,
+    new Map([["9:17","https://untrusted.invalid/"]])));
+  assert.throws(()=>resolveFormLayoutUpdate(widget(),tables,fields,{
+    ...layout,children:[{...link,label:"https://unsafe.invalid"},requested.children[1]!,{type:"submit"}]
+  },paths));
+});
+
 test("Form layout refuses unknown, duplicate or computed fields and absent submit", () => {
   for (const bad of [
     [{ type: "section", children: [{ type: "field", columnId: "Unknown" }] }, { type: "submit" }],

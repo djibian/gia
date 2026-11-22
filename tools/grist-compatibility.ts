@@ -2663,6 +2663,34 @@ async function run(): Promise<void> {
       layout: semanticFormLayout
     }), "native_form_layout_noop") as { changed: boolean };
     assert(repeatedLayout.changed === false, "native_form_layout_repeat_wrote");
+    // #295: link Form paragraphs to an already published Form using stable IDs.
+    const linkLayout = {
+      ...semanticFormLayout, confirmPublicLink: true,
+      children: [
+        {type:"form_link",label:"Continue",targetPageId:pageId,targetWidgetId:formSection.id},
+        semanticFormLayout.children[1],{type:"submit"}
+      ]
+    };
+    await callToolExpectError(bridgeBaseUrl,"grist_change_ui",{
+      action:"update_form_layout",documentId,pageId,widgetId:formSection.id,
+      layout:{...linkLayout,confirmPublicLink:undefined}
+    });
+    const linked = resultJson(await callTool(bridgeBaseUrl,"grist_change_ui",{
+      action:"update_form_layout",documentId,pageId,widgetId:formSection.id,layout:linkLayout
+    }),"native_form_link_write") as {changed:boolean;persistedLayoutVerified:boolean};
+    assert(linked.changed && linked.persistedLayoutVerified,"native_form_link_write_failed");
+    const latestFormSection = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    const nativeLinkedLayout = JSON.parse(String(latestFormSection.records.find(
+      row=>row.id===formSection.id)?.fields.layoutSpec)) as {children:Array<{text?:string}>};
+    const key = publishedShares.records.find(row=>row.id===pageShareRef)?.fields.linkId;
+    assert(nativeLinkedLayout.children[0]?.text ===
+      `[Continue](/forms/${key}/${formSection.id})`,"native_form_link_target_incorrect");
+    assert(!JSON.stringify(linked).includes(String(key)),"native_form_link_share_key_leak");
+    const repeatedLink = resultJson(await callTool(bridgeBaseUrl,"grist_change_ui",{
+      action:"update_form_layout",documentId,pageId,widgetId:formSection.id,layout:linkLayout
+    }),"native_form_link_repeat") as {changed:boolean};
+    assert(repeatedLink.changed === false,"native_form_link_repeat_wrote");
     const formPreviewAfterWrite = await gristApi(gristBaseUrl, apiKey,
       `${docPath}/forms/${formSection.id}`) as { formFieldsById: Record<number, { colId: string }> };
     assert(formPreviewAfterWrite.formFieldsById[formField.id]?.colId === "Name",

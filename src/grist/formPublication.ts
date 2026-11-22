@@ -86,6 +86,22 @@ export function readNativeFormPageShare(
   return "published";
 }
 
+/** Resolve a private share key only from a verified same-document published Form. */
+export function resolvePublishedFormRelativePath(
+  pages: unknown, shares: unknown, pageRecordId: number, pageId: number,
+  formWidgetId: number, limit: number
+): string {
+  if (!Number.isInteger(formWidgetId) || formWidgetId < 1 ||
+      readNativeFormPageShare(pages, shares, pageRecordId, pageId, limit) !== "published") {
+    throw new Error("Form link target must be a verified published native Form.");
+  }
+  const pageRows = (pages as {records:Array<{id:number;fields:{viewRef:number;shareRef:number}}>}).records;
+  const shareRows = (shares as {records:Array<{id:number;fields:{linkId:string}}>}).records;
+  const ref = pageRows.find(row => row.id === pageRecordId && row.fields.viewRef === pageId)!.fields.shareRef;
+  const key = shareRows.find(row => row.id === ref)!.fields.linkId;
+  return "/forms/" + key + "/" + formWidgetId;
+}
+
 /** Only a separately confirmed, Owner-gated publication intention is writable. */
 export function planFormPublication(raw: unknown): {
   shareOptions: string; expected: ShareOptions; changed: boolean;
