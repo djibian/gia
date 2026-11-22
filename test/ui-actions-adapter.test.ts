@@ -116,6 +116,36 @@ test("addPageWidget emits exactly one bounded CreateViewSection action", async (
   ]);
 });
 
+test("addPageWidgets emits one bounded native batch with stable ordered returned IDs", async () => {
+  const {adapter,observed}=harness([
+    {tableRef:2,viewRef:7,sectionRef:31},
+    {tableRef:3,viewRef:7,sectionRef:32}
+  ]);
+  assert.deepEqual(await adapter.addPageWidgets("doc-1",7,[
+    {tableRef:2,type:"record"},{tableRef:3,type:"form"}
+  ]), [
+    {pageId:7,tableRef:2,widgetId:31},{pageId:7,tableRef:3,widgetId:32}
+  ]);
+  assert.deepEqual(observed, [[
+    ["CreateViewSection",2,7,"record",null,null],
+    ["CreateViewSection",3,7,"form",null,null]
+  ]]);
+});
+
+test("addPageWidgets refuses incomplete and duplicate native batch result identities", async () => {
+  const {adapter,observed}=harness([
+    {tableRef:2,viewRef:7,sectionRef:31},
+    {tableRef:3,viewRef:7,sectionRef:31}
+  ]);
+  await assert.rejects(()=>adapter.addPageWidgets("doc-1",7,[
+    {tableRef:2,type:"record"},{tableRef:3,type:"form"}
+  ]), /ambiguous IDs/);
+  assert.equal(observed.length,1);
+  await assert.rejects(()=>adapter.addPageWidgets("doc-1",7,[{tableRef:2,type:"record"}]),
+    /two to eight/);
+  assert.equal(observed.length,1);
+});
+
 test("addPageWidget creates a native summary with only resolved private group-by refs", async () => {
   const { adapter, observed } = harness([
     { tableRef: 2, viewRef: 7, sectionRef: 12 }

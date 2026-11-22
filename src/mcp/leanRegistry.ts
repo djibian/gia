@@ -345,8 +345,9 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     ]
   },
   grist_add_ui: {
-    actions: ["create_page", "add_widget"],
-    request: [`create_page: {action,documentId,tableId,name}; add_widget: {action,documentId,pageId:positiveInteger,tableId,type,groupByColumnIds?:stableColumnIds[]}. Widget type: ${NATIVE_WIDGET_TYPES.join(" | ")}.`],
+    actions: ["create_page", "add_widget", "add_widgets"],
+    request: [`create_page: {action,documentId,tableId,name}; add_widget: {action,documentId,pageId:positiveInteger,tableId,type,groupByColumnIds?:stableColumnIds[]}. Widget type: ${NATIVE_WIDGET_TYPES.join(" | ")}.`,
+      "add_widgets: {action,documentId,pageId,widgets:[{tableId,type},...]} 2..8 ungrouped native sections in one page; preserves input order, reports created widget IDs, uncertain effect requires readback, no automatic replay."],
     constraints: ["Supplied grouping IDs must be unique current source columns. An empty list creates a grand-total summary. The generated/reused summary table has a distinct identity and its effective access must be checked separately."],
     examples: [{ purpose: "Create a page", arguments: {
       action: "create_page", documentId: "synthetic-doc", tableId: "Items", name: "Items Page"
