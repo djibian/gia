@@ -350,11 +350,12 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     } }]
   },
   grist_change_ui: {
-    actions: ["rename_page", "delete_page", "reorder_pages", "delete_widget", "update_layout", "update_form_layout", "publish_form", "update_form_field_options", "update_widget", "install_trusted_widget"],
+    actions: ["rename_page", "delete_page", "reorder_pages", "delete_widget", "update_layout", "update_form_layout", "publish_form", "unpublish_form", "update_form_field_options", "update_widget", "install_trusted_widget"],
     request: [
       "rename_page: {action,documentId,pageId,name}; delete_page: {action,documentId,pageId}; delete_widget: {action,documentId,pageId,widgetId}.",
       "update_form_layout: {action,documentId,pageId,widgetId,layout:{children:[paragraph|section(fields/paragraphs)|submit],submitText?,successText?,anotherResponse?}}; stable column IDs resolved server-side; no publish.",
       "publish_form: {action,documentId,pageId,widgetId,confirmPublic:true}; public Form publication intent, only after explicit approval and fresh native Grist Owner proof; effective anonymous submission not yet qualified.",
+      "unpublish_form: {action,documentId,pageId,widgetId,confirmUnpublish:true}; native Owner-verified Form disablement, preserves existing page/share refs; effective public-key revocation not claimed.",
       "update_form_field_options: {action,documentId,pageId,widgetId,columnId,update:{question?:string|null,required?:boolean,acceptFromUrl?:boolean}}; one existing native Form field, preserving unrelated options.",
       "reorder_pages: {action,documentId,pageIds:completeNavigationPageIds[]}; update_layout: {action,documentId,pageId,layout:{root:{kind:'widget',widgetId}|{kind:'group',children:[...]},collapsedWidgetIds?:positiveInteger[]}}",
       "update_widget: {action,documentId,pageId,widgetId,update:{calendarConfig?:{titleColumnId,startDateColumnId,endDateColumnId?,allDayColumnId?,typeColumnId?},visibleFields?,cardLayout?:{root:{kind:'field',columnId}|{kind:'group',children:[...]}},gridOptions?,filters?,sort?,...}}"

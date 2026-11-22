@@ -1512,6 +1512,15 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("unpublish_form"),
+            documentId: documentIdSchema,
+            pageId: positiveIdSchema,
+            widgetId: positiveIdSchema,
+            confirmUnpublish: z.literal(true)
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_form_field_options"),
             documentId: documentIdSchema,
             pageId: positiveIdSchema,
@@ -1588,6 +1597,10 @@ export function registerLeanTools(
           case "publish_form":
             return textResult(await grist.publishForm(
               input.documentId, input.pageId, input.widgetId, input.confirmPublic
+            ));
+          case "unpublish_form":
+            return textResult(await grist.unpublishForm(
+              input.documentId, input.pageId, input.widgetId, input.confirmUnpublish
             ));
           case "update_form_field_options":
             return textResult(await grist.updateFormFieldOptions(

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { planFormPublication, readNativeFormPageShare } from "../src/grist/formPublication.js";
+import { planFormPublication, planFormUnpublication, readNativeFormPageShare } from "../src/grist/formPublication.js";
 
 test("Form publication changes only the two native flags and is idempotent", () => {
   const prepared = planFormPublication('{"form":true,"publish":false}');
@@ -34,4 +34,19 @@ test("native Form publication requires a verified page-linked published share", 
   assert.throws(() => readNativeFormPageShare(pages(9), {records: [{
     id: 9, fields: {linkId:"bad", options:'{"publish":false}'}
   }]}, 7, 2, 50));
+});
+
+test("native Form unpublication changes only its two bounded flags and is idempotent", () => {
+  const first = planFormUnpublication('{"form":true,"publish":true}');
+  assert.deepEqual(JSON.parse(first.shareOptions), { form: true, publish: false });
+  assert.equal(first.changed, true);
+  assert.equal(planFormUnpublication(first.shareOptions).changed, false);
+});
+
+test("Form unpublication rejects opaque or incomplete settings before writing", () => {
+  for (const raw of [undefined, "", null, "{}", '{"form":true}',
+    '{"form":false,"publish":true}', '{"form":true,"publish":"yes"}',
+    '{"form":true,"publish":true,"extra":1}', "not-json"]) {
+    assert.throws(() => planFormUnpublication(raw));
+  }
 });

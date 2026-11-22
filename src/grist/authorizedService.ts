@@ -80,7 +80,7 @@ import { planColumnStyle, readNativeColumnStyleSequence, readNativeRowStyleSeque
   planExistingStyleFormulaReplacement, planReorderRowStyleRules, type ColumnStyleInput } from "./styleRules.js";
 import { planOwnerSchemaGuard, verifyOwnerSchemaGuard } from "./schemaEditGuard.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
-import { planFormPublication, readNativeFormPageShare } from "./formPublication.js";
+import { planFormPublication, planFormUnpublication, readNativeFormPageShare } from "./formPublication.js";
 import { readFormFieldOptions, resolveFormFieldOptions, type FormFieldOptionsInput } from "./formFieldOptions.js";
 import { DocumentContextService } from "./documentContext.js";
 import { DocumentUiService, type DocumentUiContext } from "./documentUi.js";
@@ -781,6 +781,78 @@ export class AuthorizedGristService {
           "update_page_layout",
           error instanceof Error ? error.message : "Updated page layout could not be verified."
         );
+      }
+    });
+  }
+
+  /** Change one native Form publication flag only, preserving the existing public share. */
+  async unpublishForm(
+    documentIdOrUrl: string, pageId: number, widgetId: number,
+    confirmUnpublish: true
+  ): Promise<unknown> {
+    if (confirmUnpublish !== true ||
+        !Number.isInteger(pageId) || pageId < 1 ||
+        !Number.isInteger(widgetId) || widgetId < 1) {
+      throw new Error("Explicit Form unpublication confirmation and positive IDs are required.");
+    }
+    return this.execute("unpublish_form", documentIdOrUrl, 1, async id => {
+      await this.inner.assertDocumentOwner(id);
+      const before = await this.loadDocumentUi(id);
+      assertCompleteUiSnapshot(before);
+      const page = before.pages.find(item => item.id === pageId);
+      const widget = page?.widgets.find(item => item.id === widgetId);
+      if (!page || !widget || widget.type !== "form") {
+        throw new Error("Target must be an existing native Form on the requested page.");
+      }
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const nativeShare = async () => {
+        const [pages, shares] = await Promise.all([
+          this.inner.queryRecords(id, "_grist_Pages", { limit, hidden: true }),
+          this.inner.queryRecords(id, "_grist_Shares", { limit, hidden: true })
+        ]);
+        if (readNativeFormPageShare(
+          pages, shares, page.pageRecordId, pageId, limit
+        ) !== "published") {
+          throw new Error("Unpublication requires a verified existing native Form page share.");
+        }
+        return { pages, shares };
+      };
+      const originalShare = await nativeShare();
+      const plan = planFormUnpublication(widget.formShareOptions);
+      const result = { documentId: id, pageId, widgetId };
+      if (!plan.changed) return { ...result, changed: false,
+        persistedUnpublicationIntentVerified: true, nativePageSharePreserved: true,
+        publicAccessRevocationQualified: false };
+      const latest = await this.loadDocumentUi(id);
+      assertCompleteUiSnapshot(latest);
+      const latestWidget = latest.pages.find(p => p.id === pageId)?.widgets
+        .find(w => w.id === widgetId);
+      if (!latestWidget || !sameJsonValue(latestWidget, widget) ||
+          !isDeepStrictEqual(await nativeShare(), originalShare)) {
+        throw new Error("Native Form changed before unpublication; reconcile first.");
+      }
+      try {
+        await this.uiActions.unpublishForm(id, widgetId, plan.shareOptions);
+        const [after, share] = await Promise.all([
+          this.loadDocumentUi(id), nativeShare()
+        ]);
+        assertCompleteUiSnapshot(after);
+        const current = after.pages.find(p => p.id === pageId)?.widgets
+          .find(w => w.id === widgetId);
+        if (!current || current.type !== "form" ||
+            current.tableRef !== widget.tableRef || current.tableId !== widget.tableId ||
+            !sameJsonValue(current.layoutSpec, widget.layoutSpec) ||
+            !sameJsonValue(current.options, widget.options) ||
+            !sameJsonValue(current.formShareOptions, plan.shareOptions) ||
+            !isDeepStrictEqual(share, originalShare)) {
+          throw new Error("Native Form unpublication or retained share failed postconditions.");
+        }
+        return { ...result, changed: true, persistedUnpublicationIntentVerified: true,
+          nativePageSharePreserved: true, publicAccessRevocationQualified: false };
+      } catch (error) {
+        throw new UiWriteVerificationError("unpublish_form",
+          "Native Form unpublication may be uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
       }
     });
   }
