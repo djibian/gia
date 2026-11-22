@@ -584,7 +584,7 @@ async function run(): Promise<void> {
     // or rewriting any other direct/inherited share. Test both directions.
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
       action: "change_document_user_role", documentId, email: grantRecipient,
-      expectedRole: "editors", role: "viewers", confirmRoleChange: true
+      expectedRole: "viewers", role: "viewers", confirmRoleChange: true
     });
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
       action: "change_document_user_role", documentId, email: grantRecipient,
