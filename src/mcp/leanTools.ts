@@ -1138,6 +1138,16 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("reorder_row_style_rules"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            orderedFormulas: z.array(z.string().min(1).max(4096)).min(2).max(8)
+              .refine(value => new Set(value).size === value.length,
+                "Row-style formulas must be unique.")
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_row_style_rule"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1302,6 +1312,10 @@ export function registerLeanTools(
               input.documentId, input.tableId, {
                 conditionFormula: input.conditionFormula, style: input.style
               }
+            ));
+          case "reorder_row_style_rules":
+            return textResult(await grist.reorderRowStyleRules(
+              input.documentId, input.tableId, input.orderedFormulas
             ));
           case "update_row_style_rule":
             return textResult(await grist.updateRowStyleRule(

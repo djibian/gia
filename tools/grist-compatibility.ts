@@ -3039,6 +3039,67 @@ async function run(): Promise<void> {
       previousFormula: "$Qty > 10", conditionFormula: "$Qty > 12"
     });
 
+
+    // A two-rule native reorder must move each formula with its own colors,
+    // not merely reorder the display list or overwrite helper formula bodies.
+    const secondRow = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure", {
+      action:"append_row_style_rule",documentId,tableId:TABLE_ID,
+      conditionFormula:"$Qty < 0",style:{textColor:"#112233"}
+    }),"native_row_style_second_rule") as {changed:boolean;styleRuleCount:number};
+    assert(secondRow.changed && secondRow.styleRuleCount===2,"native_row_style_second_rule_missing");
+    await callToolExpectError(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
+      orderedFormulas:["$Qty < 0","$Qty < 0"]
+    });
+    await callToolExpectError(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
+      orderedFormulas:["$Qty < 0","$Qty == 3"]
+    });
+    const priorRowSections = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    const originalRow = priorRowSections.records.find(row=>row.id===rawSectionRef);
+    assert(Array.isArray(originalRow?.fields.rules) &&
+      originalRow.fields.rules.length===3,"native_row_style_pair_not_present");
+    const originalRefs = originalRow.fields.rules as number[]; // first item is the native L tag
+    const originalOptions = JSON.parse(String(originalRow.fields.options)) as {
+      rulesOptions:Array<Record<string,string>>
+    };
+    const helperSnapshotBefore = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const reversedRow = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
+      orderedFormulas:["$Qty < 0","$Qty > 11"]
+    }),"native_row_style_reorder") as {changed:boolean;persistedStyleVerified:boolean;styleRuleCount:number};
+    assert(reversedRow.changed && reversedRow.persistedStyleVerified &&
+      reversedRow.styleRuleCount===2,"native_row_style_reorder_unverified");
+    const afterReorderSections = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    const reorderedRow = afterReorderSections.records.find(row=>row.id===rawSectionRef);
+    assert(isDeepStrictEqual(reorderedRow?.fields.rules,["L",originalRefs[2],originalRefs[1]]),
+      "native_row_style_reorder_did_not_reorder_refs");
+    const reorderedOptions = JSON.parse(String(reorderedRow?.fields.options));
+    assert(isDeepStrictEqual(reorderedOptions.rulesOptions,originalOptions.rulesOptions.slice().reverse()),
+      "native_row_style_reorder_did_not_pair_colors");
+    const helperSnapshotAfter = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    for (const ref of originalRefs.slice(1)) {
+      assert(isDeepStrictEqual(
+        helperSnapshotAfter.records.find(row=>row.id===ref),
+        helperSnapshotBefore.records.find(row=>row.id===ref)),
+        "native_row_style_reorder_modified_existing_formula_helper");
+    }
+    const repeatReorder = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
+      orderedFormulas:["$Qty < 0","$Qty > 11"]
+    }),"native_row_style_reorder_repeat") as {changed:boolean};
+    assert(!repeatReorder.changed,"native_row_style_reorder_repeat_wrote");
+    const restoredRow = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
+      orderedFormulas:["$Qty > 11","$Qty < 0"]
+    }),"native_row_style_reorder_restore") as {changed:boolean;persistedStyleVerified:boolean};
+    assert(restoredRow.changed && restoredRow.persistedStyleVerified,
+      "native_row_style_reorder_restore_unverified");
+
     const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
       action: "columns", documentId, tableId: TABLE_ID
     }), "native_conditional_style_inspection");
