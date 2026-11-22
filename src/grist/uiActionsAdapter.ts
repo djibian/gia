@@ -598,6 +598,20 @@ export class GristUiActionsAdapter {
   }
 
 
+  /** Mutate a verified native formula helper only, leaving owner widgetOptions untouched. */
+  async updateColumnStyleFormula(
+    documentId: string, helperRef: number, formula: string
+  ): Promise<void> {
+    assertPositiveId(helperRef, "Conditional style helper");
+    if (typeof formula !== "string" || !formula.trim() ||
+        formula.length > 4096 || formula.includes("\0")) {
+      throw new Error("Trusted conditional style formula is invalid.");
+    }
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Tables_column", helperRef, { formula }]
+    ]);
+  }
+
   async updateColumnStyleOptions(
     documentId: string, ownerRef: number, widgetOptions: string
   ): Promise<void> {

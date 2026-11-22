@@ -116,6 +116,37 @@ export function readNativeColumnStyleSequence(
   return { ownerRef: target.id, options, rules };
 }
 
+/** Change only a uniquely identified native rule's predicate, never its helper, colors or order. */
+export function planExistingStyleFormulaReplacement(
+  sequence: NativeStyleSequence, previousFormula: string, conditionFormula: string
+): { changed: boolean; helperRef: number; rules: NativeStyleSequence["rules"] } {
+  for (const formula of [previousFormula, conditionFormula]) {
+    if (typeof formula !== "string" || !formula.trim() ||
+        formula.length > MAX_FORMULA || formula.includes("\0")) {
+      throw new Error("Conditional style formula must be bounded, nonempty Grist Python.");
+    }
+  }
+  if (sequence.rules.some(rule =>
+    !rule.formula.trim() || Object.keys(rule.style).length === 0)) {
+    throw new Error("Native style rule is incomplete; refusing formula replacement.");
+  }
+  const matches = sequence.rules.filter(rule => rule.formula === previousFormula);
+  if (matches.length !== 1) {
+    throw new Error("Previous conditional style formula is absent or ambiguous.");
+  }
+  if (conditionFormula !== previousFormula &&
+      sequence.rules.some(rule => rule.formula === conditionFormula)) {
+    throw new Error("Replacement conditional style formula already belongs to another rule.");
+  }
+  const helperRef = matches[0]!.helperRef;
+  return {
+    changed: previousFormula !== conditionFormula,
+    helperRef,
+    rules: sequence.rules.map(rule =>
+      rule.helperRef === helperRef ? { ...rule, formula: conditionFormula } : rule)
+  };
+}
+
 /** Preserve old one-rule semantics, including refusing any native multi-rule target. */
 export function readNativeColumnStyle(
   tableResponse: unknown, columnResponse: unknown,

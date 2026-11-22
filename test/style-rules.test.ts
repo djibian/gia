@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readNativeColumnStyle, planColumnStyle, readNativeColumnStyleSequence,
-  planAppendColumnStyleRule, planExistingColumnStyleUpdate } from "../src/grist/styleRules.js";
+  planAppendColumnStyleRule, planExistingColumnStyleUpdate,
+  planExistingStyleFormulaReplacement } from "../src/grist/styleRules.js";
 
 const tables = {records:[{id:1,fields:{tableId:"Items"}}]};
 const columns = (rules: unknown, options: unknown, formula = "") => ({
@@ -117,3 +118,40 @@ test("Existing multi-rule style update changes one matching formula, preserving 
     {fillColor:"#ABCDEF"}),/absent or ambiguous/);
 });
 
+
+test("Replacement of an existing conditional formula preserves both helpers and styles", () => {
+  const state = readNativeColumnStyleSequence(tables, {records:[
+    {id:4,fields:{parentId:1,colId:"Name",rules:["L",6,8],
+      widgetOptions:JSON.stringify({formRequired:true,rulesOptions:[
+        {fillColor:"#123456"},{textColor:"#FFFFFF"}]})}},
+    {id:6,fields:{parentId:1,colId:"gristHelper_ConditionalRule",type:"Any",
+      isFormula:true,formula:"$Qty > 2"}},
+    {id:8,fields:{parentId:1,colId:"gristHelper_ConditionalRule2",type:"Any",
+      isFormula:true,formula:"$Qty < 0"}}
+  ]}, "Items", "Name", 20);
+  const planned = planExistingStyleFormulaReplacement(state,"$Qty > 2","$Qty > 3");
+  assert.equal(planned.changed,true);
+  assert.equal(planned.helperRef,6);
+  assert.deepEqual(planned.rules,[
+    {helperRef:6,formula:"$Qty > 3",style:{fillColor:"#123456"}},
+    {helperRef:8,formula:"$Qty < 0",style:{textColor:"#FFFFFF"}}
+  ]);
+  assert.deepEqual(planExistingStyleFormulaReplacement(state,"$Qty > 2","$Qty > 2"),{
+    changed:false,helperRef:6,rules:state.rules
+  });
+  assert.throws(()=>planExistingStyleFormulaReplacement(state,"$Qty == 0","$Qty > 3"),
+    /absent or ambiguous/);
+  assert.throws(()=>planExistingStyleFormulaReplacement(state,"$Qty > 2","$Qty < 0"),
+    /already belongs/);
+  assert.throws(()=>planExistingStyleFormulaReplacement(state,"$Qty > 2",""),
+    /bounded, nonempty/);
+  assert.throws(()=>planExistingStyleFormulaReplacement(state,"$Qty > 2","x".repeat(4097)),
+    /bounded, nonempty/);
+  const ambiguous = {...state,rules:[...state.rules,{helperRef:10,
+    formula:"$Qty > 2",style:{fillColor:"#445566"}}]};
+  assert.throws(()=>planExistingStyleFormulaReplacement(ambiguous,"$Qty > 2","$Qty > 3"),
+    /absent or ambiguous/);
+  const incomplete = {...state,rules:[{...state.rules[0]!,style:{}},state.rules[1]!]};
+  assert.throws(()=>planExistingStyleFormulaReplacement(incomplete,"$Qty > 2","$Qty > 3"),
+    /incomplete/);
+});

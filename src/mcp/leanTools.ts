@@ -1103,6 +1103,16 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("replace_style_formula"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            previousFormula: z.string().min(1).max(4096),
+            conditionFormula: z.string().min(1).max(4096)
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("append_style_rule"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1223,6 +1233,11 @@ export function registerLeanTools(
               input.documentId, input.tableId, input.columnId, {
                 conditionFormula: input.conditionFormula, style: input.style
               }
+            ));
+          case "replace_style_formula":
+            return textResult(await grist.replaceColumnStyleFormula(
+              input.documentId, input.tableId, input.columnId,
+              input.previousFormula, input.conditionFormula
             ));
           case "append_style_rule":
             return textResult(await grist.appendColumnStyleRule(

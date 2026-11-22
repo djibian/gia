@@ -76,7 +76,8 @@ import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUp
 import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
 import { planColumnStyle, readNativeColumnStyleSequence,
-  planAppendColumnStyleRule, planExistingColumnStyleUpdate, type ColumnStyleInput } from "./styleRules.js";
+  planAppendColumnStyleRule, planExistingColumnStyleUpdate,
+  planExistingStyleFormulaReplacement, type ColumnStyleInput } from "./styleRules.js";
 import { planOwnerSchemaGuard, verifyOwnerSchemaGuard } from "./schemaEditGuard.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
 import { planFormPublication, readNativeFormPageShare } from "./formPublication.js";
@@ -1908,6 +1909,51 @@ export class AuthorizedGristService {
           (error instanceof Error ? error.message : "unknown result"));
       }
       return { ...base, changed: true, persistedStyleVerified: true };
+    });
+  }
+
+  async replaceColumnStyleFormula(
+    documentIdOrUrl: string, tableId: string, columnId: string,
+    previousFormula: string, conditionFormula: string
+  ): Promise<unknown> {
+    return this.execute("replace_style_formula", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = async () => {
+        const [tables, columns] = await Promise.all([
+          this.inner.queryRecords(id, "_grist_Tables", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Tables_column", { hidden: true, limit })
+        ]);
+        return readNativeColumnStyleSequence(tables, columns, tableId, columnId, limit);
+      };
+      const before = await read();
+      const plan = planExistingStyleFormulaReplacement(
+        before, previousFormula, conditionFormula
+      );
+      const base = { documentId: id, tableId, columnId };
+      if (!plan.changed) {
+        return { ...base, changed: false, persistedStyleVerified: true };
+      }
+      const latest = await read();
+      if (!isDeepStrictEqual(latest, before)) {
+        throw new Error("Native style state changed before formula write; reconcile first.");
+      }
+      try {
+        // One native helper-only write, rather than an owner widgetOptions read/merge/write.
+        await this.uiActions.updateColumnStyleFormula(id, plan.helperRef, conditionFormula);
+        const after = await read();
+        if (after.ownerRef !== before.ownerRef ||
+            !isDeepStrictEqual(after.options, before.options) ||
+            !isDeepStrictEqual(after.rules, plan.rules)) {
+          throw new Error("Native style formula or preserved rules did not match postconditions.");
+        }
+        return { ...base, changed: true, persistedStyleVerified: true,
+          styleRuleCount: after.rules.length };
+      } catch (error) {
+        throw new SchemaWriteVerificationError("replace_style_formula",
+          "Conditional formula effect may be uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
     });
   }
 
