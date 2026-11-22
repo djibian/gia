@@ -200,3 +200,29 @@ test("Native row styling rejects missing, foreign and column-style helpers", () 
     {id:31,fields:{tableRef:1,rules:["L",51],options:"{broken"}}
   ]},helper(1,"gristHelper_RowConditionalRule"),"Items",20));
 });
+
+test("Existing raw-row style colors can be changed by unique formula with identities intact", () => {
+  const rows = {records:[{id:1,fields:{tableId:"Items",rawViewSectionRef:31}}]};
+  const sections = {records:[{id:31,fields:{tableRef:1,rules:["L",51,52],
+    options:JSON.stringify({theme:"dark",rulesOptions:[
+      {fillColor:"#334455"},{textColor:"#FFFFFF"}]})}}]};
+  const helpers = {records:[
+    {id:51,fields:{parentId:1,colId:"gristHelper_RowConditionalRule",type:"Any",
+      isFormula:true,formula:"$Qty > 2"}},
+    {id:52,fields:{parentId:1,colId:"gristHelper_RowConditionalRule2",type:"Any",
+      isFormula:true,formula:"$Qty < 0"}}
+  ]};
+  const state = readNativeRowStyleSequence(rows,sections,helpers,"Items",20);
+  const plan = planExistingColumnStyleUpdate(state,"$Qty > 2",{fillColor:"#ABCDEF"});
+  assert.equal(plan.changed,true);
+  assert.deepEqual(plan.options,{theme:"dark",rulesOptions:[
+    {fillColor:"#ABCDEF"},{textColor:"#FFFFFF"}]});
+  assert.equal(state.rules[0]?.helperRef,51);
+  assert.deepEqual(planExistingColumnStyleUpdate(state,"$Qty < 0",
+    {textColor:"#FFFFFF"}),{changed:false});
+  assert.throws(()=>planExistingColumnStyleUpdate(state,"$Qty == 0",
+    {fillColor:"#123456"}),/absent or ambiguous/);
+  assert.throws(()=>planExistingColumnStyleUpdate(state,"$Qty > 2",
+    {fillColor:"red"}),/#RRGGBB/);
+});
+

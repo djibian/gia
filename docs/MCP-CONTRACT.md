@@ -129,6 +129,19 @@ As with column style append, a partial or transport-uncertain native action
 requires inspection and reconciliation, never blind replay. Row-style
 persistence is not a native rendering/visual acceptance assertion.
 
+
+`grist_change_structure(action="update_row_style_rule")` updates the colors of
+**one existing unique formula** on the native raw-table row-style sequence.
+The stable `tableId`, exact `conditionFormula` and closed colors are the only
+inputs. A complete native metadata read resolves the raw section, ordered
+helpers and styles. The action refuses missing/ambiguous formulas, incomplete
+styles, foreign helpers and malformed options, and returns a verified no-op
+when colors already match. A fixed update of the raw section's `options`
+preserves helper identities, formulas, order and all nonstyle options, with
+full post-read. This is not an atomic compare-and-swap: external concurrent
+writers must be serialized and uncertain effects reconciled, not replayed.
+No new MCP tool or widget/publication authority is introduced.
+
 An operator-approved `grist_change_ui(action="install_trusted_widget")` selects one revisioned HTTPS custom widget on an empty native Custom section. The model provides only a `trustedKey` and `confirmExternalWidget:true`, never arbitrary URL/code. Deployment must configure `GIA_TRUSTED_CUSTOM_WIDGETS_JSON` as a bounded JSON list of `{key,name,widgetId,revision,url}`, with each HTTPS URL on a distinct host and including the revision in its path. Default is deny. Native Owner plus `doc.schema:write` are required. Selection is saved as Grist `customView`, with initial `access:none`, preserving unrelated section options and refusing occupied/customized widgets. Post-read confirms saved identity and access, with uncertain effects never blindly replayed. This is metadata persistence, not a verification of remotely served JavaScript or its subresources: operators must independently audit and host immutable code.
 
 `grist_change_ui(action="publish_form")` publishes one existing native Form widget and its

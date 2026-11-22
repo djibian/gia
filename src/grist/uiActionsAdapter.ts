@@ -613,6 +613,27 @@ export class GristUiActionsAdapter {
     ]);
   }
 
+
+  /** Fixed raw-section options write after a verified native row-style read. */
+  async updateRowStyleOptions(
+    documentId: string, rawSectionRef: number, options: string
+  ): Promise<void> {
+    assertPositiveId(rawSectionRef, "Native raw row-style section");
+    if (typeof options !== "string" || options.length > 16_384) {
+      throw new Error("Trusted row-style options exceed their bound.");
+    }
+    let parsed: unknown;
+    try { parsed = JSON.parse(options) as unknown; }
+    catch { throw new Error("Trusted row-style options are not JSON."); }
+    const validated = record(parsed);
+    if (!validated || !Array.isArray(validated.rulesOptions)) {
+      throw new Error("Trusted row-style options lack their native rule list.");
+    }
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Views_section", rawSectionRef, { options }]
+    ]);
+  }
+
   async writeColumnStyleRule(
     documentId: string, ownerRef: number, helperRef: number,
     formula: string, widgetOptions: string
