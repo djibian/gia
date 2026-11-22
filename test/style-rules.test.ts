@@ -23,7 +23,7 @@ test("Reordering existing raw-row styles preserves helper/color pairing and reje
   const reordered = {...before, rules:plan.rules!, options:plan.options!};
   assert.deepEqual(planReorderRowStyleRules(reordered, ["$Qty < 10", "$Qty > 0"]),{changed:false});
   for (const order of [["$Qty > 0"],["$Qty > 0","$Qty > 0"],
-    ["$Qty > 0","$Qty == 0"]]) {
+    ["$Qty > 0","$Qty == 0"], ["$Qty > 0","$Qty < 10\\0"]]) {
     assert.throws(()=>planReorderRowStyleRules(before,order));
   }
   assert.throws(()=>planReorderRowStyleRules({...before,rules:[

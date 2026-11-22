@@ -3064,6 +3064,8 @@ async function run(): Promise<void> {
     const originalOptions = JSON.parse(String(originalRow.fields.options)) as {
       rulesOptions:Array<Record<string,string>>
     };
+    const helperSnapshotBefore = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
     const reversedRow = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
       action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
       orderedFormulas:["$Qty < 0","$Qty > 11"]
@@ -3078,6 +3080,14 @@ async function run(): Promise<void> {
     const reorderedOptions = JSON.parse(String(reorderedRow?.fields.options));
     assert(isDeepStrictEqual(reorderedOptions.rulesOptions,originalOptions.rulesOptions.slice().reverse()),
       "native_row_style_reorder_did_not_pair_colors");
+    const helperSnapshotAfter = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    for (const ref of originalRefs.slice(1)) {
+      assert(isDeepStrictEqual(
+        helperSnapshotAfter.records.find(row=>row.id===ref),
+        helperSnapshotBefore.records.find(row=>row.id===ref)),
+        "native_row_style_reorder_modified_existing_formula_helper");
+    }
     const repeatReorder = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
       action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
       orderedFormulas:["$Qty < 0","$Qty > 11"]
