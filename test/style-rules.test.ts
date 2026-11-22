@@ -2,7 +2,37 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readNativeColumnStyle, planColumnStyle, readNativeColumnStyleSequence,
   planAppendColumnStyleRule, planExistingColumnStyleUpdate,
-  planExistingStyleFormulaReplacement, readNativeRowStyleSequence } from "../src/grist/styleRules.js";
+  planExistingStyleFormulaReplacement, planReorderRowStyleRules, readNativeRowStyleSequence } from "../src/grist/styleRules.js";
+
+
+test("Reordering existing raw-row styles preserves helper/color pairing and rejects lossy requests", () => {
+  const before = {
+    ownerRef: 9, options: { keep: "intact",
+      rulesOptions: [{fillColor:"#123456"},{textColor:"#AABBCC"}] },
+    rules: [
+      {helperRef:6,formula:"$Qty > 0",style:{fillColor:"#123456"}},
+      {helperRef:8,formula:"$Qty < 10",style:{textColor:"#AABBCC"}}
+    ]
+  };
+  const plan = planReorderRowStyleRules(before, ["$Qty < 10", "$Qty > 0"]);
+  assert(plan.changed);
+  assert.deepEqual(plan.refs,[8,6]);
+  assert.deepEqual(plan.options,{keep:"intact",rulesOptions:[
+    {textColor:"#AABBCC"},{fillColor:"#123456"}]});
+  assert.deepEqual(plan.rules,[before.rules[1],before.rules[0]]);
+  const reordered = {...before, rules:plan.rules!, options:plan.options!};
+  assert.deepEqual(planReorderRowStyleRules(reordered, ["$Qty < 10", "$Qty > 0"]),{changed:false});
+  for (const order of [["$Qty > 0"],["$Qty > 0","$Qty > 0"],
+    ["$Qty > 0","$Qty == 0"]]) {
+    assert.throws(()=>planReorderRowStyleRules(before,order));
+  }
+  assert.throws(()=>planReorderRowStyleRules({...before,rules:[
+    before.rules[0]!,{...before.rules[1]!,formula:"$Qty > 0"}]},
+    ["$Qty > 0","$Qty < 10"]));
+  assert.throws(()=>planReorderRowStyleRules({...before,rules:[
+    before.rules[0]!,{...before.rules[1]!,style:{}}]},
+    ["$Qty < 10","$Qty > 0"]));
+});
 
 const tables = {records:[{id:1,fields:{tableId:"Items"}}]};
 const columns = (rules: unknown, options: unknown, formula = "") => ({

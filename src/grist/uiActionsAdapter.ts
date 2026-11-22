@@ -614,6 +614,34 @@ export class GristUiActionsAdapter {
   }
 
 
+
+  /** One fixed native raw-section write pairs rule refs and corresponding colors. */
+  async reorderRowStyleRules(
+    documentId: string, ownerRef: number, refs: readonly number[], options: string
+  ): Promise<void> {
+    assertPositiveId(ownerRef, "Native raw row-style section");
+    if (!Array.isArray(refs) || refs.length < 2 || refs.length > 8 ||
+        new Set(refs).size !== refs.length ||
+        refs.some(ref => !Number.isSafeInteger(ref) || ref < 1 || ref === ownerRef) ||
+        typeof options !== "string" || options.length > 16_384) {
+      throw new Error("Trusted row-style reorder payload is malformed.");
+    }
+    let parsed: unknown;
+    try { parsed = JSON.parse(options) as unknown; }
+    catch { throw new Error("Trusted row-style reorder options are not JSON."); }
+    const state = record(parsed);
+    if (!state || !Array.isArray(state.rulesOptions) ||
+        state.rulesOptions.length !== refs.length ||
+        state.rulesOptions.some(item => !record(item) || !Object.keys(record(item)!).length)) {
+      throw new Error("Trusted row-style reorder lacks a matching style sequence.");
+    }
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Views_section", ownerRef, {
+        rules: ["L", ...refs], options
+      }]
+    ]);
+  }
+
   /** Fixed raw-section options write after a verified native row-style read. */
   async updateRowStyleOptions(
     documentId: string, rawSectionRef: number, options: string

@@ -154,6 +154,44 @@ export function readNativeRowStyleSequence(
   );
 }
 
+
+/** Reorder existing raw-table styles only; formula is an exact stable selector.
+ * Pair helper refs with colors so priority changes cannot silently swap styling. */
+export function planReorderRowStyleRules(
+  sequence: NativeStyleSequence, orderedFormulas: readonly string[]
+): {
+  changed: boolean;
+  rules?: NativeStyleSequence["rules"];
+  refs?: number[];
+  options?: JsonRecord;
+  optionsJson?: string;
+} {
+  const current = sequence.rules;
+  if (!Array.isArray(orderedFormulas) || current.length < 2 ||
+      current.length > MAX_CONDITIONAL_STYLE_RULES ||
+      orderedFormulas.length !== current.length ||
+      orderedFormulas.some(formula =>
+        typeof formula !== "string" || !formula.trim() ||
+        formula.length > MAX_FORMULA || formula.includes("\\0")) ||
+      new Set(orderedFormulas).size !== orderedFormulas.length ||
+      new Set(current.map(rule => rule.formula)).size !== current.length ||
+      current.some(rule => !rule.formula.trim() || !Object.keys(rule.style).length)) {
+    throw new Error("Row-style reorder requires exactly the complete unique configured rule sequence.");
+  }
+  const byFormula = new Map(current.map(rule => [rule.formula, rule] as const));
+  const rules = orderedFormulas.map(formula => byFormula.get(formula));
+  if (rules.some(rule => !rule)) {
+    throw new Error("Row-style reorder contains an absent native predicate.");
+  }
+  const ordered = rules as NativeStyleSequence["rules"];
+  const changed = ordered.some((rule, index) => rule.helperRef !== current[index]!.helperRef);
+  if (!changed) return { changed: false };
+  const options = { ...sequence.options, rulesOptions: ordered.map(rule => rule.style) };
+  const optionsJson = JSON.stringify(options);
+  if (optionsJson.length > MAX_OPTIONS) throw new Error("Reordered row style options exceed the native bound.");
+  return { changed: true, rules: ordered, refs: ordered.map(rule => rule.helperRef), options, optionsJson };
+}
+
 /** Change only a uniquely identified native rule's predicate, never its helper, colors or order. */
 export function planExistingStyleFormulaReplacement(
   sequence: NativeStyleSequence, previousFormula: string, conditionFormula: string

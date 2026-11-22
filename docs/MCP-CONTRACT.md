@@ -142,6 +142,20 @@ full post-read. This is not an atomic compare-and-swap: external concurrent
 writers must be serialized and uncertain effects reconciled, not replayed.
 No new MCP tool or widget/publication authority is introduced.
 
+
+`grist_change_structure(action="reorder_row_style_rules")` reorders two to eight
+**existing, fully configured raw-table row conditional styles**. The caller supplies
+the stable `tableId` and `orderedFormulas` containing every existing unique
+predicate exactly once in desired priority order. Gia resolves native helper IDs
+from a complete snapshot and atomically writes only the raw section's ordered
+`rules` references with the correspondingly reordered `rulesOptions` colors.
+No helper is created, deleted or modified. Unrecognized, duplicate, incomplete
+or missing rules, protected options and changed pre-write state are refused.
+Readback verifies the exact reordered formula/style pairs and all other
+section options; replay is a no-op. A native write without a confirmed readback
+is uncertain and must be reconciled, not blindly retried. This is not a CAS
+against external concurrent writers or proof of browser rendering.
+
 `grist_change_structure(action="replace_row_style_formula")` replaces exactly
 one unique existing **raw-table row** conditional-format formula, selected by
 stable `tableId` and exact `previousFormula`, with a bounded nonempty

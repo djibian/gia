@@ -279,7 +279,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
   },
   grist_change_structure: {
     actions: ["update_document", "update_tables", "delete_table", "update_columns", "update_form_column_options", "update_dropdown_condition",
-      "style_rules", "append_style_rule", "append_row_style_rule", "update_row_style_rule", "replace_row_style_formula", "replace_style_formula", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard", "grant_document_user", "revoke_document_user", "change_document_user_role"],
+      "style_rules", "append_style_rule", "append_row_style_rule", "update_row_style_rule", "reorder_row_style_rules", "replace_row_style_formula", "replace_style_formula", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard", "grant_document_user", "revoke_document_user", "change_document_user_role"],
     request: [
       "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}|{locale:'fr-FR'|'en-US'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
@@ -289,6 +289,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "append_style_rule: same fields as style_rules; appends one native column style (max 8), preserving existing ordered rules; identical rule is a no-op, conflicting duplicate formula is refused.",
       "replace_style_formula: {action,documentId,tableId,columnId,previousFormula,conditionFormula}; replace only the unique existing native conditional helper formula, preserving style colors, other helpers, their order and column options; absent or colliding formulas are refused.",
       "append_row_style_rule: {action,documentId,tableId,conditionFormula:GristPython,style:{fillColor?:'#RRGGBB',textColor?:'#RRGGBB'}}; appends one native raw-table row style (max 8) and preserves unrelated section options and column styles.",
+      "reorder_row_style_rules: {action,documentId,tableId,orderedFormulas:[all existing unique conditionFormula strings in desired priority order]}; only verified raw-table row styles (2..8), preserve each helper/color pair and unrelated options; no-op on repeat.",
       "update_row_style_rule: same fields as append_row_style_rule; update colors of one existing unique row-style conditionFormula, preserving rule identities/order/formulas and all unrelated raw-section options. Absent or ambiguous condition is refused.",
       "replace_row_style_formula: {action,documentId,tableId,previousFormula,conditionFormula}; replace only one unique native raw-table row-rule formula helper, preserving colors/options, order and other rules; no new helper.",
       "update_tables: {action,documentId,tables:[{id,fields}]}; delete_table: {action,documentId,tableId}; rename_column: {action,documentId,tableId,oldColumnId,newColumnId}; delete_columns: {action,documentId,tableId,columnIds}",
