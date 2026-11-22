@@ -1150,6 +1150,15 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("replace_row_style_formula"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            previousFormula: z.string().min(1).max(4096),
+            conditionFormula: z.string().min(1).max(4096)
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_form_column_options"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1280,6 +1289,11 @@ export function registerLeanTools(
               input.documentId, input.tableId, {
                 conditionFormula: input.conditionFormula, style: input.style
               }
+            ));
+          case "replace_row_style_formula":
+            return textResult(await grist.replaceRowStyleFormula(
+              input.documentId, input.tableId,
+              input.previousFormula, input.conditionFormula
             ));
           case "update_form_column_options":
             return textResult(await grist.updateFormColumnOptions(

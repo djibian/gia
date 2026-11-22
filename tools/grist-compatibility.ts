@@ -2915,6 +2915,42 @@ async function run(): Promise<void> {
       conditionFormula: "$Qty == 0", style: {fillColor:"#556677"}
     });
 
+
+    // Replace only the verified raw-row formula helper, never its native
+    // _grist_Views_section rules or any conditional-style colors/options.
+    const formulaChanged = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "replace_row_style_formula", documentId, tableId: TABLE_ID,
+        previousFormula: "$Qty > 10", conditionFormula: "$Qty > 11"
+      }), "native_row_style_formula_replace") as {
+        changed:boolean;persistedStyleVerified:boolean;styleRuleCount:number
+      };
+    assert(formulaChanged.changed && formulaChanged.persistedStyleVerified &&
+      formulaChanged.styleRuleCount === 1, "native_row_formula_unverified");
+    const [rowAfterFormula,columnsAfterRowFormula] = await Promise.all([
+      gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Views_section/records?hidden=true`) as Promise<MetaRecords>,
+      gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as Promise<MetaRecords>
+    ]);
+    const rawAfterFormula = rowAfterFormula.records.find(row => row.id === rawSectionRef);
+    assert(isDeepStrictEqual(rawAfterFormula?.fields.rules, rowRefs),
+      "native_row_formula_changed_rule_refs");
+    assert(isDeepStrictEqual(JSON.parse(String(rawAfterFormula?.fields.options)),optionsAfterColor),
+      "native_row_formula_changed_style_options");
+    assert(columnsAfterRowFormula.records.find(row => row.id === rowRefs[1])?.fields.formula ===
+      "$Qty > 11", "native_row_formula_did_not_persist");
+    const formulaNoop = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "replace_row_style_formula", documentId, tableId: TABLE_ID,
+        previousFormula: "$Qty > 11", conditionFormula: "$Qty > 11"
+      }), "native_row_style_formula_noop") as {changed:boolean};
+    assert(!formulaNoop.changed,"native_row_formula_noop_failed");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "replace_row_style_formula", documentId, tableId: TABLE_ID,
+      previousFormula: "$Qty > 10", conditionFormula: "$Qty > 12"
+    });
+
     const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
       action: "columns", documentId, tableId: TABLE_ID
     }), "native_conditional_style_inspection");

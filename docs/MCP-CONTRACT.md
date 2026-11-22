@@ -142,6 +142,19 @@ full post-read. This is not an atomic compare-and-swap: external concurrent
 writers must be serialized and uncertain effects reconciled, not replayed.
 No new MCP tool or widget/publication authority is introduced.
 
+`grist_change_structure(action="replace_row_style_formula")` replaces exactly
+one unique existing **raw-table row** conditional-format formula, selected by
+stable `tableId` and exact `previousFormula`, with a bounded nonempty
+`conditionFormula`. It resolves the native raw section and formula helper
+using a complete verified metadata snapshot, refusing absent/duplicate
+predicates, collisions with sibling rules, malformed helpers and incomplete
+styles. One fixed native helper-only formula update preserves all raw-section
+options, rule colors, helper identities, ordered siblings and unrelated widget
+styles. An identical replacement is an idempotent no-op. Before/after reads
+verify persisted semantics; concurrent writers still require serialization,
+and an uncertain write must be reconciled before replay. Native metadata
+persistence is not proof of browser rendering.
+
 An operator-approved `grist_change_ui(action="install_trusted_widget")` selects one revisioned HTTPS custom widget on an empty native Custom section. The model provides only a `trustedKey` and `confirmExternalWidget:true`, never arbitrary URL/code. Deployment must configure `GIA_TRUSTED_CUSTOM_WIDGETS_JSON` as a bounded JSON list of `{key,name,widgetId,revision,url}`, with each HTTPS URL on a distinct host and including the revision in its path. Default is deny. Native Owner plus `doc.schema:write` are required. Selection is saved as Grist `customView`, with initial `access:none`, preserving unrelated section options and refusing occupied/customized widgets. Post-read confirms saved identity and access, with uncertain effects never blindly replayed. This is metadata persistence, not a verification of remotely served JavaScript or its subresources: operators must independently audit and host immutable code.
 
 `grist_change_ui(action="publish_form")` publishes one existing native Form widget and its

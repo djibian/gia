@@ -226,3 +226,33 @@ test("Existing raw-row style colors can be changed by unique formula with identi
     {fillColor:"red"}),/#RRGGBB/);
 });
 
+
+test("Replacing one native row formula retains raw-section options and sibling rule identities", () => {
+  const rows = {records:[{id:1,fields:{tableId:"Items",rawViewSectionRef:31}}]};
+  const sections = {records:[{id:31,fields:{tableRef:1,rules:["L",51,52],
+    options:JSON.stringify({theme:"dark",rulesOptions:[
+      {fillColor:"#334455"},{textColor:"#FFFFFF"}]})}}]};
+  const helpers = {records:[
+    {id:51,fields:{parentId:1,colId:"gristHelper_RowConditionalRule",type:"Any",
+      isFormula:true,formula:"$Qty > 2"}},
+    {id:52,fields:{parentId:1,colId:"gristHelper_RowConditionalRule2",type:"Any",
+      isFormula:true,formula:"$Qty < 0"}}
+  ]};
+  const state = readNativeRowStyleSequence(rows,sections,helpers,"Items",20);
+  const plan = planExistingStyleFormulaReplacement(state,"$Qty > 2","$Qty > 3");
+  assert.equal(plan.changed,true);
+  assert.equal(plan.helperRef,51);
+  assert.deepEqual(plan.rules,[
+    {helperRef:51,formula:"$Qty > 3",style:{fillColor:"#334455"}},
+    {helperRef:52,formula:"$Qty < 0",style:{textColor:"#FFFFFF"}}
+  ]);
+  assert.deepEqual(planExistingStyleFormulaReplacement(state,"$Qty > 2","$Qty > 2"),
+    {changed:false,helperRef:51,rules:state.rules});
+  assert.throws(()=>planExistingStyleFormulaReplacement(state,"$Qty == 0","$Qty > 3"),
+    /absent or ambiguous/);
+  assert.throws(()=>planExistingStyleFormulaReplacement(state,"$Qty > 2","$Qty < 0"),
+    /already belongs/);
+  assert.throws(()=>planExistingStyleFormulaReplacement({...state,rules:[
+    state.rules[0]!,{...state.rules[1]!,formula:"$Qty > 2"}
+  ]},"$Qty > 2","$Qty > 3"),/absent or ambiguous/);
+});

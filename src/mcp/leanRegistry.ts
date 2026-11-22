@@ -279,7 +279,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
   },
   grist_change_structure: {
     actions: ["update_document", "update_tables", "delete_table", "update_columns", "update_form_column_options", "update_dropdown_condition",
-      "style_rules", "append_style_rule", "append_row_style_rule", "update_row_style_rule", "replace_style_formula", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard", "grant_document_user"],
+      "style_rules", "append_style_rule", "append_row_style_rule", "update_row_style_rule", "replace_row_style_formula", "replace_style_formula", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard", "grant_document_user"],
     request: [
       "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}|{locale:'fr-FR'|'en-US'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
@@ -290,6 +290,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "replace_style_formula: {action,documentId,tableId,columnId,previousFormula,conditionFormula}; replace only the unique existing native conditional helper formula, preserving style colors, other helpers, their order and column options; absent or colliding formulas are refused.",
       "append_row_style_rule: {action,documentId,tableId,conditionFormula:GristPython,style:{fillColor?:'#RRGGBB',textColor?:'#RRGGBB'}}; appends one native raw-table row style (max 8) and preserves unrelated section options and column styles.",
       "update_row_style_rule: same fields as append_row_style_rule; update colors of one existing unique row-style conditionFormula, preserving rule identities/order/formulas and all unrelated raw-section options. Absent or ambiguous condition is refused.",
+      "replace_row_style_formula: {action,documentId,tableId,previousFormula,conditionFormula}; replace only one unique native raw-table row-rule formula helper, preserving colors/options, order and other rules; no new helper.",
       "update_tables: {action,documentId,tables:[{id,fields}]}; delete_table: {action,documentId,tableId}; rename_column: {action,documentId,tableId,oldColumnId,newColumnId}; delete_columns: {action,documentId,tableId,columnIds}",
       "grant_document_user: {action,documentId,email:normalizedIndividualAddress,role:'viewers'|'editors'}; Owner proof + existing Owner-visible org-member user ID required; unknown targets refused before native write; no role changes, removal or public access.",
       "access_rule_group: {action,documentId,mode:'create'|'replace'|'delete',target:{tableId,columnIds?:string[]}|{userAttributeName},rules?:[{condition,permissions:{read,update,create?,delete?}}],definition?:{tableId,lookupColId,source:{kind:'user_property',property}|{kind:'link_key',name}}}",
