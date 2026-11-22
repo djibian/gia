@@ -67,6 +67,22 @@ operator-side Grist administration. See [Operations](OPERATIONS.md).
    operational events contain no principal/document identifiers. Protected audit
    identifiers never become general metric labels or a model retrieval surface.
 
+## Native document user grants
+
+Document-user grants are narrowly append-only: a caller with
+`doc.schema:write` also needs fresh upstream Grist Owner proof. The target is
+one explicit normalized individual address and a viewer/editor role, never
+an owner, public group, wildcard or list. The Owner-visible native document
+access list must identify the target as an **existing Grist org member** by
+positive user ID, with no existing direct/inherited doc role; absent/opaque
+members fail closed *before* Grist's otherwise account-creating share delta.
+Native per-user access deltas are used; Gia never writes an entire access list. Existing, inherited or
+ambiguous targets cannot be reassigned. Grist's readback must confirm the
+target and preserve unrelated grant identities/roles or an uncertain-effect
+error is returned. The full access list and personal emails of unrelated
+members are kept private. Persisted grants are not represented as proof of
+effective row ACL enforcement, and this operation never publishes a Form.
+
 ## Application access rules
 
 Both ACL inspection and mutation require fresh native document metadata proving

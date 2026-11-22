@@ -22,6 +22,7 @@ const OPERATION_CAPABILITIES = new Map<string, GristCapability>([
   ["update_dropdown_condition", "doc.schema:write"],
   ["style_rules", "doc.schema:write"],
   ["append_style_rule", "doc.schema:write"],
+  ["grant_document_user", "doc.schema:write"],
   ["rename_column", "doc.schema:write"],
   ["change_access_rule_group", "doc.schema:write"],
   ["ensure_owner_schema_guard", "doc.schema:write"],

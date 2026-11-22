@@ -138,6 +138,21 @@ export class GristClient {
     )) as GristDocumentSummary;
   }
 
+  async listDocumentAccess(documentIdOrUrl: string): Promise<unknown> {
+    const id = this.normalizeDocumentId(documentIdOrUrl);
+    return this.request(`/api/docs/${encodeURIComponent(id)}/access`);
+  }
+
+  async grantDocumentUser(
+    documentIdOrUrl: string, email: string, role: "viewers" | "editors"
+  ): Promise<unknown> {
+    const id = this.normalizeDocumentId(documentIdOrUrl);
+    return this.request(`/api/docs/${encodeURIComponent(id)}/access`, {
+      method: "PATCH",
+      body: JSON.stringify({ delta: { users: { [email]: role } } })
+    });
+  }
+
   async updateDocument(
     documentIdOrUrl: string,
     update: GristDocumentUpdate

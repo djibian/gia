@@ -101,7 +101,7 @@ export const LEAN_TOOL_REGISTRY: readonly LeanToolDefinition[] = [
     destructive: true,
     title: "Change existing Grist structure",
     description:
-      "Update bounded document name/type metadata, update/rename/delete explicitly identified tables or columns (including stable-ID Ref/RefList display selection), or create/replace/delete one bounded persisted table/column access-rule group. ACL mutations use stable identifiers and a secret-safe condition subset including typed LinkKey-name-to-record comparisons, preserve untargeted policy, require doc.schema:write, never accept LinkKey values, and remain subject to Grist Owner enforcement. Exactly one bounded destructive schema action is performed per invocation."
+      "Update bounded document metadata, update/rename/delete explicitly identified tables/columns, grant one individual viewer/editor document share via native per-user delta, or change one bounded access-rule group. ACL mutations use stable identifiers and a secret-safe condition subset including typed LinkKey-name-to-record comparisons, preserve untargeted policy, require doc.schema:write, never accept LinkKey values, and remain subject to Grist Owner enforcement. Exactly one bounded destructive schema action is performed per invocation."
   },
   {
     name: "grist_add_ui",
@@ -279,7 +279,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
   },
   grist_change_structure: {
     actions: ["update_document", "update_tables", "delete_table", "update_columns", "update_form_column_options", "update_dropdown_condition",
-      "style_rules", "append_style_rule", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard"],
+      "style_rules", "append_style_rule", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard", "grant_document_user"],
     request: [
       "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}|{locale:'fr-FR'|'en-US'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
@@ -288,6 +288,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "style_rules: {action,documentId,tableId,columnId,conditionFormula:GristPython,style:{fillColor?:'#RRGGBB',textColor?:'#RRGGBB'}}; create or replace one native column style rule, preserve other options; no arbitrary ACL formula.",
       "append_style_rule: same fields as style_rules; appends one native column style (max 8), preserving existing ordered rules; identical rule is a no-op, conflicting duplicate formula is refused.",
       "update_tables: {action,documentId,tables:[{id,fields}]}; delete_table: {action,documentId,tableId}; rename_column: {action,documentId,tableId,oldColumnId,newColumnId}; delete_columns: {action,documentId,tableId,columnIds}",
+      "grant_document_user: {action,documentId,email:normalizedIndividualAddress,role:'viewers'|'editors'}; Owner proof + existing Owner-visible org-member user ID required; unknown targets refused before native write; no role changes, removal or public access.",
       "access_rule_group: {action,documentId,mode:'create'|'replace'|'delete',target:{tableId,columnIds?:string[]}|{userAttributeName},rules?:[{condition,permissions:{read,update,create?,delete?}}],definition?:{tableId,lookupColId,source:{kind:'user_property',property}|{kind:'link_key',name}}}",
       "ensure_owner_schema_guard: {action,documentId,confirmSchemaRestriction:true}; adds only canonical user.Access != OWNER / -S on the native default ACL resource.",
       "permissions: 'allow'|'deny'|'unspecified'; condition leaves: everyone,user_access,user_access_membership,user_login_status,user_attribute_flag,record_in_user_attribute_ref_list,match_user,match_link_key,match_user_attribute,match_boolean,match_integer_flag,match_empty_text,column_change",

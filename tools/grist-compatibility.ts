@@ -523,6 +523,63 @@ async function run(): Promise<void> {
     );
     assert(discovered.includes(documentId), "created_document_not_discovered");
 
+    const grantRecipient = "gia-synthetic-reader@example.invalid";
+    // Grist creates an account when the native share delta names an unknown
+    // email. Gia must refuse it before any account/invitation side effect.
+    const absentBefore = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?: string;id?: number;access?: string | null;isMember?: boolean}>;
+      };
+    assert(!absentBefore.users.some(row => row.email === grantRecipient),
+      "native_unknown_grant_recipient_must_be_absent");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "grant_document_user", documentId, email: grantRecipient, role: "viewers"
+    });
+    const stillAbsent = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?: string}>;
+      };
+    assert(!stillAbsent.users.some(row => row.email === grantRecipient),
+      "native_unknown_grant_created_unexpected_user");
+    const nativeDoc = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}`) as {
+        workspace?: {org?: {id?: number}};
+      };
+    const orgId = nativeDoc.workspace?.org?.id;
+    assert(Number.isSafeInteger(orgId) && (orgId ?? 0) > 0,
+      "native_doc_org_not_available");
+    // Disposable upstream fixture ONLY: make the recipient a genuine existing
+    // Grist organization member before Gia is allowed to grant doc access.
+    await gristApi(gristBaseUrl, apiKey, `/api/orgs/${orgId}/access`, {
+      method: "PATCH", body: JSON.stringify({delta:{users:{[grantRecipient]:"members"}}})
+    });
+    const knownBefore = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?:string;id?:number;access?:string|null;isMember?:boolean;parentAccess?:string|null}>;
+      };
+    assert(knownBefore.users.some(row => row.email === grantRecipient &&
+      Number.isSafeInteger(row.id) && (row.id ?? 0) > 0 &&
+      row.access === null && row.isMember === true && row.parentAccess == null),
+      "native_existing_org_member_not_owner_visible");
+    const firstGrant = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "grant_document_user", documentId, email: grantRecipient, role: "viewers"
+    }), "native_grant_single_viewer");
+    assert(firstGrant.changed === true && firstGrant.persistedGrantVerified === true &&
+      firstGrant.effectiveAclVerified === false, "native_grant_not_verified");
+    const nativeGrant = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?: string;access?: string}>;
+      };
+    assert(nativeGrant.users.some(row => row.email === grantRecipient && row.access === "viewers"),
+      "native_grant_role_not_persisted");
+    const repeatedGrant = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "grant_document_user", documentId, email: grantRecipient, role: "viewers"
+    }), "native_grant_repeated");
+    assert(repeatedGrant.changed === false, "native_grant_repeat_not_idempotent");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "grant_document_user", documentId, email: grantRecipient, role: "editors"
+    });
+
     const templateMetadata = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "update_document",
