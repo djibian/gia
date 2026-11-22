@@ -644,6 +644,34 @@ export class GristUiActionsAdapter {
 
 
 
+  /** A fixed native raw-row helper deletion, only after full ownership preflight. */
+  async removeRowStyleRule(
+    documentId: string, tableId: string, rawSectionRef: number,
+    helperRef: number, helperColumnId: string, options: string
+  ): Promise<void> {
+    assertPositiveId(rawSectionRef, "Native raw row-style owner");
+    assertPositiveId(helperRef, "Native raw row-style helper");
+    if (rawSectionRef === helperRef ||
+        !/^[A-Za-z][A-Za-z0-9_]*$/.test(tableId) ||
+        !/^gristHelper_RowConditionalRule\d*$/.test(helperColumnId) ||
+        typeof options !== "string" || options.length > 16_384) {
+      throw new Error("Trusted native row-style deletion request is malformed.");
+    }
+    let parsed: unknown;
+    try { parsed = JSON.parse(options) as unknown; }
+    catch { throw new Error("Trusted remaining row-style options must be JSON."); }
+    const state = record(parsed);
+    if (!state || !Array.isArray(state.rulesOptions) ||
+        state.rulesOptions.length < 1 || state.rulesOptions.length > 7 ||
+        state.rulesOptions.some(item => !record(item) || !Object.keys(record(item)!).length)) {
+      throw new Error("Remaining raw-row style colors must be complete.");
+    }
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Views_section", rawSectionRef, { options }],
+      ["RemoveColumn", tableId, helperColumnId]
+    ]);
+  }
+
   /** One fixed native raw-section write pairs rule refs and corresponding colors. */
   async reorderRowStyleRules(
     documentId: string, ownerRef: number, refs: readonly number[], options: string

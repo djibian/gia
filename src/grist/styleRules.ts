@@ -256,6 +256,69 @@ export function exclusiveNativeColumnStyleHelper(
   return helper.fields.colId;
 }
 
+
+/** Delete exactly one complete unique raw-row style, preserving sibling pairs. */
+export function planRemoveRowStyleRule(
+  sequence: NativeStyleSequence, conditionFormula: string
+): {helperRef: number; remainingRules: NativeStyleSequence["rules"];
+    options: JsonRecord; optionsJson: string} {
+  if (typeof conditionFormula !== "string" || !conditionFormula.trim() ||
+      conditionFormula.length > MAX_FORMULA || conditionFormula.includes("\0") ||
+      sequence.rules.length < 2 || sequence.rules.length > MAX_CONDITIONAL_STYLE_RULES ||
+      new Set(sequence.rules.map(rule => rule.helperRef)).size !== sequence.rules.length ||
+      new Set(sequence.rules.map(rule => rule.formula)).size !== sequence.rules.length ||
+      sequence.rules.some(rule => !rule.formula.trim() || !Object.keys(rule.style).length)) {
+    throw new Error("Raw-row style deletion requires two to eight complete unique rules.");
+  }
+  const matches = sequence.rules.filter(rule => rule.formula === conditionFormula);
+  if (matches.length !== 1) throw new Error("Selected raw-row style formula is absent or ambiguous.");
+  const helperRef = matches[0]!.helperRef;
+  const remainingRules = sequence.rules.filter(rule => rule.helperRef !== helperRef);
+  const options = {...sequence.options, rulesOptions: remainingRules.map(rule => rule.style)};
+  const optionsJson = JSON.stringify(options);
+  if (optionsJson.length > MAX_OPTIONS) throw new Error("Remaining row styles exceed native bounds.");
+  return {helperRef, remainingRules, options, optionsJson};
+}
+
+/** Verify a raw-section helper is exclusively owned before native RemoveColumn.
+ * Unknown, shared or incomplete section/field/column owners fail closed. */
+export function exclusiveNativeRowStyleHelper(
+  columnsResponse: unknown, sectionsResponse: unknown, fieldsResponse: unknown,
+  rawSectionRef: number, helperRef: number, limit: number
+): string {
+  const columns = nativeRows(columnsResponse, "Column", limit);
+  const sections = nativeRows(sectionsResponse, "Section", limit);
+  const fields = nativeRows(fieldsResponse, "Field", limit);
+  const section = sections.find(row => row.id === rawSectionRef);
+  const helper = columns.find(row => row.id === helperRef);
+  if (!section || !helper || !Number.isSafeInteger(rawSectionRef) ||
+      rawSectionRef < 1 || rawSectionRef === helperRef ||
+      typeof section.fields.tableRef !== "number" ||
+      helper.fields.parentId !== section.fields.tableRef ||
+      typeof helper.fields.colId !== "string" ||
+      !/^gristHelper_RowConditionalRule\d*$/.test(helper.fields.colId) ||
+      helper.fields.type !== "Any" || helper.fields.isFormula !== true ||
+      typeof helper.fields.formula !== "string") {
+    throw new Error("Native raw-row helper identity cannot be verified.");
+  }
+  const refs = (value: unknown): number[] => {
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value) || value[0] !== "L" ||
+        value.slice(1).some(ref => typeof ref !== "number" ||
+          !Number.isSafeInteger(ref) || ref < 1)) {
+      throw new Error("Malformed or protected native style ownership.");
+    }
+    return value.slice(1) as number[];
+  };
+  const owners = sections.filter(row => refs(row.fields.rules).includes(helperRef));
+  if (owners.length !== 1 || owners[0]!.id !== rawSectionRef ||
+      columns.some(row => refs(row.fields.rules).includes(helperRef)) ||
+      fields.some(row => refs(row.fields.rules).includes(helperRef))) {
+    throw new Error("Raw-row style helper has a shared or foreign owner.");
+  }
+  return helper.fields.colId;
+}
+
 /** Change only a uniquely identified native rule's predicate, never its helper, colors or order. */
 export function planExistingStyleFormulaReplacement(
   sequence: NativeStyleSequence, previousFormula: string, conditionFormula: string

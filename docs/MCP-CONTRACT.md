@@ -165,6 +165,20 @@ missing, duplicate, opaque or incomplete rules are refused. Repeating the same
 order is a no-op, and unverified writes require reconciliation, not blind replay.
 Neither external CAS nor browser-visible precedence is claimed.
 
+`grist_change_structure(action="remove_row_style_rule")` deletes exactly
+one fully configured native raw-table conditional row-style rule among two to
+eight unique rules. Only the stable table ID, an exact existing predicate and
+`confirmRemoveRule:true` enter the request. Complete native metadata must prove
+the selected helper belongs exclusively to the table's raw view section, and
+no other column, field or section references it. Gia writes the surviving paired
+style colors and the fixed native helper `RemoveColumn` in one bounded action
+bundle, then verifies surviving ordered refs, formulas, colors, unrelated section
+options and physical removal of the selected helper. Missing, duplicate, shared,
+opaque or truncated owners and last-rule removal fail closed. A repeated removal
+does not delete another rule. Effects without complete postconditions are
+uncertain and must be inspected before retry; this is not a native CAS, broad
+column-deletion API or browser-rendering proof. The ten-tool interface remains.
+
 `grist_change_structure(action="reorder_row_style_rules")` reorders two to eight
 **existing, fully configured raw-table row conditional styles**. The caller supplies
 the stable `tableId` and `orderedFormulas` containing every existing unique
