@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readNativeColumnStyle, planColumnStyle, readNativeColumnStyleSequence,
   planAppendColumnStyleRule, planExistingColumnStyleUpdate,
-  planExistingStyleFormulaReplacement } from "../src/grist/styleRules.js";
+  planExistingStyleFormulaReplacement, readNativeRowStyleSequence } from "../src/grist/styleRules.js";
 
 const tables = {records:[{id:1,fields:{tableId:"Items"}}]};
 const columns = (rules: unknown, options: unknown, formula = "") => ({
@@ -154,4 +154,49 @@ test("Replacement of an existing conditional formula preserves both helpers and 
   const incomplete = {...state,rules:[{...state.rules[0]!,style:{}},state.rules[1]!]};
   assert.throws(()=>planExistingStyleFormulaReplacement(incomplete,"$Qty > 2","$Qty > 3"),
     /incomplete/);
+});
+
+test("Native raw section row rules use the table's verified raw view, not a page widget", () => {
+  const rows = {records:[{id:1,fields:{tableId:"Items",rawViewSectionRef:31}}]};
+  const rawSections = {records:[
+    {id:31,fields:{tableRef:1,rules:["L",51],options:JSON.stringify({
+      theme:"dark",rulesOptions:[{fillColor:"#334455"}]})}},
+    {id:32,fields:{tableRef:1,rules:null,options:"{}"}}
+  ]};
+  const helpers = {records:[{id:51,fields:{parentId:1,
+    colId:"gristHelper_RowConditionalRule",type:"Any",isFormula:true,formula:"$Qty > 2"}}]};
+  const state = readNativeRowStyleSequence(rows,rawSections,helpers,"Items",20);
+  assert.equal(state.ownerRef,31);
+  assert.equal(state.rules[0]?.helperRef,51);
+  assert.equal(planAppendColumnStyleRule(state,{
+    conditionFormula:"$Qty > 2",style:{fillColor:"#334455"}
+  }).changed,false);
+  const added = planAppendColumnStyleRule(state,{
+    conditionFormula:"$Qty < 0",style:{textColor:"#ABCDEF"}
+  });
+  assert.equal(added.changed,true);
+  assert.deepEqual(added.options,{
+    theme:"dark",rulesOptions:[{fillColor:"#334455"},{textColor:"#ABCDEF"}]
+  });
+});
+
+test("Native row styling rejects missing, foreign and column-style helpers", () => {
+  const rows = {records:[{id:1,fields:{tableId:"Items",rawViewSectionRef:31}}]};
+  const valid = {records:[{id:31,fields:{tableRef:1,rules:["L",51],options:"{}"}}]};
+  const helper = (parentId: number, colId: string) => ({records:[
+    {id:51,fields:{parentId,colId,type:"Any",isFormula:true,formula:"$Qty > 2"}}
+  ]});
+  assert.throws(()=>readNativeRowStyleSequence(rows,valid,
+    helper(1,"gristHelper_ConditionalRule"),"Items",20));
+  assert.throws(()=>readNativeRowStyleSequence(rows,valid,
+    helper(2,"gristHelper_RowConditionalRule"),"Items",20));
+  assert.throws(()=>readNativeRowStyleSequence(rows,{records:[
+    {id:31,fields:{tableRef:2,rules:["L",51],options:"{}"}}
+  ]},helper(1,"gristHelper_RowConditionalRule"),"Items",20));
+  assert.throws(()=>readNativeRowStyleSequence(rows,{records:[
+    {id:31,fields:{tableRef:1,rules:["L",51,51],options:"{}"}}
+  ]},helper(1,"gristHelper_RowConditionalRule"),"Items",20));
+  assert.throws(()=>readNativeRowStyleSequence(rows,{records:[
+    {id:31,fields:{tableRef:1,rules:["L",51],options:"{broken"}}
+  ]},helper(1,"gristHelper_RowConditionalRule"),"Items",20));
 });

@@ -579,6 +579,40 @@ export class GristUiActionsAdapter {
     return ref;
   }
 
+  async addRowStyleRule(documentId: string, tableId: string): Promise<number> {
+    if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(tableId)) {
+      throw new Error("Conditional row style table must be a stable ID.");
+    }
+    // Official AddEmptyRule: null field/column targets the table's raw section.
+    const raw = await this.client.applyUserActions(documentId, [
+      ["AddEmptyRule", tableId, null, null]
+    ]);
+    const returned = singleReturnValue(raw, "AddEmptyRule");
+    const ref = returned.colRef;
+    if (typeof ref !== "number" || !Number.isInteger(ref) || ref < 1) {
+      throw new Error("Native row-style helper ref unavailable.");
+    }
+    return ref;
+  }
+
+  async writeRowStyleRule(
+    documentId: string, rawSectionRef: number, helperRef: number,
+    formula: string, options: string
+  ): Promise<void> {
+    assertPositiveId(rawSectionRef, "Native raw row-style section");
+    assertPositiveId(helperRef, "Native row-style helper");
+    if (rawSectionRef === helperRef || typeof formula !== "string" ||
+        !formula.trim() || formula.length > 4096 ||
+        typeof options !== "string" || options.length > 16_384) {
+      throw new Error("Trusted row-style write is malformed.");
+    }
+    // Only the specific raw section options and newly created formula are written.
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Tables_column", helperRef, { formula }],
+      ["UpdateRecord", "_grist_Views_section", rawSectionRef, { options }]
+    ]);
+  }
+
   async writeColumnStyleRule(
     documentId: string, ownerRef: number, helperRef: number,
     formula: string, widgetOptions: string

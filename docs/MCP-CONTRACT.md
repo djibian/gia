@@ -113,6 +113,22 @@ is not a native atomic compare-and-swap, so concurrent native edits still
 require external serialization. Formulas use the already authorized Grist Python
 capability, never raw ACL expressions. No MCP tool is added.
 
+`grist_change_structure(action="append_row_style_rule")` appends one
+native conditional-format rule to the **raw table section**, rather than to
+a column or arbitrary page widget. It accepts only a stable `tableId`, a
+bounded Grist conditional `conditionFormula`, and nonempty closed
+`#RRGGBB` colors. Native `AddEmptyRule(tableId,null,null)` creates a real
+`gristHelper_RowConditionalRule` formula helper linked by
+`_grist_Tables.rawViewSectionRef` to `_grist_Views_section.rules`.
+Gia preserves other row styles, their order, the raw-section `options` and
+all unrelated column or visible widget styles, then verifies both helper
+identity and exact persisted state. At most eight row rules are supported.
+Identical repeated requests are no-ops; matching formulas with different
+colors, incomplete native metadata and ambiguous helpers refuse mutation.
+As with column style append, a partial or transport-uncertain native action
+requires inspection and reconciliation, never blind replay. Row-style
+persistence is not a native rendering/visual acceptance assertion.
+
 An operator-approved `grist_change_ui(action="install_trusted_widget")` selects one revisioned HTTPS custom widget on an empty native Custom section. The model provides only a `trustedKey` and `confirmExternalWidget:true`, never arbitrary URL/code. Deployment must configure `GIA_TRUSTED_CUSTOM_WIDGETS_JSON` as a bounded JSON list of `{key,name,widgetId,revision,url}`, with each HTTPS URL on a distinct host and including the revision in its path. Default is deny. Native Owner plus `doc.schema:write` are required. Selection is saved as Grist `customView`, with initial `access:none`, preserving unrelated section options and refusing occupied/customized widgets. Post-read confirms saved identity and access, with uncertain effects never blindly replayed. This is metadata persistence, not a verification of remotely served JavaScript or its subresources: operators must independently audit and host immutable code.
 
 `grist_change_ui(action="publish_form")` publishes one existing native Form widget and its

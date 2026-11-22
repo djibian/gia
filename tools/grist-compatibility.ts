@@ -2834,6 +2834,55 @@ async function run(): Promise<void> {
       previousFormula: "$Qty > 20", conditionFormula: "$Qty < 0"
     });
 
+    // Native raw-row style: AddEmptyRule(tableId, null, null) must attach to
+    // _grist_Tables.rawViewSectionRef, not to any visible grid or column.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "append_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty > 10", style: { fillColor: "not-a-color" }
+    });
+    const rowAdded = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "append_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty > 10", style: { fillColor: "#ABCDEF" }
+    }), "native_row_style_create") as {
+      changed:boolean;persistedStyleVerified:boolean;styleRuleCount:number
+    };
+    assert(rowAdded.changed && rowAdded.persistedStyleVerified &&
+      rowAdded.styleRuleCount === 1, "native_row_style_create_unverified");
+    const [rowTables,rowSections,rowColumns] = await Promise.all(
+      ["_grist_Tables","_grist_Views_section","_grist_Tables_column"].map(
+        async table => await gristApi(gristBaseUrl, apiKey,
+          `${docPath}/tables/${table}/records?hidden=true`) as MetaRecords
+      )
+    );
+    assert(rowTables && rowSections && rowColumns,
+      "native_row_style_metadata_snapshots_missing");
+    const rowTable = rowTables.records.find(row => row.fields.tableId === TABLE_ID);
+    const rawSectionRef = rowTable?.fields.rawViewSectionRef;
+    assert(typeof rawSectionRef === "number" && rawSectionRef > 0,
+      "native_row_style_raw_section_missing");
+    const rowOwner = rowSections.records.find(row => row.id === rawSectionRef);
+    assert(rowOwner?.fields.tableRef === rowTable?.id, "native_row_style_owner_mismatch");
+    const rowRefs = rowOwner?.fields.rules;
+    assert(Array.isArray(rowRefs) && rowRefs[0] === "L" && rowRefs.length === 2,
+      "native_row_style_rule_not_linked");
+    const rowHelper = rowColumns.records.find(row => row.id === rowRefs[1]);
+    assert(rowHelper?.fields.colId === "gristHelper_RowConditionalRule" &&
+      rowHelper.fields.formula === "$Qty > 10", "native_row_style_helper_invalid");
+    const rowOptions = JSON.parse(String(rowOwner?.fields.options)) as {
+      rulesOptions?: Array<{fillColor?:string}>
+    };
+    assert(rowOptions.rulesOptions?.[0]?.fillColor === "#ABCDEF",
+      "native_row_style_colors_missing");
+    const rowRepeat = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "append_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty > 10", style: { fillColor: "#ABCDEF" }
+    }), "native_row_style_noop") as {changed:boolean};
+    assert(!rowRepeat.changed, "native_row_style_repeat_replayed");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "append_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty > 10", style: { fillColor: "#445566" }
+    });
+
     const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
       action: "columns", documentId, tableId: TABLE_ID
     }), "native_conditional_style_inspection");
