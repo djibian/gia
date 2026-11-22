@@ -77,7 +77,8 @@ import { resolveExistingDropdownCondition, type DropdownConditionInput } from ".
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
 import { planColumnStyle, readNativeColumnStyleSequence, readNativeRowStyleSequence,
   planAppendColumnStyleRule, planExistingColumnStyleUpdate,
-  planExistingStyleFormulaReplacement, planReorderRowStyleRules, planReorderColumnStyleRules, type ColumnStyleInput } from "./styleRules.js";
+  planExistingStyleFormulaReplacement, planReorderRowStyleRules, planReorderColumnStyleRules,
+  planRemoveColumnStyleRule, exclusiveNativeColumnStyleHelper, type ColumnStyleInput } from "./styleRules.js";
 import { planOwnerSchemaGuard, verifyOwnerSchemaGuard } from "./schemaEditGuard.js";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "./formLayout.js";
 import { planFormPublication, planFormUnpublication, readNativeFormPageShare } from "./formPublication.js";
@@ -2358,6 +2359,69 @@ export class AuthorizedGristService {
       } catch (error) {
         throw new SchemaWriteVerificationError("reorder_column_style_rules",
           "Native column-style reorder may be uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
+
+  /** Remove one exclusively owned native column conditional style helper.
+   * Never claim native CAS or blindly retry uncertain destructive effects. */
+  async removeColumnStyleRule(
+    documentIdOrUrl: string, tableId: string, columnId: string,
+    conditionFormula: string, confirmRemoveRule: true
+  ): Promise<unknown> {
+    if (confirmRemoveRule !== true) {
+      throw new Error("Explicit native style-rule deletion confirmation is required.");
+    }
+    return this.execute("remove_column_style_rule", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = async () => {
+        const [tables, columns, sections, fields] = await Promise.all([
+          this.inner.queryRecords(id, "_grist_Tables", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Tables_column", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Views_section", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Views_section_field", { hidden: true, limit })
+        ]);
+        return {
+          sequence: readNativeColumnStyleSequence(tables, columns, tableId, columnId, limit),
+          columns, sections, fields
+        };
+      };
+      const before = await read();
+      const plan = planRemoveColumnStyleRule(before.sequence, conditionFormula);
+      const helperColumnId = exclusiveNativeColumnStyleHelper(
+        before.columns, before.sections, before.fields,
+        before.sequence.ownerRef, plan.helperRef, limit
+      );
+      const fresh = await read();
+      if (!isDeepStrictEqual(fresh, before) ||
+          exclusiveNativeColumnStyleHelper(
+            fresh.columns, fresh.sections, fresh.fields,
+            fresh.sequence.ownerRef, plan.helperRef, limit
+          ) !== helperColumnId) {
+        throw new Error("Native style helper ownership changed before removal; reconcile first.");
+      }
+      try {
+        await this.uiActions.removeColumnStyleRule(
+          id, tableId, before.sequence.ownerRef, plan.helperRef,
+          helperColumnId, plan.optionsJson
+        );
+        const after = await read();
+        const remainingNative = (after.columns as {records?: Array<{id: number}>}).records;
+        if (after.sequence.ownerRef !== before.sequence.ownerRef ||
+            !isDeepStrictEqual(after.sequence.rules, plan.remainingRules) ||
+            !isDeepStrictEqual(after.sequence.options, plan.options) ||
+            !Array.isArray(remainingNative) ||
+            remainingNative.some(column => column.id === plan.helperRef)) {
+          throw new Error("Native style helper removal failed complete postconditions.");
+        }
+        return { documentId: id, tableId, columnId, changed: true,
+          persistedStyleVerified: true,
+          remainingStyleRuleCount: after.sequence.rules.length };
+      } catch (error) {
+        throw new SchemaWriteVerificationError("remove_column_style_rule",
+          "Native style removal may be uncertain; inspect before retry: " +
           (error instanceof Error ? error.message : "unknown result"));
       }
     });

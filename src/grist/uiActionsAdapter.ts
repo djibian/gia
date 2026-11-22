@@ -707,6 +707,35 @@ export class GristUiActionsAdapter {
     ]);
   }
 
+  /** Fixed native Grist RemoveColumn bundle, with paired color removal.
+   * The service proves exclusive helper ownership before invoking this adapter. */
+  async removeColumnStyleRule(
+    documentId: string, tableId: string, ownerRef: number, helperRef: number,
+    helperColumnId: string, widgetOptions: string
+  ): Promise<void> {
+    assertPositiveId(ownerRef, "Style owner");
+    assertPositiveId(helperRef, "Style helper");
+    if (helperRef === ownerRef ||
+        !/^[A-Za-z][A-Za-z0-9_]*$/.test(tableId) ||
+        !/^gristHelper_ConditionalRule\d*$/.test(helperColumnId) ||
+        typeof widgetOptions !== "string" || widgetOptions.length > 16_384) {
+      throw new Error("Trusted native conditional rule deletion request is invalid.");
+    }
+    let parsed: unknown;
+    try { parsed = JSON.parse(widgetOptions) as unknown; }
+    catch { throw new Error("Trusted remaining style colors must be JSON."); }
+    const options = record(parsed);
+    if (!options || !Array.isArray(options.rulesOptions) ||
+        options.rulesOptions.length < 1 || options.rulesOptions.length > 7 ||
+        options.rulesOptions.some(item => !record(item) || !Object.keys(record(item)!).length)) {
+      throw new Error("Remaining native style rule colors must be complete.");
+    }
+    await this.client.applyUserActions(documentId, [
+      ["UpdateRecord", "_grist_Tables_column", ownerRef, { widgetOptions }],
+      ["RemoveColumn", tableId, helperColumnId]
+    ]);
+  }
+
   async writeColumnStyleRule(
     documentId: string, ownerRef: number, helperRef: number,
     formula: string, widgetOptions: string
