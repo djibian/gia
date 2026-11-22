@@ -2128,6 +2128,52 @@ export class AuthorizedGristService {
     });
   }
 
+  /** Update only a unique native row-style formula helper, not raw-section options. */
+  async replaceRowStyleFormula(
+    documentIdOrUrl: string, tableId: string,
+    previousFormula: string, conditionFormula: string
+  ): Promise<unknown> {
+    return this.execute("replace_row_style_formula", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = async () => {
+        const [tables, sections, columns] = await Promise.all([
+          this.inner.queryRecords(id, "_grist_Tables", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Views_section", { hidden: true, limit }),
+          this.inner.queryRecords(id, "_grist_Tables_column", { hidden: true, limit })
+        ]);
+        return readNativeRowStyleSequence(tables, sections, columns, tableId, limit);
+      };
+      const before = await read();
+      const plan = planExistingStyleFormulaReplacement(
+        before, previousFormula, conditionFormula
+      );
+      const result = { documentId: id, tableId };
+      if (!plan.changed) {
+        return { ...result, changed: false, persistedStyleVerified: true };
+      }
+      if (!isDeepStrictEqual(await read(), before)) {
+        throw new Error("Native row-style state changed before formula write; reconcile first.");
+      }
+      try {
+        // One verified native helper UpdateRecord; never overwrite raw-section options.
+        await this.uiActions.updateColumnStyleFormula(id, plan.helperRef, conditionFormula);
+        const after = await read();
+        if (after.ownerRef !== before.ownerRef ||
+            !isDeepStrictEqual(after.options, before.options) ||
+            !isDeepStrictEqual(after.rules, plan.rules)) {
+          throw new Error("Native row-style formula or preserved rules differ from postconditions.");
+        }
+        return { ...result, changed: true, persistedStyleVerified: true,
+          styleRuleCount: after.rules.length };
+      } catch (error) {
+        throw new SchemaWriteVerificationError("replace_row_style_formula",
+          "Native row-style formula effect may be uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
+
   async renameColumn(
     documentIdOrUrl: string,
     tableId: string,
