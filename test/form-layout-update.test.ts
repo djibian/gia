@@ -75,6 +75,22 @@ test("Form layout refuses unknown, duplicate or computed fields and absent submi
     { ...requested, successText: "https://example.test/?key=token" }));
 });
 
+test("Form accepts ordinary colon-separated instructional text, never URI-like text", () => {
+  const ordinary: FormLayoutInput = {
+    ...requested, successText: "Étape terminée : merci",
+    children: [{ type: "paragraph", text: "Informations : stage et classe" },
+      ...requested.children]
+  };
+  const result = resolveFormLayoutUpdate(widget(), tables, fields, ordinary).layoutSpec;
+  assert.equal((result.children as Array<{text?: string}>)[0]?.text,
+    "Informations : stage et classe");
+  assert.equal(result.successText, "Étape terminée : merci");
+  for (const unsafe of ["javascript:alert(1)", "https://example.test", "[Suivant](https://example.test)"]) {
+    assert.throws(() => resolveFormLayoutUpdate(widget(), tables, fields,
+      { ...requested, successText: unsafe }), /non-link-bearing/);
+  }
+});
+
 test("Form layout refuses to destroy protected/opaque pre-existing native settings", () => {
   for (const layoutSpec of [
     { type: "Layout", children: [], successURL: "https://example.test/" },
