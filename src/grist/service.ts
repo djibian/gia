@@ -259,6 +259,28 @@ function schemaIdentities(
   return { byId, byRef };
 }
 
+
+/** Complete native per-table column snapshot, including generated hidden columns. */
+function typedColumnSeedSnapshot(raw: unknown): Map<string,{ref:number;type:string}> {
+  const values=jsonRecord(raw)?.columns;
+  if (!Array.isArray(values) || values.length > 5000) {
+    throw new Error("Native expanded column metadata is unavailable or exceeds the limit.");
+  }
+  const result=new Map<string,{ref:number;type:string}>();
+  const refs=new Set<number>();
+  for(const entry of values){
+    const item=jsonRecord(entry), fields=jsonRecord(item?.fields);
+    const id=item?.id,ref=fields?.colRef,type=fields?.type;
+    if(typeof id!=="string"||!id||result.has(id)||
+       typeof ref!=="number"||!Number.isSafeInteger(ref)||ref<1||refs.has(ref)||
+       typeof type!=="string"||!type) {
+      throw new Error("Native column identity/type is incomplete or ambiguous.");
+    }
+    result.set(id,{ref,type});refs.add(ref);
+  }
+  return result;
+}
+
 function targetSchemaRefs(byId: Map<string, number>, ids: string[]): number[] {
   return ids.map((id) => {
     const ref = byId.get(id);
@@ -642,6 +664,65 @@ export class GristService {
     }
     const result = await this.client.createColumns(documentId, tableId, columns);
     return projectCreatedItems(result, "columns", columns.length, "string");
+  }
+
+
+  /** Reconcile typed columns after their owning table exists; preserve all prior IDs. */
+  async ensureColumns(
+    documentIdOrUrl:string, tableId:string, columns:GristColumnSpec[]
+  ):Promise<unknown>{
+    const documentId=await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    this.assertIdentifier(tableId,"Table ID");
+    this.assertSchemaCount(columns.length);
+    this.assertUniqueStrings(columns.map(c=>c.id),"Column IDs");
+    const allowed=/^(?:Text|Numeric|Int|Bool|Date|DateTime:(?:UTC|Europe\/Paris)|Choice|ChoiceList|(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*)$/;
+    for(const column of columns) {
+      this.assertIdentifier(column.id,"Column ID");
+      if(!column.fields||Object.keys(column.fields).length!==1||
+        typeof column.fields.type!=="string"||!allowed.test(column.fields.type)) {
+        throw new Error("Column seeds require only one explicit supported type.");
+      }
+    }
+    const read=()=>this.client.listColumns(documentId,tableId,{hidden:true});
+    const before=typedColumnSeedSnapshot(await read());
+    const missing=columns.filter(column=>{
+      const stored=before.get(column.id);
+      if(stored&&stored.type!==column.fields?.type)
+        throw new Error("Existing column seed conflicts with the requested type.");
+      return !stored;
+    });
+    if(!missing.length)return {tableId,columns:columns.map(c=>({id:c.id,created:false})),
+      changed:false,persistedSchemaVerified:true};
+    if(!isDeepStrictEqual(before,typedColumnSeedSnapshot(await read()))) {
+      throw new Error("Native column metadata changed before creation; reconcile first.");
+    }
+    try {
+      const created=projectCreatedItems(
+        await this.client.createColumns(documentId,tableId,missing),
+        "columns",missing.length,"string"
+      ) as {columns:{id:string}[];resultNormalizationIncomplete?:boolean};
+      if(created.resultNormalizationIncomplete||
+         created.columns.some((c,i)=>c.id!==missing[i]?.id)) {
+        throw new Error("Native column creation returned incomplete or changed stable IDs.");
+      }
+      const after=typedColumnSeedSnapshot(await read());
+      for(const [id,saved] of before){
+        if(!isDeepStrictEqual(after.get(id),saved))
+          throw new Error("Prior native column identity or type changed.");
+      }
+      for(const column of columns){
+        if(after.get(column.id)?.type!==column.fields?.type) {
+          throw new Error("New native column seed could not be verified.");
+        }
+      }
+      const ids=new Set(missing.map(c=>c.id));
+      return {tableId,columns:columns.map(c=>({id:c.id,created:ids.has(c.id)})),
+        changed:true,persistedSchemaVerified:true};
+    }catch(error){
+      throw new SchemaWriteVerificationError("ensure_columns",
+        "Native column creation was attempted but the outcome is uncertain: "+
+        (error instanceof Error?error.message:"unknown effect"));
+    }
   }
 
   async updateColumns(

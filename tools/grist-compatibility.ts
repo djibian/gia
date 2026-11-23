@@ -829,6 +829,38 @@ async function run(): Promise<void> {
       }
     }
 
+    // #295: restart-safe standalone typed columns on an existing native table.
+    const seedColumns=[
+      {id:"Compat_SeedDate",fields:{type:"Date"}},
+      {id:"Compat_SeedBool",fields:{type:"Bool"}}
+    ];
+    const seeded=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns",documentId,tableId:creationTableId,
+      columns:seedColumns
+    }),"native_ensure_columns") as {changed:boolean;persistedSchemaVerified:boolean;
+      columns:Array<{id:string;created:boolean}>};
+    assert(seeded.changed&&seeded.persistedSchemaVerified&&
+      seeded.columns.every(c=>c.created),"native_ensure_columns_create");
+    const replay=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns",documentId,tableId:creationTableId,
+      columns:seedColumns
+    }),"native_ensure_columns_repeat") as {changed:boolean};
+    assert(!replay.changed,"native_ensure_columns_not_idempotent");
+    await callToolExpectError(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns",documentId,tableId:creationTableId,
+      columns:[
+        {id:"Compat_SeedDate",fields:{type:"Bool"}},
+        {id:"Compat_SeedMustNotExist",fields:{type:"Text"}}
+      ]
+    });
+    const columnsAfterSeed=await gristApi(gristBaseUrl,apiKey,creationColumnUrl) as {
+      columns:Array<{id:string;fields:{type:string}}>;
+    };
+    assert(columnsAfterSeed.columns.find(c=>c.id==="Compat_SeedDate")?.fields.type==="Date"&&
+      columnsAfterSeed.columns.find(c=>c.id==="Compat_SeedBool")?.fields.type==="Bool"&&
+      !columnsAfterSeed.columns.some(c=>c.id==="Compat_SeedMustNotExist"),
+      "native_ensure_columns_preservation");
+
     // Both previously accepted-but-ignored fields must fail before *any*
     // table/column in a mixed request is created.
     for (const [suffix, ignored] of [

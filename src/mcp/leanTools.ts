@@ -994,6 +994,20 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("ensure_columns"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columns: boundedArray(z.object({
+              id: columnIdSchema,
+              fields: z.object({type: z.union([
+                z.enum(["Text","Numeric","Int","Bool","Date","Choice","ChoiceList"]),
+                z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
+                z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
+              ])}).strict()
+            }).strict(),limits.maxSchemaItems)
+          }).strict(),
+        z
+          .object({
             action: z.literal("create_columns"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1030,6 +1044,10 @@ export function registerLeanTools(
             return textResult(
               await grist.createTables(input.documentId, input.tables)
             );
+          case "ensure_columns":
+            return textResult(await grist.ensureColumns(
+              input.documentId,input.tableId,input.columns
+            ));
           case "create_columns":
             return textResult(
               await grist.createColumns(

@@ -80,6 +80,72 @@ function service(
   };
 }
 
+test("ensure_columns creates only missing seeds and preserves later columns",async()=>{
+  const existing=new Map<string,{ref:number;type:string}>([
+    ["Name",{ref:20,type:"Text"}],
+    ["Custom",{ref:21,type:"Int"}]
+  ]);
+  let writes=0;
+  const specs=[
+    {id:"Name",fields:{type:"Text"}},
+    {id:"StartDate",fields:{type:"Date"}}
+  ];
+  const {grist}=service(1000,100,2,20,{
+    listColumns:async()=>({columns:[...existing].map(([id,meta])=>({
+      id,fields:{colRef:meta.ref,type:meta.type}
+    }))}),
+    createColumns:async(_doc:string,_table:string,missing:typeof specs)=>{
+      writes++;
+      assert.deepEqual(missing,[specs[1]]);
+      existing.set("StartDate",{ref:22,type:"Date"});
+      return {columns:[{id:"StartDate"}]};
+    }
+  });
+  const first=await grist.ensureColumns("doc","Stage",specs) as Record<string,unknown>;
+  assert.equal(first.changed,true);assert.equal(first.persistedSchemaVerified,true);
+  assert.deepEqual(first.columns,[{id:"Name",created:false},{id:"StartDate",created:true}]);
+  const second=await grist.ensureColumns("doc","Stage",specs) as Record<string,unknown>;
+  assert.equal(second.changed,false);assert.equal(writes,1);
+  await assert.rejects(()=>grist.ensureColumns("doc","Stage",[
+    {id:"Name",fields:{type:"Bool"}},
+    {id:"MustNotExist",fields:{type:"Text"}}
+  ]),/conflicts/);
+  assert.equal(writes,1);assert.equal(existing.has("MustNotExist"),false);
+});
+
+test("ensure_columns fails closed on invalid and ambiguous seeds",async()=>{
+  let writes=0,reads=0;
+  const {grist}=service(1000,100,2,20,{
+    listColumns:async()=>{reads++;return {columns:[]};},
+    createColumns:async()=>{writes++;return {columns:[{id:"Flag"}]};}
+  });
+  const invalid=[
+    [{id:"Flag",fields:{type:"Silly"}}],
+    [{id:"Flag",fields:{type:"Bool",label:"extra"}}],
+    [{id:"Flag"}],
+    [{id:"Flag",fields:{type:"Bool"}},{id:"Flag",fields:{type:"Int"}}]
+  ];
+  for(const specs of invalid){
+    await assert.rejects(()=>grist.ensureColumns("doc","Stage",specs),
+      /type|Column IDs/);
+  }
+  assert.equal(reads,0);assert.equal(writes,0);
+  await assert.rejects(()=>grist.ensureColumns("doc","Stage",[
+    {id:"Flag",fields:{type:"Bool"}}
+  ]),/do not retry.*blindly/);
+  assert.equal(writes,1);
+  const ambiguous=service(1000,100,2,20,{
+    listColumns:async()=>({columns:[{
+      id:"Existing",fields:{colRef:0,type:"Text"}
+    }]}),
+    createColumns:async()=>{writes++;return {columns:[{id:"Flag"}]};}
+  });
+  await assert.rejects(()=>ambiguous.grist.ensureColumns("doc","Stage",[
+    {id:"Flag",fields:{type:"Bool"}}
+  ]),/identity\/type/);
+  assert.equal(writes,1);
+});
+
 test("service forwards richer read options and enforces configured maximum", async () => {
   const { grist, observed } = service(1000, 100);
   await grist.queryRecords("doc", "Table1", {

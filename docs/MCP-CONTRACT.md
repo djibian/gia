@@ -31,6 +31,22 @@ Unselected `grist_help({})` remains a compact ten-tool index. Selecting named to
 
 Both `grist_add_structure(create_tables)` and `grist_add_structure(create_columns)` accept only creation metadata actually persisted by the supported native Grist operations: optional `label`, `type`, `isFormula`, `formula` and `widgetOptions`. Native `AddTable` and `AddVisibleColumn` do not persist `description` and do not resolve the public stable-ID alias `visibleColumnId` at creation time. These two update-only fields therefore fail validation **before any create write**, including mixed batches, rather than producing a misleading success. To set them, first create the column with supported fields, then call `grist_change_structure(action="update_columns")` on the resulting stable IDs; update verification and uncertain-write handling remain authoritative. This narrows previously advertised but ineffective create inputs, not a functioning native creation workflow.
 
+`grist_add_structure(action="ensure_columns")` reconciles a bounded homogeneous
+batch of explicit typed columns **on one existing table**, for incremental
+application construction and restart. For every requested stable ID, either the
+column already exists with precisely the requested native type, or Gia creates
+it and rereads the complete native column state. All previously persisted column
+IDs, private native refs and types remain unchanged. Missing/duplicate IDs,
+conflicting types and incomplete/censored metadata fail before any write.
+Valid seeds are `Text`, `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`,
+`DateTime:Europe/Paris`, `Choice`, `ChoiceList`, `Ref:<table>` and
+`RefList:<table>`; the reference destination must already be valid in native
+Grist. Additional formula, widget, dropdown and Form configuration use the
+existing independent operations. Generated native auxiliary columns are not
+invented or identified as application fields. New-write normalization or
+post-read uncertainty demands reconciliation, never blind replay. No native
+cross-writer CAS, general schema migration engine or new MCP tool is implied.
+
 `grist_add_structure(action="create_columns")` also accepts a homogeneous
 batch of configured data columns. Each item has `id`, `fields:{type,label?}`
 and `configuration:{form?,dropdownCondition?}`. The `form` object accepts

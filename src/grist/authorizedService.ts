@@ -2083,6 +2083,15 @@ export class AuthorizedGristService {
     });
   }
 
+  async ensureColumns(
+    documentIdOrUrl:string,tableId:string,columns:GristColumnSpec[]
+  ):Promise<unknown>{
+    return this.execute("ensure_columns",documentIdOrUrl,columns.length,id=>{
+      assertPublicTableId(tableId);
+      return this.inner.ensureColumns(id,tableId,columns);
+    });
+  }
+
   async updateColumns(
     documentIdOrUrl: string,
     tableId: string,
