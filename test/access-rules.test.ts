@@ -123,6 +123,13 @@ test("native predicate metadata must agree before projecting, comparing or verif
   assert.equal((projectAccessRules(matching) as any).groups[0].editable, true);
   assert.equal(resolveAccessRuleMutation(matching, target, "replace", inputs).mode, "noop");
   assert.equal(verifyAccessRuleMutation(before, matching, plan).persistedDefinitionVerified, true);
+  const ensure = resolveAccessRuleMutation(before, target, "ensure", inputs);
+  assert.equal(ensure.mode, "create");
+  assert.equal(verifyAccessRuleMutation(before, matching, ensure).persistedDefinitionVerified, true);
+  assert.equal(resolveAccessRuleMutation(matching, target, "ensure", inputs).mode, "noop");
+  assert.throws(() => resolveAccessRuleMutation(matching, target, "ensure", [{
+    ...inputs[0], permissions: { read: "deny", update: "unspecified" }
+  }]), /differs from the requested definition/);
 
   const malformed = [
     "", "null", "true", "42", '["Eq"]', '["Const",true]',
@@ -149,6 +156,7 @@ test("native predicate metadata must agree before projecting, comparing or verif
     assert.equal(simulation.status, "protected_group");
     assert.equal(simulation.permissionDecisions, null);
     assert.throws(() => resolveAccessRuleMutation(state, target, "replace", inputs), /cannot be modified/);
+    assert.throws(() => resolveAccessRuleMutation(state, target, "ensure", inputs), /cannot be modified/);
     assert.throws(() => verifyAccessRuleMutation(before, state, plan), /verification failed/);
   }
 });
@@ -1517,6 +1525,13 @@ test("native user-attribute create plans a single default resource and verifies 
     changed: true, persistedDefinitionVerified: true, effectiveEnforcementVerified: false
   });
   assert.equal((projectAccessRules(after) as any).userAttributes.definitions[0].editable, true);
+  const ensure = resolveUserAttributeMutation(before, target, "ensure", definition);
+  assert.equal(ensure.mode, "create");
+  assert.equal(verifyUserAttributeMutation(before, after, ensure).persistedDefinitionVerified, true);
+  assert.equal(resolveUserAttributeMutation(after, target, "ensure", definition).mode, "noop");
+  assert.throws(() => resolveUserAttributeMutation(after, target, "ensure", {
+    ...definition, source: { kind: "link_key", name: "Token" }
+  }), /differs from the requested definition/);
   assert.throws(() => resolveUserAttributeMutation(after, target, "create", definition),
     /already exists/);
   const altered = snapshot([{ id: 1, fields: { tableId: "*", colIds: "*" } }], [

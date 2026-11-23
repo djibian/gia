@@ -109,11 +109,13 @@ resource after the fresh Owner proof, as a closed structural projection with
 validated existing table/column IDs and safe built-in user-property or LinkKey
 **names**. The projection excludes values, raw definition JSON, formulas,
 LinkKey tokens and URLs. Unknown, malformed, misplaced or duplicate-name
-definitions remain protected. A separately bounded typed create/replace/delete
+definitions remain protected. A separately bounded typed create/ensure/replace/delete
 target in the existing access_rule_group action requires fresh Owner proof and
 local doc.schema:write, refuses all native user-attribute writes whenever any
 definition is opaque/ambiguous, rejects reserved names and missing stable
 lookup columns, and never accepts raw JSON or arbitrary user properties.
+Ensure creates an absent definition, reuses an equivalent one and refuses
+conflicts. A fresh native ACL snapshot guards creation against stale state.
 Deletion and non-noop replacement refuse existing native ACL dependencies,
 including opaque or noncanonical predicate forms. Typed `match_user_attribute`
 ACL leaves accept only existing structurally verified attribute/field names
