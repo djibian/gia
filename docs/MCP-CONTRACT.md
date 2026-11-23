@@ -29,6 +29,20 @@ Unselected `grist_help({})` remains a compact ten-tool index. Selecting named to
 
 `grist_add_structure(action="create_tables")` requires a nonempty `columns` array per new table, matching native Grist TablePost. Missing or empty arrays are refused before any native write; Gia does not invent application columns.
 
+The bounded `grist_add_ui(action="ensure_widget")` reconciles exactly one
+ungrouped native section on an existing page using a unique (page ID, stable
+source table ID, widget type) identity. A sole existing section is reused with
+its native widget ID and all configuration preserved. If absent, Gia invokes
+the existing native `CreateViewSection`, verifies the returned ID and re-reads
+the complete UI: earlier widget identities/settings and unrelated pages must
+remain unchanged, with exactly one new matching section. Multiple matching
+sections, incomplete UI state, unavailable tables, or changed pre-write
+metadata fail closed. An uncertain native effect must be re-read before retry.
+This action deliberately does not reconcile summary grouping or multiple
+sections for the same table/type; use `add_widget` with client-owned stable
+IDs for those cases. No new MCP tool, persistent planner or native CAS is
+implied.
+
 The bounded `grist_add_structure(action="ensure_tables")` reconciles an
 initial named-table schema when reconstructing an application from scratch.
 Each table requires one or more explicit typed seed columns (`Text`,

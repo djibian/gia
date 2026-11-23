@@ -8,7 +8,7 @@ import { AuthorizedGristService } from "../src/grist/authorizedService.js";
 import type { GristService } from "../src/grist/service.js";
 import type { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
 
-function buildHarness() {
+function buildHarness(singleWidget = false) {
   let pageCreated = false;
   let widgetCreated = false;
   let widget12Deleted = false;
@@ -63,7 +63,7 @@ function buildHarness() {
                     linkTargetColRef: 0
                   }
                 },
-                ...(!widget12Deleted
+                ...(!widget12Deleted && !singleWidget
                   ? [
                       {
                         id: 12,
@@ -232,6 +232,47 @@ test("ensure_page creates once and retains the resulting stable named page", asy
   assert.deepEqual(capabilities,["doc.schema:write","doc.schema:write"]);
   await assert.rejects(()=>service.ensurePage("doc-1","Personnes",""),
     /nonempty page reconciliation/);
+});
+
+test("ensure_widget creates once, reuses the native ID and rejects ambiguous sections", async () => {
+  const { service, capabilities, uiCalls } = buildHarness(true);
+  await service.createPage("doc-1", "Personnes", "Vue générale");
+  uiCalls.length = 0;
+  capabilities.length = 0;
+  const first = await service.ensurePageWidget("doc-1", 7, "Personnes", "record") as {
+    changed: boolean; createdWidgetId: number; persistedWidgetVerified: boolean;
+    widget: {id: number};
+  };
+  assert.equal(first.changed, true);
+  assert.equal(first.persistedWidgetVerified, true);
+  assert.equal(first.createdWidgetId, 11);
+  assert.equal(first.widget.id, 11);
+  const repeated = await service.ensurePageWidget("doc-1", 7, "Personnes", "record") as {
+    changed: boolean; widget: {id:number};
+  };
+  assert.equal(repeated.changed, false);
+  assert.equal(repeated.widget.id, 11);
+  assert.equal(uiCalls.filter(call => (call as {action:string}).action === "widget").length, 1);
+  assert.deepEqual(capabilities, ["doc.schema:write", "doc.schema:write"]);
+
+  await assert.rejects(
+    () => service.ensurePageWidget("doc-1", 0, "Personnes", "record"),
+    /positive integer/
+  );
+  await assert.rejects(
+    () => service.ensurePageWidget("doc-1", 7, "Absent", "record"),
+    /table|Table|unavailable|unknown/i
+  );
+
+  const duplicate = buildHarness();
+  await duplicate.service.createPage("doc-1", "Personnes", "Vue générale");
+  await duplicate.service.addPageWidget("doc-1", 7, "Personnes", "record");
+  duplicate.uiCalls.length = 0;
+  await assert.rejects(
+    () => duplicate.service.ensurePageWidget("doc-1", 7, "Personnes", "record"),
+    /ambiguous/
+  );
+  assert.equal(duplicate.uiCalls.length, 0);
 });
 
 test("widget creation resolves tableRef internally and returns the re-read widget", async () => {

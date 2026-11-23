@@ -1520,6 +1520,26 @@ async function run(): Promise<void> {
     }), "native_ensure_page_repeat") as {changed:boolean;page:{id:number}};
     assert(!ensuredRepeat.changed && ensuredRepeat.page.id===ensuredNew.page.id,
       "native_ensure_page_not_idempotent");
+    // #295: a single native widget can be reconciled on a resumed empty page.
+    const ensuredWidget = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "ensure_widget", documentId, pageId: ensuredNew.page.id,
+      tableId: TABLE_ID, type: "record"
+    }), "native_ensure_widget_create") as {
+      changed:boolean; createdWidgetId:number; persistedWidgetVerified:boolean;
+      widget:{id:number;type:string;tableId:string};
+    };
+    assert(ensuredWidget.changed && ensuredWidget.persistedWidgetVerified &&
+      ensuredWidget.createdWidgetId===ensuredWidget.widget.id &&
+      ensuredWidget.widget.type==="record" &&
+      ensuredWidget.widget.tableId===TABLE_ID, "native_ensure_widget_creation");
+    const repeatedWidget = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "ensure_widget", documentId, pageId: ensuredNew.page.id,
+      tableId: TABLE_ID, type: "record"
+    }), "native_ensure_widget_repeat") as {changed:boolean;widget:{id:number}};
+    assert(!repeatedWidget.changed &&
+      repeatedWidget.widget.id===ensuredWidget.createdWidgetId,
+      "native_ensure_widget_not_idempotent");
+
     const nestedParent = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
       action: "create_page", documentId, tableId: TABLE_ID, name: "Gia Nested Parent"
     }), "native_nesting_parent") as {page:{id:number}};
