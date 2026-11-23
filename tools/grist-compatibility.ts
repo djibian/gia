@@ -770,6 +770,39 @@ async function run(): Promise<void> {
       ]
     });
 
+
+    // #295 restart-safe typed bootstrap: create on a new document, repeat after
+    // subsequent column changes and reject conflicts before any native write.
+    const seedAlpha={id:"Compat_SeedAlpha",columns:[{id:"Name",fields:{type:"Text"}}]};
+    const seedBeta={id:"Compat_SeedBeta",columns:[{id:"Contact",fields:{type:"Date"}}]};
+    const ensured=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_tables",documentId,tables:[seedAlpha,seedBeta]
+    }),"native_table_seeds") as {changed:boolean;persistedSchemaVerified:boolean;
+      tables:Array<{id:string;created:boolean}>};
+    assert(ensured.changed&&ensured.persistedSchemaVerified&&
+      ensured.tables.every(t=>t.created),"native_table_seed_create");
+    await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"create_columns",documentId,tableId:seedAlpha.id,
+      columns:[{id:"Extra",fields:{type:"Int"}}]
+    });
+    const repeated=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_tables",documentId,tables:[seedAlpha,seedBeta]
+    }),"native_table_seed_repeat") as {changed:boolean};
+    assert(repeated.changed===false,"native_table_seed_not_idempotent");
+    await callToolExpectError(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_tables",documentId,tables:[
+        {id:seedAlpha.id,columns:[{id:"Name",fields:{type:"Bool"}}]},
+        {id:"Compat_SeedMustNotExist",columns:[{id:"Name",fields:{type:"Text"}}]}
+      ]
+    });
+    const seedRead=await gristApi(gristBaseUrl,apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables?expand=column`) as {
+        tables:Array<{id:string;columns:Array<{id:string;fields:{type:string}}>}>;
+      };
+    assert(!seedRead.tables.some(t=>t.id==="Compat_SeedMustNotExist")&&
+      seedRead.tables.find(t=>t.id===seedAlpha.id)?.columns.some(
+        c=>c.id==="Extra"&&c.fields.type==="Int"),"native_table_seed_preservation");
+
     // Missing/empty columns are invalid and must not create native tables.
     for (const tables of [
       [{ id: "Compat_MissingColumns" }],

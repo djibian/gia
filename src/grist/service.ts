@@ -259,6 +259,65 @@ function schemaIdentities(
   return { byId, byRef };
 }
 
+
+/** Strict metadata used only for restart-safe table-seed reconciliation. */
+function tableSeedSnapshot(raw: unknown): Map<string, {
+  ref:number; columns:Map<string,{ref:number;type:string}>
+}> {
+  const tables=jsonRecord(raw)?.tables;
+  if (!Array.isArray(tables) || tables.length>512)
+    throw new Error("Expanded native table metadata is missing or over budget.");
+  const result=new Map<string,{ref:number;columns:Map<string,{ref:number;type:string}>}>();
+  const refs=new Set<number>(), columnRefs=new Set<number>();
+  for (const item of tables) {
+    const table=jsonRecord(item), id=table?.id, ref=jsonRecord(table?.fields)?.tableRef;
+    if(typeof id!=="string"||!id||typeof ref!=="number"||
+       !Number.isSafeInteger(ref)||ref<1||refs.has(ref)||result.has(id)||
+       !Array.isArray(table?.columns)) throw new Error("Native table identity is ambiguous.");
+    const columns=new Map<string,{ref:number;type:string}>();
+    const nativeColumns=table?.columns;
+    if(!Array.isArray(nativeColumns))throw new Error("Native table columns unavailable.");
+    for(const item of nativeColumns) {
+      const column=jsonRecord(item), colId=column?.id, fields=jsonRecord(column?.fields);
+      const colRef=fields?.colRef, type=fields?.type;
+      if(typeof colId!=="string"||!colId||typeof colRef!=="number"||
+         !Number.isSafeInteger(colRef)||colRef<1||columnRefs.has(colRef)||
+         columns.has(colId)||typeof type!=="string"||!type||columnRefs.size>=5000)
+        throw new Error("Native column identity or type is ambiguous.");
+      columns.set(colId,{ref:colRef,type});columnRefs.add(colRef);
+    }
+    refs.add(ref);result.set(id,{ref,columns});
+  }
+  return result;
+}
+function missingTableSeeds(
+  current:ReturnType<typeof tableSeedSnapshot>, tables:readonly GristTableSpec[]
+):GristTableSpec[] {
+  return tables.filter(table=>{
+    const saved=current.get(table.id);
+    if(!saved)return true;
+    for(const column of table.columns??[]) {
+      if(saved.columns.get(column.id)?.type!==column.fields?.type)
+        throw new Error("Existing table seed is missing or has a conflicting column type.");
+    }
+    return false;
+  });
+}
+function unchangedTableSeeds(
+  before:ReturnType<typeof tableSeedSnapshot>,after:ReturnType<typeof tableSeedSnapshot>
+):void{
+  for(const [id,old] of before) {
+    const now=after.get(id);
+    if(!now||now.ref!==old.ref||now.columns.size!==old.columns.size)
+      throw new Error("Existing native table changed during seed creation.");
+    for(const [colId,col] of old.columns){
+      const current=now.columns.get(colId);
+      if(!current||current.ref!==col.ref||current.type!==col.type)
+        throw new Error("Existing native column changed during seed creation.");
+    }
+  }
+}
+
 function targetSchemaRefs(byId: Map<string, number>, ids: string[]): number[] {
   return ids.map((id) => {
     const ref = byId.get(id);
@@ -566,6 +625,50 @@ export class GristService {
     }
     const result = await this.client.createTables(documentId, tables);
     return projectCreatedItems(result, "tables", tables.length, "string");
+  }
+
+
+  /** Only absent tables are created; already-created seeds are verified, not overwritten. */
+  async ensureTables(documentIdOrUrl:string,tables:GristTableSpec[]):Promise<unknown>{
+    const documentId=await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
+    this.assertSchemaCount(tables.reduce((n,t)=>n+1+(t.columns?.length??0),0));
+    this.assertUniqueStrings(tables.map(t=>t.id),"Table IDs");
+    const typeAllowed=/^(?:Text|Numeric|Int|Bool|Date|Choice|ChoiceList|Ref:[A-Za-z][A-Za-z0-9_]*|RefList:[A-Za-z][A-Za-z0-9_]*)$/;
+    for(const table of tables){
+      this.assertIdentifier(table.id,"Table ID");
+      if(!table.columns?.length)throw new Error("Each table seed needs a column.");
+      this.assertUniqueStrings(table.columns.map(col=>col.id),"Column IDs");
+      for(const col of table.columns){
+        this.assertIdentifier(col.id,"Column ID");
+        if(!col.fields||Object.keys(col.fields).length!==1||
+           typeof col.fields.type!=="string"||!typeAllowed.test(col.fields.type))
+          throw new Error("Table seeds accept only an explicit supported column type.");
+      }
+    }
+    const read=()=>this.client.listTables(documentId,{expandColumns:true});
+    const before=tableSeedSnapshot(await read());
+    const missing=missingTableSeeds(before,tables);
+    if(!missing.length)return {tables:tables.map(t=>({id:t.id,created:false})),
+      changed:false,persistedSchemaVerified:true};
+    try{
+      const result=projectCreatedItems(
+        await this.client.createTables(documentId,missing),"tables",missing.length,"string"
+      ) as {tables:{id:string}[];resultNormalizationIncomplete?:boolean};
+      if(result.resultNormalizationIncomplete||
+         result.tables.some((table,i)=>table.id!==missing[i]?.id))
+        throw new Error("Native Grist returned incomplete or changed table IDs.");
+      const after=tableSeedSnapshot(await read());
+      unchangedTableSeeds(before,after);
+      if(missingTableSeeds(after,tables).length)
+        throw new Error("New table seeds could not be confirmed on native readback.");
+      const ids=new Set(missing.map(t=>t.id));
+      return {tables:tables.map(t=>({id:t.id,created:ids.has(t.id)})),
+        changed:true,persistedSchemaVerified:true};
+    }catch(error){
+      throw new SchemaWriteVerificationError("ensure_tables",
+        "Table creation was attempted but the outcome is uncertain: "+
+        (error instanceof Error?error.message:"unknown"));
+    }
   }
 
   async updateTables(
