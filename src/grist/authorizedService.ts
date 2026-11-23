@@ -1693,6 +1693,15 @@ export class AuthorizedGristService {
     });
   }
 
+
+  async ensureTables(documentIdOrUrl:string,tables:GristTableSpec[]):Promise<unknown>{
+    const count=tables.reduce((n,t)=>n+1+(t.columns?.length??0),0);
+    return this.execute("ensure_tables",documentIdOrUrl,count,id=>{
+      for(const table of tables)assertPublicTableId(table.id);
+      return this.inner.ensureTables(id,tables);
+    });
+  }
+
   async ensureOwnerSchemaGuard(documentIdOrUrl: string, confirmed: true): Promise<unknown> {
     if (confirmed !== true) throw new Error("Explicit Owner-only schema guard confirmation required.");
     return this.execute("ensure_owner_schema_guard", documentIdOrUrl, 1, async id => {
