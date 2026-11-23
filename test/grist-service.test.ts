@@ -490,6 +490,29 @@ test("ensure_tables reconciles typed seeds and ignores later extra columns",asyn
   assert.equal(calls,1);
 });
 
+
+test("ensure_tables makes writable initial data columns and rejects formula collisions",async()=>{
+  const spec=[{id:"Classes",columns:[{id:"Code",fields:{type:"Text",isFormula:false}}]}];
+  let writes=0,formula=false;
+  const {grist}=service(1000,100,2,20,{
+    listTables:async()=>({tables:writes?[{id:"Classes",fields:{tableRef:10},
+      columns:[{id:"Code",fields:{colRef:11,type:"Text",isFormula:formula}}]}]:[]}),
+    createTables:async(_doc:string,missing:typeof spec)=>{
+      writes++;assert.deepEqual(missing,spec);
+      return {tables:[{id:"Classes"}]};
+    }
+  });
+  const first=await grist.ensureTables("doc",spec) as Record<string,unknown>;
+  assert.equal(first.changed,true);assert.equal(first.persistedSchemaVerified,true);
+  const replay=await grist.ensureTables("doc",spec) as Record<string,unknown>;
+  assert.equal(replay.changed,false);assert.equal(writes,1);
+  formula=true;
+  await assert.rejects(()=>grist.ensureTables("doc",[
+    ...spec,{id:"Other",columns:[{id:"Name",fields:{type:"Text"}}]}
+  ]),/conflicts/);
+  assert.equal(writes,1);
+});
+
 test("ensure_tables validates the complete batch before writes and fails closed on uncertain state",async()=>{
   let writes=0,reads=0;
   const {grist}=service(1000,100,2,10,{
@@ -499,6 +522,8 @@ test("ensure_tables validates the complete batch before writes and fails closed 
   for(const malformed of [
     [{id:"Stages",columns:[{id:"Date",fields:{type:"Invalid"}}]}],
     [{id:"Stages",columns:[{id:"Date",fields:{type:"Date",label:"Extra"}}]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Date",isFormula:true}}]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Date",isFormula:false,formula:"0"}}]}],
     [{id:"Stages",columns:[]}],
     [{id:"Stages",columns:[{id:"Date",fields:{type:"Date"}}]},
       {id:"Stages",columns:[{id:"Name",fields:{type:"Text"}}]}]

@@ -732,7 +732,7 @@ export function registerLeanTools(
       fields:z.object({type:z.union([
         z.enum(["Text","Numeric","Int","Bool","Date","Choice","ChoiceList"]),
         z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
-      ])}).strict()
+      ]),isFormula:z.literal(false).optional()}).strict()
     }).strict(),limits.maxSchemaItems)
   }).strict();
   const tableUpdateSchema = z.object({
