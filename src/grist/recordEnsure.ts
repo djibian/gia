@@ -63,3 +63,33 @@ export function readUniqueTextKeyRecord(
   }
   return row.id;
 }
+
+/** Complete Owner-visible filtered batch: reject truncation, unrequested keys and duplicates. */
+export function readUniqueTextKeyRecords(
+  response: unknown, keyColumnId: string,
+  requested: readonly { fields: Record<string, unknown> }[], limit: number
+): (number | undefined)[] {
+  const rows = object(response)?.records;
+  if (!Array.isArray(rows) || rows.length >= limit) {
+    throw new Error("Native keyed batch read is missing or may be truncated.");
+  }
+  const wanted = new Set(requested.map(row => row.fields[keyColumnId]));
+  const byKey = new Map<string, unknown[]>();
+  const ids = new Set<number>();
+  for (const row of rows) {
+    const item = object(row), fields = object(item?.fields);
+    const key = fields?.[keyColumnId], id = item?.id;
+    if (typeof key !== "string" || !wanted.has(key) ||
+        typeof id !== "number" || !Number.isSafeInteger(id) ||
+        id < 1 || ids.has(id)) {
+      throw new Error("Native keyed batch contains unknown or ambiguous row identity.");
+    }
+    ids.add(id);
+    const bucket = byKey.get(key) ?? [];
+    bucket.push(row);
+    byKey.set(key, bucket);
+  }
+  return requested.map(row => readUniqueTextKeyRecord(
+    { records: byKey.get(row.fields[keyColumnId] as string) ?? [] }, row.fields
+  ));
+}

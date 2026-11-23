@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  assertTextKeyRecordColumns, readUniqueTextKeyRecord
+  assertTextKeyRecordColumns, readUniqueTextKeyRecord, readUniqueTextKeyRecords
 } from "../src/grist/recordEnsure.js";
 
 const schema = { columns: [
@@ -30,4 +30,18 @@ test("unique native row replay is a no-op only when every submitted field matche
   assert.throws(() => readUniqueTextKeyRecord({records:[{id:0,fields}]},fields),/identity/);
   assert.throws(() => readUniqueTextKeyRecord({records:[{id:42,fields:{Name:fields.Name}}]},fields),/conflicts/);
   assert.throws(() => readUniqueTextKeyRecord({records:null},fields),/missing/);
+});
+
+test("bounded native batch maps distinct Text keys and rejects conflicts and truncation", () => {
+  const expected = [{fields:{Name:"A",Qty:2}},{fields:{Name:"B",Qty:3}}];
+  const rows = {records:[{id:10,fields:{Name:"B",Qty:3}},{id:9,fields:{Name:"A",Qty:2}}]};
+  assert.deepEqual(readUniqueTextKeyRecords(rows,"Name",expected,5),[9,10]);
+  assert.deepEqual(readUniqueTextKeyRecords({records:[]},"Name",expected,5),[undefined,undefined]);
+  assert.throws(() => readUniqueTextKeyRecords({records:[...rows.records,rows.records[0]]},
+    "Name",expected,5),/duplicate|ambiguous/);
+  assert.throws(() => readUniqueTextKeyRecords({records:[{id:15,fields:{Name:"A",Qty:5}}]},
+    "Name",expected,5),/conflicts/);
+  assert.throws(() => readUniqueTextKeyRecords({records:[{id:15,fields:{Name:"X",Qty:2}}]},
+    "Name",expected,5),/unknown/);
+  assert.throws(() => readUniqueTextKeyRecords({records:rows.records},"Name",expected,2),/truncated/);
 });

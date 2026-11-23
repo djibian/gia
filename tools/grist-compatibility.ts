@@ -803,6 +803,45 @@ async function run(): Promise<void> {
       keyColumnId: "Name", record: keyed
     });
 
+
+    // #295: bounded restart-safe synthetic data seed with one native write for missing keys.
+    const batchRecords = [
+      {fields:{Name:"Gia-Batch-A-295",Qty:11}},
+      {fields:{Name:"Gia-Batch-B-295",Qty:12}}
+    ];
+    const batchCreated=resultJson(await callTool(bridgeBaseUrl,"grist_add_records",{
+      action:"ensure_records",documentId,tableId:TABLE_ID,
+      keyColumnId:"Name",records:batchRecords
+    }),"native_ensure_records") as {changed:boolean;recordIds:number[];
+      createdIndices:number[];persistedRecordsVerified:boolean};
+    assert(batchCreated.changed && batchCreated.persistedRecordsVerified &&
+      batchCreated.recordIds.length===2 &&
+      batchCreated.recordIds.every(id=>Number.isSafeInteger(id)&&id>0) &&
+      batchCreated.createdIndices.join(",")==="0,1","native_batch_reconciliation_failed");
+    const batchAgain=resultJson(await callTool(bridgeBaseUrl,"grist_add_records",{
+      action:"ensure_records",documentId,tableId:TABLE_ID,
+      keyColumnId:"Name",records:batchRecords
+    }),"native_ensure_records_repeat") as {changed:boolean;recordIds:number[]};
+    assert(!batchAgain.changed &&
+      batchAgain.recordIds.join(",")===batchCreated.recordIds.join(","),
+      "native_batch_reconciliation_repeated_write");
+    await callToolExpectError(bridgeBaseUrl,"grist_add_records",{
+      action:"ensure_records",documentId,tableId:TABLE_ID,keyColumnId:"Name",
+      records:[{fields:{Name:"Gia-Batch-A-295",Qty:99}},
+        {fields:{Name:"Gia-Batch-C-MustNotExist-295",Qty:13}}]
+    });
+    await callToolExpectError(bridgeBaseUrl,"grist_add_records",{
+      action:"ensure_records",documentId,tableId:TABLE_ID,keyColumnId:"Name",
+      records:[batchRecords[0],batchRecords[0]]
+    });
+    const afterBatch=await gristApi(gristBaseUrl,apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/${TABLE_ID}/records`) as {
+        records:Array<{id:number;fields:{Name?:string}}>
+      };
+    assert(!afterBatch.records.some(row=>
+      row.fields.Name==="Gia-Batch-C-MustNotExist-295"),
+      "native_batch_wrote_despite_preflight_conflict");
+
     // #295 restart-safe typed bootstrap: create on a new document, repeat after
     // subsequent column changes and reject conflicts before any native write.
     const seedAlpha={id:"Compat_SeedAlpha",columns:[{id:"Name",fields:{type:"Text"}}]};

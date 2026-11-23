@@ -907,12 +907,25 @@ export function registerLeanTools(
           tableId: tableIdSchema,
           keyColumnId: columnIdSchema,
           record: newRecordSchema
+        }).strict(),
+        z.object({
+          action: z.literal("ensure_records"),
+          documentId: documentIdSchema,
+          tableId: tableIdSchema,
+          keyColumnId: columnIdSchema,
+          records: boundedArray(newRecordSchema, Math.min(16, limits.maxWriteRecords))
+            .min(2)
         }).strict()
       ])
     },
     async (input) => {
       try {
         if ("action" in input) {
+          if (input.action === "ensure_records") {
+            return textResult(await grist.ensureRecords(
+              input.documentId, input.tableId, input.keyColumnId, input.records
+            ));
+          }
           return textResult(await grist.ensureRecord(
             input.documentId, input.tableId, input.keyColumnId, input.record
           ));

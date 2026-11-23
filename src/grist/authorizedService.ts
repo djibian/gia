@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { assertTextKeyRecordColumns, readUniqueTextKeyRecord } from "./recordEnsure.js";
+import { assertTextKeyRecordColumns, readUniqueTextKeyRecord, readUniqueTextKeyRecords } from "./recordEnsure.js";
 import type { AuditLogger } from "../audit/auditLogger.js";
 import type { AuthorizationService } from "../auth/authorizationService.js";
 import type { GristCapability, Principal } from "../auth/principal.js";
@@ -1789,6 +1789,86 @@ export class AuthorizedGristService {
           persistedRecordVerified: true };
       } catch (error) {
         throw new UncertainWriteError("ensure_record", 0, 0, 1, 1, 0, 0, [], error);
+      }
+    });
+  }
+
+
+  /** Reconcile a bounded homogeneous group of Owner-visible Text-keyed rows. */
+  async ensureRecords(
+    documentIdOrUrl: string, tableId: string, keyColumnId: string,
+    records: NewGristRecord[]
+  ): Promise<unknown> {
+    assertPublicTableId(tableId);
+    if (!keyColumnId.trim() || keyColumnId.startsWith("_grist_") ||
+        records.length < 2 || records.length > 16) {
+      throw new Error("Batch reconciliation requires 2–16 records and a public Text key.");
+    }
+    const keys = records.map(record => {
+      const fields = record?.fields, key = fields?.[keyColumnId];
+      if (!fields || !Object.hasOwn(fields, keyColumnId) ||
+          typeof key !== "string" || !key.trim() || key.length > 128 ||
+          Object.keys(fields).length < 1 || Object.keys(fields).length > 32) {
+        throw new Error("Each keyed record requires a nonempty Text key and at most 32 fields.");
+      }
+      return key;
+    });
+    if (new Set(keys).size !== keys.length) {
+      throw new Error("Keyed batch contains duplicate requested Text keys.");
+    }
+    return this.execute("ensure_records", documentIdOrUrl, records.length, async id => {
+      await this.inner.assertDocumentOwner(id);
+      const limit = 2 * records.length + 1;
+      if (this.inner.maxReadRecords < limit) {
+        throw new Error("Keyed batch requires complete native read capacity.");
+      }
+      const columns = await this.inner.listColumns(id, tableId);
+      for (const record of records) {
+        assertTextKeyRecordColumns(columns, keyColumnId, record.fields);
+      }
+      const read = async () => readUniqueTextKeyRecords(
+        await this.inner.queryRecords(id, tableId, {
+          filter: { [keyColumnId]: keys }, limit, hidden: false, cellFormat: "normal"
+        }), keyColumnId, records, limit
+      );
+      const before = await read();
+      const missing = records.map((record, index) => ({record, index}))
+        .filter(item => before[item.index] === undefined);
+      const result = (ids: (number | undefined)[], changed: boolean) => ({
+        documentId: id, tableId, recordIds: ids, changed,
+        createdIndices: changed ? missing.map(item => item.index) : [],
+        persistedRecordsVerified: true
+      });
+      if (!missing.length) return result(before, false);
+      if (!isDeepStrictEqual(columns, await this.inner.listColumns(id, tableId)) ||
+          !isDeepStrictEqual(before, await read())) {
+        throw new Error("Native schema or keyed batch changed before creation; reconcile first.");
+      }
+      try {
+        await this.inner.createRecords(id, tableId, missing.map(item => item.record));
+        const after = await read();
+        if (after.some((recordId, index) =>
+          recordId === undefined ||
+          (before[index] !== undefined && before[index] !== recordId))) {
+          throw new Error("Native keyed batch did not persist all expected stable rows.");
+        }
+        return result(after, true);
+      } catch (error) {
+        let confirmed: { requestIndex: number; recordId: number }[] = [];
+        try {
+          const after = await read();
+          if (after.every((recordId, index) =>
+            before[index] === undefined || before[index] === recordId)) {
+            confirmed = missing.flatMap(({index}) => {
+              const recordId = after[index];
+              return recordId === undefined ? [] : [{requestIndex:index,recordId}];
+            });
+          }
+        } catch { /* Ambiguous post-state remains uncertain, never assume no effect. */ }
+        throw new UncertainWriteError(
+          "ensure_records", 0, confirmed.length, 1,
+          missing.length - confirmed.length, 0, 0, confirmed, error
+        );
       }
     });
   }

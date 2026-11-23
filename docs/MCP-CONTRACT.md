@@ -74,6 +74,17 @@ seeding and safe sequential restarts, **not** a Grist uniqueness constraint,
 atomic compare-and-swap or safe concurrent upsert. A failed or uncertain
 write must be explicitly reconciled before repetition. No new MCP tool.
 
+`grist_add_records(action="ensure_records")` reconciles 2–16 distinct Text-keyed rows
+on one existing table in a single bounded request. The Owner-gated, complete
+multi-key read rejects duplicate requested or persisted keys, conflicting values,
+non-writable columns and truncated results before creating missing rows.
+The adapter validates schema and prior records again, creates only missing keys,
+then verifies all stable row IDs in input order. Replaying identical rows is a
+no-op. Uncertain or partial effects preserve only confirmed created indices/IDs
+and refuse blind batch retries. This is not a native uniqueness index, transaction,
+concurrent upsert or cross-table orchestration; the external client reconciles
+before retrying. No additional MCP tool is introduced.
+
 Both `grist_add_structure(create_tables)` and `grist_add_structure(create_columns)` accept only creation metadata actually persisted by the supported native Grist operations: optional `label`, `type`, `isFormula`, `formula` and `widgetOptions`. Native `AddTable` and `AddVisibleColumn` do not persist `description` and do not resolve the public stable-ID alias `visibleColumnId` at creation time. These two update-only fields therefore fail validation **before any create write**, including mixed batches, rather than producing a misleading success. To set them, first create the column with supported fields, then call `grist_change_structure(action="update_columns")` on the resulting stable IDs; update verification and uncertain-write handling remain authoritative. This narrows previously advertised but ineffective create inputs, not a functioning native creation workflow.
 
 `grist_add_structure(action="ensure_columns")` reconciles a bounded homogeneous
