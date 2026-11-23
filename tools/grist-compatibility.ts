@@ -1357,26 +1357,35 @@ async function run(): Promise<void> {
       "grouped_summary_columns_mismatch"
     );
 
-    const grandTotalSummary = resultJson(
-      await callTool(bridgeBaseUrl, "grist_add_ui", {
-        action: "add_widget",
-        documentId,
-        pageId,
-        tableId: TABLE_ID,
-        type: "record",
-        groupByColumnIds: []
-      }),
-      "grand_total_summary"
-    );
-    const grandTotalInfo =
-      grandTotalSummary.summary &&
-      typeof grandTotalSummary.summary === "object" &&
-      !Array.isArray(grandTotalSummary.summary)
-        ? (grandTotalSummary.summary as Record<string, unknown>)
-        : undefined;
+    const ensureSummary = (type: "record" | "chart", groupByColumnIds: string[]) =>
+      callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "ensure_widget", documentId, pageId, tableId: TABLE_ID, type, groupByColumnIds
+      }).then(result => resultJson(result, "ensure_native_summary") as {
+        changed: boolean; persistedWidgetVerified: boolean;
+        widget: { id: number; tableId: string };
+        summary: { sourceTableId: string; summaryTableId: string; groupByColumnIds: string[] };
+      });
+    const existingSummary = await ensureSummary("record", ["Name"]);
+    assert(!existingSummary.changed && existingSummary.persistedWidgetVerified &&
+      isDeepStrictEqual(existingSummary.widget, groupedSummary.widget), "ensure_summary_did_not_reuse_section");
+    const summaryChart = await ensureSummary("chart", ["Name"]);
+    const summaryChartReplay = await ensureSummary("chart", ["Name"]);
+    assert(summaryChart.changed && summaryChart.persistedWidgetVerified &&
+      summaryChart.widget.id > 0 && summaryChart.widget.id !== existingSummary.widget.id &&
+      summaryChart.summary.summaryTableId === existingSummary.summary.summaryTableId &&
+      !summaryChartReplay.changed && summaryChartReplay.persistedWidgetVerified &&
+      summaryChartReplay.widget.id === summaryChart.widget.id,
+      "ensure_summary_did_not_reuse_grouping_or_reconcile_replay");
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "delete_widget", documentId, pageId, widgetId: summaryChart.widget.id
+    });
+
+    const grandTotalSummary = await ensureSummary("record", []);
+    const grandTotalReplay = await ensureSummary("record", []);
     assert(
-      Array.isArray(grandTotalInfo?.groupByColumnIds) &&
-        grandTotalInfo.groupByColumnIds.length === 0,
+      grandTotalSummary.changed && grandTotalSummary.persistedWidgetVerified &&
+      grandTotalSummary.summary.groupByColumnIds.length === 0 &&
+      !grandTotalReplay.changed && grandTotalReplay.widget.id === grandTotalSummary.widget.id,
       "grand_total_summary_columns_mismatch"
     );
 

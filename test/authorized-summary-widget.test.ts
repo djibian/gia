@@ -8,7 +8,7 @@ import { AuthorizedGristService } from "../src/grist/authorizedService.js";
 import type { GristService } from "../src/grist/service.js";
 import type { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
 
-function harness() {
+function harness({ duplicate = false } = {}) {
   let created = false;
   const writes: unknown[] = [];
 
@@ -43,8 +43,17 @@ function harness() {
     maxWriteRecords: 500,
     writeBatchRecords: 200,
     maxSchemaItems: 100,
+    assertDocumentOwner: async () => undefined,
     listTables: async () => ({ tables: created ? [sourceTable, summaryTable] : [sourceTable] }),
     queryRecords: async (_documentId: string, tableId: string) => {
+      if (tableId === "_grist_Tables_column") {
+        const tables = created ? [sourceTable, summaryTable] : [sourceTable];
+        return { records: tables.flatMap(table => table.columns.map(column => ({
+          id: column.fields.colRef,
+          fields: { summarySourceCol: 0, ...column.fields,
+            parentId: table.fields.tableRef, colId: column.id }
+        }))) };
+      }
       if (tableId === "_grist_Pages") {
         return { records: [{ id: 12, fields: { viewRef: 7, indentation: 0, pagePos: 1 } }] };
       }
@@ -54,8 +63,8 @@ function harness() {
       if (tableId === "_grist_Views_section") {
         return {
           records: created
-            ? [{
-                id: 11,
+            ? (duplicate ? [11, 12] : [11]).map(id => ({
+                id,
                 fields: {
                   parentId: 7,
                   tableRef: 4,
@@ -70,7 +79,7 @@ function harness() {
                   linkSrcColRef: 0,
                   linkTargetColRef: 0
                 }
-              }]
+              }))
             : []
         };
       }
@@ -156,4 +165,25 @@ test("authorized native summary rejects an unknown source column before any writ
     /does not exist/
   );
   assert.deepEqual(writes, []);
+});
+
+test("native summary reconciliation creates once and reuses the stable section", async () => {
+  const { service, writes } = harness();
+  const ensure = () => service.ensurePageWidget("doc-1", 7, "Orders", "record", ["Region"]) as
+    Promise<{ changed: boolean; persistedWidgetVerified: boolean; widget: { id: number } }>;
+  const first = await ensure();
+  const replay = await ensure();
+  assert.equal(first.changed, true);
+  assert.equal(replay.changed, false);
+  assert.equal(replay.persistedWidgetVerified, true);
+  assert.equal(replay.widget.id, first.widget.id);
+  assert.equal(writes.length, 1);
+});
+
+test("native summary reconciliation refuses multiple matching sections without writing", async () => {
+  const { service, writes } = harness({ duplicate: true });
+  await service.addPageWidget("doc-1", 7, "Orders", "record", ["Region"]);
+  await assert.rejects(() => service.ensurePageWidget("doc-1", 7, "Orders", "record", ["Region"]),
+    /identity is ambiguous/);
+  assert.equal(writes.length, 1);
 });
