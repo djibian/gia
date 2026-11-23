@@ -1173,6 +1173,15 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("replace_column_formula"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            formula: z.string().min(1).max(4096)
+              .refine(v => Boolean(v.trim()) && !v.includes("\\u0000"),
+                "Nonempty bounded Grist formula.")
+          }).strict(),
+        z.object({
             action: z.literal("append_choice_options"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1441,6 +1450,10 @@ export function registerLeanTools(
                 input.columns
               )
             );
+          case "replace_column_formula":
+            return textResult(await grist.replaceColumnFormula(
+              input.documentId, input.tableId, input.columnId, input.formula
+            ));
           case "append_choice_options":
             return textResult(await grist.appendChoiceOptions(
               input.documentId, input.tableId, input.columnId, input.values
