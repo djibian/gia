@@ -1629,6 +1629,17 @@ export function registerLeanTools(
             tableId: tableIdSchema,
             type: z.enum(NATIVE_WIDGET_TYPES)
           }).strict()).min(2).max(8)
+        }).strict(),
+        z.object({
+          action: z.literal("ensure_widgets"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema,
+          widgets: z.array(z.object({
+            tableId: tableIdSchema,
+            type: z.enum(NATIVE_WIDGET_TYPES)
+          }).strict()).min(2).max(8)
+            .refine(items => new Set(items.map(item => JSON.stringify([item.tableId,item.type]))).size === items.length,
+              "Widget reconciliation identities must be unique.")
         }).strict()
       ])
     },
@@ -1663,6 +1674,10 @@ export function registerLeanTools(
             ));
           case "add_widgets":
             return textResult(await grist.addPageWidgets(
+              input.documentId, input.pageId, input.widgets
+            ));
+          case "ensure_widgets":
+            return textResult(await grist.ensurePageWidgets(
               input.documentId, input.pageId, input.widgets
             ));
         }

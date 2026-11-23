@@ -816,6 +816,19 @@ planner, transaction, or general uniqueness enforcement under concurrent writers
 
 ## Bounded homogeneous native widget creation
 
+`grist_add_ui(action="ensure_widgets")` reconciles two to eight **distinct**
+ungrouped native section identities on one page, each selected by a stable
+source table ID and native widget type. For each requested identity, exactly
+one existing widget is reused unchanged or a missing widget is created, in
+request order. Duplicate requested identities and ambiguous pre-existing
+matches are refused before writing. Missing widgets are created in a single
+bounded native bundle (one native action when only one is absent); the complete
+post-read checks all original UI, exactly the new widgets, stable identities
+and types. Repeated identical requests are no-ops; partial/uncertain native
+effects require inspection and reconciliation, never blind retries. Multiple
+intentionally duplicated same-table/type sections remain possible using the
+existing explicit `add_widget` operation with caller-owned widget IDs.
+
 `grist_add_ui(action="add_widgets")` creates two to eight ungrouped native
 sections on one existing page, using stable input `{tableId,type}` items and
 the same closed widget types already supported by `add_widget`. It is a single

@@ -778,6 +778,118 @@ export class AuthorizedGristService {
     });
   }
 
+  /**
+   * Reconcile a bounded set of unique ungrouped (table, type) widgets on one
+   * page. Create only absent sections in one native bundle; reject ambiguous
+   * identities and never blindly retry a possibly partial native effect.
+   */
+  async ensurePageWidgets(
+    documentIdOrUrl: string, pageId: number,
+    specs: readonly { tableId: string; type: NativeWidgetType }[]
+  ): Promise<unknown> {
+    if (!Number.isSafeInteger(pageId) || pageId < 1 ||
+        !Array.isArray(specs) || specs.length < 2 || specs.length > 8) {
+      throw new Error("Native widget reconciliation needs one page and two to eight items.");
+    }
+    for (const item of specs) {
+      assertPublicTableId(item.tableId);
+      if (!NATIVE_WIDGET_TYPES.includes(item.type)) {
+        throw new Error("Unsupported native widget type.");
+      }
+    }
+    const logical = specs.map(item => JSON.stringify([item.tableId, item.type]));
+    if (new Set(logical).size !== logical.length) {
+      throw new Error("Widget reconciliation identities must be unique.");
+    }
+    return this.execute("ensure_page_widgets", documentIdOrUrl, specs.length, async id => {
+      const before = await this.loadDocumentUi(id);
+      assertCompleteUiSnapshot(before);
+      const oldPage = before.pages.find(page => page.id === pageId);
+      if (!oldPage) throw new Error("Native target page does not exist.");
+      const resolved = await Promise.all(specs.map(async spec => ({
+        ...spec, tableRef: await this.resolveTableRef(id, spec.tableId)
+      })));
+      const nativeKeys = resolved.map(item => JSON.stringify([item.tableRef, item.type]));
+      if (new Set(nativeKeys).size !== nativeKeys.length) {
+        throw new Error("Widget source identities are ambiguous.");
+      }
+      const find = (page: typeof oldPage) => resolved.map(item =>
+        page.widgets.filter(widget =>
+          widget.tableRef === item.tableRef && widget.type === item.type));
+      const previous = find(oldPage);
+      if (previous.some(items => items.length > 1)) {
+        throw new Error("Native widget identity is ambiguous; use explicit stable widget IDs.");
+      }
+      const missing = resolved.filter((_item, index) => previous[index]!.length === 0);
+      const base = { documentId: id, pageId };
+      if (missing.length === 0) {
+        return { ...base, widgets: previous.map(items => ({
+          ...projectPublicWidget(items[0]!), created: false
+        })), changed: false, persistedWidgetsVerified: true };
+      }
+      const fresh = await this.loadDocumentUi(id);
+      assertCompleteUiSnapshot(fresh);
+      if (!isDeepStrictEqual(before, fresh) ||
+          !isDeepStrictEqual(resolved.map(item => item.tableRef),
+            await Promise.all(specs.map(item => this.resolveTableRef(id, item.tableId))))) {
+        throw new Error("Native page or source table changed before reconciliation; inspect first.");
+      }
+      let created: Array<{pageId:number;tableRef:number;widgetId:number}> = [];
+      try {
+        created = missing.length === 1
+          ? [await this.uiActions.addPageWidget(id, pageId,
+            missing[0]!.tableRef, missing[0]!.type)]
+          : await this.uiActions.addPageWidgets(id, pageId,
+            missing.map(item => ({ tableRef: item.tableRef, type: item.type })));
+        const after = await this.loadDocumentUi(id);
+        assertCompleteUiSnapshot(after);
+        const page = after.pages.find(item => item.id === pageId);
+        if (!page || after.pages.length !== before.pages.length ||
+            page.pageRecordId !== oldPage.pageRecordId ||
+            page.name !== oldPage.name || page.type !== oldPage.type ||
+            page.indentation !== oldPage.indentation ||
+            page.pagePos !== oldPage.pagePos ||
+            !isDeepStrictEqual(page.layoutSpec, oldPage.layoutSpec) ||
+            after.pages.some(item => item.id !== pageId &&
+              !isDeepStrictEqual(item, before.pages.find(old => old.id === item.id))) ||
+            oldPage.widgets.some(old => !isDeepStrictEqual(
+              old, page.widgets.find(current => current.id === old.id)))) {
+          throw new Error("Native widget reconciliation changed unrelated UI.");
+        }
+        const oldIds = new Set(oldPage.widgets.map(widget => widget.id));
+        const added = page.widgets.filter(widget => !oldIds.has(widget.id));
+        const createdIds = new Set(created.map(item => item.widgetId));
+        if (created.length !== missing.length || createdIds.size !== missing.length ||
+            added.length !== missing.length ||
+            added.some(widget => !createdIds.has(widget.id))) {
+          throw new Error("Native widget reconciliation created unexpected sections.");
+        }
+        const current = find(page);
+        if (current.some(items => items.length !== 1) ||
+            created.some((entry, index) => {
+              const widget = added.find(item => item.id === entry.widgetId);
+              return entry.pageId !== pageId || !widget ||
+                entry.tableRef !== missing[index]!.tableRef ||
+                widget.tableRef !== missing[index]!.tableRef ||
+                widget.tableId !== missing[index]!.tableId ||
+                widget.type !== missing[index]!.type;
+            })) {
+          throw new Error("Native widget identity or type could not be verified.");
+        }
+        return { ...base, widgets: current.map(items => ({
+          ...projectPublicWidget(items[0]!),
+          created: createdIds.has(items[0]!.id)
+        })), changed: true, persistedWidgetsVerified: true };
+      } catch (error) {
+        const known = created.map(item => item.widgetId);
+        throw new UiWriteVerificationError("ensure_page_widgets",
+          "Native section reconciliation effect uncertain; inspect before retry." +
+          (known.length ? " Returned section IDs: " + known.join(",") + "." : "") +
+          " " + (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
+
   async renamePage(
     documentIdOrUrl: string,
     pageId: number,

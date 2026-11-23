@@ -356,9 +356,10 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     ]
   },
   grist_add_ui: {
-    actions: ["create_page", "ensure_page", "add_widget", "ensure_widget", "add_widgets"],
+    actions: ["create_page", "ensure_page", "add_widget", "ensure_widget", "add_widgets", "ensure_widgets"],
     request: [`create_page: {action,documentId,tableId,name}; ensure_page: {action,documentId,tableId,name}; add_widget: {action,documentId,pageId:positiveInteger,tableId,type,groupByColumnIds?:stableColumnIds[]}. Widget type: ${NATIVE_WIDGET_TYPES.join(" | ")}.`,
       "add_widgets: {action,documentId,pageId,widgets:[{tableId,type},...]} 2..8 ungrouped native sections in one page; preserves input order, reports created widget IDs, uncertain effect requires readback, no automatic replay.",
+      "ensure_widgets: {action,documentId,pageId,widgets:[{tableId,type},...]} 2..8 unique ungrouped native identities; reuse existing, create only absent in one bundle; refuse ambiguous duplicates; verified replay no-op.",
       "ensure_page: reconcile by an exact unique visible page name; create only if absent, preserve subsequent widgets, refuse duplicate names and incomplete state. tableId is a creation prerequisite, not proof of existing page origin.",
       "ensure_widget: {action,documentId,pageId,tableId,type}; reconcile one ungrouped section by the unique (page, table, type) identity. Reuse a sole existing widget, create only if absent, refuse ambiguous duplicates, and verify native IDs and prior UI. For multiple same-type sections use add_widget and retain the returned stable IDs."],
     constraints: ["Supplied grouping IDs must be unique current source columns. An empty list creates a grand-total summary. The generated/reused summary table has a distinct identity and its effective access must be checked separately."],
