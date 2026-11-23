@@ -426,9 +426,9 @@ async function validateFromEmptyStageSkeleton(
     action: "update_widget", documentId, pageId, widgetId: grid.widget.id, update: { selectBy }
   });
   const pageWidgets = await callTool(bridge, "grist_inspect", { action: "page_widgets", documentId, pageId }) as {
-    widgets: Array<{ id: number; selectBy?: typeof selectBy }>;
+    widgets: Array<{ id: number; selectByNormalized?: typeof selectBy }>;
   };
-  const linked = pageWidgets.widgets.find(widget => widget.id === grid.widget.id)?.selectBy;
+  const linked = pageWidgets.widgets.find(widget => widget.id === grid.widget.id)?.selectByNormalized;
   assertThat(linked?.sourceWidgetId === selectBy.sourceWidgetId && linked.targetColumnId === "Classe",
     "from_empty_class_stage_link_not_persisted");
 
