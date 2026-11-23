@@ -3190,7 +3190,7 @@ async function run(): Promise<void> {
     });
     const semanticFormLayout = {
       children: [
-        { type: "paragraph", text: "Application du stage" },
+        { type: "paragraph", text: "Informations\u202f: stage synthétique" },
         { type: "section", children: [{ type: "field", columnId: "Name" }] },
         { type: "submit" }
       ],
@@ -3202,16 +3202,21 @@ async function run(): Promise<void> {
     }), "native_form_layout_write") as { changed: boolean; persistedLayoutVerified: boolean };
     assert(createdFormLayout.changed && createdFormLayout.persistedLayoutVerified,
       "native_form_layout_write_not_verified");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_form_layout", documentId, pageId, widgetId: formSection.id,
+      layout: { ...semanticFormLayout, successText: "tel: 0155550000" }
+    });
     const persistedLayoutSections = await gristApi(gristBaseUrl, apiKey,
       `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
     const persistedFormLayout = JSON.parse(String(persistedLayoutSections.records.find(
       row => row.id === formSection.id)?.fields.layoutSpec)) as {
-      children: Array<{children?: Array<{leaf?: number}>}>;
+      children: Array<{ text?: string; children?: Array<{ leaf?: number }> }>;
       submitText?: string;
       successText?: string;
       anotherResponse?: boolean;
     };
-    assert(persistedFormLayout.children[1]?.children?.[0]?.leaf === formField.id &&
+    assert(persistedFormLayout.children[0]?.text === "Informations\u202f: stage synthétique" &&
+      persistedFormLayout.children[1]?.children?.[0]?.leaf === formField.id &&
       persistedFormLayout.submitText === "Envoyer" && persistedFormLayout.successText === "Thank you" &&
       persistedFormLayout.anotherResponse === false,
       "native_form_layout_stable_field_reference_mismatch");
