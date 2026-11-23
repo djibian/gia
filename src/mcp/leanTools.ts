@@ -1136,7 +1136,7 @@ export function registerLeanTools(
             columnId: columnIdSchema,
             values: z.array(z.string().min(1).max(120)
               .refine(value => value.trim() === value &&
-                !/[\\u0000-\\u001f\\u007f]/.test(value), "Plain bounded labels only."))
+                !/[\u0000-\u001f\u007f]/.test(value), "Plain bounded labels only."))
               .min(1).max(64)
               .refine(values => new Set(values).size === values.length, "Choice labels must be unique.")
           }).strict(),
