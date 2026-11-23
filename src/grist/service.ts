@@ -275,7 +275,9 @@ function tableSeedSnapshot(raw: unknown): Map<string, {
        !Number.isSafeInteger(ref)||ref<1||refs.has(ref)||result.has(id)||
        !Array.isArray(table?.columns)) throw new Error("Native table identity is ambiguous.");
     const columns=new Map<string,{ref:number;type:string}>();
-    for(const item of table.columns) {
+    const nativeColumns=table?.columns;
+    if(!Array.isArray(nativeColumns))throw new Error("Native table columns unavailable.");
+    for(const item of nativeColumns) {
       const column=jsonRecord(item), colId=column?.id, fields=jsonRecord(column?.fields);
       const colRef=fields?.colRef, type=fields?.type;
       if(typeof colId!=="string"||!colId||typeof colRef!=="number"||
