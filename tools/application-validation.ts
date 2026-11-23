@@ -221,7 +221,10 @@ async function validateFromEmptyStageSkeleton(
   const tables = [
     { id: "Classes", columns: [{ id: "Code", fields: { type: "Text" } }] },
     { id: "Enseignants", columns: [{ id: "Cle", fields: { type: "Text" } }] },
-    { id: "Stages", columns: [{ id: "Code_Stage", fields: { type: "Text" } }] }
+    { id: "Stages", columns: [
+      { id: "Code_Stage", fields: { type: "Text" } },
+      { id: "Contact_Le", fields: { type: "DateTime:Europe/Paris", isFormula: false } }
+    ] }
   ];
   const ensureTables = () => callTool(bridge, "grist_add_structure", {
     action: "ensure_tables", documentId, tables
@@ -241,7 +244,8 @@ async function validateFromEmptyStageSkeleton(
   const stageColumns = [
     { id: "Classe", fields: { type: "Ref:Classes" } },
     { id: "Suivi_par", fields: { type: "Ref:Enseignants" } },
-    { id: "Commentaire", fields: { type: "Text" } }
+    { id: "Commentaire", fields: { type: "Text" } },
+    { id: "Justificatifs", fields: { type: "Attachments" } }
   ];
   const classColumns = writable([{ id: "Libelle", fields: { type: "Text" } }]);
   const teacherColumns = writable([{ id: "Email", fields: { type: "Text" } }]);
