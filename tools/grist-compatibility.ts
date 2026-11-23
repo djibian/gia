@@ -3879,6 +3879,50 @@ async function run(): Promise<void> {
       batchSections.records.some(row=>row.id===sectionId && row.fields.parentId===batchPageId)),
       "native_widget_batch_missing_persisted_sections");
 
+    const originalSections = batchSections.records.filter(row => row.fields.parentId === batchPageId);
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_layout", documentId, pageId: batchPageId,
+      layout: { root: { kind: "group", children: originalSections.map(row => ({
+        kind: "widget", widgetId: row.id
+      })) } }
+    });
+    const readBatchPageLayout = async () => {
+      const views = await gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Views/records?hidden=true`) as MetaRecords;
+      return views.records.find(row => row.id === batchPageId)?.fields.layoutSpec;
+    };
+    const originalLayout = await readBatchPageLayout();
+    assert(typeof originalLayout === "string" && originalLayout.length > 0,
+      "native_widget_reconciliation_missing_configured_layout");
+    const reconcileWidgets = (widgets: Array<{ tableId: string; type: string }>) =>
+      callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "ensure_widgets", documentId, pageId: batchPageId, widgets
+      }).then(result => resultJson(result, "native_widget_reconciliation") as {
+        changed: boolean; persistedWidgetsVerified: boolean;
+        widgets: Array<{ id: number; created: boolean }>;
+      });
+    const wanted = [{ tableId: TABLE_ID, type: "record" },
+      { tableId: TABLE_ID, type: "chart" }, { tableId: TABLE_ID, type: "single" }];
+    const reconciled = await reconcileWidgets(wanted);
+    assert(reconciled.changed && reconciled.persistedWidgetsVerified &&
+      reconciled.widgets[0]?.id === batchResult.createdWidgetIds[0] &&
+      isDeepStrictEqual(reconciled.widgets.map(widget => widget.created), [false, true, true]),
+      "native_widget_reconciliation_created_wrong_sections");
+    const widgetBatchReplay = await reconcileWidgets(wanted);
+    assert(!widgetBatchReplay.changed && widgetBatchReplay.persistedWidgetsVerified &&
+      isDeepStrictEqual(widgetBatchReplay.widgets.map(widget => widget.id),
+        reconciled.widgets.map(widget => widget.id)) &&
+      widgetBatchReplay.widgets.every(widget => !widget.created),
+      "native_widget_reconciliation_replay_duplicated_sections");
+    const incremental = await reconcileWidgets([...wanted, { tableId: TABLE_ID, type: "detail" }]);
+    assert(incremental.changed && incremental.persistedWidgetsVerified &&
+      isDeepStrictEqual(incremental.widgets.slice(0, 3).map(widget => widget.id),
+        reconciled.widgets.map(widget => widget.id)) &&
+      isDeepStrictEqual(incremental.widgets.map(widget => widget.created), [false, false, false, true]),
+      "native_widget_reconciliation_incremental_created_wrong_sections");
+    assert(await readBatchPageLayout() === originalLayout,
+      "native_widget_reconciliation_overwrote_page_layout");
+
     console.log(`Grist Community ${version}: PASS`);
     console.log(
       `document=${documentId} workspace=${workspaceId} table=${TABLE_ID} page=${PAGE_NAME} empty=${emptyDocumentId} template=${copiedDocumentId}`

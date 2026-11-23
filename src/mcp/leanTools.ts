@@ -730,7 +730,8 @@ export function registerLeanTools(
     columns:boundedArray(z.object({
       id:columnIdSchema,
       fields:z.object({type:z.union([
-        z.enum(["Text","Numeric","Int","Bool","Date","Choice","ChoiceList"]),
+        z.enum(["Text","Numeric","Int","Bool","Date","Attachments","Choice","ChoiceList"]),
+        z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
         z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
       ]),isFormula:z.literal(false).optional()}).strict()
     }).strict(),limits.maxSchemaItems)
@@ -1054,13 +1055,13 @@ export function registerLeanTools(
               id: columnIdSchema,
               fields: z.union([
                 z.object({type: z.union([
-                  z.enum(["Text","Numeric","Int","Bool","Date","Choice","ChoiceList"]),
+                  z.enum(["Text","Numeric","Int","Bool","Date","Attachments","Choice","ChoiceList"]),
                   z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
                   z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
                 ])}).strict(),
                 z.object({
                   type: z.union([
-                    z.enum(["Text","Numeric","Int","Bool","Date","Choice","ChoiceList"]),
+                    z.enum(["Text","Numeric","Int","Bool","Date","Attachments","Choice","ChoiceList"]),
                     z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
                     z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
                   ]),
@@ -1068,7 +1069,7 @@ export function registerLeanTools(
                 }).strict(),
                 z.object({
                   type: z.union([
-                    z.enum(["Text","Numeric","Int","Bool","Date","Choice","ChoiceList"]),
+                    z.enum(["Text","Numeric","Int","Bool","Date","Attachments","Choice","ChoiceList"]),
                     z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
                     z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
                   ]),

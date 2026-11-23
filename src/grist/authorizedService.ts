@@ -849,6 +849,7 @@ export class AuthorizedGristService {
             page.name !== oldPage.name || page.type !== oldPage.type ||
             page.indentation !== oldPage.indentation ||
             page.pagePos !== oldPage.pagePos ||
+            !isDeepStrictEqual(page.layoutSpec, oldPage.layoutSpec) ||
             after.pages.some(item => item.id !== pageId &&
               !isDeepStrictEqual(item, before.pages.find(old => old.id === item.id))) ||
             oldPage.widgets.some(old => !isDeepStrictEqual(

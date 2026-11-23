@@ -221,7 +221,10 @@ async function validateFromEmptyStageSkeleton(
   const tables = [
     { id: "Classes", columns: [{ id: "Code", fields: { type: "Text" } }] },
     { id: "Enseignants", columns: [{ id: "Cle", fields: { type: "Text" } }] },
-    { id: "Stages", columns: [{ id: "Code_Stage", fields: { type: "Text" } }] }
+    { id: "Stages", columns: [
+      { id: "Code_Stage", fields: { type: "Text" } },
+      { id: "Contact_Le", fields: { type: "DateTime:Europe/Paris", isFormula: false } }
+    ] }
   ];
   const ensureTables = () => callTool(bridge, "grist_add_structure", {
     action: "ensure_tables", documentId, tables
@@ -241,7 +244,8 @@ async function validateFromEmptyStageSkeleton(
   const stageColumns = [
     { id: "Classe", fields: { type: "Ref:Classes" } },
     { id: "Suivi_par", fields: { type: "Ref:Enseignants" } },
-    { id: "Commentaire", fields: { type: "Text" } }
+    { id: "Commentaire", fields: { type: "Text" } },
+    { id: "Justificatifs", fields: { type: "Attachments" } }
   ];
   const classColumns = writable([{ id: "Libelle", fields: { type: "Text" } }]);
   const teacherColumns = writable([{ id: "Email", fields: { type: "Text" } }]);
@@ -339,13 +343,6 @@ async function validateFromEmptyStageSkeleton(
     JSON.stringify(initialWidgets.widgets.map(widget => widget.id)) ===
       JSON.stringify(batchReplay.widgets.map(widget => widget.id)),
     "from_empty_widget_batch_replay_duplicated_sections");
-  const extra = await ensureWidgets([
-    ...widgetBatch, { tableId: "Stages", type: "chart" }
-  ]);
-  assertThat(extra.changed && extra.persistedWidgetsVerified &&
-    !extra.widgets[0]?.created && !extra.widgets[1]?.created &&
-    extra.widgets[2]?.created && extra.widgets[2].id > 0,
-    "from_empty_widget_partial_batch_not_reconciled");
   const grid = await ensureWidget("record");
   const form = await ensureWidget("form");
   assertThat(!grid.changed && !form.changed &&
@@ -378,6 +375,15 @@ async function validateFromEmptyStageSkeleton(
     tableId: "Stages", columnId: "Code_Stage",
     update: { required: true, question: "Référence du stage" }
   });
+
+  const extra = await ensureWidgets([
+    ...widgetBatch, { tableId: "Stages", type: "chart" }
+  ]);
+  assertThat(extra.changed && extra.persistedWidgetsVerified &&
+    extra.widgets[0]?.id === grid.widget.id && !extra.widgets[0].created &&
+    extra.widgets[1]?.id === form.widget.id && !extra.widgets[1].created &&
+    extra.widgets[2]?.created && extra.widgets[2].id > 0,
+    "from_empty_widget_partial_batch_not_reconciled");
 
   const repeatClasses = await ensureRows("Classes", "Code", classes);
   const repeatTeachers = await ensureRows("Enseignants", "Cle", teachers);

@@ -46,8 +46,8 @@ implied.
 The bounded `grist_add_structure(action="ensure_tables")` reconciles an
 initial named-table schema when reconstructing an application from scratch.
 Each table requires one or more explicit typed seed columns (`Text`,
-`Numeric`, `Int`, `Bool`, `Date`, `Choice`, `ChoiceList`, `Ref` or
-`RefList`). A legacy `fields:{type}` seed asserts type alone; a writable
+`Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`, `DateTime:Europe/Paris`,
+`Attachments`, `Choice`, `ChoiceList`, `Ref` or `RefList`). A legacy `fields:{type}` seed asserts type alone; a writable
 initial data column uses `fields:{type,isFormula:false}` and must persist a
 native `isFormula:false`. A matching computed column is a conflict before
 any additional table creation. Gia reads the complete expanded native table and column identities,
@@ -103,7 +103,7 @@ data seed is `fields:{type,isFormula:false}` and requires native readback of
 `fields:{type,isFormula:true,formula:nonemptyGristPython}`, with a 4096-character
 bound and no unrelated native fields. Both use the same closed supported types:
 `Text`, `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`,
-`DateTime:Europe/Paris`, `Choice`, `ChoiceList`, `Ref:<table>` and
+`DateTime:Europe/Paris`, `Attachments`, `Choice`, `ChoiceList`, `Ref:<table>` and
 `RefList:<table>`. The reference destination and formula dependencies must
 already be valid in native Grist. A matching existing formula is reused without
 rewriting it; for an explicit formula seed a differing formula, an explicit data
