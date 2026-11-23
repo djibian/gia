@@ -1433,8 +1433,8 @@ export class AuthorizedGristService {
       if (!target) {
         throw new Error(`Grist widget ${widgetId} does not exist on page ${pageId}.`);
       }
-      if (grantsWidgetData) {
-        // Native Owner authority is mandatory even for an already granted level.
+      if (grantsWidgetData || update.customWidgetSettings?.resetWidgetOptions === true) {
+        // Raising remote data access or clearing its persisted configuration requires native Owner.
         await this.inner.assertDocumentOwner(id);
       }
       if (update.chartType !== undefined && target.type !== "chart") {
