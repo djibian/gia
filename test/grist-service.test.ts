@@ -366,3 +366,63 @@ test("column creation refuses ignored native metadata before any table or column
     { action: "createColumns", documentId: "doc", tableId: "People", columns: [good] }
   ]);
 });
+
+
+test("ensure_tables reconciles typed seeds and ignores later extra columns",async()=>{
+  const spec=[{id:"Stages",columns:[{id:"Contact",fields:{type:"Date"}}]},
+    {id:"Enseignants",columns:[{id:"Nom",fields:{type:"Text"}}]}];
+  let calls=0;
+  const data=new Map<string,{ref:number;columns:Array<{id:string;fields:{colRef:number;type:string}}>}>(
+    [["Stages",{ref:2,columns:[{id:"Contact",fields:{colRef:20,type:"Date"}},
+      {id:"Extra",fields:{colRef:21,type:"Text"}}]}]]
+  );
+  const {grist}=service(1000,100,2,20,{
+    listTables:async()=>({tables:Array.from(data,([id,t])=>({
+      id,fields:{tableRef:t.ref},columns:t.columns
+    }))}),
+    createTables:async(_id:string,missing:typeof spec)=>{
+      calls++;assert.deepEqual(missing.map(t=>t.id),["Enseignants"]);
+      data.set("Enseignants",{ref:3,columns:[{id:"Nom",fields:{colRef:30,type:"Text"}}]});
+      return {tables:[{id:"Enseignants"}]};
+    }
+  });
+  const first=await grist.ensureTables("doc",spec) as Record<string,unknown>;
+  assert.equal(first.changed,true);
+  assert.equal(first.persistedSchemaVerified,true);
+  assert.deepEqual(first.tables,[{id:"Stages",created:false},{id:"Enseignants",created:true}]);
+  const second=await grist.ensureTables("doc",spec) as Record<string,unknown>;
+  assert.equal(second.changed,false);assert.equal(calls,1);
+  await assert.rejects(()=>grist.ensureTables("doc",[
+    {id:"Stages",columns:[{id:"Contact",fields:{type:"Text"}}]},
+    {id:"Other",columns:[{id:"Name",fields:{type:"Text"}}]}
+  ]),/conflicting/);
+  assert.equal(calls,1);
+});
+
+test("ensure_tables validates the complete batch before writes and fails closed on uncertain state",async()=>{
+  let writes=0,reads=0;
+  const {grist}=service(1000,100,2,10,{
+    listTables:async()=>{reads++;return {tables:[]};},
+    createTables:async()=>{writes++;return {tables:[{id:"Stages"}]};}
+  });
+  for(const malformed of [
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Invalid"}}]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Date",label:"Extra"}}]}],
+    [{id:"Stages",columns:[]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Date"}}]},
+      {id:"Stages",columns:[{id:"Name",fields:{type:"Text"}}]}]
+  ]){
+    await assert.rejects(()=>grist.ensureTables("doc",malformed),/type|column|Table IDs|needs/);
+  }
+  assert.equal(reads,0);assert.equal(writes,0);
+  const valid=[{id:"Stages",columns:[{id:"Date",fields:{type:"Date"}}]}];
+  await assert.rejects(()=>grist.ensureTables("doc",valid),/do not retry.*blindly/);
+  assert.equal(writes,1);
+  const bad=service(1000,100,2,10,{
+    listTables:async()=>({tables:[{id:"Other",fields:{tableRef:1},
+      columns:[{id:"Name",fields:{type:"Text",colRef:0}}]}]}),
+    createTables:async()=>{writes++;return {tables:[{id:"Stages"}]};}
+  });
+  await assert.rejects(()=>bad.grist.ensureTables("doc",valid),/identity|metadata/);
+  assert.equal(writes,1);
+});

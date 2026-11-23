@@ -29,6 +29,20 @@ Unselected `grist_help({})` remains a compact ten-tool index. Selecting named to
 
 `grist_add_structure(action="create_tables")` requires a nonempty `columns` array per new table, matching native Grist TablePost. Missing or empty arrays are refused before any native write; Gia does not invent application columns.
 
+The bounded `grist_add_structure(action="ensure_tables")` reconciles an
+initial named-table schema when reconstructing an application from scratch.
+Each table requires one or more explicit typed seed columns (`Text`,
+`Numeric`, `Int`, `Bool`, `Date`, `Choice`, `ChoiceList`, `Ref` or
+`RefList`). Gia reads the complete expanded native table and column identities,
+rejects a missing or conflicting requested seed column on an existing table
+before writing, and creates only absent tables. It verifies every created
+stable ID, the requested column types and preservation of all preexisting
+table/column identities and types. Extra columns added later are preserved;
+a repeat with the same seeds is a no-op. Incomplete metadata fails closed.
+Native creation errors and unverified postconditions must be reconciled
+before retry; no concurrency CAS is claimed. More advanced column properties
+remain available via existing separate actions. This does not add an MCP tool.
+
 Both `grist_add_structure(create_tables)` and `grist_add_structure(create_columns)` accept only creation metadata actually persisted by the supported native Grist operations: optional `label`, `type`, `isFormula`, `formula` and `widgetOptions`. Native `AddTable` and `AddVisibleColumn` do not persist `description` and do not resolve the public stable-ID alias `visibleColumnId` at creation time. These two update-only fields therefore fail validation **before any create write**, including mixed batches, rather than producing a misleading success. To set them, first create the column with supported fields, then call `grist_change_structure(action="update_columns")` on the resulting stable IDs; update verification and uncertain-write handling remain authoritative. This narrows previously advertised but ineffective create inputs, not a functioning native creation workflow.
 
 `grist_add_structure(action="ensure_columns")` reconciles a bounded homogeneous

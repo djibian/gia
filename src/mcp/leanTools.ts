@@ -715,6 +715,16 @@ export function registerLeanTools(
     id: tableIdSchema,
     columns: boundedArray(columnSpecSchema, limits.maxSchemaItems)
   }).strict();
+  const tableSeedSchema=z.object({
+    id:tableIdSchema,
+    columns:boundedArray(z.object({
+      id:columnIdSchema,
+      fields:z.object({type:z.union([
+        z.enum(["Text","Numeric","Int","Bool","Date","Choice","ChoiceList"]),
+        z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
+      ])}).strict()
+    }).strict(),limits.maxSchemaItems)
+  }).strict();
   const tableUpdateSchema = z.object({
     id: tableIdSchema,
     fields: tableMutationFieldsSchema
@@ -994,6 +1004,12 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("ensure_tables"),
+            documentId: documentIdSchema,
+            tables: boundedArray(tableSeedSchema,limits.maxSchemaItems)
+          }).strict(),
+        z
+          .object({
             action: z.literal("ensure_columns"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1006,8 +1022,7 @@ export function registerLeanTools(
               ])}).strict()
             }).strict(),limits.maxSchemaItems)
           }).strict(),
-        z
-          .object({
+        z.object({
             action: z.literal("create_columns"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1044,6 +1059,8 @@ export function registerLeanTools(
             return textResult(
               await grist.createTables(input.documentId, input.tables)
             );
+          case "ensure_tables":
+            return textResult(await grist.ensureTables(input.documentId,input.tables));
           case "ensure_columns":
             return textResult(await grist.ensureColumns(
               input.documentId,input.tableId,input.columns

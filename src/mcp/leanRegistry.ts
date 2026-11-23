@@ -242,11 +242,12 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     } }]
   },
   grist_add_structure: {
-    actions: ["create_document", "copy_document_as_template", "copy_document", "create_tables", "ensure_columns", "create_columns"],
+    actions: ["create_document", "copy_document_as_template", "copy_document", "create_tables", "ensure_tables", "ensure_columns", "create_columns"],
     request: [
       "create_document: {action,workspaceId:positiveInteger,name}; copy_document_as_template: {action,sourceDocumentId,workspaceId,name}; copy_document (native full data): {action,sourceDocumentId,workspaceId,name}",
       "create_tables: {action,documentId,tables:[{id,columns:[{id,fields?:{label?,type?,isFormula?,formula?,widgetOptions?}}]}]}; create_columns: {action,documentId,tableId,columns:[{id,fields?}]}",
       "Each new table requires at least one column; creation does not accept update-only description or visibleColumnId.",
+      "ensure_tables: {action,documentId,tables:[{id,columns:[{id,fields:{type}}]}]}; creates only absent seeds, rejects conflicting existing columns and verifies native readback. Extra later columns are preserved.",
       "ensure_columns: {action,documentId,tableId,columns:[{id,fields:{type}}]}; add only absent typed columns after table creation, reject conflicting existing types, preserve old IDs and read back native metadata. No automatic replay of uncertain writes.",
       "For new configured columns, supply a homogeneous create_columns batch with {id,fields:{type,label?},configuration:{form?:{question?,required?,acceptFromUrl?},dropdownCondition?}}. Reference dropdown conditions use a typed choice/record predicate and existing operand column IDs."
     ],
@@ -262,6 +263,10 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       } },
       { purpose: "Create an empty document in an authorized workspace", arguments: {
         action: "create_document", workspaceId: 1, name: "Synthetic Example"
+      } },
+      { purpose: "Ensure a restart-safe initial table seed", arguments: {
+        action: "ensure_tables",documentId:"synthetic-doc",
+        tables:[{id:"Stages",columns:[{id:"DateContact",fields:{type:"Date"}}]}]
       } },
       { purpose: "Create a table with a real native initial column", arguments: {
         action: "create_tables", documentId: "synthetic-doc",
