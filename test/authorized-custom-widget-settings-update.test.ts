@@ -306,3 +306,28 @@ test("widget option reset requires native Owner and persists only the reset", as
   assert.deepEqual(inner.columnsMapping, { title: 11 });
   assert.deepEqual(outer.unrelated, { keep: true });
 });
+
+test("MCP update_widget carries Owner-gated reset intent through normalization", async () => {
+  const { service, currentOptions, writes } = harness();
+  const callbacks = new Map<string, (input: any) => Promise<any>>();
+  const server = {
+    registerTool: (name: string, _options: unknown, callback: (input: any) => Promise<any>) => {
+      callbacks.set(name, callback);
+      return {};
+    }
+  } as unknown as McpServer;
+  registerLeanTools(server, service, {
+    maxReadRecords: 200, maxWriteRecords: 50, maxSchemaItems: 100
+  });
+  const reply = await callbacks.get("grist_change_ui")!({
+    action: "update_widget", documentId: "doc-1", pageId: 7, widgetId: 21,
+    update: { customWidgetSettings: { resetWidgetOptions: true } }
+  });
+  assert.equal(reply.isError, undefined, JSON.stringify(reply));
+  assert.equal(writes.length, 1);
+  const native = JSON.parse(currentOptions().customView as string);
+  assert.equal(native.widgetOptions, null);
+  assert.equal(native.widgetId, "@example/widget");
+  assert.equal(native.url, PRIVATE_URL);
+  assert.equal(JSON.stringify(reply).includes("synthetic-secret-marker"), false);
+});
