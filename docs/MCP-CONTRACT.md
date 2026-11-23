@@ -45,7 +45,7 @@ implied.
 
 The bounded `grist_add_structure(action="ensure_tables")` reconciles an
 initial named-table schema when reconstructing an application from scratch.
-Each table requires one or more explicit typed seed columns (`Text`,
+Each table requires one or more explicit typed seed columns (`Any`, `Text`,
 `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`, `DateTime:Europe/Paris`,
 `Attachments`, `Choice`, `ChoiceList`, `Ref` or `RefList`). A legacy `fields:{type}` seed asserts type alone; a writable
 initial data column uses `fields:{type,isFormula:false}` and must persist a
@@ -102,7 +102,7 @@ data seed is `fields:{type,isFormula:false}` and requires native readback of
 `isFormula:false` for the matching stable ID. A formula seed is
 `fields:{type,isFormula:true,formula:nonemptyGristPython}`, with a 4096-character
 bound and no unrelated native fields. Both use the same closed supported types:
-`Text`, `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`,
+`Any`, `Text`, `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`,
 `DateTime:Europe/Paris`, `Attachments`, `Choice`, `ChoiceList`, `Ref:<table>` and
 `RefList:<table>`. The reference destination and formula dependencies must
 already be valid in native Grist. A matching existing formula is reused without
