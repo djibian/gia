@@ -90,14 +90,21 @@ Both `grist_add_structure(create_tables)` and `grist_add_structure(create_column
 `grist_add_structure(action="ensure_columns")` reconciles a bounded homogeneous
 batch of explicit typed columns **on one existing table**, for incremental
 application construction and restart. For every requested stable ID, either the
-column already exists with precisely the requested native type, or Gia creates
-it and rereads the complete native column state. All previously persisted column
-IDs, private native refs and types remain unchanged. Missing/duplicate IDs,
-conflicting types and incomplete/censored metadata fail before any write.
-Valid seeds are `Text`, `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`,
+column already exists with precisely the requested native type and formula
+intent, or Gia creates it and rereads the complete native column state.
+A type-only seed is `fields:{type}` (preserving legacy behavior without
+asserting whether Grist internally marks it as computed); a formula seed is
+`fields:{type,isFormula:true,formula:nonemptyGristPython}`, with a 4096-character
+bound and no unrelated native fields. Both use the same closed supported types:
+`Text`, `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`,
 `DateTime:Europe/Paris`, `Choice`, `ChoiceList`, `Ref:<table>` and
-`RefList:<table>`; the reference destination must already be valid in native
-Grist. Additional formula, widget, dropdown and Form configuration use the
+`RefList:<table>`. The reference destination and formula dependencies must
+already be valid in native Grist. A matching existing formula is reused without
+rewriting it; for an explicit formula seed a differing formula, or a conflicting type
+fails before creating another requested column in the same batch. All prior
+native column IDs, refs, types and observed formula metadata remain unchanged.
+Missing/duplicate IDs, incomplete/censored metadata and malformed formula seeds
+fail before any write. Other widget, dropdown and Form configuration uses the
 existing independent operations. Generated native auxiliary columns are not
 invented or identified as application fields. New-write normalization or
 post-read uncertainty demands reconciliation, never blind replay. No native

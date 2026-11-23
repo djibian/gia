@@ -320,24 +320,45 @@ function unchangedTableSeeds(
 
 
 /** Complete native per-table column snapshot, including generated hidden columns. */
-function typedColumnSeedSnapshot(raw: unknown): Map<string,{ref:number;type:string}> {
+type ColumnSeedState = {ref:number; type:string; isFormula?:boolean; formula?:string};
+
+/** Complete native column identities and, when present, formula ownership/text. */
+function typedColumnSeedSnapshot(raw: unknown): Map<string,ColumnSeedState> {
   const values=jsonRecord(raw)?.columns;
   if (!Array.isArray(values) || values.length > 5000) {
     throw new Error("Native expanded column metadata is unavailable or exceeds the limit.");
   }
-  const result=new Map<string,{ref:number;type:string}>();
+  const result=new Map<string,ColumnSeedState>();
   const refs=new Set<number>();
   for(const entry of values){
     const item=jsonRecord(entry), fields=jsonRecord(item?.fields);
     const id=item?.id,ref=fields?.colRef,type=fields?.type;
     if(typeof id!=="string"||!id||result.has(id)||
        typeof ref!=="number"||!Number.isSafeInteger(ref)||ref<1||refs.has(ref)||
-       typeof type!=="string"||!type) {
-      throw new Error("Native column identity/type is incomplete or ambiguous.");
+       typeof type!=="string"||!type||
+       (fields?.isFormula!==undefined&&typeof fields.isFormula!=="boolean")||
+       (fields?.formula!==undefined&&typeof fields.formula!=="string")) {
+      throw new Error("Native column identity/type/formula is incomplete or ambiguous.");
     }
-    result.set(id,{ref,type});refs.add(ref);
+    result.set(id,{
+      ref,type,
+      ...(typeof fields?.isFormula==="boolean"?{isFormula:fields.isFormula}:{}),
+      ...(typeof fields?.formula==="string"?{formula:fields.formula}:{})
+    });refs.add(ref);
   }
   return result;
+}
+
+function columnMatchesSeed(
+  stored: ColumnSeedState|undefined, fields: Record<string,unknown>
+): boolean {
+  if (!stored || stored.type!==fields.type) return false;
+  if (fields.isFormula===true) {
+    return stored.isFormula===true && stored.formula===fields.formula;
+  }
+  // Preserve existing v2 type-only seed semantics: Grist itself decides
+  // whether newly inserted native columns default to formula or data.
+  return true;
 }
 
 function targetSchemaRefs(byId: Map<string, number>, ids: string[]): number[] {
@@ -781,17 +802,22 @@ export class GristService {
     const allowed=/^(?:Text|Numeric|Int|Bool|Date|DateTime:(?:UTC|Europe\/Paris)|Choice|ChoiceList|(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*)$/;
     for(const column of columns) {
       this.assertIdentifier(column.id,"Column ID");
-      if(!column.fields||Object.keys(column.fields).length!==1||
-        typeof column.fields.type!=="string"||!allowed.test(column.fields.type)) {
-        throw new Error("Column seeds require only one explicit supported type.");
+      const fields=column.fields;
+      const formula=fields?.isFormula===true&&typeof fields.formula==="string"&&
+        fields.formula.length<=4096&&fields.formula.trim().length>0;
+      if(!fields||typeof fields.type!=="string"||!allowed.test(fields.type)||
+        !(Object.keys(fields).length===1||
+          (Object.keys(fields).length===3&&formula&&
+           Object.keys(fields).every(key=>["type","isFormula","formula"].includes(key))))) {
+        throw new Error("Column seeds require a supported type, optionally with isFormula:true and a bounded nonempty formula.");
       }
     }
     const read=()=>this.client.listColumns(documentId,tableId,{hidden:true});
     const before=typedColumnSeedSnapshot(await read());
     const missing=columns.filter(column=>{
       const stored=before.get(column.id);
-      if(stored&&stored.type!==column.fields?.type)
-        throw new Error("Existing column seed conflicts with the requested type.");
+      if(stored&&!columnMatchesSeed(stored,column.fields!))
+        throw new Error("Existing column seed conflicts with the requested type or formula.");
       return !stored;
     });
     if(!missing.length)return {tableId,columns:columns.map(c=>({id:c.id,created:false})),
@@ -814,8 +840,8 @@ export class GristService {
           throw new Error("Prior native column identity or type changed.");
       }
       for(const column of columns){
-        if(after.get(column.id)?.type!==column.fields?.type) {
-          throw new Error("New native column seed could not be verified.");
+        if(!columnMatchesSeed(after.get(column.id),column.fields!)) {
+          throw new Error("New native column type/formula seed could not be verified.");
         }
       }
       const ids=new Set(missing.map(c=>c.id));

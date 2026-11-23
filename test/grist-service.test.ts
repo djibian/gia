@@ -146,6 +146,62 @@ test("ensure_columns fails closed on invalid and ambiguous seeds",async()=>{
   assert.equal(writes,1);
 });
 
+test("ensure_columns creates and reuses formula seeds without changing prior state", async () => {
+  const stored=new Map<string,{ref:number;type:string;isFormula:boolean;formula:string}>([
+    ["Base",{ref:30,type:"Numeric",isFormula:false,formula:""}]
+  ]);
+  const input=[{id:"Double",fields:{type:"Numeric",isFormula:true,formula:"$Base * 2"}}];
+  let writes=0;
+  const {grist}=service(1000,100,2,20,{
+    listColumns:async()=>({columns:[...stored].map(([id,meta])=>({
+      id,fields:{colRef:meta.ref,type:meta.type,isFormula:meta.isFormula,formula:meta.formula}
+    }))}),
+    createColumns:async(_doc:string,_table:string,missing:typeof input)=>{
+      writes++;assert.deepEqual(missing,input);
+      stored.set("Double",{ref:31,type:"Numeric",isFormula:true,formula:"$Base * 2"});
+      return {columns:[{id:"Double"}]};
+    }
+  });
+  const made=await grist.ensureColumns("doc","Stage",input) as {
+    changed:boolean;persistedSchemaVerified:boolean;columns:Array<{id:string;created:boolean}>
+  };
+  assert(made.changed&&made.persistedSchemaVerified);
+  assert.deepEqual(made.columns,[{id:"Double",created:true}]);
+  const repeated=await grist.ensureColumns("doc","Stage",input) as {changed:boolean};
+  assert.equal(repeated.changed,false);assert.equal(writes,1);
+  await assert.rejects(()=>grist.ensureColumns("doc","Stage",[
+    {id:"Double",fields:{type:"Numeric",isFormula:true,formula:"$Base * 3"}},
+    {id:"MustNotCreate",fields:{type:"Numeric"}}
+  ]),/conflicts/);
+  // A legacy type-only seed checks the native type but does not assert formula intent.
+  const typeOnly=await grist.ensureColumns("doc","Stage",[
+    {id:"Double",fields:{type:"Numeric"}}
+  ]) as {changed:boolean};
+  assert.equal(typeOnly.changed,false);
+  assert.equal(stored.has("MustNotCreate"),false);assert.equal(writes,1);
+});
+
+test("ensure_columns refuses missing and malformed formula seeds before native reads", async () => {
+  let reads=0,writes=0;
+  const {grist}=service(1000,100,2,20,{
+    listColumns:async()=>{reads++;return {columns:[]};},
+    createColumns:async()=>{writes++;return {columns:[]};}
+  });
+  for(const fields of [
+    {type:"Numeric",isFormula:true},
+    {type:"Numeric",isFormula:true,formula:""},
+    {type:"Numeric",isFormula:true,formula:"   "},
+    {type:"Numeric",isFormula:true,formula:"a".repeat(4097)},
+    {type:"Numeric",isFormula:false,formula:"$Base"},
+    {type:"Numeric",isFormula:true,formula:"$Base",label:"unrelated"}
+  ]) {
+    await assert.rejects(()=>grist.ensureColumns("doc","Stage",[
+      {id:"Computed",fields}
+    ]),/type|formula/);
+  }
+  assert.equal(reads,0);assert.equal(writes,0);
+});
+
 test("service forwards richer read options and enforces configured maximum", async () => {
   const { grist, observed } = service(1000, 100);
   await grist.queryRecords("doc", "Table1", {

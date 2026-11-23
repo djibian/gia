@@ -1042,11 +1042,23 @@ export function registerLeanTools(
             tableId: tableIdSchema,
             columns: boundedArray(z.object({
               id: columnIdSchema,
-              fields: z.object({type: z.union([
-                z.enum(["Text","Numeric","Int","Bool","Date","Choice","ChoiceList"]),
-                z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
-                z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
-              ])}).strict()
+              fields: z.union([
+                z.object({type: z.union([
+                  z.enum(["Text","Numeric","Int","Bool","Date","Choice","ChoiceList"]),
+                  z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
+                  z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
+                ])}).strict(),
+                z.object({
+                  type: z.union([
+                    z.enum(["Text","Numeric","Int","Bool","Date","Choice","ChoiceList"]),
+                    z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
+                    z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
+                  ]),
+                  isFormula: z.literal(true),
+                  formula: z.string().min(1).max(4096)
+                    .refine(value=>value.trim().length>0,"Nonempty Grist formula required.")
+                }).strict()
+              ])
             }).strict(),limits.maxSchemaItems)
           }).strict(),
         z.object({
