@@ -1130,6 +1130,18 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("append_choice_options"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            values: z.array(z.string().min(1).max(120)
+              .refine(value => value.trim() === value &&
+                !/[\\u0000-\\u001f\\u007f]/.test(value), "Plain bounded labels only."))
+              .min(1).max(64)
+              .refine(values => new Set(values).size === values.length, "Choice labels must be unique.")
+          }).strict(),
+        z
+          .object({
             action: z.literal("update_dropdown_condition"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1361,6 +1373,10 @@ export function registerLeanTools(
                 input.columns
               )
             );
+          case "append_choice_options":
+            return textResult(await grist.appendChoiceOptions(
+              input.documentId, input.tableId, input.columnId, input.values
+            ));
           case "update_dropdown_condition":
             return textResult(await grist.updateDropdownCondition(
               input.documentId, input.tableId, input.columnId, input.condition
