@@ -181,6 +181,40 @@ test("ensure_columns creates and reuses formula seeds without changing prior sta
   assert.equal(stored.has("MustNotCreate"),false);assert.equal(writes,1);
 });
 
+test("ensure_columns explicitly seeds non-formula Choice and refuses formula conflicts", async () => {
+  const stored=new Map<string,{ref:number;type:string;isFormula:boolean;formula:string}>([
+    ["Computed",{ref:30,type:"Choice",isFormula:true,formula:"'A'"}]
+  ]);
+  const writable=[{id:"Status",fields:{type:"Choice",isFormula:false}}];
+  let writes=0;
+  const {grist}=service(1000,100,2,20,{
+    listColumns:async()=>({columns:[...stored].map(([id,fields])=>({
+      id,fields:{colRef:fields.ref,type:fields.type,isFormula:fields.isFormula,
+        formula:fields.formula}
+    }))}),
+    createColumns:async(_doc:string,_table:string,missing:typeof writable)=>{
+      writes++;assert.deepEqual(missing,writable);
+      stored.set("Status",{ref:31,type:"Choice",isFormula:false,formula:""});
+      return {columns:[{id:"Status"}]};
+    }
+  });
+  const first=await grist.ensureColumns("doc","Stages",writable) as {
+    changed:boolean;persistedSchemaVerified:boolean
+  };
+  assert.equal(first.changed,true);assert.equal(first.persistedSchemaVerified,true);
+  const replay=await grist.ensureColumns("doc","Stages",writable) as {changed:boolean};
+  assert.equal(replay.changed,false);assert.equal(writes,1);
+  await assert.rejects(()=>grist.ensureColumns("doc","Stages",[
+    {id:"Computed",fields:{type:"Choice",isFormula:false}},
+    {id:"Missing",fields:{type:"Text"}}
+  ]),/conflicts/);
+  assert.equal(writes,1);assert.equal(stored.has("Missing"),false);
+  const legacy=await grist.ensureColumns("doc","Stages",[
+    {id:"Computed",fields:{type:"Choice"}}
+  ]) as {changed:boolean};
+  assert.equal(legacy.changed,false);
+});
+
 test("ensure_columns refuses missing and malformed formula seeds before native reads", async () => {
   let reads=0,writes=0;
   const {grist}=service(1000,100,2,20,{
@@ -193,6 +227,7 @@ test("ensure_columns refuses missing and malformed formula seeds before native r
     {type:"Numeric",isFormula:true,formula:"   "},
     {type:"Numeric",isFormula:true,formula:"a".repeat(4097)},
     {type:"Numeric",isFormula:false,formula:"$Base"},
+    {type:"Numeric",isFormula:false,widgetOptions:"{}"},
     {type:"Numeric",isFormula:true,formula:"$Base",label:"unrelated"}
   ]) {
     await assert.rejects(()=>grist.ensureColumns("doc","Stage",[
