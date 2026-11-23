@@ -123,11 +123,11 @@ complete persisted options, and returns an idempotent no-op on re-execution.
 `question:null` clears the question. This does **not** create, render, submit or
 publish forms, accept link-bearing question text, or change native sharing.
 
-\`grist_change_structure(action="append_choice_options")\` appends up to 64
+`grist_change_structure(action="append_choice_options")` appends up to 64
 unique, nonempty plain-text labels to one existing non-formula native
-\`Choice\` or \`ChoiceList\` column. Only missing labels are appended in the
+`Choice` or `ChoiceList` column. Only missing labels are appended in the
 caller-supplied order; existing choices are never removed, renamed or reordered.
-Native \`widgetOptions.choices\` is updated while sibling options, including
+Native `widgetOptions.choices` is updated while sibling options, including
 choice colors, Form configuration and conditional styles, remain unchanged.
 Gia rejects malformed/incomplete native metadata, duplicate labels, over-limit
 lists and unrelated column types; re-reads the complete options and column
