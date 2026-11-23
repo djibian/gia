@@ -234,3 +234,40 @@ test("widget-owned options reject absent identity, opaque state, URLs and execut
   }));
   assert.deepEqual(widget.options.customView.widgetOptions, { arbitrary: [1, 2, 3] });
 });
+
+
+test("explicit widget option reset preserves private identity and mappings after deactivation", () => {
+  const result = resolveCustomWidgetSettingsUpdate(widget, expandedTables, {
+    resetWidgetOptions: true
+  });
+  const native = JSON.parse(result.options.customView as string);
+  assert.equal(native.widgetOptions, null);
+  assert.equal(native.url, widget.options.customView.url);
+  assert.equal(native.widgetId, widget.options.customView.widgetId);
+  assert.deepEqual(native.columnsMapping, { title: 11 });
+  assert.deepEqual(result.options.unrelatedTopLevel, { keep: true });
+  const replay = resolveCustomWidgetSettingsUpdate({ ...widget, options: result.options },
+    expandedTables, { resetWidgetOptions: true });
+  assert.deepEqual(replay.options, result.options);
+  assert.deepEqual(widget.options.customView.widgetOptions, { arbitrary: [1, 2, 3] });
+});
+
+test("widget option reset refuses active access, combined patch or opaque metadata", () => {
+  const reset = (altered: Parameters<typeof resolveCustomWidgetSettingsUpdate>[0],
+    update: Parameters<typeof resolveCustomWidgetSettingsUpdate>[2] =
+      { resetWidgetOptions: true }) => resolveCustomWidgetSettingsUpdate(altered,
+        expandedTables, update);
+  assert.throws(() => reset({ ...widget, options: {
+    ...widget.options, customView: { ...widget.options.customView, access: "full" }
+  } }), /Deactivate widget data access/);
+  assert.throws(() => reset(widget, { resetWidgetOptions: true,
+    access: "read table" }), /Deactivate widget data access/);
+  assert.throws(() => reset(widget, { resetWidgetOptions: true,
+    optionsPatch: { active: true } }), /separate intentions/);
+  assert.throws(() => reset({ ...widget, options: {
+    ...widget.options, customView: { ...widget.options.customView, widgetOptions: "{opaque" }
+  } }), /opaque/);
+  assert.throws(() => reset({ ...widget, options: {
+    ...widget.options, customView: { ...widget.options.customView, widgetId: "" }
+  } }), /identified/);
+});
