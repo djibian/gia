@@ -154,6 +154,17 @@ Uncertain native writes require inspection before retrying; external
 concurrent editors still need serialization. This action does not constrain
 row-level data or bypass ACLs, and adds no MCP tool.
 
+`grist_change_structure(action="reorder_choice_options")` reorders the exact
+complete set of 2–64 already configured labels in a native non-formula
+`Choice` or `ChoiceList` column. The caller supplies the entire ordered set;
+missing, extra, duplicate, malformed or unknown labels fail closed before a write.
+A successful reorder changes only the ordered `widgetOptions.choices` array,
+preserving all choice colors and sibling Form, style and other options. Gia
+checks a complete current native schema snapshot, repeats the check before
+writing, verifies post-read persistence and returns a no-op when the order
+already matches. Transport/partial effects require inspection, never blind
+replay. It cannot edit record values, authorizations or individual choice names.
+
 `grist_change_structure(action="set_choice_colors")` changes one or both
 closed `#RRGGBB` colors of a *previously configured* Choice or ChoiceList label.
 It preserves the choice list, other label colors, Form settings and all sibling

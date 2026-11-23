@@ -2634,6 +2634,29 @@ async function run(): Promise<void> {
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
       ...colorRequest, label: "absent"
     });
+    const reorderedChoices = {
+      action: "reorder_choice_options", documentId: emptyDocumentId,
+      tableId: "CompatChoices", columnId: "Status",
+      orderedLabels: ["refusé", "en attente", "validé"]
+    };
+    const movedChoice = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      reorderedChoices), "native_choice_reorder") as {changed:boolean;persistedOptionsVerified:boolean};
+    assert(movedChoice.changed && movedChoice.persistedOptionsVerified,
+      "native_choice_reorder_not_verified");
+    const replayChoice = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      reorderedChoices), "native_choice_reorder_replay") as {changed:boolean};
+    assert(!replayChoice.changed, "native_choice_reorder_repeated");
+    const movedTags = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      ...reorderedChoices, columnId: "Tags", orderedLabels: ["bureau", "terrain"]
+    }), "native_choicelist_reorder") as {changed:boolean;persistedOptionsVerified:boolean};
+    assert(movedTags.changed && movedTags.persistedOptionsVerified, "native_choicelist_reorder_failed");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...reorderedChoices, orderedLabels: ["en attente", "unknown", "refusé"]
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...reorderedChoices, orderedLabels: ["en attente", "refusé"]
+    });
+
     const nativeChoiceColumns = await gristApi(gristBaseUrl, apiKey,
       `${configuredDocPath}/tables/CompatChoices/columns`) as {
         columns: Array<{ id: string; fields: { type: string; widgetOptions: string } }>
@@ -2642,11 +2665,11 @@ async function run(): Promise<void> {
     const tagOptions = nativeChoiceColumns.columns.find(column => column.id === "Tags");
     assert(choiceOptions?.fields.type === "Choice" &&
       isDeepStrictEqual(JSON.parse(choiceOptions.fields.widgetOptions).choices,
-        ["en attente", "validé", "refusé"]) &&
+        ["refusé", "en attente", "validé"]) &&
       isDeepStrictEqual(JSON.parse(choiceOptions.fields.widgetOptions).choiceOptions["en attente"],
         { fillColor: "#ABCDEF", textColor: "#123456" }) &&
       tagOptions?.fields.type === "ChoiceList" &&
-      isDeepStrictEqual(JSON.parse(tagOptions.fields.widgetOptions).choices, ["terrain", "bureau"]),
+      isDeepStrictEqual(JSON.parse(tagOptions.fields.widgetOptions).choices, ["bureau", "terrain"]),
       "native_choice_types_or_options_mismatch");
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
       ...choicesRequest, tableId: "Mentors"

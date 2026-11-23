@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { planAppendChoiceOptions, planSetChoiceColors, readChoiceColumnState } from "../src/grist/choiceOptions.js";
+import { planAppendChoiceOptions, planReorderChoiceOptions, planSetChoiceColors, readChoiceColumnState } from "../src/grist/choiceOptions.js";
 
 const snapshot = (type = "Choice", widgetOptions = JSON.stringify({
   choices: ["validé"], choiceOptions: { "validé": { fillColor: "#12AB34" } },
@@ -71,4 +71,36 @@ test("invalid choice colors and malformed native maps are refused", () => {
     const malformed = readChoiceColumnState(snapshot("Choice", raw), "Status", 50);
     assert.throws(() => planSetChoiceColors(malformed, "validé", {textColor:"#FFFFFF"}), /malformed/);
   }
+});
+
+test("reorder exact native Choice and ChoiceList labels while retaining all options", () => {
+  for (const type of ["Choice", "ChoiceList"]) {
+    const original = readChoiceColumnState(snapshot(type, JSON.stringify({
+      choices: ["validé", "en attente", "refusé"],
+      choiceOptions: { "validé": { fillColor: "#12AB34" } },
+      formRequired: true, custom: { protected: "preserved" }
+    })), "Status", 50);
+    const requested = ["refusé", "validé", "en attente"];
+    const plan = planReorderChoiceOptions(original, requested);
+    assert.equal(plan.changed, true);
+    assert.deepEqual(plan.choices, requested);
+    assert.deepEqual(plan.options.choiceOptions, original.options.choiceOptions);
+    assert.deepEqual(plan.options.custom, original.options.custom);
+    assert.equal(plan.options.formRequired, true);
+    const persisted = readChoiceColumnState(snapshot(type, plan.widgetOptions), "Status", 50);
+    assert.equal(planReorderChoiceOptions(persisted, requested).changed, false);
+  }
+});
+
+test("choice reorder rejects omissions, insertions, collisions and malformed labels", () => {
+  const original = readChoiceColumnState(snapshot("Choice", JSON.stringify({
+    choices: ["validé", "en attente", "refusé"]
+  })), "Status", 50);
+  for (const attempt of [
+    ["validé", "en attente"], ["validé", "en attente", "absent"],
+    ["validé", "validé", "refusé"], ["validé", " en attente", "refusé"], []
+  ]) {
+    assert.throws(() => planReorderChoiceOptions(original, attempt), /complete unique existing label set/);
+  }
+  assert.equal(planReorderChoiceOptions(original, original.choices).changed, false);
 });

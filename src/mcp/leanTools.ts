@@ -1167,6 +1167,19 @@ export function registerLeanTools(
           }).strict(),
         z
           .object({
+            action: z.literal("reorder_choice_options"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            orderedLabels: z.array(z.string().min(1).max(120)
+              .refine(value => value.trim() === value &&
+                !/[\u0000-\u001f\u007f]/.test(value), "Plain bounded labels only."))
+              .min(2).max(64)
+              .refine(values => new Set(values).size === values.length,
+                "Reordering requires distinct choice labels.")
+          }).strict(),
+        z
+          .object({
             action: z.literal("set_choice_colors"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1413,6 +1426,10 @@ export function registerLeanTools(
           case "append_choice_options":
             return textResult(await grist.appendChoiceOptions(
               input.documentId, input.tableId, input.columnId, input.values
+            ));
+          case "reorder_choice_options":
+            return textResult(await grist.reorderChoiceOptions(
+              input.documentId, input.tableId, input.columnId, input.orderedLabels
             ));
           case "set_choice_colors":
             return textResult(await grist.setChoiceColors(

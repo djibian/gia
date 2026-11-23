@@ -76,7 +76,7 @@ import {
   type ColumnSelectByInput
 } from "./selectBy.js";
 import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUpdateInput } from "./formColumnOptions.js";
-import { readChoiceColumnState, planAppendChoiceOptions, planSetChoiceColors, type ChoiceColors } from "./choiceOptions.js";
+import { readChoiceColumnState, planAppendChoiceOptions, planReorderChoiceOptions, planSetChoiceColors, type ChoiceColors } from "./choiceOptions.js";
 import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
 import { planColumnStyle, readNativeColumnStyleSequence, readNativeRowStyleSequence,
@@ -2440,6 +2440,46 @@ export class AuthorizedGristService {
         throw new SchemaWriteVerificationError("append_choice_options",
           "Native choice append may be uncertain; inspect before retry: " +
           (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
+
+
+  /** Set only the complete Choice/ChoiceList ordering, preserving all sibling options. */
+  async reorderChoiceOptions(
+    documentIdOrUrl: string, tableId: string, columnId: string,
+    orderedLabels: readonly string[]
+  ): Promise<unknown> {
+    return this.execute("reorder_choice_options", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      if (!columnId.trim()) throw new Error("Choice reorder requires a stable column ID.");
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = async () => readChoiceColumnState(
+        await this.inner.listColumns(id, tableId, { hidden: true }), columnId, limit
+      );
+      const before = await read();
+      const plan = planReorderChoiceOptions(before, orderedLabels);
+      const base = { documentId: id, tableId, columnId };
+      if (!plan.changed) return { ...base, changed: false,
+        choices: plan.choices, persistedOptionsVerified: true };
+      if (!isDeepStrictEqual(await read(), before)) {
+        throw new Error("Native choice order changed before update; reconcile first.");
+      }
+      try {
+        await this.inner.updateColumns(id, tableId, [{
+          id: columnId, fields: { widgetOptions: plan.widgetOptions }
+        }]);
+        const after = await read();
+        if (after.type !== before.type ||
+            !isDeepStrictEqual(after.options, plan.options)) {
+          throw new Error("Native choice order or sibling options changed after write.");
+        }
+        return { ...base, changed: true, choices: plan.choices,
+          persistedOptionsVerified: true };
+      } catch (error) {
+        throw new SchemaWriteVerificationError("reorder_choice_options",
+          "Native choice reorder may be uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown effect"));
       }
     });
   }

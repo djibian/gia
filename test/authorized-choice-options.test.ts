@@ -7,9 +7,9 @@ import { AuthorizedGristService } from "../src/grist/authorizedService.js";
 import type { GristService } from "../src/grist/service.js";
 import type { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
 
-function harness(opts: { denied?: boolean; corrupt?: boolean; type?: string } = {}) {
+function harness(opts: { denied?: boolean; corrupt?: boolean; type?: string; choices?: string[] } = {}) {
   let reads = 0, writes = 0;
-  let raw = JSON.stringify({ choices: ["validé"], custom: { keep: true },
+  let raw = JSON.stringify({ choices: opts.choices ?? ["validé"], custom: { keep: true },
     choiceOptions: { "validé": { fillColor: "#12AB34" } }, formRequired: true });
   const inner = {
     maxReadRecords: 100,
@@ -116,5 +116,45 @@ test("choice color permission, target and uncertain native postread fail closed"
   const corrupt = harness({ corrupt: true });
   await assert.rejects(corrupt.service.setChoiceColors("doc", "Stages", "Status",
     "validé", { textColor: "#FFFFFF" }), /may already have succeeded; do not retry/);
+  assert.equal(corrupt.current().writes, 1);
+});
+
+test("Owner-visible choice reorder persists exact order, preserves colors and is idempotent", async () => {
+  const h = harness({ choices: ["validé", "en attente", "refusé"] });
+  const order = ["refusé", "validé", "en attente"];
+  const changed = await h.service.reorderChoiceOptions(
+    "doc", "Stages", "Status", order
+  ) as {changed:boolean;persistedOptionsVerified:boolean;choices:string[]};
+  assert.equal(changed.changed, true);
+  assert.equal(changed.persistedOptionsVerified, true);
+  assert.deepEqual(changed.choices, order);
+  assert.deepEqual(h.current().options.choices, order);
+  assert.deepEqual(h.current().options.choiceOptions, {
+    "validé": { fillColor: "#12AB34" }
+  });
+  assert.equal(h.current().options.formRequired, true);
+  const repeated = await h.service.reorderChoiceOptions(
+    "doc", "Stages", "Status", order
+  ) as {changed:boolean};
+  assert.equal(repeated.changed, false);
+  assert.equal(h.current().writes, 1);
+});
+
+test("choice reorder denies incomplete, unauthorized and uncertain native outcomes", async () => {
+  const denied = harness({denied:true, choices:["validé","refusé"]});
+  await assert.rejects(denied.service.reorderChoiceOptions("doc","Stages","Status",
+    ["refusé","validé"]), /DENIED/);
+  assert.equal(denied.current().reads, 0);
+  const partial = harness({choices:["validé","refusé"]});
+  await assert.rejects(partial.service.reorderChoiceOptions("doc","Stages","Status",
+    ["refusé"]), /complete unique existing label set/);
+  assert.equal(partial.current().writes, 0);
+  const badType = harness({type:"Text", choices:["validé","refusé"]});
+  await assert.rejects(badType.service.reorderChoiceOptions("doc","Stages","Status",
+    ["refusé","validé"]), /Choice or ChoiceList/);
+  assert.equal(badType.current().writes, 0);
+  const corrupt = harness({corrupt:true, choices:["validé","refusé"]});
+  await assert.rejects(corrupt.service.reorderChoiceOptions("doc","Stages","Status",
+    ["refusé","validé"]), /may be uncertain/);
   assert.equal(corrupt.current().writes, 1);
 });

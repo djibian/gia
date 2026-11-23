@@ -66,6 +66,28 @@ export function planAppendChoiceOptions(
 }
 
 
+/** Reorder the complete native label set; never add/remove labels or modify siblings. */
+export function planReorderChoiceOptions(
+  before: ReturnType<typeof readChoiceColumnState>, requested: readonly string[]
+): { changed: boolean; options: JsonRecord; widgetOptions: string; choices: string[] } {
+  if (!Array.isArray(requested) || requested.length < 2 ||
+      requested.length !== before.choices.length ||
+      requested.length > MAX_NATIVE_CHOICE_OPTIONS ||
+      requested.some(value => !validChoice(value)) ||
+      new Set(requested).size !== requested.length ||
+      requested.some(value => !before.choices.includes(value))) {
+    throw new Error("Choice reorder requires the complete unique existing label set of 2–64 labels.");
+  }
+  const choices = [...requested];
+  const options = isDeepStrictEqual(choices, before.choices)
+    ? before.options : { ...before.options, choices };
+  const widgetOptions = JSON.stringify(options);
+  if (widgetOptions.length > 16_384) {
+    throw new Error("Reordered native choices exceed the metadata bound.");
+  }
+  return { changed: !isDeepStrictEqual(options, before.options), options, widgetOptions, choices };
+}
+
 export type ChoiceColors = { fillColor?: string | undefined; textColor?: string | undefined };
 const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
 
