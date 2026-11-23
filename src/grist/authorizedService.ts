@@ -67,6 +67,7 @@ import {
   type PageOrderSnapshot
 } from "./pageOrder.js";
 import {
+  findSummaryTableRef,
   resolveSummaryCreationPlan,
   verifySummaryCreation
 } from "./summaryTables.js";
@@ -562,11 +563,11 @@ export class AuthorizedGristService {
   }
 
   /**
-   * Reconcile a single ungrouped native widget by a unique (page, table, type)
-   * identity. Multiple matching widgets are never guessed or modified.
+   * Reconcile a single native widget by page, table, type, and optional grouping.
    */
   async ensurePageWidget(
-    documentIdOrUrl: string, pageId: number, tableId: string, type: NativeWidgetType
+    documentIdOrUrl: string, pageId: number, tableId: string, type: NativeWidgetType,
+    groupByColumnIds?: readonly string[]
   ): Promise<unknown> {
     if (!Number.isSafeInteger(pageId) || pageId < 1) {
       throw new Error("Grist page ID must be a positive integer.");
@@ -576,51 +577,70 @@ export class AuthorizedGristService {
       throw new Error("Unsupported native widget type.");
     }
     return this.execute("ensure_page_widget", documentIdOrUrl, 1, async id => {
-      const tableRef = await this.resolveTableRef(id, tableId);
-      const before = await this.loadDocumentUi(id);
+      const tables = groupByColumnIds === undefined ? undefined :
+        await this.inner.listTables(id, { expandColumns: true });
+      const summaryPlan = groupByColumnIds === undefined ? undefined :
+        resolveSummaryCreationPlan(tables, tableId, groupByColumnIds);
+      const tableRef = summaryPlan?.sourceTableRef ?? await this.resolveTableRef(id, tableId);
+      const existingRef = summaryPlan ? findSummaryTableRef(tables, summaryPlan) : tableRef;
+      const before = await this.loadDocumentUi(id, tables);
       assertCompleteUiSnapshot(before);
       const oldPage = before.pages.find(page => page.id === pageId);
       if (!oldPage) throw new Error("Native target page does not exist.");
-      const matching = (widget: typeof oldPage.widgets[number]) =>
-        widget.tableRef === tableRef && widget.type === type;
-      const matches = oldPage.widgets.filter(matching);
+      const matching = (targetRef: number | undefined) => (widget: typeof oldPage.widgets[number]) =>
+        widget.tableRef === targetRef && widget.type === type;
+      const matches = oldPage.widgets.filter(matching(existingRef));
       if (matches.length > 1) {
         throw new Error("Native widget identity is ambiguous; reconcile by stable widget ID.");
       }
       if (matches.length === 1) {
-        return { documentId: id, pageId, widget: projectPublicWidget(matches[0]!),
-          changed: false, persistedWidgetVerified: true };
+        const widget = matches[0]!;
+        const summary = summaryPlan ? verifySummaryCreation(tables, summaryPlan, widget.tableRef) : undefined;
+        if (widget.tableId !== (summary?.summaryTableId ?? tableId)) {
+          throw new Error("Native widget target identity is incomplete; reconcile by stable widget ID.");
+        }
+        return { documentId: id, pageId, widget: projectPublicWidget(widget),
+          ...(summary ? { summary } : {}), changed: false, persistedWidgetVerified: true };
       }
-      if (!isDeepStrictEqual(before, await this.loadDocumentUi(id)) ||
-          tableRef !== await this.resolveTableRef(id, tableId)) {
+      const latestTables = summaryPlan ? await this.inner.listTables(id, { expandColumns: true }) : undefined;
+      if (!isDeepStrictEqual(before, await this.loadDocumentUi(id, latestTables)) ||
+          (summaryPlan ? !isDeepStrictEqual(tables, latestTables) :
+            tableRef !== await this.resolveTableRef(id, tableId))) {
         throw new Error("Native widget or source table changed before creation; reconcile first.");
       }
       let createdId: number | undefined;
       try {
-        const created = await this.uiActions.addPageWidget(id, pageId, tableRef, type);
+        const created = await this.uiActions.addPageWidget(
+          id, pageId, tableRef, type, summaryPlan?.groupByColumnRefs
+        );
         createdId = created.widgetId;
-        const after = await this.loadDocumentUi(id);
+        const afterTables = summaryPlan ? await this.inner.listTables(id, { expandColumns: true }) : undefined;
+        const after = await this.loadDocumentUi(id, afterTables);
         assertCompleteUiSnapshot(after);
         const page = after.pages.find(candidate => candidate.id === pageId);
         const oldIds = new Set(oldPage.widgets.map(widget => widget.id));
         const added = page?.widgets.filter(widget => !oldIds.has(widget.id)) ?? [];
-        const unique = page?.widgets.filter(matching) ?? [];
+        const targetRef = summaryPlan ? findSummaryTableRef(afterTables, summaryPlan) : tableRef;
+        const unique = page?.widgets.filter(matching(targetRef)) ?? [];
+        const summary = summaryPlan && targetRef ? verifySummaryCreation(afterTables, summaryPlan, targetRef) : undefined;
         if (!page || after.pages.length !== before.pages.length ||
             page.pageRecordId !== oldPage.pageRecordId ||
             page.name !== oldPage.name || page.type !== oldPage.type ||
             page.indentation !== oldPage.indentation ||
             page.pagePos !== oldPage.pagePos ||
+            !isDeepStrictEqual(page.layoutSpec, oldPage.layoutSpec) ||
             after.pages.some(current => current.id !== pageId &&
               !isDeepStrictEqual(current, before.pages.find(old => old.id === current.id))) ||
             oldPage.widgets.some(previous => !isDeepStrictEqual(
               previous, page.widgets.find(current => current.id === previous.id))) ||
             added.length !== 1 || added[0]?.id !== createdId ||
             unique.length !== 1 || unique[0]?.id !== createdId ||
-            unique[0]?.tableId !== tableId) {
+            (summaryPlan && !summary) || unique[0]?.tableId !== (summary?.summaryTableId ?? tableId)) {
           throw new Error("Native widget creation or preservation could not be verified.");
         }
         return { documentId: id, pageId, widget: projectPublicWidget(unique[0]!),
-          changed: true, createdWidgetId: createdId, persistedWidgetVerified: true };
+          ...(summary ? { summary } : {}), changed: true, createdWidgetId: createdId,
+          persistedWidgetVerified: true };
       } catch (error) {
         throw new UiWriteVerificationError("ensure_page_widget", createdId,
           error instanceof Error ? error.message : "Native widget effect is uncertain.");
