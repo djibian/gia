@@ -1064,6 +1064,14 @@ export function registerLeanTools(
                     z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
                     z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
                   ]),
+                  isFormula: z.literal(false)
+                }).strict(),
+                z.object({
+                  type: z.union([
+                    z.enum(["Text","Numeric","Int","Bool","Date","Choice","ChoiceList"]),
+                    z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
+                    z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
+                  ]),
                   isFormula: z.literal(true),
                   formula: z.string().min(1).max(4096)
                     .refine(value=>value.trim().length>0,"Nonempty Grist formula required.")
