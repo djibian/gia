@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { planAppendChoiceOptions, readChoiceColumnState } from "../src/grist/choiceOptions.js";
+import { planAppendChoiceOptions, planSetChoiceColors, readChoiceColumnState } from "../src/grist/choiceOptions.js";
 
 const snapshot = (type = "Choice", widgetOptions = JSON.stringify({
   choices: ["validé"], choiceOptions: { "validé": { fillColor: "#12AB34" } },
@@ -40,4 +40,35 @@ test("invalid requests and overfull choice sets fail before any write", () => {
   const full = readChoiceColumnState(snapshot("Choice",
     JSON.stringify({ choices: Array.from({length:64}, (_, i) => "Label"+i) })), "Status", 50);
   assert.throws(() => planAppendChoiceOptions(full, ["new"]), /64/);
+});
+
+
+test("set native Choice colors on an existing label without losing siblings", () => {
+  const before = readChoiceColumnState(snapshot(), "Status", 50);
+  const plan = planSetChoiceColors(before, "validé", { textColor: "#FFFFFF" });
+  assert.equal(plan.changed, true);
+  assert.deepEqual(plan.options.choiceOptions, { "validé": {
+    fillColor: "#12AB34", textColor: "#FFFFFF"
+  } });
+  assert.deepEqual(plan.options.choices, before.choices);
+  assert.equal(plan.options.formRequired, true);
+  assert.deepEqual(plan.options.custom, before.options.custom);
+  const after = readChoiceColumnState(snapshot("Choice", plan.widgetOptions), "Status", 50);
+  assert.equal(planSetChoiceColors(after, "validé", {textColor: "#FFFFFF"}).changed, false);
+  assert.equal(planSetChoiceColors(after, "validé", {fillColor: "#ABCDEF"}).changed, true);
+});
+
+test("invalid choice colors and malformed native maps are refused", () => {
+  const before = readChoiceColumnState(snapshot(), "Status", 50);
+  assert.throws(() => planSetChoiceColors(before, "unknown", {fillColor:"#000000"}), /existing native choice/);
+  assert.throws(() => planSetChoiceColors(before, "validé", {}), /#RRGGBB/);
+  assert.throws(() => planSetChoiceColors(before, "validé", {fillColor:"#ZZZZZZ"}), /#RRGGBB/);
+  assert.throws(() => planSetChoiceColors(before, "validé",
+    {background:"unsafe"} as {fillColor?:string}), /#RRGGBB/);
+  for (const raw of ['{"choices":["validé"],"choiceOptions":[]}',
+    '{"choices":["validé"],"choiceOptions":{"validé":"not-an-object"}}',
+    '{"choices":["validé"],"choiceOptions":{"validé":{"fillColor":"invalid"}}}']) {
+    const malformed = readChoiceColumnState(snapshot("Choice", raw), "Status", 50);
+    assert.throws(() => planSetChoiceColors(malformed, "validé", {textColor:"#FFFFFF"}), /malformed/);
+  }
 });
