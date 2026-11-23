@@ -262,19 +262,19 @@ function schemaIdentities(
 
 /** Strict metadata used only for restart-safe table-seed reconciliation. */
 function tableSeedSnapshot(raw: unknown): Map<string, {
-  ref:number; columns:Map<string,{ref:number;type:string}>
+  ref:number; columns:Map<string,{ref:number;type:string;isFormula?:boolean}>
 }> {
   const tables=jsonRecord(raw)?.tables;
   if (!Array.isArray(tables) || tables.length>512)
     throw new Error("Expanded native table metadata is missing or over budget.");
-  const result=new Map<string,{ref:number;columns:Map<string,{ref:number;type:string}>}>();
+  const result=new Map<string,{ref:number;columns:Map<string,{ref:number;type:string;isFormula?:boolean}>}>();
   const refs=new Set<number>(), columnRefs=new Set<number>();
   for (const item of tables) {
     const table=jsonRecord(item), id=table?.id, ref=jsonRecord(table?.fields)?.tableRef;
     if(typeof id!=="string"||!id||typeof ref!=="number"||
        !Number.isSafeInteger(ref)||ref<1||refs.has(ref)||result.has(id)||
        !Array.isArray(table?.columns)) throw new Error("Native table identity is ambiguous.");
-    const columns=new Map<string,{ref:number;type:string}>();
+    const columns=new Map<string,{ref:number;type:string;isFormula?:boolean}>();
     const nativeColumns=table?.columns;
     if(!Array.isArray(nativeColumns))throw new Error("Native table columns unavailable.");
     for(const item of nativeColumns) {
@@ -284,7 +284,9 @@ function tableSeedSnapshot(raw: unknown): Map<string, {
          !Number.isSafeInteger(colRef)||colRef<1||columnRefs.has(colRef)||
          columns.has(colId)||typeof type!=="string"||!type||columnRefs.size>=5000)
         throw new Error("Native column identity or type is ambiguous.");
-      columns.set(colId,{ref:colRef,type});columnRefs.add(colRef);
+      columns.set(colId,{ref:colRef,type,
+        ...(typeof fields?.isFormula==="boolean"?{isFormula:fields.isFormula}:{})});
+      columnRefs.add(colRef);
     }
     refs.add(ref);result.set(id,{ref,columns});
   }
@@ -297,8 +299,10 @@ function missingTableSeeds(
     const saved=current.get(table.id);
     if(!saved)return true;
     for(const column of table.columns??[]) {
-      if(saved.columns.get(column.id)?.type!==column.fields?.type)
-        throw new Error("Existing table seed is missing or has a conflicting column type.");
+      const existing=saved.columns.get(column.id);
+      if(existing?.type!==column.fields?.type ||
+         (column.fields?.isFormula===false && existing?.isFormula!==false))
+        throw new Error("Existing table seed is missing or has a conflicting requested type or writable intent.");
     }
     return false;
   });
@@ -312,7 +316,8 @@ function unchangedTableSeeds(
       throw new Error("Existing native table changed during seed creation.");
     for(const [colId,col] of old.columns){
       const current=now.columns.get(colId);
-      if(!current||current.ref!==col.ref||current.type!==col.type)
+      if(!current||current.ref!==col.ref||current.type!==col.type||
+         current.isFormula!==col.isFormula)
         throw new Error("Existing native column changed during seed creation.");
     }
   }
@@ -686,9 +691,12 @@ export class GristService {
       this.assertUniqueStrings(table.columns.map(col=>col.id),"Column IDs");
       for(const col of table.columns){
         this.assertIdentifier(col.id,"Column ID");
-        if(!col.fields||Object.keys(col.fields).length!==1||
-           typeof col.fields.type!=="string"||!typeAllowed.test(col.fields.type))
-          throw new Error("Table seeds accept only an explicit supported column type.");
+        const keys=col.fields?Object.keys(col.fields):[];
+        if(!col.fields||typeof col.fields.type!=="string"||
+           !typeAllowed.test(col.fields.type)||
+           !(keys.length===1&&keys[0]==="type"||
+             keys.length===2&&keys.includes("type")&&col.fields.isFormula===false))
+          throw new Error("Table seeds require a supported type and optional isFormula:false.");
       }
     }
     const read=()=>this.client.listTables(documentId,{expandColumns:true});

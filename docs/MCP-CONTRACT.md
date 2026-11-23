@@ -47,11 +47,15 @@ The bounded `grist_add_structure(action="ensure_tables")` reconciles an
 initial named-table schema when reconstructing an application from scratch.
 Each table requires one or more explicit typed seed columns (`Text`,
 `Numeric`, `Int`, `Bool`, `Date`, `Choice`, `ChoiceList`, `Ref` or
-`RefList`). Gia reads the complete expanded native table and column identities,
+`RefList`). A legacy `fields:{type}` seed asserts type alone; a writable
+initial data column uses `fields:{type,isFormula:false}` and must persist a
+native `isFormula:false`. A matching computed column is a conflict before
+any additional table creation. Gia reads the complete expanded native table and column identities,
 rejects a missing or conflicting requested seed column on an existing table
 before writing, and creates only absent tables. It verifies every created
-stable ID, the requested column types and preservation of all preexisting
-table/column identities and types. Extra columns added later are preserved;
+stable ID, the requested column types, explicit writable intent when supplied,
+and preservation of all preexisting table/column identities, types and observed
+formula flags. Extra columns added later are preserved;
 a repeat with the same seeds is a no-op. Incomplete metadata fails closed.
 Native creation errors and unverified postconditions must be reconciled
 before retry; no concurrency CAS is claimed. More advanced column properties
