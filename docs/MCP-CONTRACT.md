@@ -57,6 +57,23 @@ Native creation errors and unverified postconditions must be reconciled
 before retry; no concurrency CAS is claimed. More advanced column properties
 remain available via existing separate actions. This does not add an MCP tool.
 
+The bounded `grist_add_records(action="ensure_record")` reconciles **one**
+explicit keyed record on a caller-authorized document. A fresh native Owner
+check prevents partially visible row sets from silently duplicating data.
+The key must be an existing non-formula `Text` column with a nonempty
+at-most-128-character string value supplied in `record.fields`. At most 32
+explicit writable fields are accepted. Gia queries up to two native records
+for that key and rejects duplicates, conflicting field values, malformed
+metadata and unverified persistence. If one row matches every supplied field,
+it returns its stable numeric ID without writing; otherwise it creates exactly
+one record and verifies the unique exact persisted values on readback.
+Unrelated native columns are not updated. Formula columns cannot be written.
+Native coercion of submitted values that changes readback causes an uncertain
+outcome instead of a false success. This is useful for synthetic application
+seeding and safe sequential restarts, **not** a Grist uniqueness constraint,
+atomic compare-and-swap or safe concurrent upsert. A failed or uncertain
+write must be explicitly reconciled before repetition. No new MCP tool.
+
 Both `grist_add_structure(create_tables)` and `grist_add_structure(create_columns)` accept only creation metadata actually persisted by the supported native Grist operations: optional `label`, `type`, `isFormula`, `formula` and `widgetOptions`. Native `AddTable` and `AddVisibleColumn` do not persist `description` and do not resolve the public stable-ID alias `visibleColumnId` at creation time. These two update-only fields therefore fail validation **before any create write**, including mixed batches, rather than producing a misleading success. To set them, first create the column with supported fields, then call `grist_change_structure(action="update_columns")` on the resulting stable IDs; update verification and uncertain-write handling remain authoritative. This narrows previously advertised but ineffective create inputs, not a functioning native creation workflow.
 
 `grist_add_structure(action="ensure_columns")` reconciles a bounded homogeneous

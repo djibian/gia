@@ -895,17 +895,31 @@ export function registerLeanTools(
     "grist_add_records",
     {
       ...getLeanToolMetadata("grist_add_records"),
-      inputSchema: z
-        .object({
+      inputSchema: z.union([
+        z.object({
           documentId: documentIdSchema,
           tableId: tableIdSchema,
           records: boundedArray(newRecordSchema, limits.maxWriteRecords)
-        })
-        .strict()
+        }).strict(),
+        z.object({
+          action: z.literal("ensure_record"),
+          documentId: documentIdSchema,
+          tableId: tableIdSchema,
+          keyColumnId: columnIdSchema,
+          record: newRecordSchema
+        }).strict()
+      ])
     },
-    async ({ documentId, tableId, records }) => {
+    async (input) => {
       try {
-        return textResult(await grist.createRecords(documentId, tableId, records));
+        if ("action" in input) {
+          return textResult(await grist.ensureRecord(
+            input.documentId, input.tableId, input.keyColumnId, input.record
+          ));
+        }
+        return textResult(await grist.createRecords(
+          input.documentId, input.tableId, input.records
+        ));
       } catch (error) {
         return errorResult(error);
       }

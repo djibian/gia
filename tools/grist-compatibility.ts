@@ -771,6 +771,38 @@ async function run(): Promise<void> {
     });
 
 
+    // #295: Owner-only single-row seed reconciles identity after a restart.
+    const keyed = { fields: { Name: "Gia-Unique-Seed-295", Qty: 7 } };
+    const seededRecord = resultJson(await callTool(bridgeBaseUrl, "grist_add_records", {
+      action: "ensure_record", documentId, tableId: TABLE_ID,
+      keyColumnId: "Name", record: keyed
+    }), "native_ensure_record_create") as { changed:boolean; recordId:number; persistedRecordVerified:boolean };
+    assert(seededRecord.changed && seededRecord.persistedRecordVerified &&
+      Number.isSafeInteger(seededRecord.recordId) && seededRecord.recordId > 0,
+      "native_ensure_record_first_create");
+    const repeatedRecord = resultJson(await callTool(bridgeBaseUrl, "grist_add_records", {
+      action: "ensure_record", documentId, tableId: TABLE_ID,
+      keyColumnId: "Name", record: keyed
+    }), "native_ensure_record_repeat") as { changed:boolean; recordId:number };
+    assert(!repeatedRecord.changed && repeatedRecord.recordId === seededRecord.recordId,
+      "native_ensure_record_duplicate_on_restart");
+    await callToolExpectError(bridgeBaseUrl, "grist_add_records", {
+      action: "ensure_record", documentId, tableId: TABLE_ID,
+      keyColumnId: "Name", record: { fields: {Name:"Gia-Unique-Seed-295", Qty:8} }
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_add_records", {
+      action: "ensure_record", documentId, tableId: TABLE_ID,
+      keyColumnId: "Qty", record: {fields:{Qty:"Not a Text key"}}
+    });
+    await callTool(bridgeBaseUrl, "grist_add_records", {
+      documentId, tableId: TABLE_ID,
+      records: [{ fields: { Name:"Gia-Unique-Seed-295", Qty:7 } }]
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_add_records", {
+      action: "ensure_record", documentId, tableId: TABLE_ID,
+      keyColumnId: "Name", record: keyed
+    });
+
     // #295 restart-safe typed bootstrap: create on a new document, repeat after
     // subsequent column changes and reject conflicts before any native write.
     const seedAlpha={id:"Compat_SeedAlpha",columns:[{id:"Name",fields:{type:"Text"}}]};
