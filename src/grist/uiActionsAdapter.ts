@@ -415,6 +415,49 @@ export class GristUiActionsAdapter {
     return { pageId: returnedPageId, tableRef: returnedTableRef, widgetId };
   }
 
+  /** Create 2–8 ungrouped native sections on one page in one bounded Grist /apply. */
+  async addPageWidgets(
+    documentId: string, pageId: number,
+    specs: readonly {tableRef: number; type: NativeWidgetType}[]
+  ): Promise<Array<{pageId:number; tableRef:number; widgetId:number}>> {
+    assertPositiveId(pageId, "Grist page ID");
+    if (specs.length < 2 || specs.length > 8) {
+      throw new Error("Native widget batch requires two to eight items.");
+    }
+    for (const item of specs) {
+      assertPositiveId(item.tableRef, "Native source table reference");
+      if (!NATIVE_WIDGET_TYPES.includes(item.type)) {
+        throw new Error("Unsupported native widget type in batch.");
+      }
+    }
+    const calendarStorage = specs.some(item => item.type === "calendar")
+      ? await this.calendarStorageType() : undefined;
+    const actions = specs.map(item => [
+      "CreateViewSection", item.tableRef, pageId,
+      item.type === "calendar" ? calendarStorage : item.type, null, null
+    ]);
+    const response = await this.client.applyUserActions(documentId, actions);
+    const returned = record(response)?.retValues;
+    if (!Array.isArray(returned) || returned.length !== specs.length) {
+      throw new UiWriteVerificationError("add_page_widgets",
+        "Native section batch returned incomplete identifiers; inspect before retry.");
+    }
+    const ids = new Set<number>();
+    return returned.map((entry, index) => {
+      const native = record(entry), spec = specs[index]!;
+      const sectionRef = positiveInteger(native?.sectionRef);
+      const tableRef = positiveInteger(native?.tableRef);
+      const viewRef = positiveInteger(native?.viewRef);
+      if (!sectionRef || ids.has(sectionRef) ||
+          tableRef !== spec.tableRef || viewRef !== pageId) {
+        throw new UiWriteVerificationError("add_page_widgets",
+          "Native section batch returned ambiguous IDs; inspect before retry.");
+      }
+      ids.add(sectionRef);
+      return {pageId,tableRef,widgetId:sectionRef};
+    });
+  }
+
   async renamePage(documentId: string, pageId: number, name: string): Promise<void> {
     assertPositiveId(pageId, "Grist page ID");
     const pageName = name.trim();
@@ -455,10 +498,10 @@ export class GristUiActionsAdapter {
   }
 
   /** Change only one verified native page indentation; no reordering. */
-  async nestPage(documentId: string, pageRecordId: number, indentation: number): Promise<void> {
+  async updatePageIndentation(documentId: string, pageRecordId: number, indentation: number): Promise<void> {
     assertPositiveId(pageRecordId, "Native page record");
-    if (!Number.isSafeInteger(indentation) || indentation < 1 || indentation > 8) {
-      throw new Error("Native page depth must be between one and eight.");
+    if (!Number.isSafeInteger(indentation) || indentation < 0 || indentation > 8) {
+      throw new Error("Native page depth must be between zero and eight.");
     }
     await this.client.applyUserActions(documentId, [
       ["UpdateRecord", "_grist_Pages", pageRecordId, { indentation }]

@@ -678,6 +678,22 @@ All three creation paths are non-idempotent. After a known created ID is returne
 
 Template mode removes user-table data, attachment rows/blobs and history according to native Grist behavior, while retaining substantial document metadata. It is therefore a bootstrap primitive, not a privacy scrub or a guarantee that copied application access rules remain operational after referenced data is removed.
 
+## Bounded homogeneous native widget creation
+
+`grist_add_ui(action="add_widgets")` creates two to eight ungrouped native
+sections on one existing page, using stable input `{tableId,type}` items and
+the same closed widget types already supported by `add_widget`. It is a single
+bounded Grist native `/apply` bundle of `CreateViewSection` actions, not a
+heterogeneous workflow, summary-table constructor, or generic forwarding API.
+Each native section response and subsequent full UI readback must match its
+input page, stable source table and widget type; all existing page widgets and
+all other pages remain. The response preserves creation order and returns fresh
+stable widget IDs. Repeating the request intentionally creates new sections:
+when a write or verification is uncertain, inspect the current page and
+reconcile by returned IDs before deciding what to create, never replay blindly.
+The existing one-widget `add_widget` remains for summary/group-by creation.
+No extra MCP tool or authorization is introduced.
+
 ## Creating native page hierarchy from an empty document
 
 `grist_change_ui(action="nest_page")` accepts an existing stable `pageId` and
@@ -694,6 +710,16 @@ re-read precedes the write, and the exact normalized native tree, including
 positions, must match postconditions. There is no external atomic CAS; uncertain
 effects require inspection rather than blind replay. This operation changes
 navigation only, not permissions or user records. Ten MCP v2 tools remain.
+
+`grist_change_ui(action="unnest_page")` promotes one *visible, last-leaf*
+nested page to the indentation of its current parent. It accepts only its stable
+`pageId`; page position is not changed, and no other page, parent relation or
+visibility may change. A root page is an idempotent no-op. Non-last children,
+pages with descendants, protected ancestors and incomplete native trees fail
+closed. A fresh pre-write snapshot and exact post-read protect concurrent
+edits; an uncertain effect requires inspection before retry. This is the
+bounded inverse of leaf nesting, not an arbitrary page-move or raw metadata
+operation.
 
 ## Safety invariants
 

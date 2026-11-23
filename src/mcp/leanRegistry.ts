@@ -350,15 +350,16 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     ]
   },
   grist_add_ui: {
-    actions: ["create_page", "add_widget"],
-    request: [`create_page: {action,documentId,tableId,name}; add_widget: {action,documentId,pageId:positiveInteger,tableId,type,groupByColumnIds?:stableColumnIds[]}. Widget type: ${NATIVE_WIDGET_TYPES.join(" | ")}.`],
+    actions: ["create_page", "add_widget", "add_widgets"],
+    request: [`create_page: {action,documentId,tableId,name}; add_widget: {action,documentId,pageId:positiveInteger,tableId,type,groupByColumnIds?:stableColumnIds[]}. Widget type: ${NATIVE_WIDGET_TYPES.join(" | ")}.`,
+      "add_widgets: {action,documentId,pageId,widgets:[{tableId,type},...]} 2..8 ungrouped native sections in one page; preserves input order, reports created widget IDs, uncertain effect requires readback, no automatic replay."],
     constraints: ["Supplied grouping IDs must be unique current source columns. An empty list creates a grand-total summary. The generated/reused summary table has a distinct identity and its effective access must be checked separately."],
     examples: [{ purpose: "Create a page", arguments: {
       action: "create_page", documentId: "synthetic-doc", tableId: "Items", name: "Items Page"
     } }]
   },
   grist_change_ui: {
-    actions: ["rename_page", "delete_page", "reorder_pages", "nest_page", "delete_widget", "update_layout", "update_form_layout", "publish_form", "unpublish_form", "update_form_field_options", "update_widget", "install_trusted_widget", "update_trusted_widget_revision"],
+    actions: ["rename_page", "delete_page", "reorder_pages", "nest_page", "unnest_page", "delete_widget", "update_layout", "update_form_layout", "publish_form", "unpublish_form", "update_form_field_options", "update_widget", "install_trusted_widget", "update_trusted_widget_revision"],
     request: [
       "rename_page: {action,documentId,pageId,name}; delete_page: {action,documentId,pageId}; delete_widget: {action,documentId,pageId,widgetId}.",
       "update_form_layout: {action,documentId,pageId,widgetId,layout:{children:[paragraph|section(fields/paragraphs)|submit],submitText?,successText?,anotherResponse?}}; stable column IDs resolved server-side; no publish.",
@@ -367,6 +368,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "update_form_field_options: {action,documentId,pageId,widgetId,columnId,update:{question?:string|null,required?:boolean,acceptFromUrl?:boolean}}; one existing native Form field, preserving unrelated options.",
       "reorder_pages: {action,documentId,pageIds:completeNavigationPageIds[]}; update_layout: {action,documentId,pageId,layout:{root:{kind:'widget',widgetId}|{kind:'group',children:[...]},collapsedWidgetIds?:positiveInteger[]}}",
       "nest_page: {action,documentId,pageId,parentPageId}; nest one visible leaf sibling immediately after the intended parent subtree, preserving all existing positions, siblings and protected pages; read back native hierarchy, do not blindly retry uncertain writes.",
+      "unnest_page: {action,documentId,pageId}; promote a visible final leaf to its parent's indentation; other page parents, positions and visibility remain unchanged. Root pages no-op; non-last leaves and protected subtrees refused.",
       "update_widget: {action,documentId,pageId,widgetId,update:{calendarConfig?:{titleColumnId,startDateColumnId,endDateColumnId?,allDayColumnId?,typeColumnId?},visibleFields?,cardLayout?:{root:{kind:'field',columnId}|{kind:'group',children:[...]}},gridOptions?,filters?,sort?,...}}"
     ],
     constraints: [
