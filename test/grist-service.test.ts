@@ -460,11 +460,12 @@ test("column creation refuses ignored native metadata before any table or column
 
 
 test("ensure_tables reconciles typed seeds and ignores later extra columns",async()=>{
-  const spec=[{id:"Stages",columns:[{id:"Contact",fields:{type:"Date"}}]},
-    {id:"Enseignants",columns:[{id:"Nom",fields:{type:"Text"}}]}];
+  const spec=[{id:"Stages",columns:[{id:"Contact",fields:{type:"DateTime:UTC"}}]},
+    {id:"Enseignants",columns:[{id:"Nom",fields:{type:"Text"}},
+      {id:"Contrats",fields:{type:"Attachments"}}]}];
   let calls=0;
   const data=new Map<string,{ref:number;columns:Array<{id:string;fields:{colRef:number;type:string}}>}>(
-    [["Stages",{ref:2,columns:[{id:"Contact",fields:{colRef:20,type:"Date"}},
+    [["Stages",{ref:2,columns:[{id:"Contact",fields:{colRef:20,type:"DateTime:UTC"}},
       {id:"Extra",fields:{colRef:21,type:"Text"}}]}]]
   );
   const {grist}=service(1000,100,2,20,{
@@ -473,7 +474,8 @@ test("ensure_tables reconciles typed seeds and ignores later extra columns",asyn
     }))}),
     createTables:async(_id:string,missing:typeof spec)=>{
       calls++;assert.deepEqual(missing.map(t=>t.id),["Enseignants"]);
-      data.set("Enseignants",{ref:3,columns:[{id:"Nom",fields:{colRef:30,type:"Text"}}]});
+      data.set("Enseignants",{ref:3,columns:[{id:"Nom",fields:{colRef:30,type:"Text"}},
+        {id:"Contrats",fields:{colRef:31,type:"Attachments"}}]});
       return {tables:[{id:"Enseignants"}]};
     }
   });
@@ -484,7 +486,7 @@ test("ensure_tables reconciles typed seeds and ignores later extra columns",asyn
   const second=await grist.ensureTables("doc",spec) as Record<string,unknown>;
   assert.equal(second.changed,false);assert.equal(calls,1);
   await assert.rejects(()=>grist.ensureTables("doc",[
-    {id:"Stages",columns:[{id:"Contact",fields:{type:"Text"}}]},
+    {id:"Stages",columns:[{id:"Contact",fields:{type:"DateTime:Europe/Paris"}}]},
     {id:"Other",columns:[{id:"Name",fields:{type:"Text"}}]}
   ]),/conflicting/);
   assert.equal(calls,1);
@@ -521,6 +523,8 @@ test("ensure_tables validates the complete batch before writes and fails closed 
   });
   for(const malformed of [
     [{id:"Stages",columns:[{id:"Date",fields:{type:"Invalid"}}]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"DateTime:America/New_York"}}]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Attachments:unsafe"}}]}],
     [{id:"Stages",columns:[{id:"Date",fields:{type:"Date",label:"Extra"}}]}],
     [{id:"Stages",columns:[{id:"Date",fields:{type:"Date",isFormula:true}}]}],
     [{id:"Stages",columns:[{id:"Date",fields:{type:"Date",isFormula:false,formula:"0"}}]}],
