@@ -290,6 +290,24 @@ async function validateFromEmptyStageSkeleton(
   ];
   const stagesFirst = await ensureRows("Stages", "Code_Stage", stageRows);
 
+  // Qualify creation/restart of a real Grist Python formula on synthetic rows.
+  // This is an incremental schema operation, not a private native UserAction.
+  const computedSpec = [{
+    id: "Stage_Libelle",
+    fields: { type: "Text", isFormula: true,
+      formula: '$Code_Stage + " | " + $Statut' }
+  }];
+  const ensureComputed = () => callTool(bridge, "grist_add_structure", {
+    action: "ensure_columns", documentId, tableId: "Stages",
+    columns: computedSpec
+  }) as Promise<{ changed: boolean; persistedSchemaVerified: boolean }>;
+  const firstComputed = await ensureComputed();
+  const replayComputed = await ensureComputed();
+  assertThat(firstComputed.changed && firstComputed.persistedSchemaVerified &&
+    !replayComputed.changed && replayComputed.persistedSchemaVerified,
+    "from_empty_formula_schema_not_idempotent");
+
+
   const ensurePage = () => callTool(bridge, "grist_add_ui", {
     action: "ensure_page", documentId, tableId: "Stages", name: "Suivi synthétique"
   }) as Promise<{ page: { id: number }; changed: boolean }>;
@@ -359,6 +377,12 @@ async function validateFromEmptyStageSkeleton(
     stages.some(row => row.fields.Code_Stage === "S-A") &&
     stages.some(row => row.fields.Code_Stage === "S-B"),
     "from_empty_native_stage_data_incomplete");
+
+  const labels = new Map(stages.map(row =>
+    [row.fields.Code_Stage, row.fields.Stage_Libelle]));
+  assertThat(labels.get("S-A") === "S-A | À suivre" &&
+    labels.get("S-B") === "S-B | En cours",
+    "from_empty_native_formula_values_incomplete");
   const pageState = await mcpPages(bridge, documentId);
   assertThat(countKeyValue(pageState, "name", "Suivi synthétique") === 1,
     "from_empty_native_page_not_unique");
