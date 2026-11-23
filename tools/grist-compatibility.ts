@@ -2542,6 +2542,38 @@ async function run(): Promise<void> {
     await createFixtureTable("CompatChoices", [
       columnOf("Status", "Choice"), columnOf("Tags", "ChoiceList")
     ]);
+    // #295: a distinct blank-document table isolates formula seeds from legacy
+    // Form projection fixture metadata and verifies Grist itself owns formula state.
+    await createFixtureTable("CompatFormula", [columnOf("Base", "Text")]);
+    const formulaSeed = [{id:"Echo",fields:{type:"Text",isFormula:true,formula:"$Base"}}];
+    const createdFormula = resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns", documentId:emptyDocumentId, tableId:"CompatFormula",
+      columns:formulaSeed
+    }),"native_ensure_formula_columns") as {changed:boolean;persistedSchemaVerified:boolean};
+    assert(createdFormula.changed&&createdFormula.persistedSchemaVerified,
+      "native_formula_column_creation_failed");
+    const replayFormula = resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns", documentId:emptyDocumentId, tableId:"CompatFormula",
+      columns:formulaSeed
+    }),"native_ensure_formula_columns_replay") as {changed:boolean};
+    assert(!replayFormula.changed,"native_formula_column_not_idempotent");
+    await callToolExpectError(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns", documentId:emptyDocumentId, tableId:"CompatFormula",
+      columns:[
+        {id:"Echo",fields:{type:"Text",isFormula:true,formula:"$Base + '!'"}},
+        {id:"MustNotCreate",fields:{type:"Text"}}
+      ]
+    });
+    const formulaColumns = await gristApi(gristBaseUrl,apiKey,
+      `/api/docs/${encodeURIComponent(emptyDocumentId)}/tables/CompatFormula/columns?hidden=true`) as {
+        columns:Array<{id:string;fields:{type:string;isFormula:boolean;formula:string}}>;
+      };
+    const storedFormula = formulaColumns.columns.find(column=>column.id==="Echo");
+    assert(storedFormula?.fields.type==="Text" && storedFormula.fields.isFormula===true &&
+      storedFormula.fields.formula==="$Base" &&
+      !formulaColumns.columns.some(column=>column.id==="MustNotCreate"),
+      "native_formula_column_state_changed");
+
     const configuredRequest = {
       action: "create_columns", documentId: emptyDocumentId, tableId: "Placements", columns: [
         { ...columnOf("ActiveMentor", "Ref:Mentors"), configuration: {
