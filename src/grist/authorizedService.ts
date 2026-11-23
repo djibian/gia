@@ -76,7 +76,7 @@ import {
   type ColumnSelectByInput
 } from "./selectBy.js";
 import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUpdateInput } from "./formColumnOptions.js";
-import { readChoiceColumnState, planAppendChoiceOptions } from "./choiceOptions.js";
+import { readChoiceColumnState, planAppendChoiceOptions, planSetChoiceColors, type ChoiceColors } from "./choiceOptions.js";
 import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
 import { planColumnStyle, readNativeColumnStyleSequence, readNativeRowStyleSequence,
@@ -2360,6 +2360,44 @@ export class AuthorizedGristService {
         throw new SchemaWriteVerificationError("append_choice_options",
           "Native choice append may be uncertain; inspect before retry: " +
           (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
+
+  /** Set bounded colors of one existing choice, preserving labels and every sibling setting. */
+  async setChoiceColors(
+    documentIdOrUrl: string, tableId: string, columnId: string,
+    label: string, colors: ChoiceColors
+  ): Promise<unknown> {
+    return this.execute("set_choice_colors", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      if (!columnId.trim()) throw new Error("Choice colors require a stable column ID.");
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = async () => readChoiceColumnState(
+        await this.inner.listColumns(id, tableId, { hidden: true }), columnId, limit
+      );
+      const before = await read();
+      const plan = planSetChoiceColors(before, label, colors);
+      const result = { documentId: id, tableId, columnId, label };
+      if (!plan.changed) return { ...result, changed: false, persistedOptionsVerified: true };
+      if (!isDeepStrictEqual(await read(), before)) {
+        throw new Error("Native choice colors changed before update; reconcile first.");
+      }
+      try {
+        await this.inner.updateColumns(id, tableId, [{
+          id: columnId, fields: { widgetOptions: plan.widgetOptions }
+        }]);
+        const after = await read();
+        if (after.type !== before.type ||
+            !isDeepStrictEqual(after.choices, before.choices) ||
+            !isDeepStrictEqual(after.options, plan.options)) {
+          throw new Error("Native choice colors or preserved choices differ after write.");
+        }
+        return { ...result, changed: true, persistedOptionsVerified: true };
+      } catch (error) {
+        throw new SchemaWriteVerificationError("set_choice_colors",
+          "Native choice color update may be uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown effect"));
       }
     });
   }

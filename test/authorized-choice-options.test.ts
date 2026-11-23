@@ -81,3 +81,40 @@ test("mismatching postread reports uncertain persistence instead of success", as
     ["en attente"]), /may already have succeeded; do not retry/);
   assert.equal(h.current().writes, 1);
 });
+
+
+test("authorized choice color edit is idempotent and preserves every existing option", async () => {
+  const h = harness();
+  const result = await h.service.setChoiceColors("doc", "Stages", "Status",
+    "validé", { textColor: "#FFFFFF" }) as { changed:boolean;persistedOptionsVerified:boolean };
+  assert.equal(result.changed, true);
+  assert.equal(result.persistedOptionsVerified, true);
+  assert.deepEqual(h.current().options, {
+    choices: ["validé"], custom: { keep: true },
+    choiceOptions: { "validé": { fillColor: "#12AB34", textColor: "#FFFFFF" } },
+    formRequired: true
+  });
+  const replay = await h.service.setChoiceColors("doc", "Stages", "Status",
+    "validé", { textColor: "#FFFFFF" }) as { changed:boolean };
+  assert.equal(replay.changed, false);
+  assert.equal(h.current().writes, 1);
+});
+
+test("choice color permission, target and uncertain native postread fail closed", async () => {
+  const denied = harness({ denied: true });
+  await assert.rejects(denied.service.setChoiceColors("doc", "Stages", "Status",
+    "validé", { fillColor: "#000000" }), /DENIED/);
+  assert.equal(denied.current().reads, 0);
+  const missing = harness();
+  await assert.rejects(missing.service.setChoiceColors("doc", "Stages", "Status",
+    "inconnu", { fillColor: "#000000" }), /existing native choice/);
+  assert.equal(missing.current().writes, 0);
+  const invalidType = harness({ type:"Text" });
+  await assert.rejects(invalidType.service.setChoiceColors("doc", "Stages", "Status",
+    "validé", { fillColor: "#000000" }), /Choice or ChoiceList/);
+  assert.equal(invalidType.current().writes, 0);
+  const corrupt = harness({ corrupt: true });
+  await assert.rejects(corrupt.service.setChoiceColors("doc", "Stages", "Status",
+    "validé", { textColor: "#FFFFFF" }), /may already have succeeded; do not retry/);
+  assert.equal(corrupt.current().writes, 1);
+});

@@ -1142,6 +1142,18 @@ export function registerLeanTools(
           }).strict(),
         z
           .object({
+            action: z.literal("set_choice_colors"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            label: z.string().min(1).max(120),
+            colors: z.object({
+              fillColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+              textColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional()
+            }).strict().refine(value => Object.keys(value).length > 0, "At least one color required.")
+          }).strict(),
+        z
+          .object({
             action: z.literal("update_dropdown_condition"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1376,6 +1388,10 @@ export function registerLeanTools(
           case "append_choice_options":
             return textResult(await grist.appendChoiceOptions(
               input.documentId, input.tableId, input.columnId, input.values
+            ));
+          case "set_choice_colors":
+            return textResult(await grist.setChoiceColors(
+              input.documentId, input.tableId, input.columnId, input.label, input.colors
             ));
           case "update_dropdown_condition":
             return textResult(await grist.updateDropdownCondition(

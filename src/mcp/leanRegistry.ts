@@ -285,13 +285,14 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     ]
   },
   grist_change_structure: {
-    actions: ["update_document", "update_tables", "delete_table", "update_columns", "update_form_column_options", "append_choice_options", "update_dropdown_condition",
+    actions: ["update_document", "update_tables", "delete_table", "update_columns", "update_form_column_options", "append_choice_options", "set_choice_colors", "update_dropdown_condition",
       "style_rules", "append_style_rule", "reorder_column_style_rules", "remove_column_style_rule", "append_row_style_rule", "update_row_style_rule", "reorder_row_style_rules", "remove_row_style_rule", "replace_row_style_formula", "replace_style_formula", "rename_column", "delete_columns", "access_rule_group", "ensure_owner_schema_guard", "grant_document_user", "revoke_document_user", "change_document_user_role"],
     request: [
       "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}|{locale:'fr-FR'|'en-US'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
       "update_form_column_options: {action,documentId,tableId,columnId,update:{question?:string|null,required?:boolean,acceptFromUrl?:boolean}}; preserves other native options.",
       "append_choice_options: {action,documentId,tableId,columnId,values:[unique choice labels]}; appends only missing labels on Choice/ChoiceList columns, preserving order, colors, Form and other settings; max 64, replay no-op.",
+      "set_choice_colors: {action,documentId,tableId,columnId,label:existingChoice,colors:{fillColor?:'#RRGGBB',textColor?:'#RRGGBB'}}; updates colors of one existing Choice/ChoiceList label only, keeps labels and siblings, repeat no-op.",
       "update_dropdown_condition: {action,documentId,tableId,columnId,condition:null|{kind:'choice_field_equals_literal',choiceColumnId,value}|{kind:'choice_field_equals_record_ref',choiceColumnId,recordColumnId}|{kind:'choice_id_in_record_reflist',recordColumnId}}; typed native Ref/RefList predicate, null removes it.",
       "style_rules: {action,documentId,tableId,columnId,conditionFormula:GristPython,style:{fillColor?:'#RRGGBB',textColor?:'#RRGGBB'}}; create or replace one native column style rule, preserve other options; no arbitrary ACL formula.",
       "append_style_rule: same fields as style_rules; appends one native column style (max 8), preserving existing ordered rules; identical rule is a no-op, conflicting duplicate formula is refused.",

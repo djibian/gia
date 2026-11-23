@@ -2546,6 +2546,23 @@ async function run(): Promise<void> {
     }), "native_choicelist_append") as { changed: boolean; persistedOptionsVerified: boolean };
     assert(tagCreated.changed && tagCreated.persistedOptionsVerified,
       "native_choicelist_append_not_verified");
+    const colorRequest = { action: "set_choice_colors", documentId: emptyDocumentId,
+      tableId: "CompatChoices", columnId: "Status", label: "en attente",
+      colors: { fillColor: "#ABCDEF", textColor: "#123456" } };
+    const colorChanged = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", colorRequest), "native_choice_color") as {
+        changed: boolean; persistedOptionsVerified: boolean
+      };
+    assert(colorChanged.changed && colorChanged.persistedOptionsVerified,
+      "native_choice_color_not_verified");
+    const colorReplay = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", colorRequest), "native_choice_color_replay") as {
+        changed: boolean
+      };
+    assert(!colorReplay.changed, "native_choice_color_repeated");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...colorRequest, label: "absent"
+    });
     const nativeChoiceColumns = await gristApi(gristBaseUrl, apiKey,
       `${configuredDocPath}/tables/CompatChoices/columns`) as {
         columns: Array<{ id: string; fields: { type: string; widgetOptions: string } }>
@@ -2555,6 +2572,8 @@ async function run(): Promise<void> {
     assert(choiceOptions?.fields.type === "Choice" &&
       isDeepStrictEqual(JSON.parse(choiceOptions.fields.widgetOptions).choices,
         ["en attente", "validé", "refusé"]) &&
+      isDeepStrictEqual(JSON.parse(choiceOptions.fields.widgetOptions).choiceOptions["en attente"],
+        { fillColor: "#ABCDEF", textColor: "#123456" }) &&
       tagOptions?.fields.type === "ChoiceList" &&
       isDeepStrictEqual(JSON.parse(tagOptions.fields.widgetOptions).choices, ["terrain", "bureau"]),
       "native_choice_types_or_options_mismatch");

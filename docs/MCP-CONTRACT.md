@@ -136,6 +136,15 @@ Uncertain native writes require inspection before retrying; external
 concurrent editors still need serialization. This action does not constrain
 row-level data or bypass ACLs, and adds no MCP tool.
 
+`grist_change_structure(action="set_choice_colors")` changes one or both
+closed `#RRGGBB` colors of a *previously configured* Choice or ChoiceList label.
+It preserves the choice list, other label colors, Form settings and all sibling
+native options; a repeated identical request is a verified no-op. Unknown labels,
+non-choice or formula columns, malformed existing color state, excessive metadata
+and invalid color values are refused before any write. It uses `doc.schema:write`
+and complete native readback, never updates row values or grants.
+Uncertain effects must be reconciled without blind retries.
+
 `grist_change_structure(action="update_dropdown_condition")` applies or clears
 a typed native reference-dropdown predicate on one existing stable Ref/RefList
 column, reusing the same three closed forms supported by configured-column
