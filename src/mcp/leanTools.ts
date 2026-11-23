@@ -354,13 +354,20 @@ const customWidgetSettingsUpdateSchema = z
     access: z.enum(["none", "read table", "full"]).optional(),
     confirmDataAccess: z.literal(true).optional(),
     columnsMapping: customWidgetColumnsMappingSchema.nullable().optional(),
-    optionsPatch: dictionarySchema(customWidgetOptionValue, 1).optional()
+    optionsPatch: dictionarySchema(customWidgetOptionValue, 1).optional(),
+    resetWidgetOptions: z.literal(true).optional()
   })
   .strict()
   .refine(
     (value) => value.access !== undefined || value.columnsMapping !== undefined ||
-      value.optionsPatch !== undefined,
-    "At least one of access, columnsMapping or optionsPatch must be supplied."
+      value.optionsPatch !== undefined || value.resetWidgetOptions === true,
+    "At least one of access, columnsMapping, optionsPatch or resetWidgetOptions must be supplied."
+  )
+  .refine(
+    (value) => value.resetWidgetOptions !== true ||
+      (value.optionsPatch === undefined &&
+        (value.access === undefined || value.access === "none")),
+    "Widget option reset cannot be combined with a patch or a data access grant."
   )
   .refine(
     (value) => value.access === undefined || value.access === "none" ||
