@@ -367,6 +367,10 @@ reconciled, never blindly retried. Existing public home-database Share.keys
 are **not** deleted or attested revoked. Disabling the section does not qualify
 effective anonymous access revocation; that is a separate native boundary.
 
+Plain Form instructional text supports ordinary spaced punctuation such as
+`Stage : informations`, while URLs, scheme-prefixed strings and link-bearing
+Markdown remain protected to prevent accidental capability disclosure.
+
 `grist_change_ui(action="update_form_layout")` configures one existing
 native Form section with a bounded tree of typed paragraphs, field groups and a
 final submit element. All field references are supplied as stable column IDs and

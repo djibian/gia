@@ -49,7 +49,9 @@ export function nativeDropdownConditionState(value: unknown): "protected" | "inc
 
 /** Redact link-bearing native Form prose instead of returning potential tokens/URLs. */
 export function safeNativeFormText(value: string, maxLength: number): FormText {
-  const linkLike = /[:/\\@<>{}\[\]=&%]|[\p{L}\d]\.[\p{L}\d]/u;
+  // Only allow colons surrounded by space separators, including French no-break spaces.
+  // Tabs and newlines do not count: URL parsers can strip them inside a scheme.
+  const linkLike = /[/\\@<>{}\[\]=&%]|(?<!\p{Zs}):|:(?!\p{Zs})|[\p{L}\d]\.[\p{L}\d]/u;
   return value.length > Math.min(1000, maxLength) || linkLike.test(value)
     ? { protected: true } : value;
 }
