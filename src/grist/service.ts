@@ -684,7 +684,7 @@ export class GristService {
     const documentId=await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
     this.assertSchemaCount(tables.reduce((n,t)=>n+1+(t.columns?.length??0),0));
     this.assertUniqueStrings(tables.map(t=>t.id),"Table IDs");
-    const typeAllowed=/^(?:Text|Numeric|Int|Bool|Date|Choice|ChoiceList|Ref:[A-Za-z][A-Za-z0-9_]*|RefList:[A-Za-z][A-Za-z0-9_]*)$/;
+    const typeAllowed=/^(?:Text|Numeric|Int|Bool|Date|DateTime:(?:UTC|Europe\/Paris)|Attachments|Choice|ChoiceList|Ref:[A-Za-z][A-Za-z0-9_]*|RefList:[A-Za-z][A-Za-z0-9_]*)$/;
     for(const table of tables){
       this.assertIdentifier(table.id,"Table ID");
       if(!table.columns?.length)throw new Error("Each table seed needs a column.");
@@ -810,7 +810,7 @@ export class GristService {
     this.assertIdentifier(tableId,"Table ID");
     this.assertSchemaCount(columns.length);
     this.assertUniqueStrings(columns.map(c=>c.id),"Column IDs");
-    const allowed=/^(?:Text|Numeric|Int|Bool|Date|DateTime:(?:UTC|Europe\/Paris)|Choice|ChoiceList|(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*)$/;
+    const allowed=/^(?:Text|Numeric|Int|Bool|Date|DateTime:(?:UTC|Europe\/Paris)|Attachments|Choice|ChoiceList|(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*)$/;
     for(const column of columns) {
       this.assertIdentifier(column.id,"Column ID");
       const fields=column.fields;
