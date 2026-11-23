@@ -216,6 +216,41 @@ function sameGrouping(actual: Set<string>, expected: readonly string[]): boolean
   return actual.size === expected.length && expected.every(columnId => actual.has(columnId));
 }
 
+/** Native expanded tables omit hidden columns, which may still be summary keys. */
+export function withNativeSummaryColumns(tableResponse: unknown, columnResponse: unknown, limit: number): unknown {
+  const rows = record(columnResponse)?.records;
+  if (!Array.isArray(rows) || rows.length >= limit) {
+    throw new Error("Complete native summary column metadata is required.");
+  }
+  const refs = new Set<number>();
+  const byTable = new Map<number, JsonRecord[]>();
+  for (const value of rows) {
+    const row = record(value);
+    const fields = record(row?.fields);
+    const parentId = positiveInteger(fields?.parentId);
+    const colRef = positiveInteger(row?.id);
+    const colId = text(fields?.colId);
+    const group = fields?.summarySourceCol;
+    if (!parentId || !colRef || !colId || refs.has(colRef) ||
+        (group !== 0 && !positiveInteger(group))) {
+      throw new Error("Native summary column metadata is incomplete or ambiguous.");
+    }
+    refs.add(colRef);
+    const columns = byTable.get(parentId) ?? [];
+    columns.push({ id: colId, fields: { colRef, summarySourceCol: group } });
+    byTable.set(parentId, columns);
+  }
+  return { tables: tables(tableResponse).map(table => {
+    const ref = tableRef(table);
+    const columns = ref === undefined ? undefined : byTable.get(ref);
+    if (!columns || [...columnMaps(table).byRef].some(([id, name]) =>
+      !columns.some(column => column.id === name && record(column.fields)?.colRef === id))) {
+      throw new Error("Native summary metadata disagrees with the visible schema.");
+    }
+    return { ...table, columns };
+  }) };
+}
+
 export function findSummaryTableRef(tableResponse: unknown, plan: SummaryCreationPlan): number | undefined {
   const sourceTables = tables(tableResponse);
   const source = findTableByRef(sourceTables, plan.sourceTableRef);

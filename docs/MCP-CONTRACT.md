@@ -34,7 +34,9 @@ native section on an existing page using its page ID, stable source table ID,
 widget type and optional `groupByColumnIds`. An omitted grouping selects an
 ordinary section. An empty grouping selects a grand total, and a grouping of
 1–20 unique stable column IDs selects a summary of that set of columns.
-Gia verifies the generated summary table and source-column references.
+Grouped reconciliation requires fresh native Owner proof. Gia verifies the
+generated summary table using complete native column metadata so a hidden
+grouping column cannot turn an existing section into a false grand total.
 A sole existing section is reused with
 its native widget ID and all configuration preserved. If absent, Gia invokes
 the existing native `CreateViewSection`, verifies the returned ID and re-reads
@@ -818,6 +820,19 @@ same table. This is a small reconciliation primitive, not an application
 planner, transaction, or general uniqueness enforcement under concurrent writers.
 
 ## Bounded homogeneous native widget creation
+
+`grist_add_ui(action="ensure_widgets")` reconciles two to eight **distinct**
+ungrouped native section identities on one page, each selected by a stable
+source table ID and native widget type. For each requested identity, exactly
+one existing widget is reused unchanged or a missing widget is created, in
+request order. Duplicate requested identities and ambiguous pre-existing
+matches are refused before writing. Missing widgets are created in a single
+bounded native bundle (one native action when only one is absent); the complete
+post-read checks all original UI, exactly the new widgets, stable identities
+and types. Repeated identical requests are no-ops; partial/uncertain native
+effects require inspection and reconciliation, never blind retries. Multiple
+intentionally duplicated same-table/type sections remain possible using the
+existing explicit `add_widget` operation with caller-owned widget IDs.
 
 `grist_add_ui(action="add_widgets")` creates two to eight ungrouped native
 sections on one existing page, using stable input `{tableId,type}` items and

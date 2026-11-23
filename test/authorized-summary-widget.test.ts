@@ -43,8 +43,17 @@ function harness({ duplicate = false } = {}) {
     maxWriteRecords: 500,
     writeBatchRecords: 200,
     maxSchemaItems: 100,
+    assertDocumentOwner: async () => undefined,
     listTables: async () => ({ tables: created ? [sourceTable, summaryTable] : [sourceTable] }),
     queryRecords: async (_documentId: string, tableId: string) => {
+      if (tableId === "_grist_Tables_column") {
+        const tables = created ? [sourceTable, summaryTable] : [sourceTable];
+        return { records: tables.flatMap(table => table.columns.map(column => ({
+          id: column.fields.colRef,
+          fields: { summarySourceCol: 0, ...column.fields,
+            parentId: table.fields.tableRef, colId: column.id }
+        }))) };
+      }
       if (tableId === "_grist_Pages") {
         return { records: [{ id: 12, fields: { viewRef: 7, indentation: 0, pagePos: 1 } }] };
       }
