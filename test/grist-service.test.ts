@@ -509,7 +509,7 @@ test("ensure_tables makes writable initial data columns and rejects formula coll
   formula=true;
   await assert.rejects(()=>grist.ensureTables("doc",[
     ...spec,{id:"Other",columns:[{id:"Name",fields:{type:"Text"}}]}
-  ]),/conflicts/);
+  ]),/conflicting/);
   assert.equal(writes,1);
 });
 

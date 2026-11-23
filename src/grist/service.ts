@@ -302,7 +302,7 @@ function missingTableSeeds(
       const existing=saved.columns.get(column.id);
       if(existing?.type!==column.fields?.type ||
          (column.fields?.isFormula===false && existing?.isFormula!==false))
-        throw new Error("Existing table seed conflicts with the requested type or writable intent.");
+        throw new Error("Existing table seed is missing or has a conflicting requested type or writable intent.");
     }
     return false;
   });
