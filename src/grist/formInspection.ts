@@ -49,7 +49,9 @@ export function nativeDropdownConditionState(value: unknown): "protected" | "inc
 
 /** Redact link-bearing native Form prose instead of returning potential tokens/URLs. */
 export function safeNativeFormText(value: string, maxLength: number): FormText {
-  const linkLike = /[:/\\@<>{}\[\]=&%]|[\p{L}\d]\.[\p{L}\d]/u;
+  // Plain labels such as "Stage : suivi" are harmless; colon immediately followed
+  // by non-whitespace may introduce a scheme or opaque capability and stays protected.
+  const linkLike = /[/\\@<>{}\[\]=&%]|:(?=\S)|[\p{L}\d]\.[\p{L}\d]/u;
   return value.length > Math.min(1000, maxLength) || linkLike.test(value)
     ? { protected: true } : value;
 }
