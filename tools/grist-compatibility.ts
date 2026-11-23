@@ -1477,6 +1477,17 @@ async function run(): Promise<void> {
 
     // Construct a real parent/child navigation relation from two freshly
     // created native flat pages. No source document import or copy.
+    const ensuredNew = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action:"ensure_page",documentId,tableId:TABLE_ID,name:"Gia Restart Page"
+    }), "native_ensure_page_create") as {changed:boolean;createdPageId:number;
+      persistedPageVerified:boolean;page:{id:number}};
+    assert(ensuredNew.changed && ensuredNew.persistedPageVerified &&
+      ensuredNew.createdPageId===ensuredNew.page.id, "native_ensure_page_create_unverified");
+    const ensuredRepeat = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action:"ensure_page",documentId,tableId:TABLE_ID,name:"Gia Restart Page"
+    }), "native_ensure_page_repeat") as {changed:boolean;page:{id:number}};
+    assert(!ensuredRepeat.changed && ensuredRepeat.page.id===ensuredNew.page.id,
+      "native_ensure_page_not_idempotent");
     const nestedParent = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
       action: "create_page", documentId, tableId: TABLE_ID, name: "Gia Nested Parent"
     }), "native_nesting_parent") as {page:{id:number}};

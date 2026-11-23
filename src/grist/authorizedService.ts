@@ -497,6 +497,66 @@ export class AuthorizedGristService {
     });
   }
 
+
+  /**
+   * Reconcile a logical application page by its unique public name.
+   * Grist does not persist the source table on an empty AddView, so tableId is
+   * only a validated creation prerequisite, not an assertion of page origin.
+   */
+  async ensurePage(
+    documentIdOrUrl: string, tableId: string, name: string
+  ): Promise<unknown> {
+    assertPublicTableId(tableId);
+    const pageName = name.trim();
+    if (!pageName || pageName.length > 128) {
+      throw new Error("A nonempty page reconciliation name of at most 128 characters is required.");
+    }
+    return this.execute("ensure_page", documentIdOrUrl, 1, async id => {
+      const sourceRef = await this.resolveTableRef(id, tableId);
+      const before = await this.loadDocumentUi(id);
+      assertCompleteUiSnapshot(before);
+      const matches = before.pages.filter(page => page.name === pageName);
+      if (matches.length > 1) {
+        throw new Error("Native page name is ambiguous; use stable page IDs to reconcile.");
+      }
+      const project = (page: typeof before.pages[number]) => ({
+        ...projectPublicPage(page),
+        widgetCount: page.widgets.length,
+        widgetIds: page.widgets.map(widget => widget.id)
+      });
+      if (matches.length === 1) {
+        return {documentId:id,page:project(matches[0]!),changed:false,
+          persistedPageVerified:true};
+      }
+      if (!isDeepStrictEqual(before, await this.loadDocumentUi(id)) ||
+          sourceRef !== await this.resolveTableRef(id, tableId)) {
+        throw new Error("Native page names or creation table changed before write; reconcile first.");
+      }
+      let createdId: number | undefined;
+      try {
+        const created = await this.uiActions.createEmptyPage(id, tableId, pageName);
+        createdId = created.pageId;
+        const after = await this.loadDocumentUi(id);
+        assertCompleteUiSnapshot(after);
+        const unique = after.pages.filter(page => page.name === pageName);
+        const page = unique[0];
+        if (unique.length !== 1 || !page || page.id !== createdId ||
+            page.type !== "empty" || page.widgets.length !== 0 ||
+            after.pages.length !== before.pages.length + 1 ||
+            before.pages.some(previous =>
+              !isDeepStrictEqual(previous, after.pages.find(current => current.id === previous.id)))) {
+          throw new Error("Native page creation changed other pages or has an ambiguous result.");
+        }
+        return {documentId:id,page:project(page),changed:true,createdPageId:createdId,
+          persistedPageVerified:true};
+      } catch (error) {
+        throw new UiWriteVerificationError("ensure_page",
+          createdId,
+          error instanceof Error ? error.message : "Native page creation could not be verified.");
+      }
+    });
+  }
+
   async addPageWidget(
     documentIdOrUrl: string,
     pageId: number,
