@@ -301,7 +301,7 @@ function missingTableSeeds(
     for(const column of table.columns??[]) {
       const existing=saved.columns.get(column.id);
       if(existing?.type!==column.fields?.type ||
-         (column.fields?.isFormula===false && existing.isFormula!==false))
+         (column.fields?.isFormula===false && existing?.isFormula!==false))
         throw new Error("Existing table seed conflicts with the requested type or writable intent.");
     }
     return false;
