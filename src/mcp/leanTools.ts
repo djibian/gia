@@ -621,6 +621,9 @@ function normalizeWidgetUpdate(
               : {}),
             ...(update.customWidgetSettings.optionsPatch !== undefined
               ? { optionsPatch: update.customWidgetSettings.optionsPatch }
+              : {}),
+            ...(update.customWidgetSettings.resetWidgetOptions === true
+              ? { resetWidgetOptions: true as const }
               : {})
           }
         }
