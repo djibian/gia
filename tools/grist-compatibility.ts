@@ -975,6 +975,13 @@ async function run(): Promise<void> {
       columns:writableChoice
     }),"native_ensure_writable_choice_replay") as {changed:boolean};
     assert(!seedWritableChoiceReplay.changed,"native_writable_choice_recreated");
+    // Keep the existing document-wide bounded Form inspection below unchanged:
+    // this test-only column would otherwise push its native metadata past the
+    // fixed read limit and correctly yield status:incomplete.
+    await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"delete_columns",documentId,tableId:creationTableId,
+      columnIds:["Compat_WritableChoice"]
+    });
 
     await callToolExpectError(bridgeBaseUrl,"grist_add_structure",{
       action:"ensure_columns",documentId,tableId:creationTableId,
@@ -3117,7 +3124,7 @@ async function run(): Promise<void> {
         ] },
         { type: "submit" }
       ] }
-    }), "native_form_projection_mismatch:"+JSON.stringify(form));
+    }), "native_form_projection_mismatch");
     assert(!JSON.stringify(widgets).includes("synthetic-private-form-marker"),
       "native_form_secret_exposed");
     const dropdownDiscovery = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
