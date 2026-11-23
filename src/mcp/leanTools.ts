@@ -1407,7 +1407,7 @@ export function registerLeanTools(
           .object({
             action: z.literal("access_rule_group"),
             documentId: documentIdSchema,
-            mode: z.enum(["create", "replace", "delete"]),
+            mode: z.enum(["create", "ensure", "replace", "delete"]),
             target: z.union([accessRuleTargetSchema, accessUserAttributeTargetSchema]),
             rules: z.array(accessRuleSchema).min(1).max(MAX_ACCESS_RULES_PER_GROUP).optional(),
             definition: accessUserAttributeDefinitionSchema.optional()

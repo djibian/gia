@@ -2232,8 +2232,8 @@ async function run(): Promise<void> {
 
     // Compare a bounded synthetic decision with actual native ordinary
     // R/C/U/D behavior in the compatibility document.
-    const compatibilityPolicy = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
-      action: "access_rule_group", documentId, mode: "create", target: { tableId: ACL_TABLE_ID },
+    const compatibilityPolicyRequest = {
+      action: "access_rule_group", documentId, mode: "ensure", target: { tableId: ACL_TABLE_ID },
       rules: [
         {
           condition: { kind: "match_boolean", columnId: "Enabled", operator: "equals", value: true },
@@ -2244,8 +2244,22 @@ async function run(): Promise<void> {
           permissions: { read: "deny", update: "deny", create: "deny", delete: "deny" }
         }
       ]
-    }), "expected_decision_setup");
-    assert(compatibilityPolicy.persistedDefinitionVerified === true, "expected_policy_not_persisted");
+    };
+    const aclRulesPath = `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_ACLRules/records?hidden=true`;
+    const compatibilityPolicy = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      compatibilityPolicyRequest), "expected_decision_setup");
+    assert(compatibilityPolicy.changed === true && compatibilityPolicy.persistedDefinitionVerified === true,
+      "expected_policy_not_persisted");
+    const persistedCompatibilityPolicy = await gristApi(gristBaseUrl, apiKey, aclRulesPath);
+    const compatibilityPolicyReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      compatibilityPolicyRequest), "expected_decision_replay");
+    assert(compatibilityPolicyReplay.changed === false &&
+      compatibilityPolicyReplay.persistedDefinitionVerified === true, "expected_policy_replay_wrote");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...compatibilityPolicyRequest, rules: compatibilityPolicyRequest.rules.slice(0, 1)
+    });
+    assert(isDeepStrictEqual(await gristApi(gristBaseUrl, apiKey, aclRulesPath), persistedCompatibilityPolicy),
+      "expected_policy_replay_or_conflict_changed_native_rules");
 
     const syntheticFields = [{ name: "Enabled", value: { kind: "boolean", value: true } }];
     for (const operation of ["read", "create", "update", "delete"] as const) {
@@ -2433,16 +2447,25 @@ async function run(): Promise<void> {
       !JSON.stringify(afterNullInspection).includes("LinkKey.Token"),
       "native_null_user_attribute_raw_metadata_leaked");
 
-        const attrCreate = resultJson(await callTool(bridgeBaseUrl,
-      "grist_change_structure", {
-        action: "access_rule_group", documentId, mode: "create",
+    const attrRequest = {
+        action: "access_rule_group", documentId, mode: "ensure",
         target: { userAttributeName: "CompatCreated" },
         definition: { tableId: ACL_TABLE_ID, lookupColId: "ShareToken",
           source: { kind: "user_property", property: "Email" } }
-      }), "native_user_attribute_create");
+    };
+    const attrCreate = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", attrRequest),
+      "native_user_attribute_ensure");
     assert(attrCreate.changed === true && attrCreate.persistedDefinitionVerified === true &&
       attrCreate.effectiveEnforcementVerified === false,
       "native_user_attribute_create_not_verified");
+    const attrReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", attrRequest),
+      "native_user_attribute_ensure_replay");
+    assert(attrReplay.changed === false && attrReplay.persistedDefinitionVerified === true,
+      "native_user_attribute_replay_wrote");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...attrRequest, definition: { ...attrRequest.definition,
+        source: { kind: "link_key", name: "StageToken" } }
+    });
     const attrReplace = resultJson(await callTool(bridgeBaseUrl,
       "grist_change_structure", {
         action: "access_rule_group", documentId, mode: "replace",
