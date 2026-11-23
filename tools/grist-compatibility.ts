@@ -2500,6 +2500,9 @@ async function run(): Promise<void> {
     await createFixtureTable("Mentors", [columnOf("Status", "Text"), columnOf("Class", "Ref:Classes")]);
     await createFixtureTable("Placements", [columnOf("Class", "Ref:Classes"),
       columnOf("Eligible", "RefList:Mentors"), columnOf("Oracle", "Ref:Mentors")]);
+    await createFixtureTable("CompatChoices", [
+      columnOf("Status", "Choice"), columnOf("Tags", "ChoiceList")
+    ]);
     const configuredRequest = {
       action: "create_columns", documentId: emptyDocumentId, tableId: "Placements", columns: [
         { ...columnOf("ActiveMentor", "Ref:Mentors"), configuration: {
@@ -2527,6 +2530,41 @@ async function run(): Promise<void> {
     ] });
 
     const configuredDocPath = `/api/docs/${encodeURIComponent(emptyDocumentId)}`;
+    // #295: build and augment both native choice types from this empty document.
+    const choicesRequest = { action: "append_choice_options",
+      documentId: emptyDocumentId, tableId: "CompatChoices",
+      columnId: "Status", values: ["en attente", "validé", "refusé"] };
+    const choiceCreated = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      choicesRequest), "native_choices_append") as { changed: boolean; persistedOptionsVerified: boolean };
+    assert(choiceCreated.changed && choiceCreated.persistedOptionsVerified,
+      "native_choice_append_not_verified");
+    const choiceReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      choicesRequest), "native_choices_replay") as { changed: boolean };
+    assert(!choiceReplay.changed, "native_choice_append_repeated");
+    const tagCreated = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      ...choicesRequest, columnId: "Tags", values: ["terrain", "bureau"]
+    }), "native_choicelist_append") as { changed: boolean; persistedOptionsVerified: boolean };
+    assert(tagCreated.changed && tagCreated.persistedOptionsVerified,
+      "native_choicelist_append_not_verified");
+    const nativeChoiceColumns = await gristApi(gristBaseUrl, apiKey,
+      `${configuredDocPath}/tables/CompatChoices/columns`) as {
+        columns: Array<{ id: string; fields: { type: string; widgetOptions: string } }>
+      };
+    const choiceOptions = nativeChoiceColumns.columns.find(column => column.id === "Status");
+    const tagOptions = nativeChoiceColumns.columns.find(column => column.id === "Tags");
+    assert(choiceOptions?.fields.type === "Choice" &&
+      isDeepStrictEqual(JSON.parse(choiceOptions.fields.widgetOptions).choices,
+        ["en attente", "validé", "refusé"]) &&
+      tagOptions?.fields.type === "ChoiceList" &&
+      isDeepStrictEqual(JSON.parse(tagOptions.fields.widgetOptions).choices, ["terrain", "bureau"]),
+      "native_choice_types_or_options_mismatch");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...choicesRequest, tableId: "Mentors"
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...choicesRequest, values: ["duplicata", "duplicata"]
+    });
+
     const columnPath = `${configuredDocPath}/tables/Placements/columns`;
     const nativeColumns = await gristApi(gristBaseUrl, apiKey, columnPath) as {
       columns: Array<{ id: string; fields: { colRef: number; widgetOptions: string } }>;
