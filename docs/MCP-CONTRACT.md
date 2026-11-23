@@ -93,14 +93,17 @@ application construction and restart. For every requested stable ID, either the
 column already exists with precisely the requested native type and formula
 intent, or Gia creates it and rereads the complete native column state.
 A type-only seed is `fields:{type}` (preserving legacy behavior without
-asserting whether Grist internally marks it as computed); a formula seed is
+asserting whether Grist internally marks it as computed); an explicitly writable
+data seed is `fields:{type,isFormula:false}` and requires native readback of
+`isFormula:false` for the matching stable ID. A formula seed is
 `fields:{type,isFormula:true,formula:nonemptyGristPython}`, with a 4096-character
 bound and no unrelated native fields. Both use the same closed supported types:
 `Text`, `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`,
 `DateTime:Europe/Paris`, `Choice`, `ChoiceList`, `Ref:<table>` and
 `RefList:<table>`. The reference destination and formula dependencies must
 already be valid in native Grist. A matching existing formula is reused without
-rewriting it; for an explicit formula seed a differing formula, or a conflicting type
+rewriting it; for an explicit formula seed a differing formula, an explicit data
+seed targeting a formula column, or a conflicting type
 fails before creating another requested column in the same batch. All prior
 native column IDs, refs, types and observed formula metadata remain unchanged.
 Missing/duplicate IDs, incomplete/censored metadata and malformed formula seeds
