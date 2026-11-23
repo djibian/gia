@@ -103,6 +103,7 @@ import {
 import {
   GristUiActionsAdapter,
   UiWriteVerificationError,
+  NATIVE_WIDGET_TYPES,
   type NativeWidgetType
 } from "./uiActionsAdapter.js";
 import {
@@ -573,6 +574,75 @@ export class AuthorizedGristService {
           created.widgetId,
           error instanceof Error ? error.message : "Created widget could not be verified."
         );
+      }
+    });
+  }
+
+  /** One homogeneous native section-creation bundle; never replay an uncertain batch. */
+  async addPageWidgets(
+    documentIdOrUrl: string, pageId: number,
+    specs: readonly {tableId: string; type: NativeWidgetType}[]
+  ): Promise<unknown> {
+    if (!Number.isSafeInteger(pageId) || pageId < 1 ||
+        !Array.isArray(specs) || specs.length < 2 || specs.length > 8) {
+      throw new Error("Native widget creation batch requires one page and two to eight items.");
+    }
+    for (const item of specs) {
+      assertPublicTableId(item.tableId);
+      if (!NATIVE_WIDGET_TYPES.includes(item.type)) {
+        throw new Error("Unsupported native widget type.");
+      }
+    }
+    return this.execute("add_page_widgets", documentIdOrUrl, specs.length, async id => {
+      const before = await this.loadDocumentUi(id);
+      assertCompleteUiSnapshot(before);
+      const oldPage = before.pages.find(page => page.id === pageId);
+      if (!oldPage) throw new Error("Native target page does not exist.");
+      const sourceRefs = await Promise.all(specs.map(item => this.resolveTableRef(id, item.tableId)));
+      if (!isDeepStrictEqual(before, await this.loadDocumentUi(id)) ||
+          !isDeepStrictEqual(sourceRefs,
+            await Promise.all(specs.map(item => this.resolveTableRef(id, item.tableId))))) {
+        throw new Error("Native page or source tables changed before batch creation; reconcile first.");
+      }
+      let created: Array<{pageId:number;tableRef:number;widgetId:number}> = [];
+      try {
+        created = await this.uiActions.addPageWidgets(id, pageId,
+          specs.map((item, index) => ({tableRef:sourceRefs[index]!,type:item.type})));
+        const after = await this.loadDocumentUi(id);
+        assertCompleteUiSnapshot(after);
+        const page = after.pages.find(candidate => candidate.id === pageId);
+        if (!page || created.length !== specs.length ||
+            after.pages.some(currentPage => currentPage.id !== pageId &&
+              !isDeepStrictEqual(currentPage, before.pages.find(old => old.id === currentPage.id))) ||
+            after.pages.length !== before.pages.length ||
+            oldPage.widgets.some(old => !page.widgets.some(current => current.id === old.id))) {
+          throw new Error("Native batch modified unrelated pages or omitted existing widgets.");
+        }
+        const oldIds = new Set(oldPage.widgets.map(widget => widget.id));
+        const createdIds = new Set(created.map(item => item.widgetId));
+        const actualNew = page.widgets.filter(widget => !oldIds.has(widget.id));
+        if (actualNew.length !== specs.length ||
+            createdIds.size !== specs.length ||
+            actualNew.some(widget => !createdIds.has(widget.id))) {
+          throw new Error("Native batch generated unexpected or duplicated sections.");
+        }
+        const widgets = created.map((entry,index) => {
+          const widget = actualNew.find(candidate => candidate.id === entry.widgetId);
+          if (!widget || widget.pageId !== pageId ||
+              widget.tableRef !== sourceRefs[index] ||
+              widget.tableId !== specs[index]!.tableId ||
+              widget.type !== specs[index]!.type) {
+            throw new Error("Native batch section identity or source table differs on re-read.");
+          }
+          return projectPublicWidget(widget);
+        });
+        return {documentId:id,pageId,widgets,createdWidgetIds:created.map(item=>item.widgetId)};
+      } catch (error) {
+        const known = created.map(item=>item.widgetId);
+        throw new UiWriteVerificationError("add_page_widgets",
+          "Native section batch effect uncertain; inspect before retry." +
+          (known.length ? " Returned section IDs: " + known.join(",") + "." : "") +
+          " " + (error instanceof Error ? error.message : "unknown result"));
       }
     });
   }

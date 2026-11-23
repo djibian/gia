@@ -1450,7 +1450,16 @@ export function registerLeanTools(
               )
               .optional()
           })
-          .strict()
+          .strict(),
+        z.object({
+          action: z.literal("add_widgets"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema,
+          widgets: z.array(z.object({
+            tableId: tableIdSchema,
+            type: z.enum(NATIVE_WIDGET_TYPES)
+          }).strict()).min(2).max(8)
+        }).strict()
       ])
     },
     async (input) => {
@@ -1474,6 +1483,10 @@ export function registerLeanTools(
                 input.groupByColumnIds
               )
             );
+          case "add_widgets":
+            return textResult(await grist.addPageWidgets(
+              input.documentId, input.pageId, input.widgets
+            ));
         }
       } catch (error) {
         return errorResult(error);

@@ -3505,6 +3505,40 @@ async function run(): Promise<void> {
     await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`,
       schemaWrite("OwnerAfterSchemaGuard"));
 
+    // #295: one bounded native batch makes mixed Form/Custom/Grid sections from zero.
+    const batchPageResponse = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action:"create_page",documentId,tableId:TABLE_ID,name:"Compat Widget Batch"
+    }), "native_widget_batch_page") as {page?: {id?:number}};
+    const batchPageId = positiveResultId(batchPageResponse.page?.id,"native_widget_batch_page_id");
+    await callToolExpectError(bridgeBaseUrl,"grist_add_ui",{
+      action:"add_widgets",documentId,pageId:batchPageId,
+      widgets:[{tableId:TABLE_ID,type:"record"}]
+    });
+    const batchResult = resultJson(await callTool(bridgeBaseUrl,"grist_add_ui",{
+      action:"add_widgets",documentId,pageId:batchPageId,
+      widgets:[
+        {tableId:TABLE_ID,type:"record"},
+        {tableId:"Compat_Events",type:"form"},
+        {tableId:TABLE_ID,type:"custom"}
+      ]
+    }), "native_widget_batch") as {
+      widgets?:Array<{id?:number;type?:string;tableId?:string}>;
+      createdWidgetIds?:number[];
+    };
+    assert(batchResult.widgets?.length===3 &&
+      batchResult.createdWidgetIds?.length===3 &&
+      new Set(batchResult.createdWidgetIds).size===3 &&
+      batchResult.widgets.every((widget,i)=>
+        widget.id===batchResult.createdWidgetIds?.[i] &&
+        widget.type===["record","form","custom"][i] &&
+        widget.tableId===[TABLE_ID,"Compat_Events",TABLE_ID][i]),
+      "native_widget_batch_return_mismatch");
+    const batchSections = await gristApi(gristBaseUrl,apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    assert(batchResult.createdWidgetIds.every(sectionId=>
+      batchSections.records.some(row=>row.id===sectionId && row.fields.parentId===batchPageId)),
+      "native_widget_batch_missing_persisted_sections");
+
     console.log(`Grist Community ${version}: PASS`);
     console.log(
       `document=${documentId} workspace=${workspaceId} table=${TABLE_ID} page=${PAGE_NAME} empty=${emptyDocumentId} template=${copiedDocumentId}`
