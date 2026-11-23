@@ -664,6 +664,22 @@ All three creation paths are non-idempotent. After a known created ID is returne
 
 Template mode removes user-table data, attachment rows/blobs and history according to native Grist behavior, while retaining substantial document metadata. It is therefore a bootstrap primitive, not a privacy scrub or a guarantee that copied application access rules remain operational after referenced data is removed.
 
+## Restart-safe named page construction
+
+`grist_add_ui(action="ensure_page")` reconciles one native page using a
+caller-chosen **unique page name** as the explicit logical key. It requires an
+authorized existing `tableId`, creates an empty native Grist page only when the
+name is absent, and returns the stable page ID. An exact single existing visible
+page is returned without altering its subsequent widgets or navigation; two
+matching names, incomplete/censored UI metadata and changed pre-write state
+fail closed. A new page must be empty, uniquely named, and preserve all earlier
+page identities and UI state on readback. Unverified creation is **uncertain**,
+never automatically retried. The caller must deliberately reserve page names;
+Grist does not persist the input table association on an empty `AddView`, so
+Gia does **not** claim that a pre-existing same-named page was created from the
+same table. This is a small reconciliation primitive, not an application
+planner, transaction, or general uniqueness enforcement under concurrent writers.
+
 ## Bounded homogeneous native widget creation
 
 `grist_add_ui(action="add_widgets")` creates two to eight ungrouped native
