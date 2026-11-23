@@ -389,6 +389,19 @@ or null. URLs, executable markup, secret-bearing keys, arbitrary objects and
 prototype keys are rejected. This neither installs a widget nor establishes
 publisher provenance, version pinning, or safe remote widget execution.
 
+`grist_change_ui(action="update_widget", update:{customWidgetSettings:{resetWidgetOptions:true}})`
+explicitly clears all widget-owned options to native `null` on an already
+identified Custom section. The persisted widget access must already be `none`;
+active `read table`/`full` widgets must be deactivated in a separate verified
+operation. A fresh native document Owner proof and the existing schema grant
+are required, because the reset deliberately discards previously configured
+options. A reset cannot be combined with `optionsPatch` or data-access
+escalation. Widget identity, approved external URL, mapping, other Custom
+settings and all outer section options are preserved and checked on native
+readback. Repeating a completed reset preserves the same state; uncertain
+writes require inspection before retry. This does not remove the remote
+widget, certify its code or grant any remote data access.
+
 `grist_change_ui(action="update_widget", update:{customWidgetSettings:{access}})`
 accepts the native levels `none`, `read table`, and `full`. Granting either
 non-`none` level requires `confirmDataAccess:true`, `doc.schema:write` and a
