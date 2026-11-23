@@ -79,6 +79,7 @@ import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUp
 import { readChoiceColumnState, planAppendChoiceOptions, planReorderChoiceOptions, planSetChoiceColors, type ChoiceColors } from "./choiceOptions.js";
 import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
+import { planColumnFormulaReplacement, verifyColumnFormulaReplacement } from "./columnFormulaReplacement.js";
 import { planColumnStyle, readNativeColumnStyleSequence, readNativeRowStyleSequence,
   planAppendColumnStyleRule, planExistingColumnStyleUpdate,
   planExistingStyleFormulaReplacement, planReorderRowStyleRules, planReorderColumnStyleRules,
@@ -2370,6 +2371,34 @@ export class AuthorizedGristService {
     return this.execute("update_columns", documentIdOrUrl, columns.length, (id) => {
       assertPublicTableId(tableId);
       return this.inner.updateColumns(id, tableId, columns);
+    });
+  }
+
+  /** Idempotent, exact native schema replacement for one existing Grist formula. */
+  async replaceColumnFormula(
+    documentIdOrUrl: string, tableId: string, columnId: string, formula: string
+  ): Promise<unknown> {
+    return this.execute("replace_column_formula", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = () => this.inner.listColumns(id, tableId, { hidden: true });
+      const before = await read();
+      const planned = planColumnFormulaReplacement(before, columnId, formula, limit);
+      const base = { documentId: id, tableId, columnId };
+      if (!planned.changed) {
+        return { ...base, changed: false, persistedFormulaVerified: true };
+      }
+      try {
+        await this.inner.updateColumns(id, tableId, [
+          { id: columnId, fields: { formula } }
+        ]);
+        verifyColumnFormulaReplacement(before, await read(), columnId, formula, limit);
+      } catch (error) {
+        throw new SchemaWriteVerificationError("replace_column_formula",
+          "Native formula effect may be uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
+      return { ...base, changed: true, persistedFormulaVerified: true };
     });
   }
 

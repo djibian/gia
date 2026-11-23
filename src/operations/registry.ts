@@ -22,6 +22,7 @@ const OPERATION_CAPABILITIES = new Map<string, GristCapability>([
   ["create_columns", "doc.schema:write"],
   ["ensure_columns", "doc.schema:write"],
   ["update_columns", "doc.schema:write"],
+  ["replace_column_formula", "doc.schema:write"],
   ["update_form_column_options", "doc.schema:write"],
   ["append_choice_options", "doc.schema:write"],
   ["reorder_choice_options", "doc.schema:write"],
