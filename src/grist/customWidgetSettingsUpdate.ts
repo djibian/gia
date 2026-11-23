@@ -16,6 +16,8 @@ export interface CustomWidgetSettingsUpdateInput {
   confirmDataAccess?: true | undefined;
   columnsMapping?: CustomWidgetColumnMapping | null | undefined;
   optionsPatch?: CustomWidgetOptionsPatch | undefined;
+  /** Explicitly clear inert widget-owned options after deactivation, retaining identity/mappings. */
+  resetWidgetOptions?: true | undefined;
 }
 
 export interface ResolvedCustomWidgetSettingsUpdate {
@@ -174,7 +176,7 @@ export function resolveCustomWidgetSettingsUpdate(
     throw new Error(`Grist widget ${widget.id} is not a custom widget.`);
   }
   if (update.access === undefined && update.columnsMapping === undefined &&
-      update.optionsPatch === undefined) {
+      update.optionsPatch === undefined && update.resetWidgetOptions !== true) {
     throw new Error("At least one custom widget setting must be supplied.");
   }
 
@@ -201,6 +203,26 @@ export function resolveCustomWidgetSettingsUpdate(
       update.columnsMapping === null
         ? null
         : resolveMappings(widget, tableResponse, update.columnsMapping);
+  }
+
+  if (update.resetWidgetOptions === true) {
+    if (update.optionsPatch !== undefined) {
+      throw new Error("Widget option reset and patch are separate intentions.");
+    }
+    if (currentCustomView.access !== "none" ||
+        (update.access !== undefined && update.access !== "none")) {
+      throw new Error("Deactivate widget data access to none before resetting options.");
+    }
+    if (typeof currentCustomView.widgetId !== "string" ||
+        !currentCustomView.widgetId.trim()) {
+      throw new Error("Widget option reset requires an already identified custom widget.");
+    }
+    if (currentCustomView.widgetOptions !== undefined &&
+        currentCustomView.widgetOptions !== null &&
+        !record(currentCustomView.widgetOptions)) {
+      throw new Error("Existing widget options are opaque; refusing reset.");
+    }
+    customView.widgetOptions = null;
   }
 
   if (update.optionsPatch !== undefined) {
