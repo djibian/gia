@@ -123,6 +123,19 @@ complete persisted options, and returns an idempotent no-op on re-execution.
 `question:null` clears the question. This does **not** create, render, submit or
 publish forms, accept link-bearing question text, or change native sharing.
 
+`grist_change_structure(action="append_choice_options")` appends up to 64
+unique, nonempty plain-text labels to one existing non-formula native
+`Choice` or `ChoiceList` column. Only missing labels are appended in the
+caller-supplied order; existing choices are never removed, renamed or reordered.
+Native `widgetOptions.choices` is updated while sibling options, including
+choice colors, Form configuration and conditional styles, remain unchanged.
+Gia rejects malformed/incomplete native metadata, duplicate labels, over-limit
+lists and unrelated column types; re-reads the complete options and column
+type to verify persistence. Identical repeated requests are no-ops.
+Uncertain native writes require inspection before retrying; external
+concurrent editors still need serialization. This action does not constrain
+row-level data or bypass ACLs, and adds no MCP tool.
+
 `grist_change_structure(action="update_dropdown_condition")` applies or clears
 a typed native reference-dropdown predicate on one existing stable Ref/RefList
 column, reusing the same three closed forms supported by configured-column

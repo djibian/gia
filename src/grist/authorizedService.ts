@@ -76,6 +76,7 @@ import {
   type ColumnSelectByInput
 } from "./selectBy.js";
 import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUpdateInput } from "./formColumnOptions.js";
+import { readChoiceColumnState, planAppendChoiceOptions } from "./choiceOptions.js";
 import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
 import { planColumnStyle, readNativeColumnStyleSequence, readNativeRowStyleSequence,
@@ -2324,6 +2325,44 @@ export class AuthorizedGristService {
     });
   }
 
+
+  /** Preserve every native sibling setting while appending only explicitly requested choices. */
+  async appendChoiceOptions(
+    documentIdOrUrl: string, tableId: string, columnId: string, values: readonly string[]
+  ): Promise<unknown> {
+    return this.execute("append_choice_options", documentIdOrUrl, 1, async id => {
+      assertPublicTableId(tableId);
+      if (!columnId.trim()) throw new Error("Choice update requires a stable column ID.");
+      const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
+      const read = async () => readChoiceColumnState(
+        await this.inner.listColumns(id, tableId, { hidden: true }), columnId, limit
+      );
+      const before = await read();
+      const plan = planAppendChoiceOptions(before, values);
+      const base = { documentId: id, tableId, columnId };
+      if (!plan.changed) return { ...base, changed: false,
+        choices: plan.choices, persistedOptionsVerified: true };
+      if (!isDeepStrictEqual(await read(), before)) {
+        throw new Error("Native choices changed before update; reconcile before retry.");
+      }
+      try {
+        await this.inner.updateColumns(id, tableId, [{
+          id: columnId, fields: { widgetOptions: plan.widgetOptions }
+        }]);
+        const after = await read();
+        if (after.type !== before.type ||
+            !isDeepStrictEqual(after.options, plan.options)) {
+          throw new Error("Native choices did not persist without loss of sibling options.");
+        }
+        return { ...base, changed: true, choices: plan.choices,
+          persistedOptionsVerified: true };
+      } catch (error) {
+        throw new SchemaWriteVerificationError("append_choice_options",
+          "Native choice append may be uncertain; inspect before retry: " +
+          (error instanceof Error ? error.message : "unknown result"));
+      }
+    });
+  }
 
   async updateDropdownCondition(
     documentIdOrUrl: string, tableId: string, columnId: string,
