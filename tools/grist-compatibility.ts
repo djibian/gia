@@ -1572,6 +1572,31 @@ async function run(): Promise<void> {
       optionsInner.url === nativeCustomView.url && optionsInner.pluginId === nativeCustomView.pluginId &&
       optionsOuter.keepCanary === true, "native_custom_widget_identity_or_unrelated_options_changed");
 
+    // A previously configured custom widget can be deactivated and explicitly
+    // returned to empty native widget-owned options for an approved revision change.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: customWidgetId,
+      update: { customWidgetSettings: { resetWidgetOptions: true } }
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: customWidgetId,
+      update: { customWidgetSettings: { access: "none" } }
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: customWidgetId,
+      update: { customWidgetSettings: { resetWidgetOptions: true } }
+    });
+    const resetSections = await gristApi(gristBaseUrl, apiKey,
+      "/api/docs/" + encodeURIComponent(documentId) + "/tables/_grist_Views_section/records") as typeof sections;
+    const resetOuter = JSON.parse(resetSections.records.find(section =>
+      section.id === customWidgetId)?.fields.options as string) as Record<string, unknown>;
+    const resetInner = JSON.parse(resetOuter.customView as string) as Record<string, unknown>;
+    assert(resetInner.widgetOptions === null && resetInner.access === "none" &&
+      resetInner.widgetId === "@synthetic/fixture-widget" &&
+      resetInner.url === nativeCustomView.url &&
+      resetInner.pluginId === nativeCustomView.pluginId &&
+      resetOuter.keepCanary === true, "native_custom_widget_reset_not_preserved");
+
     const navigation = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", { action: "pages", documentId }), "navigation");
     assert(Array.isArray(navigation.navigationPageIds), "navigation_ids_missing");
     const requestedOrder = [...navigation.navigationPageIds].reverse();
