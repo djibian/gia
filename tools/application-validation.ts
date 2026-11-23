@@ -331,6 +331,7 @@ async function validateFromEmptyStageSkeleton(
   });
   const layout = {
     children: [
+      { type: "paragraph", text: "Suivi du stage : informations synthétiques" },
       { type: "section", children: [
         { type: "field", columnId: "Code_Stage" },
         { type: "field", columnId: "Commentaire" }
