@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
+import { assertTextKeyRecordColumns, readUniqueTextKeyRecord } from "./recordEnsure.js";
 import type { AuditLogger } from "../audit/auditLogger.js";
 import type { AuthorizationService } from "../auth/authorizationService.js";
 import type { GristCapability, Principal } from "../auth/principal.js";
@@ -96,6 +97,7 @@ import {
 } from "./publicMetadata.js";
 import {
   SchemaWriteVerificationError,
+  UncertainWriteError,
   type DocumentMetadataUpdateInput,
   type GristService,
   type QueryRecordsOptions
@@ -1736,6 +1738,57 @@ export class AuthorizedGristService {
     return this.execute("create_records", documentIdOrUrl, records.length, (id) => {
       assertPublicTableId(tableId);
       return this.inner.createRecords(id, tableId, records);
+    });
+  }
+
+
+  /** Reconcile one Owner-visible row by an explicit non-formula Text key. */
+  async ensureRecord(
+    documentIdOrUrl: string, tableId: string, keyColumnId: string,
+    record: NewGristRecord
+  ): Promise<unknown> {
+    assertPublicTableId(tableId);
+    const fields = record?.fields;
+    const key = fields?.[keyColumnId];
+    if (!keyColumnId.trim() || keyColumnId.startsWith("_grist_") ||
+        typeof key !== "string" || !key.trim() || key.length > 128 ||
+        !fields || Object.keys(fields).length > 32) {
+      throw new Error("A nonempty Text reconciliation key and at most 32 explicit fields are required.");
+    }
+    return this.execute("ensure_record", documentIdOrUrl, 1, async id => {
+      // Without native Owner visibility a filtered lookup could hide duplicate rows.
+      await this.inner.assertDocumentOwner(id);
+      if (this.inner.maxReadRecords < 2) {
+        throw new Error("Record reconciliation requires a read limit of at least two.");
+      }
+      const columns = await this.inner.listColumns(id, tableId);
+      assertTextKeyRecordColumns(columns, keyColumnId, fields);
+      const read = async () => readUniqueTextKeyRecord(
+        await this.inner.queryRecords(id, tableId, {
+          filter: { [keyColumnId]: [key] }, limit: 2, hidden: false,
+          cellFormat: "normal"
+        }), fields
+      );
+      const existing = await read();
+      if (existing !== undefined) {
+        return { documentId: id, tableId, recordId: existing, changed: false,
+          persistedRecordVerified: true };
+      }
+      if (!isDeepStrictEqual(columns, await this.inner.listColumns(id, tableId)) ||
+          await read() !== undefined) {
+        throw new Error("Native record or schema changed before creation; reconcile first.");
+      }
+      try {
+        await this.inner.createRecords(id, tableId, [record]);
+        const created = await read();
+        if (created === undefined) {
+          throw new Error("The created row could not be verified in native Grist.");
+        }
+        return { documentId: id, tableId, recordId: created, changed: true,
+          persistedRecordVerified: true };
+      } catch (error) {
+        throw new UncertainWriteError("ensure_record", 0, 0, 1, 1, 0, 0, [], error);
+      }
     });
   }
 

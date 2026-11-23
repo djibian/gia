@@ -226,8 +226,9 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     } }]
   },
   grist_add_records: {
-    request: ["{documentId,tableId,records:[{fields:{[columnId]:value}}, ...]}"],
-    constraints: ["Batch bound is deployment-configured; confirmed/uncertain partial writes must never be blindly replayed."],
+    actions: ["ensure_record"],
+    request: ["create (existing): {documentId,tableId,records:[{fields:{[columnId]:value}}, ...]}; ensure_record: {action,documentId,tableId,keyColumnId,record:{fields:{[columnId]:value}}}"],
+    constraints: ["ensure_record requires native Owner, a Text key included in record.fields and complete unique filtered readback; identical repeat is a no-op, conflicts/duplicates refuse creation, uncertain native writes need reconciliation. No native unique index or CAS is claimed.", "Batch bound is deployment-configured; confirmed/uncertain partial writes must never be blindly replayed."],
     examples: [{ purpose: "Create one synthetic record", arguments: {
       documentId: "synthetic-doc", tableId: "Items", records: [{ fields: { Name: "Example" } }]
     } }]
