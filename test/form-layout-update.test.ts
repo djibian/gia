@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { resolveFormLayoutUpdate, type FormLayoutInput } from "../src/grist/formLayout.js";
+import { inspectNativeForm } from "../src/grist/formInspection.js";
 
 const tables = { tables: [{ id: "People", fields: { tableRef: 10 }, columns: [
   { id: "Name", fields: { colRef: 11, isFormula: false } },
@@ -73,6 +74,28 @@ test("Form layout refuses unknown, duplicate or computed fields and absent submi
   assert.throws(() => resolveFormLayoutUpdate(widget(), tables, { records: [] }, requested));
   assert.throws(() => resolveFormLayoutUpdate(widget(), tables, fields,
     { ...requested, successText: "https://example.test/?key=token" }));
+});
+
+test("Form accepts ordinary colon-separated instructional text, never URI-like text", () => {
+  const ordinary: FormLayoutInput = {
+    ...requested, successText: "Étape terminée : merci",
+    children: [{ type: "paragraph", text: "Informations\u202f: stage et classe" },
+      ...requested.children]
+  };
+  const result = resolveFormLayoutUpdate(widget(), tables, fields, ordinary).layoutSpec;
+  assert.equal((result.children as Array<{text?: string}>)[0]?.text,
+    "Informations\u202f: stage et classe");
+  assert.equal(result.successText, "Étape terminée : merci");
+  for (const unsafe of ["javascript:alert(1)", "javascript: alert(1)", "javascript\t:\talert(1)",
+    "tel: 0155550000", "https://example.test", "[Suivant](https://example.test)"]) {
+    assert.throws(() => resolveFormLayoutUpdate(widget(), tables, fields,
+      { ...requested, successText: unsafe }), /non-link-bearing/);
+    const previous = widget({ ...result, successText: unsafe });
+    assert.deepEqual(inspectNativeForm(previous, tables, fields,
+      { forms: 1, nodes: 20, text: 1000 }).submission?.successText, { protected: true });
+    assert.throws(() => resolveFormLayoutUpdate(previous, tables, fields, requested),
+      /Existing success text must be bounded non-link-bearing text/);
+  }
 });
 
 test("Form layout refuses to destroy protected/opaque pre-existing native settings", () => {

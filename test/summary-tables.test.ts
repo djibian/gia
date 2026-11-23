@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   MAX_SUMMARY_GROUP_BY_COLUMNS,
+  findSummaryTableRef,
   resolveSummaryCreationPlan,
-  verifySummaryCreation
+  verifySummaryCreation,
+  withNativeSummaryColumns
 } from "../src/grist/summaryTables.js";
 
 const metadata = {
@@ -69,4 +71,27 @@ test("summary planning enforces its independent group-by bound", () => {
     (_, index) => `C${index}`
   );
   assert.throws(() => resolveSummaryCreationPlan(metadata, "Orders", ids), /at most/);
+});
+
+test("native hidden grouping cannot be mistaken for a grand total", () => {
+  const visible = {
+    tables: [metadata.tables[0]!, {
+      id: "Orders_summary_Manual", fields: { tableRef: 4, summarySourceTable: 2 },
+      columns: [{ id: "count", fields: { colRef: 33, summarySourceCol: 0 } }]
+    }]
+  };
+  const records = visible.tables.flatMap(table => table.columns.map(column => ({
+    id: column.fields.colRef,
+    fields: { summarySourceCol: 0, ...column.fields, parentId: table.fields.tableRef, colId: column.id }
+  })));
+  const hiddenRecords = [
+    { id: 14, fields: { colId: "manualSort", parentId: 2, colRef: 14, summarySourceCol: 0 } },
+    { id: 34, fields: { colId: "gristHelper_Key", parentId: 4, colRef: 34, summarySourceCol: 14 } }
+  ];
+  const complete = withNativeSummaryColumns(visible, { records: [...records, ...hiddenRecords] }, 20);
+  const grandTotal = resolveSummaryCreationPlan(visible, "Orders", []);
+  assert.equal(findSummaryTableRef(complete, grandTotal), undefined);
+  assert.throws(() => withNativeSummaryColumns(visible, {
+    records: [...records, { id: 34, fields: { colId: "", parentId: 0 } }]
+  }, 20), /incomplete or ambiguous/);
 });

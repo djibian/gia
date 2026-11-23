@@ -91,6 +91,9 @@ const documentIdSchema = z.string().trim().min(1);
 const tableIdSchema = z.string().trim().min(1);
 const columnIdSchema = z.string().trim().min(1);
 const positiveIdSchema = z.number().int().positive();
+const groupByColumnIdsSchema = z.array(columnIdSchema)
+  .max(MAX_SUMMARY_GROUP_BY_COLUMNS)
+  .refine(ids => new Set(ids).size === ids.length, "Summary group-by column IDs must be unique.");
 const accessPermissionValueSchema = z.enum(["allow", "deny", "unspecified"]);
 const accessRuleLinkKeyNameSchema = z
   .string()
@@ -1604,14 +1607,7 @@ export function registerLeanTools(
             pageId: positiveIdSchema,
             tableId: tableIdSchema,
             type: z.enum(NATIVE_WIDGET_TYPES),
-            groupByColumnIds: z
-              .array(columnIdSchema)
-              .max(MAX_SUMMARY_GROUP_BY_COLUMNS)
-              .refine(
-                (ids) => new Set(ids).size === ids.length,
-                "Summary group-by column IDs must be unique."
-              )
-              .optional()
+            groupByColumnIds: groupByColumnIdsSchema.optional()
           })
           .strict(),
         z.object({
@@ -1619,7 +1615,8 @@ export function registerLeanTools(
           documentId: documentIdSchema,
           pageId: positiveIdSchema,
           tableId: tableIdSchema,
-          type: z.enum(NATIVE_WIDGET_TYPES)
+          type: z.enum(NATIVE_WIDGET_TYPES),
+          groupByColumnIds: groupByColumnIdsSchema.optional()
         }).strict(),
         z.object({
           action: z.literal("add_widgets"),
@@ -1670,7 +1667,7 @@ export function registerLeanTools(
             );
           case "ensure_widget":
             return textResult(await grist.ensurePageWidget(
-              input.documentId, input.pageId, input.tableId, input.type
+              input.documentId, input.pageId, input.tableId, input.type, input.groupByColumnIds
             ));
           case "add_widgets":
             return textResult(await grist.addPageWidgets(

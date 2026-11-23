@@ -30,18 +30,23 @@ Unselected `grist_help({})` remains a compact ten-tool index. Selecting named to
 `grist_add_structure(action="create_tables")` requires a nonempty `columns` array per new table, matching native Grist TablePost. Missing or empty arrays are refused before any native write; Gia does not invent application columns.
 
 The bounded `grist_add_ui(action="ensure_widget")` reconciles exactly one
-ungrouped native section on an existing page using a unique (page ID, stable
-source table ID, widget type) identity. A sole existing section is reused with
+native section on an existing page using its page ID, stable source table ID,
+widget type and optional `groupByColumnIds`. An omitted grouping selects an
+ordinary section. An empty grouping selects a grand total, and a grouping of
+1–20 unique stable column IDs selects a summary of that set of columns.
+Grouped reconciliation requires fresh native Owner proof. Gia verifies the
+generated summary table using complete native column metadata so a hidden
+grouping column cannot turn an existing section into a false grand total.
+A sole existing section is reused with
 its native widget ID and all configuration preserved. If absent, Gia invokes
 the existing native `CreateViewSection`, verifies the returned ID and re-reads
 the complete UI: earlier widget identities/settings and unrelated pages must
 remain unchanged, with exactly one new matching section. Multiple matching
 sections, incomplete UI state, unavailable tables, or changed pre-write
 metadata fail closed. An uncertain native effect must be re-read before retry.
-This action deliberately does not reconcile summary grouping or multiple
-sections for the same table/type; use `add_widget` with client-owned stable
-IDs for those cases. No new MCP tool, persistent planner or native CAS is
-implied.
+Use `add_widget` with client-owned stable IDs to create intentional duplicates.
+The preflight and native creation are separate requests, so clients must
+serialize writes to the same native UI.
 
 The bounded `grist_add_structure(action="ensure_tables")` reconciles an
 initial named-table schema when reconstructing an application from scratch.
@@ -366,6 +371,10 @@ reads verify this intention; a repeat is a no-op, and uncertain writes must be
 reconciled, never blindly retried. Existing public home-database Share.keys
 are **not** deleted or attested revoked. Disabling the section does not qualify
 effective anonymous access revocation; that is a separate native boundary.
+
+Plain Form instructional text supports ordinary spaced punctuation such as
+`Stage : informations`, while URLs, scheme-prefixed strings and link-bearing
+Markdown remain protected to prevent accidental capability disclosure.
 
 `grist_change_ui(action="update_form_layout")` configures one existing
 native Form section with a bounded tree of typed paragraphs, field groups and a
