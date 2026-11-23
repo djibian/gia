@@ -64,3 +64,46 @@ export function planAppendChoiceOptions(
   }
   return { changed: !isDeepStrictEqual(options, before.options), options, widgetOptions, choices };
 }
+
+
+export type ChoiceColors = { fillColor?: string; textColor?: string };
+const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
+
+/** Change colors for one existing native Choice label; never create a label or drop sibling options. */
+export function planSetChoiceColors(
+  before: ReturnType<typeof readChoiceColumnState>, label: string, colors: ChoiceColors
+): { changed: boolean; options: JsonRecord; widgetOptions: string } {
+  if (!before.choices.includes(label)) {
+    throw new Error("Choice color target must be an existing native choice label.");
+  }
+  if (!record(colors) || Object.keys(colors).length === 0 ||
+      Object.keys(colors).some(key => !["fillColor", "textColor"].includes(key)) ||
+      Object.values(colors).some(value => typeof value !== "string" || !HEX_COLOR.test(value))) {
+    throw new Error("Choice colors require one or two explicit #RRGGBB fields.");
+  }
+  const original = before.options.choiceOptions;
+  if (original !== undefined && !record(original)) {
+    throw new Error("Existing native choice colors are malformed.");
+  }
+  const styles = (original ?? {}) as JsonRecord;
+  if (Object.values(styles).some(value => !record(value))) {
+    throw new Error("Existing native choice color entries are malformed.");
+  }
+  const oldStyle = Object.prototype.hasOwnProperty.call(styles, label)
+    ? record(styles[label])! : {};
+  for (const colorKey of ["fillColor", "textColor"]) {
+    const value = oldStyle[colorKey];
+    if (value !== undefined && (typeof value !== "string" || !HEX_COLOR.test(value))) {
+      throw new Error("Existing targeted native choice colors are malformed.");
+    }
+  }
+  const options: JsonRecord = {
+    ...before.options,
+    choiceOptions: { ...styles, [label]: { ...oldStyle, ...colors } }
+  };
+  const widgetOptions = JSON.stringify(options);
+  if (widgetOptions.length > 16_384) {
+    throw new Error("Updated native choice color options exceed the metadata bound.");
+  }
+  return { changed: !isDeepStrictEqual(options, before.options), options, widgetOptions };
+}
