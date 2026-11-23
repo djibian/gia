@@ -1178,7 +1178,7 @@ export function registerLeanTools(
             tableId: tableIdSchema,
             columnId: columnIdSchema,
             formula: z.string().min(1).max(4096)
-              .refine(v => Boolean(v.trim()) && !v.includes("\\u0000"),
+              .refine(v => Boolean(v.trim()) && !v.includes(String.fromCharCode(0)),
                 "Nonempty bounded Grist formula.")
           }).strict(),
         z.object({
