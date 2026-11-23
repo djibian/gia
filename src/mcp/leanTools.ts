@@ -1495,6 +1495,13 @@ export function registerLeanTools(
           })
           .strict(),
         z.object({
+          action: z.literal("ensure_widget"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema,
+          tableId: tableIdSchema,
+          type: z.enum(NATIVE_WIDGET_TYPES)
+        }).strict(),
+        z.object({
           action: z.literal("add_widgets"),
           documentId: documentIdSchema,
           pageId: positiveIdSchema,
@@ -1530,6 +1537,10 @@ export function registerLeanTools(
                 input.groupByColumnIds
               )
             );
+          case "ensure_widget":
+            return textResult(await grist.ensurePageWidget(
+              input.documentId, input.pageId, input.tableId, input.type
+            ));
           case "add_widgets":
             return textResult(await grist.addPageWidgets(
               input.documentId, input.pageId, input.widgets
