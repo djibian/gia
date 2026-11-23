@@ -1471,6 +1471,14 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("ensure_page"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            name: z.string().trim().min(1).max(128)
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("add_widget"),
             documentId: documentIdSchema,
             pageId: positiveIdSchema,
@@ -1508,6 +1516,10 @@ export function registerLeanTools(
                 input.name
               )
             );
+          case "ensure_page":
+            return textResult(await grist.ensurePage(
+              input.documentId, input.tableId, input.name
+            ));
           case "add_widget":
             return textResult(
               await grist.addPageWidget(

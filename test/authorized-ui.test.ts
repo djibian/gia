@@ -211,6 +211,29 @@ test("page creation requires structure capability and returns the re-read page",
   });
 });
 
+
+test("ensure_page creates once and retains the resulting stable named page", async () => {
+  const {service, capabilities, uiCalls} = buildHarness();
+  const first = await service.ensurePage("doc-1", "Personnes", "Vue générale") as {
+    changed:boolean;createdPageId:number;persistedPageVerified:boolean;
+    page:{id:number;widgetIds:number[]};
+  };
+  assert.equal(first.changed,true);
+  assert.equal(first.createdPageId,7);
+  assert.equal(first.persistedPageVerified,true);
+  assert.deepEqual(first.page.widgetIds,[]);
+  const second = await service.ensurePage("doc-1", "Personnes", "Vue générale") as {
+    changed:boolean;page:{id:number};
+  };
+  assert.equal(second.changed,false);
+  assert.equal(second.page.id,7);
+  assert.deepEqual(uiCalls,[{action:"page",documentId:"doc-1",
+    tableId:"Personnes",name:"Vue générale"}]);
+  assert.deepEqual(capabilities,["doc.schema:write","doc.schema:write"]);
+  await assert.rejects(()=>service.ensurePage("doc-1","Personnes",""),
+    /nonempty page reconciliation/);
+});
+
 test("widget creation resolves tableRef internally and returns the re-read widget", async () => {
   const { service, capabilities, uiCalls } = buildHarness();
 
