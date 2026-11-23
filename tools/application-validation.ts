@@ -383,6 +383,23 @@ async function validateFromEmptyStageSkeleton(
   assertThat(labels.get("S-A") === "S-A | À suivre" &&
     labels.get("S-B") === "S-B | En cours",
     "from_empty_native_formula_values_incomplete");
+  // Changing an existing computed field is separate from creating it.
+  const replaceFormula = () => callTool(bridge, "grist_change_structure", {
+    action: "replace_column_formula", documentId, tableId: "Stages",
+    columnId: "Stage_Libelle", formula: '$Statut + " / " + $Code_Stage'
+  }) as Promise<{ changed: boolean; persistedFormulaVerified: boolean }>;
+  const changedFormula = await replaceFormula();
+  const replayFormula = await replaceFormula();
+  assertThat(changedFormula.changed && changedFormula.persistedFormulaVerified &&
+    !replayFormula.changed && replayFormula.persistedFormulaVerified,
+    "from_empty_formula_replacement_not_idempotent");
+  const recalculated = recordsFrom(await gristApi(context.baseUrl, context.ownerKey,
+    "/api/docs/" + encodeURIComponent(documentId) + "/tables/Stages/records"));
+  const updatedLabels = new Map(recalculated.map(row =>
+    [row.fields.Code_Stage, row.fields.Stage_Libelle]));
+  assertThat(updatedLabels.get("S-A") === "À suivre / S-A" &&
+    updatedLabels.get("S-B") === "En cours / S-B",
+    "from_empty_formula_replacement_not_calculated");
   const pageState = await mcpPages(bridge, documentId);
   assertThat(countKeyValue(pageState, "name", "Suivi synthétique") === 1,
     "from_empty_native_page_not_unique");
