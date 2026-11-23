@@ -3117,7 +3117,7 @@ async function run(): Promise<void> {
         ] },
         { type: "submit" }
       ] }
-    }), "native_form_projection_mismatch");
+    }), "native_form_projection_mismatch:"+JSON.stringify(form));
     assert(!JSON.stringify(widgets).includes("synthetic-private-form-marker"),
       "native_form_secret_exposed");
     const dropdownDiscovery = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
