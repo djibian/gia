@@ -120,6 +120,7 @@ export async function startBridge(options: {
   baseUrl: string;
   apiKey: string;
   documentIds: string[];
+  workspaceIds?: readonly number[];
 }): Promise<{ baseUrl: string; child: ChildProcess }> {
   const port = await freePort();
   const env: NodeJS.ProcessEnv = {
@@ -127,7 +128,7 @@ export async function startBridge(options: {
     GRIST_BASE_URL: options.baseUrl,
     GRIST_API_KEY: options.apiKey,
     GRIST_ALLOWED_DOCUMENT_IDS: options.documentIds.join(","),
-    GRIST_ALLOWED_WORKSPACE_IDS: "",
+    GRIST_ALLOWED_WORKSPACE_IDS: (options.workspaceIds ?? []).join(","),
     GRIST_MAX_READ_RECORDS: "100",
     GRIST_MAX_WRITE_RECORDS: "50",
     GRIST_WRITE_BATCH_RECORDS: "25",
