@@ -275,6 +275,32 @@ test("ensure_widget creates once, reuses the native ID and rejects ambiguous sec
   assert.equal(duplicate.uiCalls.length, 0);
 });
 
+test("ensure_widgets rejects duplicate requests and ambiguous pre-existing sections before writes", async () => {
+  const first = buildHarness();
+  const duplicatedSpec = [
+    { tableId: "Personnes", type: "record" as const },
+    { tableId: "Personnes", type: "record" as const }
+  ];
+  await assert.rejects(
+    () => first.service.ensurePageWidgets("doc-1", 7, duplicatedSpec),
+    /unique/
+  );
+  assert.deepEqual(first.uiCalls, []);
+
+  const second = buildHarness();
+  await second.service.createPage("doc-1", "Personnes", "Vue générale");
+  await second.service.addPageWidget("doc-1", 7, "Personnes", "record");
+  second.uiCalls.length = 0;
+  await assert.rejects(
+    () => second.service.ensurePageWidgets("doc-1", 7, [
+      {tableId: "Personnes", type: "record"},
+      {tableId: "Personnes", type: "form"}
+    ]),
+    /ambiguous/
+  );
+  assert.deepEqual(second.uiCalls, []);
+});
+
 test("widget creation resolves tableRef internally and returns the re-read widget", async () => {
   const { service, capabilities, uiCalls } = buildHarness();
 

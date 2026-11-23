@@ -323,9 +323,32 @@ async function validateFromEmptyStageSkeleton(
     callTool(bridge, "grist_add_ui", {
       action: "ensure_widget", documentId, pageId, tableId: "Stages", type
     }) as Promise<{ widget: { id: number }; changed: boolean }>;
+  const widgetBatch = [
+    { tableId: "Stages", type: "record" as const },
+    { tableId: "Stages", type: "form" as const }
+  ];
+  const ensureWidgets = (widgets: Array<{tableId: string;type: "record"|"form"|"chart"}>) =>
+    callTool(bridge, "grist_add_ui", {
+      action: "ensure_widgets", documentId, pageId, widgets
+    }) as Promise<{ widgets: Array<{id:number;created:boolean}>; changed:boolean;
+      persistedWidgetsVerified:boolean }>;
+  const initialWidgets = await ensureWidgets(widgetBatch);
+  assertThat(initialWidgets.changed && initialWidgets.persistedWidgetsVerified &&
+    initialWidgets.widgets.length === 2 &&
+    initialWidgets.widgets.every(widget => widget.created && widget.id > 0),
+    "from_empty_widget_batch_creation_failed");
+  const batchReplay = await ensureWidgets(widgetBatch);
+  assertThat(!batchReplay.changed && batchReplay.persistedWidgetsVerified &&
+    batchReplay.widgets.every(widget => !widget.created) &&
+    JSON.stringify(initialWidgets.widgets.map(widget => widget.id)) ===
+      JSON.stringify(batchReplay.widgets.map(widget => widget.id)),
+    "from_empty_widget_batch_replay_duplicated_sections");
   const grid = await ensureWidget("record");
   const form = await ensureWidget("form");
-  assertThat(grid.widget.id > 0 && form.widget.id > 0 && grid.widget.id !== form.widget.id,
+  assertThat(!grid.changed && !form.changed &&
+    grid.widget.id === initialWidgets.widgets[0]?.id &&
+    form.widget.id === initialWidgets.widgets[1]?.id &&
+    grid.widget.id !== form.widget.id,
     "from_empty_widget_id_missing");
 
   await callTool(bridge, "grist_change_ui", {
@@ -353,6 +376,15 @@ async function validateFromEmptyStageSkeleton(
     tableId: "Stages", columnId: "Code_Stage",
     update: { required: true, question: "Référence du stage" }
   });
+
+  const extra = await ensureWidgets([
+    ...widgetBatch, { tableId: "Stages", type: "chart" }
+  ]);
+  assertThat(extra.changed && extra.persistedWidgetsVerified &&
+    extra.widgets[0]?.id === grid.widget.id && !extra.widgets[0].created &&
+    extra.widgets[1]?.id === form.widget.id && !extra.widgets[1].created &&
+    extra.widgets[2]?.created && extra.widgets[2].id > 0,
+    "from_empty_widget_partial_batch_not_reconciled");
 
   const repeatClasses = await ensureRows("Classes", "Code", classes);
   const repeatTeachers = await ensureRows("Enseignants", "Cle", teachers);
