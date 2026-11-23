@@ -950,6 +950,39 @@ async function run(): Promise<void> {
       columns:seedColumns
     }),"native_ensure_columns_repeat") as {changed:boolean};
     assert(!columnSeedReplay.changed,"native_ensure_columns_not_idempotent");
+    // A newly built application needs writable data columns, not just types.
+    // Explicit false must survive native creation, restart and choice updates.
+    const writableChoice = [{id:"Compat_WritableChoice",
+      fields:{type:"Choice",isFormula:false}}];
+    const seedWritableChoiceCreated=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns",documentId,tableId:creationTableId,
+      columns:writableChoice
+    }),"native_ensure_writable_choice") as {changed:boolean;persistedSchemaVerified:boolean};
+    assert(seedWritableChoiceCreated.changed&&seedWritableChoiceCreated.persistedSchemaVerified,
+      "native_writable_choice_not_created");
+    const choiceColumns=await gristApi(gristBaseUrl,apiKey,creationColumnUrl) as {
+      columns:Array<{id:string;fields:{isFormula?:boolean;type:string}}>;
+    };
+    const writable=choiceColumns.columns.find(c=>c.id==="Compat_WritableChoice");
+    assert(writable?.fields.isFormula===false&&writable.fields.type==="Choice",
+      "native_writable_choice_formula_intent_lost");
+    await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"append_choice_options",documentId,tableId:creationTableId,
+      columnId:"Compat_WritableChoice",values:["À suivre","En cours"]
+    });
+    const seedWritableChoiceReplay=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns",documentId,tableId:creationTableId,
+      columns:writableChoice
+    }),"native_ensure_writable_choice_replay") as {changed:boolean};
+    assert(!seedWritableChoiceReplay.changed,"native_writable_choice_recreated");
+    // Keep the existing document-wide bounded Form inspection below unchanged:
+    // this test-only column would otherwise push its native metadata past the
+    // fixed read limit and correctly yield status:incomplete.
+    await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"delete_columns",documentId,tableId:creationTableId,
+      columnIds:["Compat_WritableChoice"]
+    });
+
     await callToolExpectError(bridgeBaseUrl,"grist_add_structure",{
       action:"ensure_columns",documentId,tableId:creationTableId,
       columns:[

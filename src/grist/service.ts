@@ -356,6 +356,9 @@ function columnMatchesSeed(
   if (fields.isFormula===true) {
     return stored.isFormula===true && stored.formula===fields.formula;
   }
+  if (fields.isFormula===false) {
+    return stored.isFormula===false;
+  }
   // Preserve existing v2 type-only seed semantics: Grist itself decides
   // whether newly inserted native columns default to formula or data.
   return true;
@@ -805,11 +808,13 @@ export class GristService {
       const fields=column.fields;
       const formula=fields?.isFormula===true&&typeof fields.formula==="string"&&
         fields.formula.length<=4096&&fields.formula.trim().length>0;
+      const keys=fields?Object.keys(fields):[];
       if(!fields||typeof fields.type!=="string"||!allowed.test(fields.type)||
-        !(Object.keys(fields).length===1||
-          (Object.keys(fields).length===3&&formula&&
-           Object.keys(fields).every(key=>["type","isFormula","formula"].includes(key))))) {
-        throw new Error("Column seeds require a supported type, optionally with isFormula:true and a bounded nonempty formula.");
+        !(keys.length===1&&keys[0]==="type"||
+          (keys.length===2&&keys.includes("type")&&fields.isFormula===false)||
+          (keys.length===3&&formula&&
+           keys.every(key=>["type","isFormula","formula"].includes(key))))) {
+        throw new Error("Column seeds require a supported type, optional isFormula:false or isFormula:true with a bounded nonempty formula.");
       }
     }
     const read=()=>this.client.listColumns(documentId,tableId,{hidden:true});
