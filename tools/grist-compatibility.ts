@@ -1482,6 +1482,22 @@ async function run(): Promise<void> {
     await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
       action: "nest_page", documentId, pageId:nativeParentPageId, parentPageId:nativeChildPageId
     });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "unnest_page", documentId, pageId:987654321
+    });
+    const unnestResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "unnest_page", documentId, pageId:nativeChildPageId
+    }), "native_page_unnest") as {changed:boolean;nativeHierarchyVerified:boolean};
+    assert(unnestResult.changed && unnestResult.nativeHierarchyVerified,
+      "native_page_unnesting_not_verified");
+    const afterUnnestPages = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Pages/records?hidden=true`) as MetaRecords;
+    assert(isDeepStrictEqual(afterUnnestPages.records, beforeNestingPages.records),
+      "native_page_unnesting_did_not_restore_original_tree");
+    const repeatedUnnest = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "unnest_page", documentId, pageId:nativeChildPageId
+    }), "native_page_unnest_repeat") as {changed:boolean};
+    assert(!repeatedUnnest.changed, "native_page_unnesting_repeated_write");
 
 
     const accessRules = resultJson(
