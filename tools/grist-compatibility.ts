@@ -841,11 +841,11 @@ async function run(): Promise<void> {
       columns:Array<{id:string;created:boolean}>};
     assert(seeded.changed&&seeded.persistedSchemaVerified&&
       seeded.columns.every(c=>c.created),"native_ensure_columns_create");
-    const replay=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+    const columnSeedReplay=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
       action:"ensure_columns",documentId,tableId:creationTableId,
       columns:seedColumns
     }),"native_ensure_columns_repeat") as {changed:boolean};
-    assert(!replay.changed,"native_ensure_columns_not_idempotent");
+    assert(!columnSeedReplay.changed,"native_ensure_columns_not_idempotent");
     await callToolExpectError(bridgeBaseUrl,"grist_add_structure",{
       action:"ensure_columns",documentId,tableId:creationTableId,
       columns:[
