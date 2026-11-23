@@ -66,7 +66,7 @@ export function planAppendChoiceOptions(
 }
 
 
-export type ChoiceColors = { fillColor?: string; textColor?: string };
+export type ChoiceColors = { fillColor?: string | undefined; textColor?: string | undefined };
 const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
 
 /** Change colors for one existing native Choice label; never create a label or drop sibling options. */
