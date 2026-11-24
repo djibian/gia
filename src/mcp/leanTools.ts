@@ -739,6 +739,9 @@ export function registerLeanTools(
     z.enum(["DateTime:UTC", "DateTime:Europe/Paris"]),
     z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
   ]);
+  const seedFormula = z.string().min(1).max(4096)
+    .refine(value => value.trim().length > 0 && !value.includes("\0"),
+      "Nonempty Grist formula without null characters required.");
   const tableSeedSchema=z.object({
     id:tableIdSchema,
     columns:boundedArray(z.object({
@@ -1072,8 +1075,12 @@ export function registerLeanTools(
                 z.object({
                   type: seedColumnType,
                   isFormula: z.literal(true),
-                  formula: z.string().min(1).max(4096)
-                    .refine(value=>value.trim().length>0,"Nonempty Grist formula required.")
+                  formula: seedFormula
+                }).strict(),
+                z.object({
+                  type: z.enum(["Text", "Choice"]),
+                  isFormula: z.literal(false),
+                  formula: seedFormula
                 }).strict()
               ])
             }).strict(),limits.maxSchemaItems)

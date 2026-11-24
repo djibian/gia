@@ -325,7 +325,13 @@ function unchangedTableSeeds(
 
 
 /** Complete native per-table column snapshot, including generated hidden columns. */
-type ColumnSeedState = {ref:number; type:string; isFormula?:boolean; formula?:string};
+type ColumnSeedState = {
+  ref: number; type: string; isFormula?: boolean; formula?: string;
+  recalcWhen?: unknown; recalcDeps?: unknown;
+};
+
+// Native Grist RecalcWhen.DEFAULT runs a data formula for missing values on insert.
+const INSERT_TRIGGER_MODE = 0;
 
 /** Complete native column identities and, when present, formula ownership/text. */
 function typedColumnSeedSnapshot(raw: unknown): Map<string,ColumnSeedState> {
@@ -348,7 +354,9 @@ function typedColumnSeedSnapshot(raw: unknown): Map<string,ColumnSeedState> {
     result.set(id,{
       ref,type,
       ...(typeof fields?.isFormula==="boolean"?{isFormula:fields.isFormula}:{}),
-      ...(typeof fields?.formula==="string"?{formula:fields.formula}:{})
+      ...(typeof fields?.formula==="string"?{formula:fields.formula}:{}),
+      recalcWhen: fields?.recalcWhen,
+      recalcDeps: fields?.recalcDeps
     });refs.add(ref);
   }
   return result;
@@ -358,15 +366,14 @@ function columnMatchesSeed(
   stored: ColumnSeedState|undefined, fields: Record<string,unknown>
 ): boolean {
   if (!stored || stored.type!==fields.type) return false;
-  if (fields.isFormula===true) {
-    return stored.isFormula===true && stored.formula===fields.formula;
-  }
-  if (fields.isFormula===false) {
-    return stored.isFormula===false;
-  }
   // Preserve existing v2 type-only seed semantics: Grist itself decides
   // whether newly inserted native columns default to formula or data.
-  return true;
+  if (fields.isFormula === undefined) return true;
+  if (stored.isFormula !== fields.isFormula) return false;
+  if (fields.formula === undefined) return true;
+  return stored.formula === fields.formula &&
+    (fields.isFormula === true ||
+      (stored.recalcWhen === INSERT_TRIGGER_MODE && stored.recalcDeps === null));
 }
 
 function targetSchemaRefs(byId: Map<string, number>, ids: string[]): number[] {
@@ -819,15 +826,18 @@ export class GristService {
     for(const column of columns) {
       this.assertIdentifier(column.id,"Column ID");
       const fields=column.fields;
-      const formula=fields?.isFormula===true&&typeof fields.formula==="string"&&
-        fields.formula.length<=4096&&fields.formula.trim().length>0;
+      const formula = typeof fields?.formula === "string" &&
+        fields.formula.length <= 4096 && fields.formula.trim().length > 0 &&
+        !fields.formula.includes("\0");
+      const formulaMode = fields?.isFormula === true ||
+        (fields?.isFormula === false && (fields.type === "Text" || fields.type === "Choice"));
       const keys=fields?Object.keys(fields):[];
       if(!fields||typeof fields.type!=="string"||!allowed.test(fields.type)||
         !(keys.length===1&&keys[0]==="type"||
           (keys.length===2&&keys.includes("type")&&fields.isFormula===false)||
-          (keys.length===3&&formula&&
+          (keys.length===3&&formula&&formulaMode&&
            keys.every(key=>["type","isFormula","formula"].includes(key))))) {
-        throw new Error("Column seeds require a supported type, optional isFormula:false or isFormula:true with a bounded nonempty formula.");
+        throw new Error("Column seeds require a supported type and explicit formula intent. Insert trigger formulas require Text or Choice.");
       }
     }
     const read=()=>this.client.listColumns(documentId,tableId,{hidden:true});
@@ -845,7 +855,10 @@ export class GristService {
     }
     try {
       const created=projectCreatedItems(
-        await this.client.createColumns(documentId,tableId,missing),
+        await this.client.createColumns(documentId, tableId, missing.map(column =>
+          column.fields?.isFormula === false && column.fields.formula !== undefined
+            ? { ...column, fields: { ...column.fields, recalcWhen: INSERT_TRIGGER_MODE } }
+            : column)),
         "columns",missing.length,"string"
       ) as {columns:{id:string}[];resultNormalizationIncomplete?:boolean};
       if(created.resultNormalizationIncomplete||
