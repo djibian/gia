@@ -571,7 +571,7 @@ async function validateFromEmptyStageSkeleton(
     {
       target: { tableId: "Enseignants" },
       rules: [{ condition: { kind: "user_access", operator: "not_equals", role: "owner" },
-        permissions: { create: "deny", update: "deny", delete: "deny" } }]
+        permissions: { read: "unspecified", create: "deny", update: "deny", delete: "deny" } }]
     },
     {
       target: { tableId: "Stages", columnIds: ["Suivi_par"] },
