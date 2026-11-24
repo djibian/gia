@@ -612,7 +612,7 @@ async function validateFromEmptyStageSkeleton(
   const rolePath = "/api/docs/" + encodeURIComponent(documentId) + "/tables/Enseignants/records";
   const teacherBId = teachersFirst.recordIds[1]!;
   const roleCodes = async (apiKey: string, expected: string[]) => {
-    const status = await gristStatus(context.baseUrl, apiKey, stagePath);
+    const status = await gristStatus(context.baseUrl, apiKey, stagePath, { method: "GET" });
     if (expected.length === 0 && status === 403) return;
     assertThat(status === 200, "from_empty_role_read_status:" + status);
     const rows = recordsFrom(await gristApi(context.baseUrl, apiKey, stagePath));
