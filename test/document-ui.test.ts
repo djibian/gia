@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assertDirectSelectByAllowed } from "../src/grist/selectBy.js";
+import { assertDirectSelectByAllowed, resolveColumnSelectByAllowed } from "../src/grist/selectBy.js";
 import { GristApiError } from "../src/grist/client.js";
 import { DocumentUiService } from "../src/grist/documentUi.js";
 
@@ -220,6 +220,40 @@ test("discovers only direct select-by sources accepted for each target", () => {
   assert.deepEqual(result.widgets.find(w => w.id === 3)?.directSelectByOptions, []);
   assert.deepEqual(result.widgets.find(w => w.id === 2)?.directSelectByOptions,
     [{ sourceWidgetId: 1 }, { sourceWidgetId: 6 }]);
+});
+
+test("native reciprocal cursor pairs require verified ordinary tables and direct native edges", () => {
+  const service = new DocumentUiService();
+  const ordinary = { tables: [{ id: "Eleves", fields: { tableRef: 1, summarySourceTable: 0 } }] };
+  const build = (tableResponse: unknown, sourceType = "record", sourceColumn = 0,
+    targetType = "form", targetSource = 0) => service.build("doc-1", tableResponse, pages, views, {
+    records: [
+      { id: 1, fields: { parentId: 101, tableRef: 1, parentKey: sourceType,
+        linkSrcSectionRef: 2, linkSrcColRef: sourceColumn, linkTargetColRef: 0 } },
+      { id: 2, fields: { parentId: 101, tableRef: 1, parentKey: targetType,
+        linkSrcSectionRef: targetSource, linkSrcColRef: 0, linkTargetColRef: 0 } }
+    ]
+  });
+  const verify = (context: ReturnType<DocumentUiService["build"]>, accepted: boolean) => {
+    const [source, target] = context.pages[0]!.widgets;
+    const attempt = () => assertDirectSelectByAllowed(context, source!, target!, true);
+    if (accepted) assert.doesNotThrow(attempt);
+    else assert.throws(attempt, /cycle/);
+  };
+  const context = build(ordinary);
+  verify(context, true);
+  verify(build(ordinary, "record", 0, "form", 1), true); // replay
+  verify(build(tables), false); // missing ordinary-table proof
+  verify(build({ tables: [{ id: "Eleves", fields: { tableRef: 1, summarySourceTable: 3 } }] }), false);
+  verify(build(ordinary, "record", 9), false);
+  verify(build(ordinary, "custom"), false);
+  verify(build(ordinary, "record", 0, "custom"), false);
+  const [source, target] = context.pages[0]!.widgets;
+  assert.throws(() => resolveColumnSelectByAllowed(context, ordinary, source!, target!,
+    { sourceWidgetId: 1, targetColumnId: "Other" }), /cycle/);
+  const projected = service.getPageWidgets(context, 101);
+  assert.deepEqual(projected.widgets.find(w => w.id === 2)?.directSelectByOptions, [{ sourceWidgetId: 1 }]);
+  assert.equal(JSON.stringify(projected).includes("nativeCursorCycleEligible"), false);
 });
 
 test("bounds discovery output and marks incomplete lists deterministically", () => {

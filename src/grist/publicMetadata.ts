@@ -173,7 +173,8 @@ export function projectPublicPage(page: GristPage) {
 
 /** Full options remain internal for preservation and post-write verification. */
 export function projectPublicWidget(widget: GristPageWidget) {
-  const { options, layoutSpec, sortColRefs, formShareOptions, ...projected } = widget;
+  const { options, layoutSpec, sortColRefs, formShareOptions,
+    nativeCursorCycleEligible: _nativeCursorCycleEligible, ...projected } = widget;
   let omitted = false;
   let publicOptions: JsonRecord | undefined;
   if (options !== undefined) {
