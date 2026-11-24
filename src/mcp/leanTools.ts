@@ -75,6 +75,12 @@ function boundedArray<T extends z.ZodType>(schema: T, max: number) {
   return result;
 }
 
+const conditionalStyleSchema = z.object({
+  fillColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  textColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+  fontBold: z.boolean().optional()
+}).strict().refine(value => Object.keys(value).length > 0, "Supply a color or fontBold.");
+
 function dictionarySchema<T extends z.ZodType>(valueSchema: T, minKeyLength = 0) {
   // Zod skips __proto__ before validating record keys. Reject the raw own key
   // first so an accepted mutation/filter can never silently lose an intention.
@@ -1240,10 +1246,7 @@ export function registerLeanTools(
             tableId: tableIdSchema,
             columnId: columnIdSchema,
             conditionFormula: z.string().min(1).max(4096),
-            style: z.object({
-              fillColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
-              textColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional()
-            }).strict().refine(value => Object.keys(value).length > 0, "Supply at least one color.")
+            style: conditionalStyleSchema
           })
           .strict(),
         z
@@ -1263,10 +1266,7 @@ export function registerLeanTools(
             tableId: tableIdSchema,
             columnId: columnIdSchema,
             conditionFormula: z.string().min(1).max(4096),
-            style: z.object({
-              fillColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
-              textColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional()
-            }).strict().refine(value => Object.keys(value).length > 0, "Supply at least one color.")
+            style: conditionalStyleSchema
           })
           .strict(),
         z
@@ -1275,10 +1275,7 @@ export function registerLeanTools(
             documentId: documentIdSchema,
             tableId: tableIdSchema,
             conditionFormula: z.string().min(1).max(4096),
-            style: z.object({
-              fillColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
-              textColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional()
-            }).strict().refine(value => Object.keys(value).length > 0, "Supply at least one color.")
+            style: conditionalStyleSchema
           })
           .strict(),
         z
@@ -1323,10 +1320,7 @@ export function registerLeanTools(
             documentId: documentIdSchema,
             tableId: tableIdSchema,
             conditionFormula: z.string().min(1).max(4096),
-            style: z.object({
-              fillColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
-              textColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional()
-            }).strict().refine(value => Object.keys(value).length > 0, "Supply at least one color.")
+            style: conditionalStyleSchema
           })
           .strict(),
         z
