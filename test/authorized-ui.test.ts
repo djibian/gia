@@ -516,3 +516,67 @@ test("direct select-by rejects a cycle before any write", async () => {
   );
   assert.deepEqual(uiCalls, []);
 });
+
+
+test("Form linking refuses to overwrite a source layout changed during the native share lookup", async () => {
+  let sourceLayout = "";
+  let writeCalls = 0;
+  const inner = {
+    maxReadRecords: 100,
+    assertDocumentOwner: async () => undefined,
+    listTables: async () => ({
+      tables: [{ id: "Responses", fields: { tableRef: 10 },
+        columns: [{ id: "Name", fields: { colRef: 11, type: "Text", isFormula: false } }] }]
+    }),
+    queryRecords: async (_documentId: string, tableId: string) => {
+      switch (tableId) {
+        case "_grist_Pages": return { records: [
+          { id: 21, fields: { viewRef: 7, indentation: 0, pagePos: 1, shareRef: 0 } },
+          { id: 22, fields: { viewRef: 8, indentation: 0, pagePos: 2, shareRef: 9 } }
+        ] };
+        case "_grist_Views": return { records: [
+          { id: 7, fields: { name: "Source", type: "empty", layoutSpec: "" } },
+          { id: 8, fields: { name: "Target", type: "empty", layoutSpec: "" } }
+        ] };
+        case "_grist_Views_section": return { records: [
+          { id: 31, fields: { parentId: 7, parentKey: "form", tableRef: 10,
+            options: "{}", layoutSpec: sourceLayout, shareOptions: "" } },
+          { id: 32, fields: { parentId: 8, parentKey: "form", tableRef: 10,
+            options: "{}", layoutSpec: "", shareOptions: '{"form":true,"publish":true}' } }
+        ] };
+        case "_grist_Views_section_field": return { records: [
+          { id: 41, fields: { parentId: 31, colRef: 11, parentPos: 1, width: 0 } },
+          { id: 42, fields: { parentId: 32, colRef: 11, parentPos: 1, width: 0 } }
+        ] };
+        case "_grist_Shares": return { records: [
+          { id: 9, fields: { linkId: "localShare", options: '{"publish":true}' } }
+        ] };
+        default: return { records: [] };
+      }
+    },
+    resolvePublicFormPath: async () => {
+      sourceLayout = JSON.stringify({ type: "Layout", children: [],
+        successURL: "https://protected.example.invalid/" });
+      return "/forms/realPublicKey/32";
+    }
+  } as unknown as GristService;
+  const authorization = {
+    assertDocumentAllowed: async (_principal: Principal, id: string) => id
+  } as unknown as AuthorizationService;
+  const audit = { nextRequestId: () => "form-link-test", record: () => undefined } as unknown as AuditLogger;
+  const principal: Principal = {
+    id: "form-link-test", transport: "mcp",
+    grants: [{ documentIds: ["doc-1"], workspaceIds: [], capabilities: ["doc.schema:write"] }]
+  };
+  const writes = { updateFormLayout: async () => { writeCalls += 1; } } as unknown as GristUiActionsAdapter;
+  const service = new AuthorizedGristService(inner, authorization, audit, principal, writes);
+  await assert.rejects(() => service.updateFormLayout("doc-1", 7, 31, {
+    confirmPublicLink: true,
+    children: [
+      { type: "form_link", label: "Next", targetPageId: 8, targetWidgetId: 32 },
+      { type: "section", children: [{ type: "field", columnId: "Name" }] },
+      { type: "submit" }
+    ]
+  }), /Native Form or its share changed during link resolution/);
+  assert.equal(writeCalls, 0);
+});

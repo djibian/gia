@@ -1343,8 +1343,8 @@ export class AuthorizedGristService {
       if (!widget || widget.type !== "form") {
         throw new Error("Target widget is not a verified native Form on the requested page.");
       }
-      const publicPaths = async (context: typeof before) => {
-        if (!link) return new Map<string, string>();
+      const targetLinkId = async (context: typeof before): Promise<string | undefined> => {
+        if (!link) return undefined;
         const targetPage = context.pages.find(page => page.id === link.targetPageId);
         const target = targetPage?.widgets.find(item => item.id === link.targetWidgetId);
         if (!targetPage || !target || target.type !== "form" || target.id === widgetId ||
@@ -1358,11 +1358,32 @@ export class AuthorizedGristService {
         ]);
         const linkId = readNativeFormPageLinkId(pages, shares, targetPage.pageRecordId, targetPage.id, limit);
         if (!linkId) throw new Error("The target Form has no verified published page share.");
-        const path = await this.inner.resolvePublicFormPath(id, linkId, target.id);
+        return linkId;
+      };
+      const publicPaths = async (linkId: string | undefined) => {
+        if (!link || !linkId) return new Map<string, string>();
+        const path = await this.inner.resolvePublicFormPath(id, linkId, link.targetWidgetId);
         return new Map([[link.targetPageId + ":" + link.targetWidgetId, path]]);
       };
+      const nativeLinkId = await targetLinkId(before);
+      const paths = await publicPaths(nativeLinkId);
       const fields = before[SECTION_FIELDS_METADATA];
-      const resolved = resolveFormLayoutUpdate(widget, tables, fields, layout, await publicPaths(before));
+      if (nativeLinkId) {
+        // The public lookup crosses several native calls. Revalidate the source and
+        // the target binding after that network window, before declaring or writing a layout.
+        const currentTables = await this.inner.listTables(id, { expandColumns: true });
+        const [current, currentLinkId] = await Promise.all([
+          this.loadDocumentUi(id, currentTables, true),
+          targetLinkId(before)
+        ]);
+        assertCompleteUiSnapshot(current);
+        if (currentLinkId !== nativeLinkId || !isDeepStrictEqual(currentTables, tables) ||
+            !isDeepStrictEqual(current.pages, before.pages) ||
+            !isDeepStrictEqual(current[SECTION_FIELDS_METADATA], fields)) {
+          throw new Error("Native Form or its share changed during link resolution; reconcile first.");
+        }
+      }
+      const resolved = resolveFormLayoutUpdate(widget, tables, fields, layout, paths);
       const base = { documentId: id, pageId, widgetId };
       if (sameJsonValue(widget.layoutSpec, resolved.layoutSpec)) {
         return { ...base, changed: false, persistedLayoutVerified: true,
@@ -1379,7 +1400,8 @@ export class AuthorizedGristService {
             current.tableRef !== widget.tableRef || current.tableId !== widget.tableId ||
             !sameJsonValue(current.layoutSpec, resolved.layoutSpec) ||
             !sameJsonValue(resolveFormLayoutUpdate(current, currentTables,
-              after[SECTION_FIELDS_METADATA], layout, await publicPaths(after)).layoutSpec, resolved.layoutSpec)) {
+              after[SECTION_FIELDS_METADATA], layout, await publicPaths(await targetLinkId(after)))
+              .layoutSpec, resolved.layoutSpec)) {
           throw new Error("Native Form layout differs from the requested persisted state.");
         }
         return { ...base, changed: true, persistedLayoutVerified: true,
