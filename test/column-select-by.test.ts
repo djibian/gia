@@ -290,3 +290,61 @@ test("column select-by refuses incomplete/ambiguous schemas for reads, advertise
   assert.throws(() => resolveColumnSelectByAllowed(context, tables, { ...source, tableId: "Missing" }, target, { sourceWidgetId: 101, sourceColumnId: "Customer" }), /unavailable table/);
   assert.throws(() => resolveColumnSelectByAllowed(context, tables, { ...source, tableRef: 99 }, target, { sourceWidgetId: 101, sourceColumnId: "Customer" }), /unavailable table/);
 });
+
+test("ordinary native row links to a summary grid only through a verified grouped Ref", () => {
+  const schema = {
+    tables: [
+      { id: "Orders", fields: { tableRef: 1, summarySourceTable: 0 }, columns: [
+        { id: "Customer", fields: { colRef: 11, type: "Ref:Customers" } }
+      ] },
+      { id: "Customers", fields: { tableRef: 2, summarySourceTable: 0 }, columns: [
+        { id: "Orders", fields: { colRef: 21, type: "RefList:Orders" } }
+      ] },
+      { id: "Summary", fields: { tableRef: 3, summarySourceTable: 1 }, columns: [
+        { id: "Customer", fields: { colRef: 31, type: "Ref:Customers", summarySourceCol: 11 } },
+        { id: "Calculated", fields: { colRef: 32, type: "Ref:Customers", summarySourceCol: 0 } },
+        { id: "group", fields: { colRef: 33, type: "RefList:Orders", summarySourceCol: 0 } }
+      ] }
+    ]
+  };
+  const context = new DocumentUiService().build("doc", schema, pages, views, {
+    records: [section(101, 1), section(102, 2), section(103, 3), section(104, 2, "custom"), section(105, 2, "chart")]
+  });
+  const [orders, customers, summary, custom, chart] = context.pages[0]!.widgets;
+  const input = { sourceWidgetId: 102, targetColumnId: "Customer" };
+  assert.deepEqual(discoverColumnSelectByOptions(context, schema, summary!), {
+    options: [input], truncated: false
+  });
+  assert.deepEqual(resolveColumnSelectByAllowed(context, schema, customers!, summary!, input),
+    { sourceSectionId: 102, targetColumnRef: 31 });
+  for (const source of [orders!, custom!, chart!]) {
+    assert.throws(() => resolveColumnSelectByAllowed(context, schema, source, summary!,
+      { ...input, sourceWidgetId: source.id }));
+  }
+  for (const invalid of [
+    { ...input, sourceColumnId: "Orders" },
+    { ...input, targetColumnId: "Calculated" },
+    { ...input, targetColumnId: "group" }
+  ]) {
+    assert.throws(() => resolveColumnSelectByAllowed(context, schema, customers!, summary!, invalid));
+  }
+  for (const groupRef of [0, 21, 999]) {
+    const missingProvenance = structuredClone(schema);
+    missingProvenance.tables[2]!.columns[0]!.fields.summarySourceCol = groupRef;
+    assert.deepEqual(discoverColumnSelectByOptions(context, missingProvenance, summary!), {
+      options: [], truncated: false
+    });
+    assert.throws(() => resolveColumnSelectByAllowed(context, missingProvenance, customers!, summary!, input));
+  }
+  const missingOrdinary = structuredClone(schema);
+  missingOrdinary.tables[1]!.fields.summarySourceTable = -1;
+  assert.throws(() => resolveColumnSelectByAllowed(context, missingOrdinary, customers!, summary!, input));
+  const wrongType = structuredClone(schema);
+  wrongType.tables[0]!.columns[0]!.fields.type = "RefList:Customers";
+  assert.throws(() => resolveColumnSelectByAllowed(context, wrongType, customers!, summary!, input));
+  const cycle = new DocumentUiService().build("doc", schema, pages, views, {
+    records: [section(102, 2, "record", { source: 103, sourceColumn: 0, targetColumn: 0 }), section(103, 3)]
+  });
+  assert.throws(() => resolveColumnSelectByAllowed(cycle, schema, cycle.pages[0]!.widgets[0]!,
+    cycle.pages[0]!.widgets[1]!, input), /cycle/);
+});

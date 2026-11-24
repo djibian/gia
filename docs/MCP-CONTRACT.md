@@ -985,6 +985,13 @@ JWT/JWKS verification enforces: optional `nbf` is enforced, unsupported JOSE cri
   metadata. Replay and clearing preserve the counterpart. Larger cycles,
   column/filter cycles, unverified metadata and custom-widget cycles remain
   refused. This verifies persisted links, not interactive cursor behavior.
+  A native record selector may also filter a native summary grid by one
+  explicit group-by column whose source and generated column both have the
+  exact single-Ref type pointing to the selector's verified ordinary table.
+  The summary source column reference must resolve to that group-by column;
+  generated `group` RefLists, other derived columns, custom-widget sources
+  and cyclic summary links are excluded. Use the advertised stable
+  target column ID. Clearing the link is supported.
 - Calendar configuration accepts stable IDs for required Title/Start Date and
   optional End Date/All Day/Type mappings. Private native mapping refs remain
   internal and untargeted widget options are preserved.

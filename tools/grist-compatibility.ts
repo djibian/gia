@@ -1733,6 +1733,50 @@ async function run(): Promise<void> {
     assert(hasPairLink(pairCleared, pairForm, pairGrid) && hasPairLink(pairCleared, pairGrid, 0) &&
       isDeepStrictEqual(pairOnly(pairCleared), pairOnly(pairBefore)), "native_cursor_pair_clear_unverified");
 
+    const summaryLinkTable = "LinkSummaryRows";
+    resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", {
+      action: "ensure_tables", documentId: directDocumentId,
+      tables: [{ id: summaryLinkTable, columns: [
+        { id: "Selected", fields: { type: `Ref:${directTableId}`, isFormula: false } }
+      ] }]
+    }), "summary_link_source_table");
+    const summaryLink = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "ensure_widget", documentId: directDocumentId, pageId: directPageId,
+      tableId: summaryLinkTable, type: "record", groupByColumnIds: ["Selected"]
+    }), "summary_link_widget") as { widget: { id: number }; summary: { summaryTableId: string } };
+    const summaryLinkId = positiveResultId(summaryLink.widget.id, "summary_link_widget_id");
+    const nativeSummaryLinkColumns = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(directDocumentId)}/tables/${encodeURIComponent(summaryLink.summary.summaryTableId)}/columns`) as
+      { columns: Array<{ id: string; fields: Record<string, unknown> }> };
+    const summaryLinkRef = positiveResultId(
+      nativeSummaryLinkColumns.columns.find(column => column.id === "Selected")?.fields.colRef,
+      "summary_link_target_ref");
+    const summaryLinkBefore = await gristApi(gristBaseUrl, apiKey, pairPath) as MetaRecords;
+    const summaryLinkUpdate = (selectBy: Record<string, unknown> | null) => callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId: directDocumentId, pageId: directPageId,
+      widgetId: summaryLinkId, update: { selectBy }
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId: directDocumentId, pageId: directPageId,
+      widgetId: summaryLinkId, update: { selectBy: { sourceWidgetId: pairGrid, targetColumnId: "group" } }
+    });
+    const rejectedSummaryLink = await gristApi(gristBaseUrl, apiKey, pairPath) as MetaRecords;
+    assert(isDeepStrictEqual(rejectedSummaryLink, summaryLinkBefore), "summary_link_rejection_mutated");
+    const groupSelect = { sourceWidgetId: pairGrid, targetColumnId: "Selected" };
+    resultJson(await summaryLinkUpdate(groupSelect), "summary_link_write");
+    resultJson(await summaryLinkUpdate(groupSelect), "summary_link_replay");
+    const linkedSummary = await gristApi(gristBaseUrl, apiKey, pairPath) as MetaRecords;
+    const summaryLinkRecord = linkedSummary.records.find(record => record.id === summaryLinkId);
+    const withoutLinkedSummary = (rows: MetaRecords) => rows.records.filter(record => record.id !== summaryLinkId);
+    assert(summaryLinkRecord?.fields.linkSrcSectionRef === pairGrid &&
+      summaryLinkRecord.fields.linkSrcColRef === 0 &&
+      summaryLinkRecord.fields.linkTargetColRef === summaryLinkRef &&
+      isDeepStrictEqual(withoutLinkedSummary(linkedSummary), withoutLinkedSummary(summaryLinkBefore)),
+      "summary_link_postcondition");
+    resultJson(await summaryLinkUpdate(null), "summary_link_clear");
+    const clearedSummaryLink = await gristApi(gristBaseUrl, apiKey, pairPath) as MetaRecords;
+    assert(isDeepStrictEqual(clearedSummaryLink, summaryLinkBefore), "summary_link_clear_unverified");
+
     const configuredCustom = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_widget", documentId, pageId, widgetId: customWidgetId,
       update: { customWidgetSettings: { access: "none", columnsMapping: { title: "Name" } } }

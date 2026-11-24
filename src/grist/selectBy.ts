@@ -8,12 +8,16 @@ interface SelectByColumn {
   id: string;
   ref: number;
   targetTableId: string;
+  singleRef: boolean;
+  groupSourceRef: number | undefined;
 }
 
 interface SelectByTable {
   id: string;
   ref: number;
   isSummary: boolean;
+  ordinary: boolean;
+  summarySourceRef: number | undefined;
   columns: SelectByColumn[];
   columnIdsByRef: Map<number, string>;
 }
@@ -76,6 +80,8 @@ export function buildSelectBySchemaIndex(tableResponse: unknown): SelectBySchema
     const parsed: SelectByTable = {
       id, ref,
       isSummary: positiveInteger(fields?.summarySourceTable) !== undefined,
+      ordinary: fields?.summarySourceTable === 0,
+      summarySourceRef: positiveInteger(fields?.summarySourceTable),
       columns: [], columnIdsByRef: new Map()
     };
     byId.set(id, parsed);
@@ -101,7 +107,10 @@ export function buildSelectBySchemaIndex(tableResponse: unknown): SelectBySchema
       parsed.columnIdsByRef.set(colRef, columnId);
       const match = /^(Ref|RefList):(.+)$/.exec(type);
       const targetTable = match?.[2] ? byId.get(match[2]) : undefined;
-      if (targetTable && !targetTable.isSummary) parsed.columns.push({ id: columnId, ref: colRef, targetTableId: targetTable.id });
+      if (targetTable && !targetTable.isSummary) parsed.columns.push({
+        id: columnId, ref: colRef, targetTableId: targetTable.id,
+        singleRef: match?.[1] === "Ref", groupSourceRef: positiveInteger(fields?.summarySourceCol)
+      });
     }
     remainingColumns -= table.columns.length;
   }
@@ -110,12 +119,13 @@ export function buildSelectBySchemaIndex(tableResponse: unknown): SelectBySchema
 
 function tableForWidget(
   widget: GristPageWidget,
-  schema: SelectBySchemaIndex
+  schema: SelectBySchemaIndex,
+  allowSummary = false
 ): SelectByTable | undefined {
   const table =
     (widget.tableId ? schema.byId.get(widget.tableId) : undefined) ??
     schema.byRef.get(widget.tableRef);
-  return table && table.ref === widget.tableRef && (widget.tableId === undefined || table.id === widget.tableId) && !table.isSummary ? table : undefined;
+  return table && table.ref === widget.tableRef && (widget.tableId === undefined || table.id === widget.tableId) && (allowSummary || !table.isSummary) ? table : undefined;
 }
 
 function nodesForWidget(
@@ -132,6 +142,26 @@ function nodesForWidget(
       columnRef: column.ref
     }))
   ];
+}
+
+// Bounded native row-to-column filtering into a summary grid. Require native
+// grouping provenance and a matching single Ref on its ordinary source table;
+// calculated references, the special group RefList and guessed refs are excluded.
+function summaryGroupNodes(widget: GristPageWidget, schema: SelectBySchemaIndex): SelectByNode[] {
+  const summary = tableForWidget(widget, schema, true);
+  if (!summary?.isSummary || widget.type !== "record" || summary.summarySourceRef === undefined) return [];
+  const underlying = schema.byRef.get(summary.summarySourceRef);
+  if (!underlying?.ordinary) return [];
+  return summary.columns.filter(column => column.singleRef && column.groupSourceRef !== undefined &&
+    underlying.columns.some(original => original.ref === column.groupSourceRef && original.singleRef &&
+      original.targetTableId === column.targetTableId))
+    .map(column => ({ logicalTableId: column.targetTableId, columnId: column.id, columnRef: column.ref }));
+}
+
+function summaryLinkSourceNodes(widget: GristPageWidget, schema: SelectBySchemaIndex): SelectByNode[] {
+  const table = tableForWidget(widget, schema);
+  return table?.ordinary && ["record", "single", "detail", "form"].includes(widget.type)
+    ? [{ logicalTableId: table.id }] : [];
 }
 
 function nodeForColumnId(
@@ -249,7 +279,8 @@ export function discoverColumnSelectByOptions(
   const maxCandidates = limits.maxCandidates ?? 10000;
   const schema = buildSelectBySchemaIndex(tableResponse);
   if (schema.truncated) return { options: [], truncated: true };
-  const targetNodes = nodesForWidget(target, schema);
+  const summaryTarget = tableForWidget(target, schema, true)?.isSummary === true;
+  const targetNodes = summaryTarget ? summaryGroupNodes(target, schema) : nodesForWidget(target, schema);
   const page = context.pages.find((candidate) => candidate.id === target.pageId);
   if (!page || targetNodes.length === 0) {
     return { options: [], truncated: schema.truncated };
@@ -266,7 +297,7 @@ export function discoverColumnSelectByOptions(
     } catch {
       continue;
     }
-    const sourceNodes = nodesForWidget(source, schema);
+    const sourceNodes = summaryTarget ? summaryLinkSourceNodes(source, schema) : nodesForWidget(source, schema);
     for (const sourceNode of sourceNodes) {
       for (const targetNode of targetNodes) {
         if (sourceNode.columnId === undefined && targetNode.columnId === undefined) continue;
@@ -305,8 +336,16 @@ export function resolveColumnSelectByAllowed(
   selectByGraphValidator(context)(source, target);
   const schema = buildSelectBySchemaIndex(tableResponse);
   if (schema.truncated) throw new Error("Select-by schema is incomplete or ambiguous; refusing to resolve a column link.");
-  const sourceNode = nodeForColumnId(source, schema, input.sourceColumnId);
-  const targetNode = nodeForColumnId(target, schema, input.targetColumnId);
+  const summaryTarget = tableForWidget(target, schema, true)?.isSummary === true;
+  const sourceNode = summaryTarget
+    ? (input.sourceColumnId === undefined ? summaryLinkSourceNodes(source, schema)[0] : undefined)
+    : nodeForColumnId(source, schema, input.sourceColumnId);
+  const targetNode = summaryTarget
+    ? summaryGroupNodes(target, schema).find(node => node.columnId === input.targetColumnId)
+    : nodeForColumnId(target, schema, input.targetColumnId);
+  if (!sourceNode || !targetNode) {
+    throw new Error("Summary select-by requires a native ordinary row source and a verified grouped Ref column on a summary grid.");
+  }
   if (sourceNode.logicalTableId !== targetNode.logicalTableId) {
     throw new Error(
       "The requested Ref/RefList select-by columns do not resolve to the same logical Grist table."
