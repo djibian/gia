@@ -450,6 +450,10 @@ async function run(): Promise<void> {
         tableSlots: ["items", "customers"],
         columnSlots: { display: "customers", quantity: "items" },
         defaults: { layout: { compact: true } } }
+    },{
+      key: "compat-direct", name: "Compatibility direct widget", widgetId: "@test/compat",
+      revision: "v1.0.2", url: "https://widgets.example.org/compat/v1.0.2/index.html",
+      directUrl: true
     }])
   });
 
@@ -1622,6 +1626,43 @@ async function run(): Promise<void> {
     await callToolExpectError(bridgeBaseUrl, "grist_change_ui", referenceRequest);
     assert(activeView.access === "read table" && isDeepStrictEqual(await readTrustedView(), activeView),
       "trusted_reference_active_widget_changed");
+
+    const directDocumentId = createdDocumentId(resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", {
+      action: "create_document", workspaceId, name: "Compatibility Direct Widget"
+    }), "native_direct_widget_doc"), "create_document");
+    const directTableId = "Samples";
+    await callTool(bridgeBaseUrl, "grist_add_structure", {
+      action: "ensure_tables", documentId: directDocumentId,
+      tables: [{ id: directTableId, columns: [{ id: "Name", fields: { type: "Text", isFormula: false } }] }]
+    });
+    const directPage = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "ensure_page", documentId: directDocumentId, tableId: directTableId, name: "Approved Widget"
+    }), "native_direct_page") as { page: { id: number } };
+    const directPageId = directPage.page.id;
+    const direct = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "add_widget", documentId: directDocumentId, pageId: directPageId, tableId: directTableId, type: "custom"
+    }), "new_direct_trusted_widget");
+    const directId = positiveResultId((direct.widget as Record<string, unknown>)?.id, "trusted_direct_id");
+    const directRequest = { action: "install_trusted_widget", documentId: directDocumentId, pageId: directPageId,
+      widgetId: directId, trustedKey: "compat-direct", confirmExternalWidget: true };
+    const initialDirect = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", directRequest),
+      "trusted_direct_install");
+    const replayDirect = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", directRequest),
+      "trusted_direct_replay");
+    assert(initialDirect.changed === true && initialDirect.persistedWidgetVerified === true &&
+      replayDirect.changed === false && !JSON.stringify(initialDirect).includes("widgets.example.org"),
+      "trusted_direct_install_contract_wrong");
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId: directDocumentId, pageId: directPageId, widgetId: directId,
+      update: { customWidgetSettings: { optionsPatch: { fixtureMode: "test" } } }
+    });
+    const directSections = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(directDocumentId)}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    const directRow = directSections.records.find(section => section.id === directId);
+    const directView = JSON.parse(JSON.parse(directRow?.fields.options as string).customView);
+    assert(directView.url === "https://widgets.example.org/compat/v1.0.2/index.html" &&
+      directView.widgetId === null && directView.widgetDef === null && directView.access === "none" &&
+      directView.widgetOptions.fixtureMode === "test", "trusted_direct_native_selection_wrong");
 
     const configuredCustom = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_widget", documentId, pageId, widgetId: customWidgetId,

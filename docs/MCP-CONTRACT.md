@@ -339,9 +339,18 @@ persistence is not proof of browser rendering.
 
 An operator-approved `grist_change_ui(action="install_trusted_widget")` selects one revisioned HTTPS custom widget on an empty native Custom section. The model provides only a `trustedKey` and `confirmExternalWidget:true`, never arbitrary URL/code. Deployment must configure `GIA_TRUSTED_CUSTOM_WIDGETS_JSON` as a bounded JSON list of `{key,name,widgetId,revision,url}`, with each HTTPS URL on a distinct host and including the revision in its path. Default is deny. Native Owner plus `doc.schema:write` are required. Selection is saved as Grist `customView`, with initial `access:none`, preserving unrelated section options and refusing occupied/customized widgets. Post-read confirms saved identity and access, with uncertain effects never blindly replayed. This is metadata persistence, not a verification of remotely served JavaScript or its subresources: operators must independently audit and host immutable code.
 
+An operator may add `directUrl:true` to an approved registry entry to select
+the pinned URL directly. Gia then sets the native frame URL and leaves both
+catalog ID fields empty, so Grist cannot substitute a catalog URL for that
+section. Gia verifies the private URL on readback and returns the approved
+key without disclosing the URL. Operator-approved direct widgets accept the
+same bounded literal option patch and reset with native Owner proof. The
+normal widget access confirmation still applies. An entry without
+`directUrl:true` retains catalog selection, where Grist resolves the URL.
+
 A separate `grist_change_ui(action="update_trusted_widget_revision")` replaces
 one previously approved immutable custom-widget revision with another approved
-revision **of the same widget and asset at the same origin**. The model supplies
+revision **of the same widget and asset at the same origin and selection mode**. The model supplies
 `previousTrustedKey`, `trustedKey`, stable page/widget IDs and
 `confirmExternalWidget:true`; no URL or code enters the call. Native Owner
 and `doc.schema:write` remain mandatory. The persisted widget must exactly

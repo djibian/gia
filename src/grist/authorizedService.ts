@@ -119,7 +119,7 @@ import {
   type WidgetSortInput
 } from "./widgetSort.js";
 import { existingWidgetFields } from "./widgetFields.js";
-import { approvedWidgets, planTrustedWidgetInstall, planTrustedWidgetReferences,
+import { approvedWidgets, matchesTrustedWidgetSelection, planTrustedWidgetInstall, planTrustedWidgetReferences,
   planTrustedWidgetRevisionUpdate, type TrustedWidgetReferences } from "./trustedWidgetInstall.js";
 import {
   resolveWidgetFieldsUpdate,
@@ -1492,7 +1492,7 @@ export class AuthorizedGristService {
           ?.widgets.find(w => w.id === widgetId);
         if (!installed || !sameJsonValue(installed.options, plan.options) ||
             installed.customWidgetSettingsNormalizationIncomplete ||
-            installed.customWidgetSettings?.widgetId !== approved.widgetId ||
+            !matchesTrustedWidgetSelection(installed.options, approved) ||
             installed.customWidgetSettings?.access !== "none") {
           throw new Error("Native widget identity or initial zero access could not be verified.");
         }
@@ -1545,7 +1545,7 @@ export class AuthorizedGristService {
         const after = await read();
         if (!sameJsonValue(after.options,plan.options) ||
             after.customWidgetSettingsNormalizationIncomplete ||
-            after.customWidgetSettings?.widgetId !== next.widgetId ||
+            !matchesTrustedWidgetSelection(after.options, next) ||
             after.customWidgetSettings?.access !== "none") {
           throw new Error("Trusted widget revision postconditions not verified.");
         }
@@ -1675,7 +1675,13 @@ export class AuthorizedGristService {
       if (!target) {
         throw new Error(`Grist widget ${widgetId} does not exist on page ${pageId}.`);
       }
-      if (grantsWidgetData || update.customWidgetSettings?.resetWidgetOptions === true) {
+      const config = update.customWidgetSettings;
+      const approvedDirect = target.type === "custom" &&
+        target.customWidgetSettings?.widgetId === undefined &&
+        (config?.optionsPatch !== undefined || config?.resetWidgetOptions === true) &&
+        approvedWidgets(process.env.GIA_TRUSTED_CUSTOM_WIDGETS_JSON, process.env.GRIST_BASE_URL ?? "")
+          .some(item => item.directUrl === true && matchesTrustedWidgetSelection(target.options, item));
+      if (grantsWidgetData || config?.resetWidgetOptions === true || approvedDirect) {
         // Raising remote data access or clearing its persisted configuration requires native Owner.
         await this.inner.assertDocumentOwner(id);
       }
@@ -1738,7 +1744,8 @@ export class AuthorizedGristService {
           ? resolveCustomWidgetSettingsUpdate(
               target,
               tableResponse,
-              update.customWidgetSettings
+              update.customWidgetSettings,
+              approvedDirect
             )
           : expectedCalendarConfig;
       if (update.gridOptions !== undefined) {

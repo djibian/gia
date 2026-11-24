@@ -1,11 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { approvedWidgets, planTrustedWidgetInstall, planTrustedWidgetReferences,
+import { approvedWidgets, matchesTrustedWidgetSelection, planTrustedWidgetInstall, planTrustedWidgetReferences,
   planTrustedWidgetRevisionUpdate } from "../src/grist/trustedWidgetInstall.js";
 
 const base="https://grist.example.org";
 const approved={key:"timeline",name:"Stages timeline",widgetId:"@test/timeline",
   revision:"v1.0.0",url:"https://widgets.example.org/timeline/v1.0.0/index.html"};
+
+test("direct trusted widgets pin the Grist frame URL without enabling catalog resolution", () => {
+  const item = approvedWidgets(JSON.stringify([{ ...approved, directUrl: true }]), base)[0]!;
+  const before = planTrustedWidgetInstall({ type: "custom", options: { theme: "dark" } }, item);
+  const view = JSON.parse(before.options.customView as string);
+  assert.equal(view.url, approved.url);
+  assert.equal(view.widgetId, null);
+  assert.equal(view.widgetDef, null);
+  assert.equal(view.access, "none");
+  assert.equal(matchesTrustedWidgetSelection(before.options, item), true);
+  assert.equal(matchesTrustedWidgetSelection({ ...before.options,
+    customView: JSON.stringify({ ...view, widgetDef: { widgetId: approved.widgetId } })
+  }, item), false);
+  assert.equal(planTrustedWidgetInstall({ type: "custom", options: before.options }, item).changed, false);
+  const next = { ...item, revision: "v1.0.1", url: approved.url.replace("v1.0.0", "v1.0.1") };
+  const revised = planTrustedWidgetRevisionUpdate({ type: "custom", options: before.options }, item, next);
+  assert.equal(revised.changed, true);
+  assert.equal(matchesTrustedWidgetSelection(revised.options, next), true);
+  assert.equal(revised.options.theme, "dark");
+  assert.throws(() => planTrustedWidgetRevisionUpdate({ type: "custom", options: before.options }, item, approved));
+  assert.throws(() => approvedWidgets(JSON.stringify([item, {
+    ...item, key: "other", widgetId: "@test/other",
+    url: item.url.replace("widgets.example.org", "WIDGETS.EXAMPLE.ORG:443")
+  }]), base), /Duplicate trusted direct widget URL/);
+});
 
 test("trusted reference option resolves only approved slots and preserves inactive widget metadata", () => {
   const manifest = { key: "config", version: 2, tableSlots: ["source", "lookup"],
