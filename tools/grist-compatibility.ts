@@ -443,6 +443,9 @@ async function run(): Promise<void> {
     GIA_TRUSTED_CUSTOM_WIDGETS_JSON: JSON.stringify([{
       key: "compat", name: "Compatibility widget", widgetId: "@test/compat",
       revision: "v1.0.0", url: "https://widgets.example.org/compat/v1.0.0/index.html"
+    },{
+      key: "compat-v2", name: "Compatibility widget", widgetId: "@test/compat",
+      revision: "v1.0.1", url: "https://widgets.example.org/compat/v1.0.1/index.html"
     }])
   });
 
@@ -580,6 +583,94 @@ async function run(): Promise<void> {
       action: "grant_document_user", documentId, email: grantRecipient, role: "editors"
     });
 
+    // Change an already verified existing direct grant, without inviting a user
+    // or rewriting any other direct/inherited share. Test both directions.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "change_document_user_role", documentId, email: grantRecipient,
+      expectedRole: "viewers", role: "viewers", confirmRoleChange: true
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "change_document_user_role", documentId, email: grantRecipient,
+      expectedRole: "viewers", role: "editors", confirmRoleChange: false
+    });
+    const beforeRoleChange = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?:string;access?:string|null;id?:number;parentAccess?:string|null}>;
+        maxInheritedRole?:string|null;
+      };
+    const roleChanged = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "change_document_user_role", documentId, email: grantRecipient,
+      expectedRole: "viewers", role: "editors", confirmRoleChange: true
+    }), "native_document_user_role_change") as {
+      changed:boolean;persistedRoleVerified:boolean;effectiveAclVerified:boolean
+    };
+    assert(roleChanged.changed && roleChanged.persistedRoleVerified &&
+      roleChanged.effectiveAclVerified === false,"native_role_change_not_verified");
+    const afterRoleChange = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?:string;access?:string|null;id?:number;parentAccess?:string|null}>;
+        maxInheritedRole?:string|null;
+      };
+    const originalTarget = beforeRoleChange.users.find(u=>u.email===grantRecipient);
+    const changedTarget = afterRoleChange.users.find(u=>u.email===grantRecipient);
+    assert(changedTarget && changedTarget.id===originalTarget?.id &&
+      changedTarget.access==="editors" &&
+      changedTarget.parentAccess===originalTarget?.parentAccess,
+      "native_role_change_target_identity_or_role_changed");
+    assert(beforeRoleChange.maxInheritedRole===afterRoleChange.maxInheritedRole &&
+      isDeepStrictEqual(beforeRoleChange.users.filter(u=>u.email!==grantRecipient),
+        afterRoleChange.users.filter(u=>u.email!==grantRecipient)),
+      "native_role_change_unrelated_access_changed");
+    const repeatedRole = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "change_document_user_role", documentId, email: grantRecipient,
+      expectedRole: "viewers", role: "editors", confirmRoleChange: true
+    }), "native_document_user_role_replay") as {changed:boolean};
+    assert(!repeatedRole.changed,"native_role_change_replay_mutated");
+    const restoredRole = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "change_document_user_role", documentId, email: grantRecipient,
+      expectedRole: "editors", role: "viewers", confirmRoleChange: true
+    }), "native_document_user_role_restore") as {changed:boolean;persistedRoleVerified:boolean};
+    assert(restoredRole.changed && restoredRole.persistedRoleVerified,
+      "native_role_change_restore_failed");
+
+    // Revoke only the existing direct document grant. Never delete the user,
+    // broaden inherited access or touch other document recipients.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "revoke_document_user", documentId, email: grantRecipient,
+      expectedRole: "editors", confirmRevocation: true
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "revoke_document_user", documentId, email: grantRecipient,
+      expectedRole: "viewers", confirmRevocation: false
+    });
+    const beforeRevocation = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?:string;access?:string|null;id?:number}>;
+        maxInheritedRole?: string|null;
+      };
+    const grantUserId = beforeRevocation.users.find(u=>u.email===grantRecipient)?.id;
+    const revoked = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "revoke_document_user", documentId, email: grantRecipient,
+      expectedRole: "viewers", confirmRevocation: true
+    }), "native_document_user_revoke") as {
+      changed:boolean; persistedRevocationVerified:boolean; effectiveAclVerified:boolean
+    };
+    assert(revoked.changed && revoked.persistedRevocationVerified &&
+      revoked.effectiveAclVerified === false,"native_revoke_not_verified");
+    const afterRevocation = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/access`) as {
+        users: Array<{email?:string;access?:string|null;id?:number}>;
+        maxInheritedRole?: string|null;
+      };
+    const revokedUser = afterRevocation.users.find(u=>u.email===grantRecipient);
+    assert(!revokedUser || (revokedUser.access===null && revokedUser.id===grantUserId),
+      "native_revoke_left_direct_access");
+    assert(beforeRevocation.maxInheritedRole===afterRevocation.maxInheritedRole,
+      "native_revoke_changed_inherited_ceiling");
+    assert(isDeepStrictEqual(beforeRevocation.users.filter(u=>u.email!==grantRecipient),
+      afterRevocation.users.filter(u=>u.email!==grantRecipient)),
+      "native_revoke_changed_unrelated_access");
+
     const templateMetadata = resultJson(
       await callTool(bridgeBaseUrl, "grist_change_structure", {
         action: "update_document",
@@ -679,6 +770,113 @@ async function run(): Promise<void> {
       ]
     });
 
+
+    // #295: Owner-only single-row seed reconciles identity after a restart.
+    const keyed = { fields: { Name: "Gia-Unique-Seed-295", Qty: 7 } };
+    const seededRecord = resultJson(await callTool(bridgeBaseUrl, "grist_add_records", {
+      action: "ensure_record", documentId, tableId: TABLE_ID,
+      keyColumnId: "Name", record: keyed
+    }), "native_ensure_record_create") as { changed:boolean; recordId:number; persistedRecordVerified:boolean };
+    assert(seededRecord.changed && seededRecord.persistedRecordVerified &&
+      Number.isSafeInteger(seededRecord.recordId) && seededRecord.recordId > 0,
+      "native_ensure_record_first_create");
+    const repeatedRecord = resultJson(await callTool(bridgeBaseUrl, "grist_add_records", {
+      action: "ensure_record", documentId, tableId: TABLE_ID,
+      keyColumnId: "Name", record: keyed
+    }), "native_ensure_record_repeat") as { changed:boolean; recordId:number };
+    assert(!repeatedRecord.changed && repeatedRecord.recordId === seededRecord.recordId,
+      "native_ensure_record_duplicate_on_restart");
+    await callToolExpectError(bridgeBaseUrl, "grist_add_records", {
+      action: "ensure_record", documentId, tableId: TABLE_ID,
+      keyColumnId: "Name", record: { fields: {Name:"Gia-Unique-Seed-295", Qty:8} }
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_add_records", {
+      action: "ensure_record", documentId, tableId: TABLE_ID,
+      keyColumnId: "Qty", record: {fields:{Qty:"Not a Text key"}}
+    });
+    await callTool(bridgeBaseUrl, "grist_add_records", {
+      documentId, tableId: TABLE_ID,
+      records: [{ fields: { Name:"Gia-Unique-Seed-295", Qty:7 } }]
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_add_records", {
+      action: "ensure_record", documentId, tableId: TABLE_ID,
+      keyColumnId: "Name", record: keyed
+    });
+
+
+    // #295: bounded restart-safe synthetic data seed with one native write for missing keys.
+    const batchRecords = [
+      {fields:{Name:"Gia-Batch-A-295",Qty:11}},
+      {fields:{Name:"Gia-Batch-B-295",Qty:12}}
+    ];
+    const batchCreated=resultJson(await callTool(bridgeBaseUrl,"grist_add_records",{
+      action:"ensure_records",documentId,tableId:TABLE_ID,
+      keyColumnId:"Name",records:batchRecords
+    }),"native_ensure_records") as {changed:boolean;recordIds:number[];
+      createdIndices:number[];persistedRecordsVerified:boolean};
+    assert(batchCreated.changed && batchCreated.persistedRecordsVerified &&
+      batchCreated.recordIds.length===2 &&
+      batchCreated.recordIds.every(id=>Number.isSafeInteger(id)&&id>0) &&
+      batchCreated.createdIndices.join(",")==="0,1","native_batch_reconciliation_failed");
+    const batchAgain=resultJson(await callTool(bridgeBaseUrl,"grist_add_records",{
+      action:"ensure_records",documentId,tableId:TABLE_ID,
+      keyColumnId:"Name",records:batchRecords
+    }),"native_ensure_records_repeat") as {changed:boolean;recordIds:number[]};
+    assert(!batchAgain.changed &&
+      batchAgain.recordIds.join(",")===batchCreated.recordIds.join(","),
+      "native_batch_reconciliation_repeated_write");
+    await callToolExpectError(bridgeBaseUrl,"grist_add_records",{
+      action:"ensure_records",documentId,tableId:TABLE_ID,keyColumnId:"Name",
+      records:[{fields:{Name:"Gia-Batch-A-295",Qty:99}},
+        {fields:{Name:"Gia-Batch-C-MustNotExist-295",Qty:13}}]
+    });
+    await callToolExpectError(bridgeBaseUrl,"grist_add_records",{
+      action:"ensure_records",documentId,tableId:TABLE_ID,keyColumnId:"Name",
+      records:[batchRecords[0],batchRecords[0]]
+    });
+    const afterBatch=await gristApi(gristBaseUrl,apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/${TABLE_ID}/records`) as {
+        records:Array<{id:number;fields:{Name?:string}}>
+      };
+    assert(!afterBatch.records.some(row=>
+      row.fields.Name==="Gia-Batch-C-MustNotExist-295"),
+      "native_batch_wrote_despite_preflight_conflict");
+
+    // #295 restart-safe typed bootstrap: create on a new document, repeat after
+    // subsequent column changes and reject conflicts before any native write.
+    const seedAlpha={id:"Compat_SeedAlpha",columns:[{id:"Name",fields:{type:"Text",isFormula:false}}]};
+    const seedBeta={id:"Compat_SeedBeta",columns:[{id:"Contact",fields:{type:"Date"}}]};
+    const ensured=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_tables",documentId,tables:[seedAlpha,seedBeta]
+    }),"native_table_seeds") as {changed:boolean;persistedSchemaVerified:boolean;
+      tables:Array<{id:string;created:boolean}>};
+    assert(ensured.changed&&ensured.persistedSchemaVerified&&
+      ensured.tables.every(t=>t.created),"native_table_seed_create");
+    await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"create_columns",documentId,tableId:seedAlpha.id,
+      columns:[{id:"Extra",fields:{type:"Int"}}]
+    });
+    const repeated=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_tables",documentId,tables:[seedAlpha,seedBeta]
+    }),"native_table_seed_repeat") as {changed:boolean};
+    assert(repeated.changed===false,"native_table_seed_not_idempotent");
+    await callToolExpectError(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_tables",documentId,tables:[
+        {id:seedAlpha.id,columns:[{id:"Name",fields:{type:"Bool"}}]},
+        {id:"Compat_SeedMustNotExist",columns:[{id:"Name",fields:{type:"Text"}}]}
+      ]
+    });
+    const seedRead=await gristApi(gristBaseUrl,apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables?expand=column`) as {
+        tables:Array<{id:string;columns:Array<{id:string;fields:{type:string;isFormula?:boolean}}>}>;
+      };
+    assert(!seedRead.tables.some(t=>t.id==="Compat_SeedMustNotExist")&&
+      seedRead.tables.find(t=>t.id===seedAlpha.id)?.columns.some(
+        c=>c.id==="Extra"&&c.fields.type==="Int"),"native_table_seed_preservation");
+    assert(seedRead.tables.find(t=>t.id===seedAlpha.id)?.columns.some(
+      c=>c.id==="Name"&&c.fields.isFormula===false),
+      "native_writable_initial_table_seed_not_persisted");
+
     // Missing/empty columns are invalid and must not create native tables.
     for (const tables of [
       [{ id: "Compat_MissingColumns" }],
@@ -737,6 +935,71 @@ async function run(): Promise<void> {
         assert(actual.fields[field] === expected, "creation_field_not_persisted:" + field);
       }
     }
+
+    // #295: restart-safe standalone typed columns on an existing native table.
+    const seedColumns=[
+      {id:"Compat_SeedDate",fields:{type:"Date"}},
+      {id:"Compat_SeedBool",fields:{type:"Bool"}}
+    ];
+    const seeded=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns",documentId,tableId:creationTableId,
+      columns:seedColumns
+    }),"native_ensure_columns") as {changed:boolean;persistedSchemaVerified:boolean;
+      columns:Array<{id:string;created:boolean}>};
+    assert(seeded.changed&&seeded.persistedSchemaVerified&&
+      seeded.columns.every(c=>c.created),"native_ensure_columns_create");
+    const columnSeedReplay=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns",documentId,tableId:creationTableId,
+      columns:seedColumns
+    }),"native_ensure_columns_repeat") as {changed:boolean};
+    assert(!columnSeedReplay.changed,"native_ensure_columns_not_idempotent");
+    // A newly built application needs writable data columns, not just types.
+    // Explicit false must survive native creation, restart and choice updates.
+    const writableChoice = [{id:"Compat_WritableChoice",
+      fields:{type:"Choice",isFormula:false}}];
+    const seedWritableChoiceCreated=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns",documentId,tableId:creationTableId,
+      columns:writableChoice
+    }),"native_ensure_writable_choice") as {changed:boolean;persistedSchemaVerified:boolean};
+    assert(seedWritableChoiceCreated.changed&&seedWritableChoiceCreated.persistedSchemaVerified,
+      "native_writable_choice_not_created");
+    const choiceColumns=await gristApi(gristBaseUrl,apiKey,creationColumnUrl) as {
+      columns:Array<{id:string;fields:{isFormula?:boolean;type:string}}>;
+    };
+    const writable=choiceColumns.columns.find(c=>c.id==="Compat_WritableChoice");
+    assert(writable?.fields.isFormula===false&&writable.fields.type==="Choice",
+      "native_writable_choice_formula_intent_lost");
+    await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"append_choice_options",documentId,tableId:creationTableId,
+      columnId:"Compat_WritableChoice",values:["À suivre","En cours"]
+    });
+    const seedWritableChoiceReplay=resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns",documentId,tableId:creationTableId,
+      columns:writableChoice
+    }),"native_ensure_writable_choice_replay") as {changed:boolean};
+    assert(!seedWritableChoiceReplay.changed,"native_writable_choice_recreated");
+    // Keep the existing document-wide bounded Form inspection below unchanged:
+    // this test-only column would otherwise push its native metadata past the
+    // fixed read limit and correctly yield status:incomplete.
+    await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"delete_columns",documentId,tableId:creationTableId,
+      columnIds:["Compat_WritableChoice"]
+    });
+
+    await callToolExpectError(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns",documentId,tableId:creationTableId,
+      columns:[
+        {id:"Compat_SeedDate",fields:{type:"Bool"}},
+        {id:"Compat_SeedMustNotExist",fields:{type:"Text"}}
+      ]
+    });
+    const columnsAfterSeed=await gristApi(gristBaseUrl,apiKey,creationColumnUrl) as {
+      columns:Array<{id:string;fields:{type:string}}>;
+    };
+    assert(columnsAfterSeed.columns.find(c=>c.id==="Compat_SeedDate")?.fields.type==="Date"&&
+      columnsAfterSeed.columns.find(c=>c.id==="Compat_SeedBool")?.fields.type==="Bool"&&
+      !columnsAfterSeed.columns.some(c=>c.id==="Compat_SeedMustNotExist"),
+      "native_ensure_columns_preservation");
 
     // Both previously accepted-but-ignored fields must fail before *any*
     // table/column in a mixed request is created.
@@ -1094,26 +1357,35 @@ async function run(): Promise<void> {
       "grouped_summary_columns_mismatch"
     );
 
-    const grandTotalSummary = resultJson(
-      await callTool(bridgeBaseUrl, "grist_add_ui", {
-        action: "add_widget",
-        documentId,
-        pageId,
-        tableId: TABLE_ID,
-        type: "record",
-        groupByColumnIds: []
-      }),
-      "grand_total_summary"
-    );
-    const grandTotalInfo =
-      grandTotalSummary.summary &&
-      typeof grandTotalSummary.summary === "object" &&
-      !Array.isArray(grandTotalSummary.summary)
-        ? (grandTotalSummary.summary as Record<string, unknown>)
-        : undefined;
+    const ensureSummary = (type: "record" | "chart", groupByColumnIds: string[]) =>
+      callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "ensure_widget", documentId, pageId, tableId: TABLE_ID, type, groupByColumnIds
+      }).then(result => resultJson(result, "ensure_native_summary") as {
+        changed: boolean; persistedWidgetVerified: boolean;
+        widget: { id: number; tableId: string };
+        summary: { sourceTableId: string; summaryTableId: string; groupByColumnIds: string[] };
+      });
+    const existingSummary = await ensureSummary("record", ["Name"]);
+    assert(!existingSummary.changed && existingSummary.persistedWidgetVerified &&
+      isDeepStrictEqual(existingSummary.widget, groupedSummary.widget), "ensure_summary_did_not_reuse_section");
+    const summaryChart = await ensureSummary("chart", ["Name"]);
+    const summaryChartReplay = await ensureSummary("chart", ["Name"]);
+    assert(summaryChart.changed && summaryChart.persistedWidgetVerified &&
+      summaryChart.widget.id > 0 && summaryChart.widget.id !== existingSummary.widget.id &&
+      summaryChart.summary.summaryTableId === existingSummary.summary.summaryTableId &&
+      !summaryChartReplay.changed && summaryChartReplay.persistedWidgetVerified &&
+      summaryChartReplay.widget.id === summaryChart.widget.id,
+      "ensure_summary_did_not_reuse_grouping_or_reconcile_replay");
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "delete_widget", documentId, pageId, widgetId: summaryChart.widget.id
+    });
+
+    const grandTotalSummary = await ensureSummary("record", []);
+    const grandTotalReplay = await ensureSummary("record", []);
     assert(
-      Array.isArray(grandTotalInfo?.groupByColumnIds) &&
-        grandTotalInfo.groupByColumnIds.length === 0,
+      grandTotalSummary.changed && grandTotalSummary.persistedWidgetVerified &&
+      grandTotalSummary.summary.groupByColumnIds.length === 0 &&
+      !grandTotalReplay.changed && grandTotalReplay.widget.id === grandTotalSummary.widget.id,
       "grand_total_summary_columns_mismatch"
     );
 
@@ -1261,6 +1533,28 @@ async function run(): Promise<void> {
       trustedKey: "compat", confirmExternalWidget: true
     }), "trusted_install_idempotent") as {changed:boolean};
     assert(!repeatedInstall.changed, "trusted_widget_install_repeated");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_trusted_widget_revision", documentId, pageId, widgetId: trustedId,
+      previousTrustedKey: "unapproved", trustedKey: "compat-v2", confirmExternalWidget: true
+    });
+    const upgraded = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_trusted_widget_revision", documentId, pageId, widgetId: trustedId,
+      previousTrustedKey: "compat", trustedKey: "compat-v2", confirmExternalWidget: true
+    }), "trusted_revision_upgrade") as {changed:boolean;persistedWidgetVerified:boolean};
+    assert(upgraded.changed && upgraded.persistedWidgetVerified,
+      "trusted_revision_not_verified");
+    const upgradedRows = await gristApi(gristBaseUrl, apiKey,
+      "/api/docs/" + encodeURIComponent(documentId) + "/tables/_grist_Views_section/records?hidden=true") as MetaRecords;
+    const upgradedRow = upgradedRows.records.find(row => row.id === trustedId);
+    const upgradedView = JSON.parse(JSON.parse(upgradedRow?.fields.options as string).customView);
+    assert(upgradedView.widgetDef.url === "https://widgets.example.org/compat/v1.0.1/index.html" &&
+      upgradedView.widgetId === "@test/compat" && upgradedView.access === "none" &&
+      upgradedView.columnsMapping == null, "trusted_revision_native_state_wrong");
+    const repeatUpgrade = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_trusted_widget_revision", documentId, pageId, widgetId: trustedId,
+      previousTrustedKey: "compat", trustedKey: "compat-v2", confirmExternalWidget: true
+    }), "trusted_revision_repeat") as {changed:boolean};
+    assert(!repeatUpgrade.changed, "trusted_revision_repeated");
 
     const configuredCustom = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_widget", documentId, pageId, widgetId: customWidgetId,
@@ -1323,11 +1617,125 @@ async function run(): Promise<void> {
       optionsInner.url === nativeCustomView.url && optionsInner.pluginId === nativeCustomView.pluginId &&
       optionsOuter.keepCanary === true, "native_custom_widget_identity_or_unrelated_options_changed");
 
+    // A previously configured custom widget can be deactivated and explicitly
+    // returned to empty native widget-owned options for an approved revision change.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: customWidgetId,
+      update: { customWidgetSettings: { resetWidgetOptions: true } }
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: customWidgetId,
+      update: { customWidgetSettings: { access: "none" } }
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: customWidgetId,
+      update: { customWidgetSettings: { resetWidgetOptions: true } }
+    });
+    const resetSections = await gristApi(gristBaseUrl, apiKey,
+      "/api/docs/" + encodeURIComponent(documentId) + "/tables/_grist_Views_section/records") as typeof sections;
+    const resetOuter = JSON.parse(resetSections.records.find(section =>
+      section.id === customWidgetId)?.fields.options as string) as Record<string, unknown>;
+    const resetInner = JSON.parse(resetOuter.customView as string) as Record<string, unknown>;
+    assert(resetInner.widgetOptions === null && resetInner.access === "none" &&
+      resetInner.widgetId === "@synthetic/fixture-widget" &&
+      resetInner.url === nativeCustomView.url &&
+      resetInner.pluginId === nativeCustomView.pluginId &&
+      resetOuter.keepCanary === true, "native_custom_widget_reset_not_preserved");
+
     const navigation = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", { action: "pages", documentId }), "navigation");
     assert(Array.isArray(navigation.navigationPageIds), "navigation_ids_missing");
     const requestedOrder = [...navigation.navigationPageIds].reverse();
     const reordered = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", { action: "reorder_pages", documentId, pageIds: requestedOrder }), "native_page_reorder");
     assert(JSON.stringify(reordered.pageIds) === JSON.stringify(requestedOrder), "native_page_order_not_verified");
+
+    // Construct a real parent/child navigation relation from two freshly
+    // created native flat pages. No source document import or copy.
+    const ensuredNew = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action:"ensure_page",documentId,tableId:TABLE_ID,name:"Gia Restart Page"
+    }), "native_ensure_page_create") as {changed:boolean;createdPageId:number;
+      persistedPageVerified:boolean;page:{id:number}};
+    assert(ensuredNew.changed && ensuredNew.persistedPageVerified &&
+      ensuredNew.createdPageId===ensuredNew.page.id, "native_ensure_page_create_unverified");
+    const ensuredRepeat = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action:"ensure_page",documentId,tableId:TABLE_ID,name:"Gia Restart Page"
+    }), "native_ensure_page_repeat") as {changed:boolean;page:{id:number}};
+    assert(!ensuredRepeat.changed && ensuredRepeat.page.id===ensuredNew.page.id,
+      "native_ensure_page_not_idempotent");
+    // #295: a single native widget can be reconciled on a resumed empty page.
+    const ensuredWidget = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "ensure_widget", documentId, pageId: ensuredNew.page.id,
+      tableId: TABLE_ID, type: "record"
+    }), "native_ensure_widget_create") as {
+      changed:boolean; createdWidgetId:number; persistedWidgetVerified:boolean;
+      widget:{id:number;type:string;tableId:string};
+    };
+    assert(ensuredWidget.changed && ensuredWidget.persistedWidgetVerified &&
+      ensuredWidget.createdWidgetId===ensuredWidget.widget.id &&
+      ensuredWidget.widget.type==="record" &&
+      ensuredWidget.widget.tableId===TABLE_ID, "native_ensure_widget_creation");
+    const repeatedWidget = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "ensure_widget", documentId, pageId: ensuredNew.page.id,
+      tableId: TABLE_ID, type: "record"
+    }), "native_ensure_widget_repeat") as {changed:boolean;widget:{id:number}};
+    assert(!repeatedWidget.changed &&
+      repeatedWidget.widget.id===ensuredWidget.createdWidgetId,
+      "native_ensure_widget_not_idempotent");
+
+    const nestedParent = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "create_page", documentId, tableId: TABLE_ID, name: "Gia Nested Parent"
+    }), "native_nesting_parent") as {page:{id:number}};
+    const nestedChild = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "create_page", documentId, tableId: TABLE_ID, name: "Gia Nested Child"
+    }), "native_nesting_child") as {page:{id:number}};
+    const nativeParentPageId = positiveResultId(nestedParent.page.id, "native_nesting_parent_id");
+    const nativeChildPageId = positiveResultId(nestedChild.page.id, "native_nesting_child_id");
+    const beforeNestingPages = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Pages/records?hidden=true`) as MetaRecords;
+    const parentPageRow = beforeNestingPages.records.find(row => row.fields.viewRef === nativeParentPageId);
+    const childPageRow = beforeNestingPages.records.find(row => row.fields.viewRef === nativeChildPageId);
+    assert(parentPageRow && childPageRow &&
+      parentPageRow.fields.indentation === 0 && childPageRow.fields.indentation === 0,
+      "native_nesting_fixture_pages_not_flat");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "nest_page", documentId, pageId:nativeChildPageId, parentPageId:nativeChildPageId
+    });
+    const nestedResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "nest_page", documentId, pageId:nativeChildPageId, parentPageId:nativeParentPageId
+    }), "native_page_nest") as {changed:boolean;nativeHierarchyVerified:boolean};
+    assert(nestedResult.changed && nestedResult.nativeHierarchyVerified,
+      "native_page_nesting_not_verified");
+    const afterNestingPages = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Pages/records?hidden=true`) as MetaRecords;
+    const afterChildRow = afterNestingPages.records.find(row=>row.id===childPageRow.id);
+    assert(afterChildRow?.fields.indentation === 1 &&
+      afterChildRow.fields.pagePos === childPageRow.fields.pagePos &&
+      afterNestingPages.records.filter(row=>row.id!==childPageRow.id).every(row =>
+        isDeepStrictEqual(row, beforeNestingPages.records.find(before=>before.id===row.id))),
+      "native_nesting_modified_other_pages_or_positions");
+    const repeatedNesting = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "nest_page", documentId, pageId:nativeChildPageId, parentPageId:nativeParentPageId
+    }), "native_nesting_repeat") as {changed:boolean};
+    assert(!repeatedNesting.changed, "native_page_nesting_repeated_write");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "nest_page", documentId, pageId:nativeParentPageId, parentPageId:nativeChildPageId
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "unnest_page", documentId, pageId:987654321
+    });
+    const unnestResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "unnest_page", documentId, pageId:nativeChildPageId
+    }), "native_page_unnest") as {changed:boolean;nativeHierarchyVerified:boolean};
+    assert(unnestResult.changed && unnestResult.nativeHierarchyVerified,
+      "native_page_unnesting_not_verified");
+    const afterUnnestPages = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Pages/records?hidden=true`) as MetaRecords;
+    assert(isDeepStrictEqual(afterUnnestPages.records, beforeNestingPages.records),
+      "native_page_unnesting_did_not_restore_original_tree");
+    const repeatedUnnest = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "unnest_page", documentId, pageId:nativeChildPageId
+    }), "native_page_unnest_repeat") as {changed:boolean};
+    assert(!repeatedUnnest.changed, "native_page_unnesting_repeated_write");
+
 
     const accessRules = resultJson(
       await callTool(bridgeBaseUrl, "grist_inspect", {
@@ -1833,8 +2241,8 @@ async function run(): Promise<void> {
 
     // Compare a bounded synthetic decision with actual native ordinary
     // R/C/U/D behavior in the compatibility document.
-    const compatibilityPolicy = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
-      action: "access_rule_group", documentId, mode: "create", target: { tableId: ACL_TABLE_ID },
+    const compatibilityPolicyRequest = {
+      action: "access_rule_group", documentId, mode: "ensure", target: { tableId: ACL_TABLE_ID },
       rules: [
         {
           condition: { kind: "match_boolean", columnId: "Enabled", operator: "equals", value: true },
@@ -1845,8 +2253,22 @@ async function run(): Promise<void> {
           permissions: { read: "deny", update: "deny", create: "deny", delete: "deny" }
         }
       ]
-    }), "expected_decision_setup");
-    assert(compatibilityPolicy.persistedDefinitionVerified === true, "expected_policy_not_persisted");
+    };
+    const aclRulesPath = `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_ACLRules/records?hidden=true`;
+    const compatibilityPolicy = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      compatibilityPolicyRequest), "expected_decision_setup");
+    assert(compatibilityPolicy.changed === true && compatibilityPolicy.persistedDefinitionVerified === true,
+      "expected_policy_not_persisted");
+    const persistedCompatibilityPolicy = await gristApi(gristBaseUrl, apiKey, aclRulesPath);
+    const compatibilityPolicyReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      compatibilityPolicyRequest), "expected_decision_replay");
+    assert(compatibilityPolicyReplay.changed === false &&
+      compatibilityPolicyReplay.persistedDefinitionVerified === true, "expected_policy_replay_wrote");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...compatibilityPolicyRequest, rules: compatibilityPolicyRequest.rules.slice(0, 1)
+    });
+    assert(isDeepStrictEqual(await gristApi(gristBaseUrl, apiKey, aclRulesPath), persistedCompatibilityPolicy),
+      "expected_policy_replay_or_conflict_changed_native_rules");
 
     const syntheticFields = [{ name: "Enabled", value: { kind: "boolean", value: true } }];
     for (const operation of ["read", "create", "update", "delete"] as const) {
@@ -2034,16 +2456,25 @@ async function run(): Promise<void> {
       !JSON.stringify(afterNullInspection).includes("LinkKey.Token"),
       "native_null_user_attribute_raw_metadata_leaked");
 
-        const attrCreate = resultJson(await callTool(bridgeBaseUrl,
-      "grist_change_structure", {
-        action: "access_rule_group", documentId, mode: "create",
+    const attrRequest = {
+        action: "access_rule_group", documentId, mode: "ensure",
         target: { userAttributeName: "CompatCreated" },
         definition: { tableId: ACL_TABLE_ID, lookupColId: "ShareToken",
           source: { kind: "user_property", property: "Email" } }
-      }), "native_user_attribute_create");
+    };
+    const attrCreate = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", attrRequest),
+      "native_user_attribute_ensure");
     assert(attrCreate.changed === true && attrCreate.persistedDefinitionVerified === true &&
       attrCreate.effectiveEnforcementVerified === false,
       "native_user_attribute_create_not_verified");
+    const attrReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", attrRequest),
+      "native_user_attribute_ensure_replay");
+    assert(attrReplay.changed === false && attrReplay.persistedDefinitionVerified === true,
+      "native_user_attribute_replay_wrote");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...attrRequest, definition: { ...attrRequest.definition,
+        source: { kind: "link_key", name: "StageToken" } }
+    });
     const attrReplace = resultJson(await callTool(bridgeBaseUrl,
       "grist_change_structure", {
         action: "access_rule_group", documentId, mode: "replace",
@@ -2201,6 +2632,68 @@ async function run(): Promise<void> {
     await createFixtureTable("Mentors", [columnOf("Status", "Text"), columnOf("Class", "Ref:Classes")]);
     await createFixtureTable("Placements", [columnOf("Class", "Ref:Classes"),
       columnOf("Eligible", "RefList:Mentors"), columnOf("Oracle", "Ref:Mentors")]);
+    await createFixtureTable("CompatChoices", [
+      columnOf("Status", "Choice"), columnOf("Tags", "ChoiceList")
+    ]);
+    // #295: a distinct blank-document table isolates formula seeds from legacy
+    // Form projection fixture metadata and verifies Grist itself owns formula state.
+    const tableSeed = {
+      action: "ensure_tables", documentId: emptyDocumentId,
+      tables: [{ id: "CompatFormula", columns: [
+        { id: "Base", fields: { type: "Text", isFormula: false } },
+        { id: "Extra", fields: { type: "Any", isFormula: false } }
+      ] }]
+    };
+    const initialMixedTable = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", tableSeed),
+      "native_any_table_seed");
+    const mixedTableReplay = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", tableSeed),
+      "native_any_table_replay");
+    assert(initialMixedTable.changed === true && initialMixedTable.persistedSchemaVerified === true &&
+      mixedTableReplay.changed === false && mixedTableReplay.persistedSchemaVerified === true,
+      "native_any_table_seed_not_verified");
+    const mixedFormula = "$Base if $Base else 0";
+    const formulaSeed = [{id:"Echo",fields:{type:"Text",isFormula:true,formula:"$Base"}},
+      {id:"Mixed",fields:{type:"Any",isFormula:true,formula:mixedFormula}}];
+    const createdFormula = resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns", documentId:emptyDocumentId, tableId:"CompatFormula",
+      columns:formulaSeed
+    }),"native_ensure_formula_columns") as {changed:boolean;persistedSchemaVerified:boolean};
+    assert(createdFormula.changed&&createdFormula.persistedSchemaVerified,
+      "native_formula_column_creation_failed");
+    const replayFormula = resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns", documentId:emptyDocumentId, tableId:"CompatFormula",
+      columns:formulaSeed
+    }),"native_ensure_formula_columns_replay") as {changed:boolean};
+    assert(!replayFormula.changed,"native_formula_column_not_idempotent");
+    await callToolExpectError(bridgeBaseUrl,"grist_add_structure",{
+      action:"ensure_columns", documentId:emptyDocumentId, tableId:"CompatFormula",
+      columns:[
+        {id:"Echo",fields:{type:"Text",isFormula:true,formula:"$Base + '!'"}},
+        {id:"MustNotCreate",fields:{type:"Text"}}
+      ]
+    });
+    const formulaColumns = await gristApi(gristBaseUrl,apiKey,
+      `/api/docs/${encodeURIComponent(emptyDocumentId)}/tables/CompatFormula/columns?hidden=true`) as {
+        columns:Array<{id:string;fields:{type:string;isFormula:boolean;formula:string}}>;
+      };
+    const storedFormula = formulaColumns.columns.find(column=>column.id==="Echo");
+    const storedMixedFormula = formulaColumns.columns.find(column => column.id === "Mixed");
+    assert(storedFormula?.fields.type==="Text" && storedFormula.fields.isFormula===true &&
+      storedFormula.fields.formula==="$Base" &&
+      storedMixedFormula?.fields.type === "Any" && storedMixedFormula.fields.isFormula === true &&
+      storedMixedFormula.fields.formula === mixedFormula &&
+      !formulaColumns.columns.some(column=>column.id==="MustNotCreate"),
+      "native_formula_column_state_changed");
+    await callTool(bridgeBaseUrl, "grist_add_records", {
+      documentId: emptyDocumentId, tableId: "CompatFormula",
+      records: [{ fields: { Base: "Synthétique", Extra: 3 } }, { fields: { Base: "", Extra: "saisie" } }]
+    });
+    const mixedRows = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(emptyDocumentId)}/tables/CompatFormula/records`) as MetaRecords;
+    assert(mixedRows.records.some(row => row.fields.Extra === 3 && row.fields.Mixed === "Synthétique") &&
+      mixedRows.records.some(row => row.fields.Extra === "saisie" && row.fields.Mixed === 0),
+      "native_any_data_or_formula_values_changed_type");
+
     const configuredRequest = {
       action: "create_columns", documentId: emptyDocumentId, tableId: "Placements", columns: [
         { ...columnOf("ActiveMentor", "Ref:Mentors"), configuration: {
@@ -2228,6 +2721,83 @@ async function run(): Promise<void> {
     ] });
 
     const configuredDocPath = `/api/docs/${encodeURIComponent(emptyDocumentId)}`;
+    // #295: build and augment both native choice types from this empty document.
+    const choicesRequest = { action: "append_choice_options",
+      documentId: emptyDocumentId, tableId: "CompatChoices",
+      columnId: "Status", values: ["en attente", "validé", "refusé"] };
+    const choiceCreated = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      choicesRequest), "native_choices_append") as { changed: boolean; persistedOptionsVerified: boolean };
+    assert(choiceCreated.changed && choiceCreated.persistedOptionsVerified,
+      "native_choice_append_not_verified");
+    const choiceReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      choicesRequest), "native_choices_replay") as { changed: boolean };
+    assert(!choiceReplay.changed, "native_choice_append_repeated");
+    const tagCreated = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      ...choicesRequest, columnId: "Tags", values: ["terrain", "bureau"]
+    }), "native_choicelist_append") as { changed: boolean; persistedOptionsVerified: boolean };
+    assert(tagCreated.changed && tagCreated.persistedOptionsVerified,
+      "native_choicelist_append_not_verified");
+    const colorRequest = { action: "set_choice_colors", documentId: emptyDocumentId,
+      tableId: "CompatChoices", columnId: "Status", label: "en attente",
+      colors: { fillColor: "#ABCDEF", textColor: "#123456" } };
+    const colorChanged = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", colorRequest), "native_choice_color") as {
+        changed: boolean; persistedOptionsVerified: boolean
+      };
+    assert(colorChanged.changed && colorChanged.persistedOptionsVerified,
+      "native_choice_color_not_verified");
+    const colorReplay = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", colorRequest), "native_choice_color_replay") as {
+        changed: boolean
+      };
+    assert(!colorReplay.changed, "native_choice_color_repeated");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...colorRequest, label: "absent"
+    });
+    const reorderedChoices = {
+      action: "reorder_choice_options", documentId: emptyDocumentId,
+      tableId: "CompatChoices", columnId: "Status",
+      orderedLabels: ["refusé", "en attente", "validé"]
+    };
+    const movedChoice = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      reorderedChoices), "native_choice_reorder") as {changed:boolean;persistedOptionsVerified:boolean};
+    assert(movedChoice.changed && movedChoice.persistedOptionsVerified,
+      "native_choice_reorder_not_verified");
+    const replayChoice = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      reorderedChoices), "native_choice_reorder_replay") as {changed:boolean};
+    assert(!replayChoice.changed, "native_choice_reorder_repeated");
+    const movedTags = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      ...reorderedChoices, columnId: "Tags", orderedLabels: ["bureau", "terrain"]
+    }), "native_choicelist_reorder") as {changed:boolean;persistedOptionsVerified:boolean};
+    assert(movedTags.changed && movedTags.persistedOptionsVerified, "native_choicelist_reorder_failed");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...reorderedChoices, orderedLabels: ["en attente", "unknown", "refusé"]
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...reorderedChoices, orderedLabels: ["en attente", "refusé"]
+    });
+
+    const nativeChoiceColumns = await gristApi(gristBaseUrl, apiKey,
+      `${configuredDocPath}/tables/CompatChoices/columns`) as {
+        columns: Array<{ id: string; fields: { type: string; widgetOptions: string } }>
+      };
+    const choiceOptions = nativeChoiceColumns.columns.find(column => column.id === "Status");
+    const tagOptions = nativeChoiceColumns.columns.find(column => column.id === "Tags");
+    assert(choiceOptions?.fields.type === "Choice" &&
+      isDeepStrictEqual(JSON.parse(choiceOptions.fields.widgetOptions).choices,
+        ["refusé", "en attente", "validé"]) &&
+      isDeepStrictEqual(JSON.parse(choiceOptions.fields.widgetOptions).choiceOptions["en attente"],
+        { fillColor: "#ABCDEF", textColor: "#123456" }) &&
+      tagOptions?.fields.type === "ChoiceList" &&
+      isDeepStrictEqual(JSON.parse(tagOptions.fields.widgetOptions).choices, ["bureau", "terrain"]),
+      "native_choice_types_or_options_mismatch");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...choicesRequest, tableId: "Mentors"
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...choicesRequest, values: ["duplicata", "duplicata"]
+    });
+
     const columnPath = `${configuredDocPath}/tables/Placements/columns`;
     const nativeColumns = await gristApi(gristBaseUrl, apiKey, columnPath) as {
       columns: Array<{ id: string; fields: { colRef: number; widgetOptions: string } }>;
@@ -2555,6 +3125,43 @@ async function run(): Promise<void> {
       action: "publish_form", documentId, pageId, widgetId: formSection.id, confirmPublic: true
     }), "native_publish_form_replay") as { changed: boolean };
     assert(repeatedPublish.changed === false, "native_form_publication_replay_wrote");
+    // Native reversible Form disablement: preserve the existing page share and ACLs.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "unpublish_form", documentId, pageId, widgetId: formSection.id
+    });
+    const unpublished = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "unpublish_form", documentId, pageId, widgetId: formSection.id,
+      confirmUnpublish: true
+    }), "native_form_unpublication") as {
+      changed:boolean; persistedUnpublicationIntentVerified:boolean;
+      nativePageSharePreserved:boolean; publicAccessRevocationQualified:boolean
+    };
+    assert(unpublished.changed && unpublished.persistedUnpublicationIntentVerified &&
+      unpublished.nativePageSharePreserved && !unpublished.publicAccessRevocationQualified,
+      "native_form_unpublication_not_verified");
+    const [unpublishedSections, unpublishedPages, unpublishedShares] = await Promise.all(
+      ["_grist_Views_section", "_grist_Pages", "_grist_Shares"].map(table =>
+        gristApi(gristBaseUrl, apiKey,
+          `${docPath}/tables/${table}/records?hidden=true`) as Promise<MetaRecords>)
+    );
+    assert(isDeepStrictEqual(unpublishedPages, publishedPages) &&
+      isDeepStrictEqual(unpublishedShares, publishedShares),
+      "native_unpublication_changed_page_or_share");
+    const unpublishedFlags = JSON.parse(String(unpublishedSections?.records.find(
+      row => row.id === formSection.id)?.fields.shareOptions));
+    assert(unpublishedFlags.form === true && unpublishedFlags.publish === false,
+      "native_form_unpublication_flag_not_persisted");
+    const repeatedUnpublish = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "unpublish_form", documentId, pageId, widgetId: formSection.id,
+      confirmUnpublish: true
+    }), "native_form_unpublication_noop") as { changed:boolean };
+    assert(!repeatedUnpublish.changed, "native_form_unpublication_noop_wrote");
+    const republished = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "publish_form", documentId, pageId, widgetId: formSection.id,
+      confirmPublic: true
+    }), "native_republish_existing_form") as { changed:boolean };
+    assert(republished.changed, "native_republication_did_not_change");
+
     const nativePreview = await gristApi(gristBaseUrl, apiKey, `${docPath}/forms/${formSection.id}`) as {
       formTableId: string;
       formFieldsById: Record<number, { colId: string; question: string }>;
@@ -2633,7 +3240,7 @@ async function run(): Promise<void> {
     });
     const semanticFormLayout = {
       children: [
-        { type: "paragraph", text: "Application du stage" },
+        { type: "paragraph", text: "Informations\u202f: stage synthétique" },
         { type: "section", children: [{ type: "field", columnId: "Name" }] },
         { type: "submit" }
       ],
@@ -2645,16 +3252,21 @@ async function run(): Promise<void> {
     }), "native_form_layout_write") as { changed: boolean; persistedLayoutVerified: boolean };
     assert(createdFormLayout.changed && createdFormLayout.persistedLayoutVerified,
       "native_form_layout_write_not_verified");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_form_layout", documentId, pageId, widgetId: formSection.id,
+      layout: { ...semanticFormLayout, successText: "tel: 0155550000" }
+    });
     const persistedLayoutSections = await gristApi(gristBaseUrl, apiKey,
       `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
     const persistedFormLayout = JSON.parse(String(persistedLayoutSections.records.find(
       row => row.id === formSection.id)?.fields.layoutSpec)) as {
-      children: Array<{children?: Array<{leaf?: number}>}>;
+      children: Array<{ text?: string; children?: Array<{ leaf?: number }> }>;
       submitText?: string;
       successText?: string;
       anotherResponse?: boolean;
     };
-    assert(persistedFormLayout.children[1]?.children?.[0]?.leaf === formField.id &&
+    assert(persistedFormLayout.children[0]?.text === "Informations\u202f: stage synthétique" &&
+      persistedFormLayout.children[1]?.children?.[0]?.leaf === formField.id &&
       persistedFormLayout.submitText === "Envoyer" && persistedFormLayout.successText === "Thank you" &&
       persistedFormLayout.anotherResponse === false,
       "native_form_layout_stable_field_reference_mismatch");
@@ -2663,34 +3275,6 @@ async function run(): Promise<void> {
       layout: semanticFormLayout
     }), "native_form_layout_noop") as { changed: boolean };
     assert(repeatedLayout.changed === false, "native_form_layout_repeat_wrote");
-    // #295: link Form paragraphs to an already published Form using stable IDs.
-    const linkLayout = {
-      ...semanticFormLayout, confirmPublicLink: true,
-      children: [
-        {type:"form_link",label:"Continue",targetPageId:pageId,targetWidgetId:formSection.id},
-        semanticFormLayout.children[1],{type:"submit"}
-      ]
-    };
-    await callToolExpectError(bridgeBaseUrl,"grist_change_ui",{
-      action:"update_form_layout",documentId,pageId,widgetId:formSection.id,
-      layout:{...linkLayout,confirmPublicLink:undefined}
-    });
-    const linked = resultJson(await callTool(bridgeBaseUrl,"grist_change_ui",{
-      action:"update_form_layout",documentId,pageId,widgetId:formSection.id,layout:linkLayout
-    }),"native_form_link_write") as {changed:boolean;persistedLayoutVerified:boolean};
-    assert(linked.changed && linked.persistedLayoutVerified,"native_form_link_write_failed");
-    const latestFormSection = await gristApi(gristBaseUrl,apiKey,
-      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
-    const nativeLinkedLayout = JSON.parse(String(latestFormSection.records.find(
-      row=>row.id===formSection.id)?.fields.layoutSpec)) as {children:Array<{text?:string}>};
-    const key = publishedShares.records.find(row=>row.id===pageShareRef)?.fields.linkId;
-    assert(nativeLinkedLayout.children[0]?.text ===
-      `[Continue](/forms/${key}/${formSection.id})`,"native_form_link_target_incorrect");
-    assert(!JSON.stringify(linked).includes(String(key)),"native_form_link_share_key_leak");
-    const repeatedLink = resultJson(await callTool(bridgeBaseUrl,"grist_change_ui",{
-      action:"update_form_layout",documentId,pageId,widgetId:formSection.id,layout:linkLayout
-    }),"native_form_link_repeat") as {changed:boolean};
-    assert(repeatedLink.changed === false,"native_form_link_repeat_wrote");
     const formPreviewAfterWrite = await gristApi(gristBaseUrl, apiKey,
       `${docPath}/forms/${formSection.id}`) as { formFieldsById: Record<number, { colId: string }> };
     assert(formPreviewAfterWrite.formFieldsById[formField.id]?.colId === "Name",
@@ -2862,6 +3446,87 @@ async function run(): Promise<void> {
       previousFormula: "$Qty > 20", conditionFormula: "$Qty < 0"
     });
 
+    // Reorder the two already qualified column rules while preserving each
+    // immutable helper/formula identity, paired colors and unrelated options.
+    await callToolExpectError(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_column_style_rules",documentId,tableId:TABLE_ID,columnId:"Name",
+      orderedFormulas:["$Qty < 0","$Qty < 0"]
+    });
+    await callToolExpectError(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_column_style_rules",documentId,tableId:TABLE_ID,columnId:"Name",
+      orderedFormulas:["$Qty < 0","$Qty == 999"]
+    });
+    const reorderedColumn = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_column_style_rules",documentId,tableId:TABLE_ID,columnId:"Name",
+      orderedFormulas:["$Qty < 0","$Qty > 20"]
+    }),"native_column_style_reorder") as {changed:boolean;persistedStyleVerified:boolean;styleRuleCount:number};
+    assert(reorderedColumn.changed && reorderedColumn.persistedStyleVerified &&
+      reorderedColumn.styleRuleCount===2,"native_column_style_reorder_not_verified");
+    const columnAfterReorder = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const reorderedOwner = columnAfterReorder.records.find(row=>row.id===column.id);
+    assert(isDeepStrictEqual(reorderedOwner?.fields.rules,["L",updatedRefs[2],updatedRefs[1]]),
+      "native_column_style_reorder_did_not_change_refs");
+    const reorderedColumnOptions = JSON.parse(reorderedOwner?.fields.widgetOptions as string);
+    const oldOptionsWithoutRules = {...updatedOptions};
+    const newOptionsWithoutRules = {...reorderedColumnOptions};
+    delete oldOptionsWithoutRules.rulesOptions;
+    delete newOptionsWithoutRules.rulesOptions;
+    assert(isDeepStrictEqual(oldOptionsWithoutRules,newOptionsWithoutRules) &&
+      reorderedColumnOptions.rulesOptions[0].fillColor==="#ABCDEF" &&
+      reorderedColumnOptions.rulesOptions[1].fillColor==="#445566" &&
+      reorderedColumnOptions.rulesOptions[1].textColor==="#FFFFFF",
+      "native_column_style_reorder_broke_color_pairing_or_options");
+    assert(columnAfterReorder.records.find(row=>row.id===updatedRefs[1])?.fields.formula==="$Qty > 20" &&
+      columnAfterReorder.records.find(row=>row.id===updatedRefs[2])?.fields.formula==="$Qty < 0",
+      "native_column_style_reorder_mutated_helper_formulas");
+    const repeatedColumn = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_column_style_rules",documentId,tableId:TABLE_ID,columnId:"Name",
+      orderedFormulas:["$Qty < 0","$Qty > 20"]
+    }),"native_column_style_reorder_noop") as {changed:boolean};
+    assert(repeatedColumn.changed===false,"native_column_style_reorder_noop_wrote");
+    const restoredColumn = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_column_style_rules",documentId,tableId:TABLE_ID,columnId:"Name",
+      orderedFormulas:["$Qty > 20","$Qty < 0"]
+    }),"native_column_style_reorder_restore") as {changed:boolean};
+    assert(restoredColumn.changed,"native_column_style_reorder_restore_failed");
+    const restoredColumnRows = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const restoredColumnOwner = restoredColumnRows.records.find(row=>row.id===column.id);
+    assert(isDeepStrictEqual(restoredColumnOwner?.fields.rules,updatedRefs) &&
+      isDeepStrictEqual(JSON.parse(restoredColumnOwner?.fields.widgetOptions as string),updatedOptions),
+      "native_column_style_reorder_restore_mismatch");
+
+    // Remove exactly one existing column conditional rule via the bounded
+    // Grist RemoveColumn helper action and preserve all surviving state.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "remove_column_style_rule", documentId, tableId: TABLE_ID,
+      columnId: "Name", conditionFormula: "$Qty == 999", confirmRemoveRule: true
+    });
+    const removed = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "remove_column_style_rule", documentId, tableId: TABLE_ID,
+      columnId: "Name", conditionFormula: "$Qty < 0", confirmRemoveRule: true
+    }), "native_column_style_remove") as {
+      changed: boolean; persistedStyleVerified: boolean; remainingStyleRuleCount: number
+    };
+    assert(removed.changed && removed.persistedStyleVerified &&
+      removed.remainingStyleRuleCount === 1, "native_column_style_remove_unverified");
+    const columnsAfterRemove = await gristApi(gristBaseUrl, apiKey,
+      docPath + "/tables/_grist_Tables_column/records?hidden=true") as MetaRecords;
+    const remainingOwner = columnsAfterRemove.records.find(row => row.id === column.id);
+    const remainingOptions = JSON.parse(remainingOwner?.fields.widgetOptions as string);
+    assert(isDeepStrictEqual(remainingOwner?.fields.rules, ["L", updatedRefs[1]]) &&
+      remainingOptions.rulesOptions.length === 1 &&
+      remainingOptions.rulesOptions[0].fillColor === "#445566" &&
+      remainingOptions.rulesOptions[0].textColor === "#FFFFFF" &&
+      !columnsAfterRemove.records.some(row => row.id === updatedRefs[2]),
+      "native_column_style_remove_broke_survivor_or_left_helper");
+    const originalOtherOptions = { ...updatedOptions };
+    delete originalOtherOptions.rulesOptions;
+    delete remainingOptions.rulesOptions;
+    assert(isDeepStrictEqual(originalOtherOptions, remainingOptions),
+      "native_column_style_remove_broke_unrelated_options");
+
     // Native raw-row style: AddEmptyRule(tableId, null, null) must attach to
     // _grist_Tables.rawViewSectionRef, not to any visible grid or column.
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
@@ -2910,6 +3575,173 @@ async function run(): Promise<void> {
       action: "append_row_style_rule", documentId, tableId: TABLE_ID,
       conditionFormula: "$Qty > 10", style: { fillColor: "#445566" }
     });
+
+
+    // Changing one verified raw-row style must retain the native formula helper.
+    const changedRowStyle = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "update_row_style_rule", documentId, tableId: TABLE_ID,
+        conditionFormula: "$Qty > 10", style: { fillColor: "#556677" }
+      }), "native_row_style_color_update") as {
+        changed: boolean; persistedStyleVerified: boolean; styleRuleCount: number
+      };
+    assert(changedRowStyle.changed && changedRowStyle.persistedStyleVerified &&
+      changedRowStyle.styleRuleCount === 1, "native_row_style_color_update_unverified");
+    const sectionAfterColor = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    const ownerAfterColor = sectionAfterColor.records.find(row => row.id === rawSectionRef);
+    assert(isDeepStrictEqual(ownerAfterColor?.fields.rules, rowRefs),
+      "native_row_style_color_update_changed_helper_refs");
+    const optionsAfterColor = JSON.parse(String(ownerAfterColor?.fields.options)) as {
+      rulesOptions?: Array<{fillColor?:string}>
+    };
+    assert(optionsAfterColor.rulesOptions?.[0]?.fillColor === "#556677",
+      "native_row_style_color_update_did_not_persist");
+    const rowNoop = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "update_row_style_rule", documentId, tableId: TABLE_ID,
+        conditionFormula: "$Qty > 10", style: { fillColor: "#556677" }
+      }), "native_row_style_color_noop") as {changed:boolean};
+    assert(rowNoop.changed === false, "native_row_style_color_repeat_wrote");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "update_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty == 0", style: {fillColor:"#556677"}
+    });
+
+
+    // Replace only the verified raw-row formula helper, never its native
+    // _grist_Views_section rules or any conditional-style colors/options.
+    const formulaChanged = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "replace_row_style_formula", documentId, tableId: TABLE_ID,
+        previousFormula: "$Qty > 10", conditionFormula: "$Qty > 11"
+      }), "native_row_style_formula_replace") as {
+        changed:boolean;persistedStyleVerified:boolean;styleRuleCount:number
+      };
+    assert(formulaChanged.changed && formulaChanged.persistedStyleVerified &&
+      formulaChanged.styleRuleCount === 1, "native_row_formula_unverified");
+    const [rowAfterFormula,columnsAfterRowFormula] = await Promise.all([
+      gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Views_section/records?hidden=true`) as Promise<MetaRecords>,
+      gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as Promise<MetaRecords>
+    ]);
+    const rawAfterFormula = rowAfterFormula.records.find(row => row.id === rawSectionRef);
+    assert(isDeepStrictEqual(rawAfterFormula?.fields.rules, rowRefs),
+      "native_row_formula_changed_rule_refs");
+    assert(isDeepStrictEqual(JSON.parse(String(rawAfterFormula?.fields.options)),optionsAfterColor),
+      "native_row_formula_changed_style_options");
+    assert(columnsAfterRowFormula.records.find(row => row.id === rowRefs[1])?.fields.formula ===
+      "$Qty > 11", "native_row_formula_did_not_persist");
+    const formulaNoop = resultJson(await callTool(bridgeBaseUrl,
+      "grist_change_structure", {
+        action: "replace_row_style_formula", documentId, tableId: TABLE_ID,
+        previousFormula: "$Qty > 11", conditionFormula: "$Qty > 11"
+      }), "native_row_style_formula_noop") as {changed:boolean};
+    assert(!formulaNoop.changed,"native_row_formula_noop_failed");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "replace_row_style_formula", documentId, tableId: TABLE_ID,
+      previousFormula: "$Qty > 10", conditionFormula: "$Qty > 12"
+    });
+
+
+    // A two-rule native reorder must move each formula with its own colors,
+    // not merely reorder the display list or overwrite helper formula bodies.
+    const secondRow = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure", {
+      action:"append_row_style_rule",documentId,tableId:TABLE_ID,
+      conditionFormula:"$Qty < 0",style:{textColor:"#112233"}
+    }),"native_row_style_second_rule") as {changed:boolean;styleRuleCount:number};
+    assert(secondRow.changed && secondRow.styleRuleCount===2,"native_row_style_second_rule_missing");
+    await callToolExpectError(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
+      orderedFormulas:["$Qty < 0","$Qty < 0"]
+    });
+    await callToolExpectError(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
+      orderedFormulas:["$Qty < 0","$Qty == 3"]
+    });
+    const priorRowSections = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    const originalRow = priorRowSections.records.find(row=>row.id===rawSectionRef);
+    assert(Array.isArray(originalRow?.fields.rules) &&
+      originalRow.fields.rules.length===3,"native_row_style_pair_not_present");
+    const originalRefs = originalRow.fields.rules as number[]; // first item is the native L tag
+    const originalOptions = JSON.parse(String(originalRow.fields.options)) as {
+      rulesOptions:Array<Record<string,string>>
+    };
+    const helperSnapshotBefore = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const reversedRow = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
+      orderedFormulas:["$Qty < 0","$Qty > 11"]
+    }),"native_row_style_reorder") as {changed:boolean;persistedStyleVerified:boolean;styleRuleCount:number};
+    assert(reversedRow.changed && reversedRow.persistedStyleVerified &&
+      reversedRow.styleRuleCount===2,"native_row_style_reorder_unverified");
+    const afterReorderSections = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    const reorderedRow = afterReorderSections.records.find(row=>row.id===rawSectionRef);
+    assert(isDeepStrictEqual(reorderedRow?.fields.rules,["L",originalRefs[2],originalRefs[1]]),
+      "native_row_style_reorder_did_not_reorder_refs");
+    const reorderedOptions = JSON.parse(String(reorderedRow?.fields.options));
+    assert(isDeepStrictEqual(reorderedOptions.rulesOptions,originalOptions.rulesOptions.slice().reverse()),
+      "native_row_style_reorder_did_not_pair_colors");
+    const helperSnapshotAfter = await gristApi(gristBaseUrl,apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    for (const ref of originalRefs.slice(1)) {
+      assert(isDeepStrictEqual(
+        helperSnapshotAfter.records.find(row=>row.id===ref),
+        helperSnapshotBefore.records.find(row=>row.id===ref)),
+        "native_row_style_reorder_modified_existing_formula_helper");
+    }
+    const repeatReorder = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
+      orderedFormulas:["$Qty < 0","$Qty > 11"]
+    }),"native_row_style_reorder_repeat") as {changed:boolean};
+    assert(!repeatReorder.changed,"native_row_style_reorder_repeat_wrote");
+    const restoredRow = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",{
+      action:"reorder_row_style_rules",documentId,tableId:TABLE_ID,
+      orderedFormulas:["$Qty > 11","$Qty < 0"]
+    }),"native_row_style_reorder_restore") as {changed:boolean;persistedStyleVerified:boolean};
+    assert(restoredRow.changed && restoredRow.persistedStyleVerified,
+      "native_row_style_reorder_restore_unverified");
+
+    // Native raw-row conditional helper removal: exact owner, stable surviving
+    // color/formula pair, absent helper and preserved unrelated section options.
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "remove_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty < 0"
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      action: "remove_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty == 999", confirmRemoveRule: true
+    });
+    const removedRowStyle = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "remove_row_style_rule", documentId, tableId: TABLE_ID,
+      conditionFormula: "$Qty < 0", confirmRemoveRule: true
+    }), "native_row_style_remove") as {
+      changed: boolean; persistedStyleVerified: boolean; remainingStyleRuleCount: number
+    };
+    assert(removedRowStyle.changed && removedRowStyle.persistedStyleVerified &&
+      removedRowStyle.remainingStyleRuleCount === 1,
+      "native_row_style_remove_unverified");
+    const [removedRowSections, removedRowColumns] = await Promise.all([
+      gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Views_section/records?hidden=true`) as Promise<MetaRecords>,
+      gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as Promise<MetaRecords>
+    ]);
+    const sectionAfterRemove = removedRowSections.records.find(row => row.id === rawSectionRef);
+    const rowOptionsAfterRemove = JSON.parse(String(sectionAfterRemove?.fields.options));
+    assert(isDeepStrictEqual(sectionAfterRemove?.fields.rules, ["L", originalRefs[1]]) &&
+      isDeepStrictEqual(rowOptionsAfterRemove.rulesOptions, [originalOptions.rulesOptions[0]]) &&
+      removedRowColumns.records.some(row => row.id === originalRefs[1]) &&
+      !removedRowColumns.records.some(row => row.id === originalRefs[2]),
+      "native_row_style_remove_lost_survivor_or_left_helper");
+    assert(isDeepStrictEqual(
+      Object.fromEntries(Object.entries(rowOptionsAfterRemove).filter(([key]) => key !== "rulesOptions")),
+      Object.fromEntries(Object.entries(originalOptions).filter(([key]) => key !== "rulesOptions"))
+    ), "native_row_style_remove_changed_unrelated_options");
+
 
     const schemaWithStyle = resultJson(await callTool(bridgeBaseUrl, "grist_discover", {
       action: "columns", documentId, tableId: TABLE_ID
@@ -3076,6 +3908,187 @@ async function run(): Promise<void> {
     assert(editorAfter === 403, `native_schema_guard_editor_not_denied:${editorAfter}`);
     await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`,
       schemaWrite("OwnerAfterSchemaGuard"));
+
+    // #295: one bounded native batch makes mixed Form/Custom/Grid sections from zero.
+    const batchPageResponse = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action:"create_page",documentId,tableId:TABLE_ID,name:"Compat Widget Batch"
+    }), "native_widget_batch_page") as {page?: {id?:number}};
+    const batchPageId = positiveResultId(batchPageResponse.page?.id,"native_widget_batch_page_id");
+    await callToolExpectError(bridgeBaseUrl,"grist_add_ui",{
+      action:"add_widgets",documentId,pageId:batchPageId,
+      widgets:[{tableId:TABLE_ID,type:"record"}]
+    });
+    const batchResult = resultJson(await callTool(bridgeBaseUrl,"grist_add_ui",{
+      action:"add_widgets",documentId,pageId:batchPageId,
+      widgets:[
+        {tableId:TABLE_ID,type:"record"},
+        {tableId:"Compat_Events",type:"form"},
+        {tableId:TABLE_ID,type:"custom"}
+      ]
+    }), "native_widget_batch") as {
+      widgets?:Array<{id?:number;type?:string;tableId?:string}>;
+      createdWidgetIds?:number[];
+    };
+    assert(batchResult.widgets?.length===3 &&
+      batchResult.createdWidgetIds?.length===3 &&
+      new Set(batchResult.createdWidgetIds).size===3 &&
+      batchResult.widgets.every((widget,i)=>
+        widget.id===batchResult.createdWidgetIds?.[i] &&
+        widget.type===["record","form","custom"][i] &&
+        widget.tableId===[TABLE_ID,"Compat_Events",TABLE_ID][i]),
+      "native_widget_batch_return_mismatch");
+    const batchSections = await gristApi(gristBaseUrl,apiKey,
+      `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    assert(batchResult.createdWidgetIds.every(sectionId=>
+      batchSections.records.some(row=>row.id===sectionId && row.fields.parentId===batchPageId)),
+      "native_widget_batch_missing_persisted_sections");
+
+    const originalSections = batchSections.records.filter(row => row.fields.parentId === batchPageId);
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_layout", documentId, pageId: batchPageId,
+      layout: { root: { kind: "group", children: originalSections.map(row => ({
+        kind: "widget", widgetId: row.id
+      })) } }
+    });
+    const readBatchPageLayout = async () => {
+      const views = await gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Views/records?hidden=true`) as MetaRecords;
+      return views.records.find(row => row.id === batchPageId)?.fields.layoutSpec;
+    };
+    const originalLayout = await readBatchPageLayout();
+    assert(typeof originalLayout === "string" && originalLayout.length > 0,
+      "native_widget_reconciliation_missing_configured_layout");
+    const reconcileWidgets = (widgets: Array<{ tableId: string; type: string }>) =>
+      callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "ensure_widgets", documentId, pageId: batchPageId, widgets
+      }).then(result => resultJson(result, "native_widget_reconciliation") as {
+        changed: boolean; persistedWidgetsVerified: boolean;
+        widgets: Array<{ id: number; created: boolean }>;
+      });
+    const wanted = [{ tableId: TABLE_ID, type: "record" },
+      { tableId: TABLE_ID, type: "chart" }, { tableId: TABLE_ID, type: "single" }];
+    const reconciled = await reconcileWidgets(wanted);
+    assert(reconciled.changed && reconciled.persistedWidgetsVerified &&
+      reconciled.widgets[0]?.id === batchResult.createdWidgetIds[0] &&
+      isDeepStrictEqual(reconciled.widgets.map(widget => widget.created), [false, true, true]),
+      "native_widget_reconciliation_created_wrong_sections");
+    const widgetBatchReplay = await reconcileWidgets(wanted);
+    assert(!widgetBatchReplay.changed && widgetBatchReplay.persistedWidgetsVerified &&
+      isDeepStrictEqual(widgetBatchReplay.widgets.map(widget => widget.id),
+        reconciled.widgets.map(widget => widget.id)) &&
+      widgetBatchReplay.widgets.every(widget => !widget.created),
+      "native_widget_reconciliation_replay_duplicated_sections");
+    const incremental = await reconcileWidgets([...wanted, { tableId: TABLE_ID, type: "detail" }]);
+    assert(incremental.changed && incremental.persistedWidgetsVerified &&
+      isDeepStrictEqual(incremental.widgets.slice(0, 3).map(widget => widget.id),
+        reconciled.widgets.map(widget => widget.id)) &&
+      isDeepStrictEqual(incremental.widgets.map(widget => widget.created), [false, false, false, true]),
+      "native_widget_reconciliation_incremental_created_wrong_sections");
+    assert(await readBatchPageLayout() === originalLayout,
+      "native_widget_reconciliation_overwrote_page_layout");
+
+    // An actual anonymous submission through a link assembled only from stable native IDs.
+    {
+      const publicDoc = createdDocumentId(resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", {
+        action: "create_document", workspaceId, name: "Compatibility Public Form Link"
+      }), "native_public_form_link_doc"), "create_document");
+      await callTool(bridgeBaseUrl, "grist_add_structure", {
+        action: "ensure_tables", documentId: publicDoc,
+        tables: [{ id: "Responses", columns: [{ id: "Name", fields: { type: "Text", isFormula: false } }] }]
+      });
+      const makeForm = async (name: string) => {
+        const page = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+          action: "ensure_page", documentId: publicDoc, tableId: "Responses", name
+        }), "native_public_form_link_page") as { page: { id: number } };
+        const widget = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+          action: "ensure_widget", documentId: publicDoc, pageId: page.page.id,
+          tableId: "Responses", type: "form"
+        }), "native_public_form_link_widget") as { widget: { id: number } };
+        const ids = { pageId: page.page.id, widgetId: widget.widget.id };
+        await callTool(bridgeBaseUrl, "grist_change_ui", {
+          action: "update_widget", documentId: publicDoc, ...ids,
+          update: { visibleFields: [{ columnId: "Name" }] }
+        });
+        await callTool(bridgeBaseUrl, "grist_change_ui", {
+          action: "update_form_layout", documentId: publicDoc, ...ids,
+          layout: { children: [{ type: "section", children: [{ type: "field", columnId: "Name" }] },
+            { type: "submit" }] }
+        });
+        return ids;
+      };
+      const source = await makeForm("Source");
+      const target = await makeForm("Target");
+      const linkedLayout = {
+        children: [
+          { type: "form_link", label: "Étape suivante", targetPageId: target.pageId, targetWidgetId: target.widgetId },
+          { type: "section", children: [{ type: "field", columnId: "Name" }] },
+          { type: "submit" }
+        ],
+        confirmPublicLink: true
+      };
+      const linkRequest = {
+        action: "update_form_layout", documentId: publicDoc, ...source, layout: linkedLayout
+      };
+      await callToolExpectError(bridgeBaseUrl, "grist_change_ui", linkRequest);
+      await callTool(bridgeBaseUrl, "grist_change_ui", {
+        action: "publish_form", documentId: publicDoc, ...target, confirmPublic: true
+      });
+      await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+        ...linkRequest, layout: { children: linkedLayout.children }
+      });
+      const linked = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", linkRequest),
+        "native_public_form_link_write");
+      const linkedReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", linkRequest),
+        "native_public_form_link_replay");
+      assert(linked.changed === true && linked.persistedLayoutVerified === true &&
+        linkedReplay.changed === false && linkedReplay.persistedLayoutVerified === true,
+        "native_public_form_link_not_reconciled");
+
+      const publicDocPath = "/api/docs/" + encodeURIComponent(publicDoc);
+      const publicSections = await gristApi(gristBaseUrl, apiKey,
+        publicDocPath + "/tables/_grist_Views_section/records?hidden=true") as MetaRecords;
+      const sourceLayout = JSON.parse(String(publicSections.records.find(row => row.id === source.widgetId)
+        ?.fields.layoutSpec)) as { children: Array<{ text?: string }> };
+      const nativeLink = /^\[Étape suivante\]\(\/forms\/([a-zA-Z0-9_-]{1,100})\/([1-9]\d*)\)$/
+        .exec(sourceLayout.children[0]?.text ?? "");
+      assert(nativeLink && Number(nativeLink[2]) === target.widgetId, "native_public_form_link_wrong_target");
+      const key = nativeLink[1]!;
+      const sourceProjection = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "page_widgets", documentId: publicDoc, pageId: source.pageId
+      }), "native_public_form_link_redacted");
+      assert(![linked, linkedReplay, sourceProjection].some(item => JSON.stringify(item).includes(key)),
+        "native_public_form_link_key_exposed");
+      const anon = (path: string, body?: unknown) => fetch(gristBaseUrl + path, {
+        credentials: "omit", redirect: "error", signal: AbortSignal.timeout(10_000),
+        ...(body === undefined ? {} : {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
+        })
+      }).catch(() => { throw new Error("Native anonymous Form request could not be verified."); });
+      const publicPath = "/api/s/" + key;
+      const preview = await anon(publicPath + "/forms/" + target.widgetId);
+      assert(preview.ok, "native_public_form_real_key_did_not_open");
+      const visibleFields = await preview.json() as { formFieldsById?: Record<string, { colId: string }> };
+      assert(Object.values(visibleFields.formFieldsById ?? {}).some(field => field.colId === "Name"),
+        "native_public_form_real_key_wrong_fields");
+      const html = await anon("/forms/" + key + "/" + target.widgetId);
+      await html.body?.cancel();
+      assert(html.ok && html.headers.get("content-type")?.startsWith("text/html"),
+        "native_public_form_real_link_did_not_serve_html");
+      const denied = await anon(publicPath + "/forms/" + source.widgetId);
+      await denied.body?.cancel();
+      assert(denied.status === 403 || denied.status === 404, "native_public_form_wrong_section_exposed");
+      const sent = await anon(publicPath + "/tables/Responses/records",
+        { records: [{ fields: { Name: "Synthetic anonymous Form response" } }] });
+      await sent.body?.cancel();
+      assert(sent.ok, "native_public_form_submission_denied_" + sent.status);
+      const nativeResponses = await gristApi(gristBaseUrl, apiKey,
+        publicDocPath + "/tables/Responses/records") as MetaRecords;
+      assert(nativeResponses.records.some(row => row.fields.Name === "Synthetic anonymous Form response"),
+        "native_public_form_submission_not_persisted");
+      const publicRows = await anon(publicPath + "/tables/Responses/records");
+      const publicBody = await publicRows.text();
+      assert(!publicBody.includes("Synthetic anonymous Form response"), "native_public_form_responses_exposed");
+    }
 
     console.log(`Grist Community ${version}: PASS`);
     console.log(

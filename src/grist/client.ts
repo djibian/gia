@@ -1,3 +1,5 @@
+import { readOwnerFormShareKey } from "./formShareLookup.js";
+
 export interface NewGristRecord {
   fields: Record<string, unknown>;
 }
@@ -138,6 +140,26 @@ export class GristClient {
     )) as GristDocumentSummary;
   }
 
+  async resolvePublicFormPath(documentId: string, linkId: string, widgetId: number): Promise<string> {
+    if (!Number.isSafeInteger(widgetId) || widgetId < 1) {
+      throw new Error("A stable native Form widget ID is required.");
+    }
+    const document = await this.getDocument(documentId);
+    if (document.id !== documentId || document.access !== "owners") {
+      throw new Error("Native Owner is required for published Form links.");
+    }
+    const worker = await this.request("/api/worker/" + encodeURIComponent(documentId), { redirect: "error" });
+    const key = await readOwnerFormShareKey(this.baseUrl, document, worker, documentId, linkId, this.apiKey);
+    const response = await fetch(this.baseOrigin + "/api/s/" + key + "/forms/" + widgetId, {
+      credentials: "omit", redirect: "error", signal: AbortSignal.timeout(10_000)
+    }).catch(() => { throw new Error("Native public Form could not be verified."); });
+    await response.body?.cancel().catch(() => undefined);
+    if (!response.ok || !response.headers.get("content-type")?.startsWith("application/json")) {
+      throw new Error("Native public Form could not be verified.");
+    }
+    return "/forms/" + key + "/" + widgetId;
+  }
+
   async listDocumentAccess(documentIdOrUrl: string): Promise<unknown> {
     const id = this.normalizeDocumentId(documentIdOrUrl);
     return this.request(`/api/docs/${encodeURIComponent(id)}/access`);
@@ -150,6 +172,16 @@ export class GristClient {
     return this.request(`/api/docs/${encodeURIComponent(id)}/access`, {
       method: "PATCH",
       body: JSON.stringify({ delta: { users: { [email]: role } } })
+    });
+  }
+
+  async revokeDocumentUser(
+    documentIdOrUrl: string, email: string
+  ): Promise<unknown> {
+    const id = this.normalizeDocumentId(documentIdOrUrl);
+    return this.request(`/api/docs/${encodeURIComponent(id)}/access`, {
+      method: "PATCH",
+      body: JSON.stringify({ delta: { users: { [email]: null } } })
     });
   }
 

@@ -37,17 +37,19 @@ function safeText(value: unknown, label: string): string {
 }
 
 /** Permit only the private Grist Form-link format emitted by Gia. */
-function safePreviousParagraph(value: unknown): void {
+function safePreviousParagraph(value: unknown, publicPaths: ReadonlySet<string>): void {
   if (typeof value !== "string") throw new Error("Malformed native Form paragraph.");
   if (safeNativeFormText(value, 300) === value) return;
-  const match = /^\[([^\[\]()\r\n]{1,100})\]\(\/forms\/[a-zA-Z0-9_-]{1,100}\/[1-9]\d{0,9}\)$/.exec(value);
-  if (!match || safeNativeFormText(match[1]!, 100) !== match[1]) {
+  const match = /^\[([^\[\]()\r\n]{1,100})\]\((\/forms\/[a-zA-Z0-9_-]{1,100}\/[1-9]\d{0,9})\)$/.exec(value);
+  if (!match || !publicPaths.has(match[2]!) || safeNativeFormText(match[1]!, 100) !== match[1]) {
     throw new Error("Pre-existing Form link is protected or malformed.");
   }
 }
 
 /** Refuse to replace unsupported native attributes, links or unresolvable field references. */
-function safePreviousLayout(value: unknown, knownFields: ReadonlySet<number>): JsonRecord | undefined {
+function safePreviousLayout(
+  value: unknown, knownFields: ReadonlySet<number>, publicPaths: ReadonlySet<string>
+): JsonRecord | undefined {
   if (value === undefined) return;
   const root = record(value);
   if (!root) throw new Error("Native Form layout is opaque or malformed; refusing overwrite.");
@@ -99,7 +101,7 @@ function safePreviousLayout(value: unknown, knownFields: ReadonlySet<number>): J
       if (!keys(node, ["id", "type", "text", "alignment", "children"])) {
         throw new Error("Unsupported native Form paragraph settings.");
       }
-      safePreviousParagraph(node.text ?? "");
+      safePreviousParagraph(node.text ?? "", publicPaths);
       if (node.alignment !== undefined && !["left", "center", "right"].includes(node.alignment as string)) {
         throw new Error("Unsupported native Form alignment.");
       }
@@ -129,7 +131,7 @@ export function resolveFormLayoutUpdate(
     throw new Error("Native Form field metadata is incomplete; refusing layout write.");
   }
   const fieldsByColumnId = new Map(fields.map(field => [field.columnId, field.fieldId]));
-  const previous = safePreviousLayout(widget.layoutSpec, new Set(fields.map(field => field.fieldId)));
+  const previous = safePreviousLayout(widget.layoutSpec, new Set(fields.map(field => field.fieldId)), new Set(publishedFormPaths.values()));
   if (!Array.isArray(input.children) || !input.children.length || input.children.length > MAX_CHILDREN) {
     throw new Error("Form layout requires a bounded nonempty root.");
   }

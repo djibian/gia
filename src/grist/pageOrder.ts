@@ -356,3 +356,106 @@ export function samePageOrderSnapshot(
     );
   });
 }
+
+
+/** Nest one visible leaf page under its immediately preceding visible sibling
+ * subtree. The native page position slots and all other parents stay fixed. */
+export function resolvePageNestingUpdate(
+  current: PageOrderSnapshot, pageId: number, parentPageId: number
+): {changed: boolean; pageRecordId: number; indentation: number; expected: PageOrderSnapshot} {
+  if (!Number.isSafeInteger(pageId) || !Number.isSafeInteger(parentPageId) ||
+      pageId < 1 || parentPageId < 1 || pageId === parentPageId ||
+      current.pages.length > MAX_PAGE_ORDER_PAGES ||
+      !current.visiblePageIds.includes(pageId) ||
+      !current.visiblePageIds.includes(parentPageId)) {
+    throw new Error("Nesting requires distinct visible stable page and parent IDs.");
+  }
+  const pages = current.pages;
+  const parentIndex = pages.findIndex(page => page.pageId === parentPageId);
+  const childIndex = pages.findIndex(page => page.pageId === pageId);
+  const parent = pages[parentIndex], child = pages[childIndex];
+  if (!parent || !child || parent.isCensored || parent.isSpecial ||
+      child.isCensored || child.isSpecial) {
+    throw new Error("Nesting cannot target protected or missing pages.");
+  }
+  if (child.parentPageId === parentPageId) {
+    return {changed:false,pageRecordId:child.pageRecordId,indentation:child.indentation,expected:current};
+  }
+  if (parentIndex >= childIndex || parent.indentation >= 8 ||
+      parent.indentation !== child.indentation ||
+      (pages[childIndex + 1]?.indentation ?? 0) > child.indentation) {
+    throw new Error("Nesting requires a later leaf sibling at supported depth.");
+  }
+  // The target must be the first sibling after the complete, contiguous
+  // existing child subtree of the chosen parent, with no opaque page crossed.
+  let nextSibling = parentIndex + 1;
+  while (nextSibling < pages.length &&
+         pages[nextSibling]!.indentation > parent.indentation) {
+    nextSibling++;
+  }
+  if (nextSibling !== childIndex ||
+      pages.slice(parentIndex,childIndex + 1).some(page => page.isSpecial || page.isCensored)) {
+    throw new Error("Nesting cannot cross other siblings or protected page state.");
+  }
+  const expected = finalizeSnapshot(pages.map(page => ({
+    pageId: page.pageId, pageRecordId: page.pageRecordId,
+    indentation: page.pageId === pageId ? page.indentation + 1 : page.indentation,
+    pagePos: page.pagePos, isCensored: page.isCensored, isSpecial: page.isSpecial
+  })));
+  if (expected.visiblePageIds.length !== current.visiblePageIds.length ||
+      expected.visiblePageIds.some((id,index) => id !== current.visiblePageIds[index]) ||
+      expected.pages.some(page =>
+        page.pageId !== pageId &&
+        page.parentPageId !== pages.find(before => before.pageId === page.pageId)?.parentPageId) ||
+      expected.pages.find(page => page.pageId === pageId)?.parentPageId !== parentPageId) {
+    throw new Error("Nesting would silently change unrelated navigation hierarchy.");
+  }
+  return {changed:true,pageRecordId:child.pageRecordId,
+    indentation:child.indentation+1,expected};
+}
+
+/** Promote a last nested leaf without moving a page or reparenting siblings. */
+export function resolvePageUnnestUpdate(
+  current: PageOrderSnapshot, pageId: number
+): {changed:boolean; pageRecordId:number; indentation:number; expected:PageOrderSnapshot} {
+  if (!Number.isSafeInteger(pageId) || pageId < 1 ||
+      current.pages.length > MAX_PAGE_ORDER_PAGES ||
+      !current.visiblePageIds.includes(pageId)) {
+    throw new Error("Unnesting requires one existing visible stable page ID.");
+  }
+  const pages=current.pages;
+  const index=pages.findIndex(page=>page.pageId===pageId);
+  const child=pages[index]!;
+  if (child.isCensored || child.isSpecial || child.indentation > 8) {
+    throw new Error("Unnesting cannot target a protected or unsupported page.");
+  }
+  if (child.indentation === 0) {
+    return {changed:false,pageRecordId:child.pageRecordId,indentation:0,expected:current};
+  }
+  const parentIndex=pages.findIndex(page=>page.pageId===child.parentPageId);
+  const parent=pages[parentIndex];
+  if (!parent || parentIndex >= index || parent.isCensored || parent.isSpecial ||
+      !current.visiblePageIds.includes(parent.pageId) ||
+      pages.slice(parentIndex,index+1).some(page=>page.isCensored || page.isSpecial)) {
+    throw new Error("Unnesting requires an unprotected existing visible ancestor.");
+  }
+  // A following child or same-depth sibling would be silently reparented.
+  if (index+1 < pages.length && pages[index+1]!.indentation >= child.indentation) {
+    throw new Error("Unnesting requires the last leaf in the current parent subtree.");
+  }
+  const expected=finalizeSnapshot(pages.map(page=>({
+    pageId:page.pageId,pageRecordId:page.pageRecordId,
+    indentation:page.pageId===pageId?page.indentation-1:page.indentation,
+    pagePos:page.pagePos,isCensored:page.isCensored,isSpecial:page.isSpecial
+  })));
+  const oldById=new Map(pages.map(page=>[page.pageId,page]));
+  if (expected.visiblePageIds.length!==current.visiblePageIds.length ||
+      expected.visiblePageIds.some((id,i)=>id!==current.visiblePageIds[i]) ||
+      expected.pages.some(page=>page.pageId!==pageId &&
+        page.parentPageId!==oldById.get(page.pageId)?.parentPageId) ||
+      expected.pages.find(page=>page.pageId===pageId)?.parentPageId!==parent.parentPageId) {
+    throw new Error("Unnesting would alter unrelated native page hierarchy.");
+  }
+  return {changed:true,pageRecordId:child.pageRecordId,
+    indentation:child.indentation-1,expected};
+}

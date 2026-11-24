@@ -29,7 +29,98 @@ Unselected `grist_help({})` remains a compact ten-tool index. Selecting named to
 
 `grist_add_structure(action="create_tables")` requires a nonempty `columns` array per new table, matching native Grist TablePost. Missing or empty arrays are refused before any native write; Gia does not invent application columns.
 
+The bounded `grist_add_ui(action="ensure_widget")` reconciles exactly one
+native section on an existing page using its page ID, stable source table ID,
+widget type and optional `groupByColumnIds`. An omitted grouping selects an
+ordinary section. An empty grouping selects a grand total, and a grouping of
+1–20 unique stable column IDs selects a summary of that set of columns.
+Grouped reconciliation requires fresh native Owner proof. Gia verifies the
+generated summary table using complete native column metadata so a hidden
+grouping column cannot turn an existing section into a false grand total.
+A sole existing section is reused with
+its native widget ID and all configuration preserved. If absent, Gia invokes
+the existing native `CreateViewSection`, verifies the returned ID and re-reads
+the complete UI: earlier widget identities/settings and unrelated pages must
+remain unchanged, with exactly one new matching section. Multiple matching
+sections, incomplete UI state, unavailable tables, or changed pre-write
+metadata fail closed. An uncertain native effect must be re-read before retry.
+Use `add_widget` with client-owned stable IDs to create intentional duplicates.
+The preflight and native creation are separate requests, so clients must
+serialize writes to the same native UI.
+
+The bounded `grist_add_structure(action="ensure_tables")` reconciles an
+initial named-table schema when reconstructing an application from scratch.
+Each table requires one or more explicit typed seed columns (`Any`, `Text`,
+`Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`, `DateTime:Europe/Paris`,
+`Attachments`, `Choice`, `ChoiceList`, `Ref` or `RefList`). A legacy `fields:{type}` seed asserts type alone; a writable
+initial data column uses `fields:{type,isFormula:false}` and must persist a
+native `isFormula:false`. A matching computed column is a conflict before
+any additional table creation. Gia reads the complete expanded native table and column identities,
+rejects a missing or conflicting requested seed column on an existing table
+before writing, and creates only absent tables. It verifies every created
+stable ID, the requested column types, explicit writable intent when supplied,
+and preservation of all preexisting table/column identities, types and observed
+formula flags. Extra columns added later are preserved;
+a repeat with the same seeds is a no-op. Incomplete metadata fails closed.
+Native creation errors and unverified postconditions must be reconciled
+before retry; no concurrency CAS is claimed. More advanced column properties
+remain available via existing separate actions. This does not add an MCP tool.
+
+The bounded `grist_add_records(action="ensure_record")` reconciles **one**
+explicit keyed record on a caller-authorized document. A fresh native Owner
+check prevents partially visible row sets from silently duplicating data.
+The key must be an existing non-formula `Text` column with a nonempty
+at-most-128-character string value supplied in `record.fields`. At most 32
+explicit writable fields are accepted. Gia queries up to two native records
+for that key and rejects duplicates, conflicting field values, malformed
+metadata and unverified persistence. If one row matches every supplied field,
+it returns its stable numeric ID without writing; otherwise it creates exactly
+one record and verifies the unique exact persisted values on readback.
+Unrelated native columns are not updated. Formula columns cannot be written.
+Native coercion of submitted values that changes readback causes an uncertain
+outcome instead of a false success. This is useful for synthetic application
+seeding and safe sequential restarts, **not** a Grist uniqueness constraint,
+atomic compare-and-swap or safe concurrent upsert. A failed or uncertain
+write must be explicitly reconciled before repetition. No new MCP tool.
+
+`grist_add_records(action="ensure_records")` reconciles 2–16 distinct Text-keyed rows
+on one existing table in a single bounded request. The Owner-gated, complete
+multi-key read rejects duplicate requested or persisted keys, conflicting values,
+non-writable columns and truncated results before creating missing rows.
+The adapter validates schema and prior records again, creates only missing keys,
+then verifies all stable row IDs in input order. Replaying identical rows is a
+no-op. Uncertain or partial effects preserve only confirmed created indices/IDs
+and refuse blind batch retries. This is not a native uniqueness index, transaction,
+concurrent upsert or cross-table orchestration; the external client reconciles
+before retrying. No additional MCP tool is introduced.
+
 Both `grist_add_structure(create_tables)` and `grist_add_structure(create_columns)` accept only creation metadata actually persisted by the supported native Grist operations: optional `label`, `type`, `isFormula`, `formula` and `widgetOptions`. Native `AddTable` and `AddVisibleColumn` do not persist `description` and do not resolve the public stable-ID alias `visibleColumnId` at creation time. These two update-only fields therefore fail validation **before any create write**, including mixed batches, rather than producing a misleading success. To set them, first create the column with supported fields, then call `grist_change_structure(action="update_columns")` on the resulting stable IDs; update verification and uncertain-write handling remain authoritative. This narrows previously advertised but ineffective create inputs, not a functioning native creation workflow.
+
+`grist_add_structure(action="ensure_columns")` reconciles a bounded homogeneous
+batch of explicit typed columns **on one existing table**, for incremental
+application construction and restart. For every requested stable ID, either the
+column already exists with precisely the requested native type and formula
+intent, or Gia creates it and rereads the complete native column state.
+A type-only seed is `fields:{type}` (preserving legacy behavior without
+asserting whether Grist internally marks it as computed); an explicitly writable
+data seed is `fields:{type,isFormula:false}` and requires native readback of
+`isFormula:false` for the matching stable ID. A formula seed is
+`fields:{type,isFormula:true,formula:nonemptyGristPython}`, with a 4096-character
+bound and no unrelated native fields. Both use the same closed supported types:
+`Any`, `Text`, `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`,
+`DateTime:Europe/Paris`, `Attachments`, `Choice`, `ChoiceList`, `Ref:<table>` and
+`RefList:<table>`. The reference destination and formula dependencies must
+already be valid in native Grist. A matching existing formula is reused without
+rewriting it; for an explicit formula seed a differing formula, an explicit data
+seed targeting a formula column, or a conflicting type
+fails before creating another requested column in the same batch. All prior
+native column IDs, refs, types and observed formula metadata remain unchanged.
+Missing/duplicate IDs, incomplete/censored metadata and malformed formula seeds
+fail before any write. Other widget, dropdown and Form configuration uses the
+existing independent operations. Generated native auxiliary columns are not
+invented or identified as application fields. New-write normalization or
+post-read uncertainty demands reconciliation, never blind replay. No native
+cross-writer CAS, general schema migration engine or new MCP tool is implied.
 
 `grist_add_structure(action="create_columns")` also accepts a homogeneous
 batch of configured data columns. Each item has `id`, `fields:{type,label?}`
@@ -61,6 +152,39 @@ configuration. It refuses malformed or truncated native state, verifies the
 complete persisted options, and returns an idempotent no-op on re-execution.
 `question:null` clears the question. This does **not** create, render, submit or
 publish forms, accept link-bearing question text, or change native sharing.
+
+`grist_change_structure(action="append_choice_options")` appends up to 64
+unique, nonempty plain-text labels to one existing non-formula native
+`Choice` or `ChoiceList` column. Only missing labels are appended in the
+caller-supplied order; existing choices are never removed, renamed or reordered.
+Native `widgetOptions.choices` is updated while sibling options, including
+choice colors, Form configuration and conditional styles, remain unchanged.
+Gia rejects malformed/incomplete native metadata, duplicate labels, over-limit
+lists and unrelated column types; re-reads the complete options and column
+type to verify persistence. Identical repeated requests are no-ops.
+Uncertain native writes require inspection before retrying; external
+concurrent editors still need serialization. This action does not constrain
+row-level data or bypass ACLs, and adds no MCP tool.
+
+`grist_change_structure(action="reorder_choice_options")` reorders the exact
+complete set of 2–64 already configured labels in a native non-formula
+`Choice` or `ChoiceList` column. The caller supplies the entire ordered set;
+missing, extra, duplicate, malformed or unknown labels fail closed before a write.
+A successful reorder changes only the ordered `widgetOptions.choices` array,
+preserving all choice colors and sibling Form, style and other options. Gia
+checks a complete current native schema snapshot, repeats the check before
+writing, verifies post-read persistence and returns a no-op when the order
+already matches. Transport/partial effects require inspection, never blind
+replay. It cannot edit record values, authorizations or individual choice names.
+
+`grist_change_structure(action="set_choice_colors")` changes one or both
+closed `#RRGGBB` colors of a *previously configured* Choice or ChoiceList label.
+It preserves the choice list, other label colors, Form settings and all sibling
+native options; a repeated identical request is a verified no-op. Unknown labels,
+non-choice or formula columns, malformed existing color state, excessive metadata
+and invalid color values are refused before any write. It uses `doc.schema:write`
+and complete native readback, never updates row values or grants.
+Uncertain effects must be reconciled without blind retries.
 
 `grist_change_structure(action="update_dropdown_condition")` applies or clears
 a typed native reference-dropdown predicate on one existing stable Ref/RefList
@@ -129,7 +253,97 @@ As with column style append, a partial or transport-uncertain native action
 requires inspection and reconciliation, never blind replay. Row-style
 persistence is not a native rendering/visual acceptance assertion.
 
+
+`grist_change_structure(action="update_row_style_rule")` updates the colors of
+**one existing unique formula** on the native raw-table row-style sequence.
+The stable `tableId`, exact `conditionFormula` and closed colors are the only
+inputs. A complete native metadata read resolves the raw section, ordered
+helpers and styles. The action refuses missing/ambiguous formulas, incomplete
+styles, foreign helpers and malformed options, and returns a verified no-op
+when colors already match. A fixed update of the raw section's `options`
+preserves helper identities, formulas, order and all nonstyle options, with
+full post-read. This is not an atomic compare-and-swap: external concurrent
+writers must be serialized and uncertain effects reconciled, not replayed.
+No new MCP tool or widget/publication authority is introduced.
+
+
+`grist_change_structure(action="remove_column_style_rule")` removes exactly one
+uniquely selected native column conditional style from a complete 2–8-rule
+owner. It requires stable table/column IDs, exact existing `conditionFormula`,
+and `confirmRemoveRule:true`. Gia verifies that the private hidden helper is
+exclusively owned by that column and is not referenced by another column,
+section or field. Grist receives only a fixed bundled removal of the paired
+style option and the native helper `RemoveColumn`; remaining helpers, their
+formulas and colors, and all other owner options are re-verified. Missing,
+duplicate, shared, malformed or incomplete state refuses deletion. No arbitrary
+column deletion, unconditional retry, external CAS or ACL authority is granted.
+
+`grist_change_structure(action="reorder_column_style_rules")` reorders two to eight
+existing, fully configured native column conditional styles. The complete
+`orderedFormulas` permutation selects unique existing formula helpers. Gia pairs
+each helper with its closed colors using the verified row-style ordering planner;
+a fixed owner-column native update changes only ordered `rules` and the paired
+`widgetOptions.rulesOptions`. Native helpers/formulas and unrelated column
+options remain intact. Fresh before/after reads enforce exact preservation;
+missing, duplicate, opaque or incomplete rules are refused. Repeating the same
+order is a no-op, and unverified writes require reconciliation, not blind replay.
+Neither external CAS nor browser-visible precedence is claimed.
+
+`grist_change_structure(action="remove_row_style_rule")` deletes exactly
+one fully configured native raw-table conditional row-style rule among two to
+eight unique rules. Only the stable table ID, an exact existing predicate and
+`confirmRemoveRule:true` enter the request. Complete native metadata must prove
+the selected helper belongs exclusively to the table's raw view section, and
+no other column, field or section references it. Gia writes the surviving paired
+style colors and the fixed native helper `RemoveColumn` in one bounded action
+bundle, then verifies surviving ordered refs, formulas, colors, unrelated section
+options and physical removal of the selected helper. Missing, duplicate, shared,
+opaque or truncated owners and last-rule removal fail closed. A repeated removal
+does not delete another rule. Effects without complete postconditions are
+uncertain and must be inspected before retry; this is not a native CAS, broad
+column-deletion API or browser-rendering proof. The ten-tool interface remains.
+
+`grist_change_structure(action="reorder_row_style_rules")` reorders two to eight
+**existing, fully configured raw-table row conditional styles**. The caller supplies
+the stable `tableId` and `orderedFormulas` containing every existing unique
+predicate exactly once in desired priority order. Gia resolves native helper IDs
+from a complete snapshot and atomically writes only the raw section's ordered
+`rules` references with the correspondingly reordered `rulesOptions` colors.
+No helper is created, deleted or modified. Unrecognized, duplicate, incomplete
+or missing rules, protected options and changed pre-write state are refused.
+Readback verifies the exact reordered formula/style pairs and all other
+section options; replay is a no-op. A native write without a confirmed readback
+is uncertain and must be reconciled, not blindly retried. This is not a CAS
+against external concurrent writers or proof of browser rendering.
+
+`grist_change_structure(action="replace_row_style_formula")` replaces exactly
+one unique existing **raw-table row** conditional-format formula, selected by
+stable `tableId` and exact `previousFormula`, with a bounded nonempty
+`conditionFormula`. It resolves the native raw section and formula helper
+using a complete verified metadata snapshot, refusing absent/duplicate
+predicates, collisions with sibling rules, malformed helpers and incomplete
+styles. One fixed native helper-only formula update preserves all raw-section
+options, rule colors, helper identities, ordered siblings and unrelated widget
+styles. An identical replacement is an idempotent no-op. Before/after reads
+verify persisted semantics; concurrent writers still require serialization,
+and an uncertain write must be reconciled before replay. Native metadata
+persistence is not proof of browser rendering.
+
 An operator-approved `grist_change_ui(action="install_trusted_widget")` selects one revisioned HTTPS custom widget on an empty native Custom section. The model provides only a `trustedKey` and `confirmExternalWidget:true`, never arbitrary URL/code. Deployment must configure `GIA_TRUSTED_CUSTOM_WIDGETS_JSON` as a bounded JSON list of `{key,name,widgetId,revision,url}`, with each HTTPS URL on a distinct host and including the revision in its path. Default is deny. Native Owner plus `doc.schema:write` are required. Selection is saved as Grist `customView`, with initial `access:none`, preserving unrelated section options and refusing occupied/customized widgets. Post-read confirms saved identity and access, with uncertain effects never blindly replayed. This is metadata persistence, not a verification of remotely served JavaScript or its subresources: operators must independently audit and host immutable code.
+
+A separate `grist_change_ui(action="update_trusted_widget_revision")` replaces
+one previously approved immutable custom-widget revision with another approved
+revision **of the same widget and asset at the same origin**. The model supplies
+`previousTrustedKey`, `trustedKey`, stable page/widget IDs and
+`confirmExternalWidget:true`; no URL or code enters the call. Native Owner
+and `doc.schema:write` remain mandatory. The persisted widget must exactly
+match its approved source definition and have `access:none`, no column
+mappings, no widget-owned options, and no active rendering. Gia preserves all
+unrelated section options, verifies the full resulting metadata and treats
+repeated completed upgrades as no-ops. Configured/data-bearing widgets are
+refused: operators must explicitly deactivate and clear their settings before
+an approved revision update. This does not prove the remote code is safe,
+nor provide an external compare-and-set or a blind retry guarantee.
 
 `grist_change_ui(action="publish_form")` publishes one existing native Form widget and its
 page-linked native share through a private fixed Grist action bundle. The request must
@@ -146,6 +360,22 @@ are never exposed to the model. Native persisted publication and page linkage
 do not prove anonymous browsing or submission; those require separate
 native acceptance checks.
 
+`grist_change_ui(action="unpublish_form")` disables the native publication
+flags of one previously published Form section. Exact existing page/widget IDs
+and `confirmUnpublish:true` are required, together with `doc.schema:write`
+and fresh upstream Grist document Owner authority. A uniquely verified native
+published page share is required. One fixed native section update changes only
+`shareOptions` to `{form:true,publish:false}`; it preserves page/share
+metadata, Form layout and options, and unrelated native permissions. Before/after
+reads verify this intention; a repeat is a no-op, and uncertain writes must be
+reconciled, never blindly retried. Existing public home-database Share.keys
+are **not** deleted or attested revoked. Disabling the section does not qualify
+effective anonymous access revocation; that is a separate native boundary.
+
+Plain Form instructional text supports ordinary spaced punctuation such as
+`Stage : informations`, while URLs, scheme-prefixed strings and link-bearing
+Markdown remain protected to prevent accidental capability disclosure.
+
 `grist_change_ui(action="update_form_layout")` configures one existing
 native Form section with a bounded tree of typed paragraphs, field groups and a
 final submit element. All field references are supplied as stable column IDs and
@@ -157,13 +387,18 @@ bindings. It does not add fields to native sections, create share links, publish
 execute submissions or assert rendered behavior. To place a column not already
 present as a native section field, configure the widget fields separately first.
 
-A closed `{type:"form_link",label,targetPageId,targetWidgetId}` paragraph
-links to an already published native Form in the **same document**. The caller
-must provide `confirmPublicLink:true` and hold `doc.schema:write` plus fresh
-native Owner authority. Gia checks a unique published page share, generates a
-root-relative Markdown link from its private `linkId`, and verifies persistence.
-It never accepts a caller-supplied URL or echoes the share key. Form inspection
-redacts the link paragraph; actual browser navigation is not yet qualified.
+A layout may contain one `{type:"form_link",label,targetPageId,targetWidgetId}`
+at the root or within a section. The request requires `confirmPublicLink:true`
+and native Grist Owner access. Both IDs must resolve to another already
+published Form in the same document. Gia verifies the native page-share
+binding, resolves the separate public key with fixed Grist socket calls on
+the configured origin, and checks the exact public Form endpoint without
+credentials before writing the link. The caller supplies no URL or key.
+Re-read confirms the target and persisted layout. The key is never returned
+through MCP. An earlier protected link can be retained or edited only after
+its target is resolved to that same verified key. Native anonymous submissions
+are tested in disposable Grist qualification, never sent by the runtime.
+Worker routes on another origin and unresolved organization paths fail closed.
 
 `grist_change_ui(action="update_form_field_options")` targets one
 existing native Form section field by page/widget and stable column ID. It
@@ -182,6 +417,19 @@ re-read. Values are bounded strings, numbers, booleans, string/number lists
 or null. URLs, executable markup, secret-bearing keys, arbitrary objects and
 prototype keys are rejected. This neither installs a widget nor establishes
 publisher provenance, version pinning, or safe remote widget execution.
+
+`grist_change_ui(action="update_widget", update:{customWidgetSettings:{resetWidgetOptions:true}})`
+explicitly clears all widget-owned options to native `null` on an already
+identified Custom section. The persisted widget access must already be `none`;
+active `read table`/`full` widgets must be deactivated in a separate verified
+operation. A fresh native document Owner proof and the existing schema grant
+are required, because the reset deliberately discards previously configured
+options. A reset cannot be combined with `optionsPatch` or data-access
+escalation. Widget identity, approved external URL, mapping, other Custom
+settings and all outer section options are preserved and checked on native
+readback. Repeating a completed reset preserves the same state; uncertain
+writes require inspection before retry. This does not remove the remote
+widget, certify its code or grant any remote data access.
 
 `grist_change_ui(action="update_widget", update:{customWidgetSettings:{access}})`
 accepts the native levels `none`, `read table`, and `full`. Granting either
@@ -213,6 +461,40 @@ verification is not evidence that all document ACLs were enforced or that
 an invitation email was delivered. An uncertain or unverified mutation must
 not be blindly retried. Publication is explicitly outside this operation.
 
+
+A separately confirmed `grist_change_structure(action="revoke_document_user")`
+removes **one existing direct** Grist document `viewers` or `editors` grant.
+The client supplies an exact individual normalized email, the
+`expectedRole` and `confirmRevocation:true`. Gia requires
+`doc.schema:write` and fresh native document Owner authority. It refuses
+public pseudo-users, unknown or ambiguous identities, inherited access,
+other direct roles (including owners), or unexpected current roles.
+Native `PermissionDelta.users[email]=null` removes direct document access,
+not the Grist account, a workspace grant or any inherited permission.
+The complete native access snapshot is checked before and after; unrelated
+recipients and inherited-role ceiling must remain unchanged. A target
+remaining visible with null direct access, or disappearing from the
+document membership list, is consistent with native revocation. An
+already-absent direct grant on a still-visible known user is a no-op.
+Effects that cannot be read back are uncertain and must not be replayed
+blindly. This is not a general user-management API, nor a proof of
+end-to-end authenticated access enforcement.
+
+A separately confirmed `grist_change_structure(action="change_document_user_role")`
+changes only an **existing direct** document viewer/editor grant to the other
+role. The caller supplies a normalized individual email, `expectedRole`, the
+distinct desired `role`, and `confirmRoleChange:true`. Local
+`doc.schema:write` plus a fresh native Owner proof are mandatory. A complete
+native access snapshot must identify the existing target by positive user ID,
+with neither inherited access nor a protected direct role. Gia sends only
+`PermissionDelta.users[email]=role`, never a whole-list write or a new
+identity. A previously completed transition is a no-op when the target already
+has the desired direct role. After the write Gia verifies the same target ID,
+desired role, unchanged membership/inherited state and identical unrelated
+recipients and inherited-role ceiling. Failed or ambiguous effects are
+uncertain and not blindly retryable; non-CAS native sharing changes must
+be serialized and reconciled. No native authorization decision or invitation
+delivery is certified by this persisted write.
 
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
@@ -338,6 +620,8 @@ name or type. The native documentSettings JSON is read in full, updated only
 at the locale key and reread as a complete postcondition, without exposing
 unrelated settings. Unsupported or incomplete native JSON refuses modification.
 
+`grist_change_structure(action="replace_column_formula")` changes the formula on one **existing** calculated column via a bounded Grist Python string, without accepting arbitrary UserActions or ACL text. It requires `doc.schema:write`, a complete hidden-column snapshot, and an exact positive native column identity. Data columns, malformed or truncated schema, and uncertain target ownership are refused. Identical input is a no-op; a changed formula is written using native column PATCH and reread. All untargeted native column fields and identities must be preserved, otherwise the effect is uncertain and must be reconciled before retry. This operation does not evaluate the formula in the bridge; native synthetic Grist acceptance checks calculated values.
+
 For Ref/RefList columns, `grist_change_structure(action="update_columns")` additionally accepts `visibleColumnId`, always as the stable ID of a column on the referenced table. Numeric `visibleCol`/`displayCol` refs remain bridge-private. Gia resolves the target privately and applies Grist's paired native semantics—updating `visibleCol` and setting the display formula—in one fixed internal action bundle, then verifies the target relation, visible column and generated display formula after re-read. `label` and `visibleColumnId` are intentionally separate mutations because a native label change may also canonicalize the source stable column ID.
 
 Calendars remain one public widget concept, `calendar`. `grist_change_ui(action="update_widget")` accepts `calendarConfig: {titleColumnId,startDateColumnId,endDateColumnId?,allDayColumnId?,typeColumnId?}`; all values are stable column IDs on the widget table. Gia follows Grist's calendar mapping types: start/end are strict `Date|DateTime`, all-day is strict `Bool`, title accepts the native non-strict `Text|Any` semantics, and type accepts the native non-strict `Choice|ChoiceList|Any` semantics. Gia preserves untargeted widget options/mappings and verifies the normalized mapping after write. Calendar creation/configuration adapts internally across the supported Grist Community matrix: legacy persisted `custom.calendar` is used when the old bundled calendar is discoverable, otherwise native `calendar` is used. Inspection normalizes either representation back to public `calendar`. The compatibility probe exercises document type conversion, relation display and configured calendars on every supported Grist Community version 1.7.16–1.7.20.
@@ -352,7 +636,16 @@ Document/page inspection additionally returns `navigationPageIds`, the exact cur
 
 ## Application access rules
 
-Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect(action="access_rules")` returns a normalized view of persisted ordinary table/column access-rule groups, while `grist_change_structure(action="access_rule_group")` accepts exactly one `create`, `replace` or `delete` intention.
+Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect(action="access_rules")` returns a normalized view of persisted ordinary table/column access-rule groups, while `grist_change_structure(action="access_rule_group")` accepts exactly one `create`, `ensure`, `replace` or `delete` intention.
+
+`ensure` requires the existing Owner and document-schema authorization and
+the same typed definition as `create`. It creates an absent group or user
+attribute, reuses an equivalent existing definition, and refuses conflicts
+before writing. Rule order and permissions are part of equivalence. Gia
+rechecks the native ACL snapshot before creation and verifies persisted
+definitions and untargeted state. This does not guarantee compare-and-set
+against external editors or effective native enforcement. Reconcile an
+uncertain native outcome before retrying.
 
 Targets use stable table/column IDs; private ACL resource/rule row IDs remain bridge-internal. Writable conditions are a deliberately small typed subset with no arbitrary literal or formula text: everyone, one native Grist role comparison or a bounded two/three-role `user.Access in/not in` membership, a `user.IsLoggedIn` equality/inequality against a native boolean literal, one same-table record-column comparison with a bounded built-in user property, or one equality/inequality comparison between a stable Text/Any record column and a bounded safe `user.LinkKey.<name>` reference, or a same-column equality/inequality comparison of `rec` and `newRec` for update-only decisions, or a Bool column compared with a native boolean `True`/`False` literal, or an existing Int column compared with the finite numeric flag `0`/`1`, or an existing Text column compared with an exact empty string.  The existing `match_user`, `match_link_key` and Bool-literal `match_boolean` leaves accept an optional `record: "newRec"` to compare the proposed post-change row instead of the current `rec` row. It is valid only for create/update permissions (read/delete must be unspecified). Absence of `record` retains the original `rec` form and normalized shape. These leaves may be combined through finite `all` / `any` / `not` boolean trees; other operand pairs, string/numeric literals and non-role membership forms remain unsupported. LinkKey names are structural policy metadata; LinkKey values and secret-bearing URLs are never accepted or returned. Both native operand orders for the supported LinkKey comparison normalize to the same public `match_link_key` condition, while writes use one canonical formula form. Permissions are explicit `allow|deny|unspecified`; native `S`, `all` and `none` forms are outside the writable subset.
 
@@ -391,7 +684,7 @@ LinkKey values, secret-bearing URLs, raw ACL JSON/formulas or native row IDs are
 model-visible. This is not an evaluation of the native lookup or enforcement.
 The same `grist_change_structure(action="access_rule_group")` also supports a
 closed `target:{userAttributeName:<safe identifier>}` in place of an ordinary
-table/column target. `create` and `replace` require exactly one typed
+table/column target. `create`, `ensure` and `replace` require exactly one typed
 `definition:{tableId,lookupColId,source}`, where source is either
 `{kind:"user_property",property:<bounded native built-in>}` or
 `{kind:"link_key",name:<safe LinkKey name>}`. `delete` accepts no definition.
@@ -535,6 +828,78 @@ The tool-level OAuth security scheme remains the baseline `doc.schema:write`. Te
 All three creation paths are non-idempotent. After a known created ID is returned, Gia invalidates principal-local discovery and verifies that the created document currently resolves inside the requested destination under the same principal and required destination capability. If verification fails, the model-facing result retains `effectState: "APPLIED"`, `postconditionVerified: false`, the exact `createdDocumentId`, and `retryWholeOperation: false`; the operation must not be retried by name or “cleaned up” by guessing. Response loss or an acknowledged mutation whose created ID cannot be normalized remains `UNCERTAIN`; the discovery cache is still invalidated, but Gia does not replay the request automatically.
 
 Template mode removes user-table data, attachment rows/blobs and history according to native Grist behavior, while retaining substantial document metadata. It is therefore a bootstrap primitive, not a privacy scrub or a guarantee that copied application access rules remain operational after referenced data is removed.
+
+## Restart-safe named page construction
+
+`grist_add_ui(action="ensure_page")` reconciles one native page using a
+caller-chosen **unique page name** as the explicit logical key. It requires an
+authorized existing `tableId`, creates an empty native Grist page only when the
+name is absent, and returns the stable page ID. An exact single existing visible
+page is returned without altering its subsequent widgets or navigation; two
+matching names, incomplete/censored UI metadata and changed pre-write state
+fail closed. A new page must be empty, uniquely named, and preserve all earlier
+page identities and UI state on readback. Unverified creation is **uncertain**,
+never automatically retried. The caller must deliberately reserve page names;
+Grist does not persist the input table association on an empty `AddView`, so
+Gia does **not** claim that a pre-existing same-named page was created from the
+same table. This is a small reconciliation primitive, not an application
+planner, transaction, or general uniqueness enforcement under concurrent writers.
+
+## Bounded homogeneous native widget creation
+
+`grist_add_ui(action="ensure_widgets")` reconciles two to eight **distinct**
+ungrouped native section identities on one page, each selected by a stable
+source table ID and native widget type. For each requested identity, exactly
+one existing widget is reused unchanged or a missing widget is created, in
+request order. Duplicate requested identities and ambiguous pre-existing
+matches are refused before writing. Missing widgets are created in a single
+bounded native bundle (one native action when only one is absent); the complete
+post-read checks all original UI, exactly the new widgets, stable identities
+and types. Repeated identical requests are no-ops; partial/uncertain native
+effects require inspection and reconciliation, never blind retries. Multiple
+intentionally duplicated same-table/type sections remain possible using the
+existing explicit `add_widget` operation with caller-owned widget IDs.
+
+`grist_add_ui(action="add_widgets")` creates two to eight ungrouped native
+sections on one existing page, using stable input `{tableId,type}` items and
+the same closed widget types already supported by `add_widget`. It is a single
+bounded Grist native `/apply` bundle of `CreateViewSection` actions, not a
+heterogeneous workflow, summary-table constructor, or generic forwarding API.
+Each native section response and subsequent full UI readback must match its
+input page, stable source table and widget type; all existing page widgets and
+all other pages remain. The response preserves creation order and returns fresh
+stable widget IDs. Repeating the request intentionally creates new sections:
+when a write or verification is uncertain, inspect the current page and
+reconcile by returned IDs before deciding what to create, never replay blindly.
+The existing one-widget `add_widget` remains for summary/group-by creation.
+No extra MCP tool or authorization is introduced.
+
+## Creating native page hierarchy from an empty document
+
+`grist_change_ui(action="nest_page")` accepts an existing stable `pageId` and
+`parentPageId` in the same document. The child must be a visible leaf sibling
+immediately following the complete existing child subtree of the intended
+visible parent, at the same current indentation. This enables new Grist pages
+to be organized as nested navigation after native creation without reordering
+other pages or editing private page record IDs. Grist's native
+`_grist_Pages.indentation` is updated only for that one verified leaf; the
+position, existing parents, visible-page list and special/censored rows must
+remain unchanged. Nested existing children are no-ops. Other nesting shapes,
+invisible/protected pages and depth beyond eight levels fail closed. Fresh
+re-read precedes the write, and the exact normalized native tree, including
+positions, must match postconditions. There is no external atomic CAS; uncertain
+effects require inspection rather than blind replay. This operation changes
+navigation only, not permissions or user records. Ten MCP v2 tools remain.
+
+`grist_change_ui(action="unnest_page")` promotes one *visible, last-leaf*
+nested page to the indentation of its current parent. It accepts only its stable
+`pageId`; page position is not changed, and no other page, parent relation or
+visibility may change. A root page is an idempotent no-op. Non-last children,
+pages with descendants, protected ancestors and incomplete native trees fail
+closed. A fresh pre-write snapshot and exact post-read protect concurrent
+edits; an uncertain effect requires inspection before retry. This is the
+bounded inverse of leaf nesting, not an arbitrary page-move or raw metadata
+operation.
 
 ## Safety invariants
 

@@ -80,6 +80,163 @@ function service(
   };
 }
 
+test("ensure_columns creates only missing seeds and preserves later columns",async()=>{
+  const existing=new Map<string,{ref:number;type:string}>([
+    ["Name",{ref:20,type:"Text"}],
+    ["Custom",{ref:21,type:"Int"}]
+  ]);
+  let writes=0;
+  const specs=[
+    {id:"Name",fields:{type:"Text"}},
+    {id:"StartDate",fields:{type:"Date"}}
+  ];
+  const {grist}=service(1000,100,2,20,{
+    listColumns:async()=>({columns:[...existing].map(([id,meta])=>({
+      id,fields:{colRef:meta.ref,type:meta.type}
+    }))}),
+    createColumns:async(_doc:string,_table:string,missing:typeof specs)=>{
+      writes++;
+      assert.deepEqual(missing,[specs[1]]);
+      existing.set("StartDate",{ref:22,type:"Date"});
+      return {columns:[{id:"StartDate"}]};
+    }
+  });
+  const first=await grist.ensureColumns("doc","Stage",specs) as Record<string,unknown>;
+  assert.equal(first.changed,true);assert.equal(first.persistedSchemaVerified,true);
+  assert.deepEqual(first.columns,[{id:"Name",created:false},{id:"StartDate",created:true}]);
+  const second=await grist.ensureColumns("doc","Stage",specs) as Record<string,unknown>;
+  assert.equal(second.changed,false);assert.equal(writes,1);
+  await assert.rejects(()=>grist.ensureColumns("doc","Stage",[
+    {id:"Name",fields:{type:"Bool"}},
+    {id:"MustNotExist",fields:{type:"Text"}}
+  ]),/conflicts/);
+  assert.equal(writes,1);assert.equal(existing.has("MustNotExist"),false);
+});
+
+test("ensure_columns fails closed on invalid and ambiguous seeds",async()=>{
+  let writes=0,reads=0;
+  const {grist}=service(1000,100,2,20,{
+    listColumns:async()=>{reads++;return {columns:[]};},
+    createColumns:async()=>{writes++;return {columns:[{id:"Flag"}]};}
+  });
+  const invalid=[
+    [{id:"Flag",fields:{type:"Silly"}}],
+    [{id:"Flag",fields:{type:"Bool",label:"extra"}}],
+    [{id:"Flag"}],
+    [{id:"Flag",fields:{type:"Bool"}},{id:"Flag",fields:{type:"Int"}}]
+  ];
+  for(const specs of invalid){
+    await assert.rejects(()=>grist.ensureColumns("doc","Stage",specs),
+      /type|Column IDs/);
+  }
+  assert.equal(reads,0);assert.equal(writes,0);
+  await assert.rejects(()=>grist.ensureColumns("doc","Stage",[
+    {id:"Flag",fields:{type:"Bool"}}
+  ]),/do not retry.*blindly/);
+  assert.equal(writes,1);
+  const ambiguous=service(1000,100,2,20,{
+    listColumns:async()=>({columns:[{
+      id:"Existing",fields:{colRef:0,type:"Text"}
+    }]}),
+    createColumns:async()=>{writes++;return {columns:[{id:"Flag"}]};}
+  });
+  await assert.rejects(()=>ambiguous.grist.ensureColumns("doc","Stage",[
+    {id:"Flag",fields:{type:"Bool"}}
+  ]),/identity\/type/);
+  assert.equal(writes,1);
+});
+
+test("ensure_columns creates and reuses formula seeds without changing prior state", async () => {
+  const stored=new Map<string,{ref:number;type:string;isFormula:boolean;formula:string}>([
+    ["Base",{ref:30,type:"Numeric",isFormula:false,formula:""}]
+  ]);
+  const input=[{id:"Double",fields:{type:"Any",isFormula:true,formula:"$Base * 2"}}];
+  let writes=0;
+  const {grist}=service(1000,100,2,20,{
+    listColumns:async()=>({columns:[...stored].map(([id,meta])=>({
+      id,fields:{colRef:meta.ref,type:meta.type,isFormula:meta.isFormula,formula:meta.formula}
+    }))}),
+    createColumns:async(_doc:string,_table:string,missing:typeof input)=>{
+      writes++;assert.deepEqual(missing,input);
+      stored.set("Double",{ref:31,type:"Any",isFormula:true,formula:"$Base * 2"});
+      return {columns:[{id:"Double"}]};
+    }
+  });
+  const made=await grist.ensureColumns("doc","Stage",input) as {
+    changed:boolean;persistedSchemaVerified:boolean;columns:Array<{id:string;created:boolean}>
+  };
+  assert(made.changed&&made.persistedSchemaVerified);
+  assert.deepEqual(made.columns,[{id:"Double",created:true}]);
+  const repeated=await grist.ensureColumns("doc","Stage",input) as {changed:boolean};
+  assert.equal(repeated.changed,false);assert.equal(writes,1);
+  await assert.rejects(()=>grist.ensureColumns("doc","Stage",[
+    {id:"Double",fields:{type:"Any",isFormula:true,formula:"$Base * 3"}},
+    {id:"MustNotCreate",fields:{type:"Numeric"}}
+  ]),/conflicts/);
+  // A legacy type-only seed checks the native type but does not assert formula intent.
+  const typeOnly=await grist.ensureColumns("doc","Stage",[
+    {id:"Double",fields:{type:"Any"}}
+  ]) as {changed:boolean};
+  assert.equal(typeOnly.changed,false);
+  assert.equal(stored.has("MustNotCreate"),false);assert.equal(writes,1);
+});
+
+test("ensure_columns explicitly seeds non-formula Choice and refuses formula conflicts", async () => {
+  const stored=new Map<string,{ref:number;type:string;isFormula:boolean;formula:string}>([
+    ["Computed",{ref:30,type:"Choice",isFormula:true,formula:"'A'"}]
+  ]);
+  const writable=[{id:"Status",fields:{type:"Choice",isFormula:false}}];
+  let writes=0;
+  const {grist}=service(1000,100,2,20,{
+    listColumns:async()=>({columns:[...stored].map(([id,fields])=>({
+      id,fields:{colRef:fields.ref,type:fields.type,isFormula:fields.isFormula,
+        formula:fields.formula}
+    }))}),
+    createColumns:async(_doc:string,_table:string,missing:typeof writable)=>{
+      writes++;assert.deepEqual(missing,writable);
+      stored.set("Status",{ref:31,type:"Choice",isFormula:false,formula:""});
+      return {columns:[{id:"Status"}]};
+    }
+  });
+  const first=await grist.ensureColumns("doc","Stages",writable) as {
+    changed:boolean;persistedSchemaVerified:boolean
+  };
+  assert.equal(first.changed,true);assert.equal(first.persistedSchemaVerified,true);
+  const replay=await grist.ensureColumns("doc","Stages",writable) as {changed:boolean};
+  assert.equal(replay.changed,false);assert.equal(writes,1);
+  await assert.rejects(()=>grist.ensureColumns("doc","Stages",[
+    {id:"Computed",fields:{type:"Choice",isFormula:false}},
+    {id:"Missing",fields:{type:"Text"}}
+  ]),/conflicts/);
+  assert.equal(writes,1);assert.equal(stored.has("Missing"),false);
+  const legacy=await grist.ensureColumns("doc","Stages",[
+    {id:"Computed",fields:{type:"Choice"}}
+  ]) as {changed:boolean};
+  assert.equal(legacy.changed,false);
+});
+
+test("ensure_columns refuses missing and malformed formula seeds before native reads", async () => {
+  let reads=0,writes=0;
+  const {grist}=service(1000,100,2,20,{
+    listColumns:async()=>{reads++;return {columns:[]};},
+    createColumns:async()=>{writes++;return {columns:[]};}
+  });
+  for(const fields of [
+    {type:"Numeric",isFormula:true},
+    {type:"Numeric",isFormula:true,formula:""},
+    {type:"Numeric",isFormula:true,formula:"   "},
+    {type:"Numeric",isFormula:true,formula:"a".repeat(4097)},
+    {type:"Numeric",isFormula:false,formula:"$Base"},
+    {type:"Numeric",isFormula:false,widgetOptions:"{}"},
+    {type:"Numeric",isFormula:true,formula:"$Base",label:"unrelated"}
+  ]) {
+    await assert.rejects(()=>grist.ensureColumns("doc","Stage",[
+      {id:"Computed",fields}
+    ]),/type|formula/);
+  }
+  assert.equal(reads,0);assert.equal(writes,0);
+});
+
 test("service forwards richer read options and enforces configured maximum", async () => {
   const { grist, observed } = service(1000, 100);
   await grist.queryRecords("doc", "Table1", {
@@ -299,4 +456,94 @@ test("column creation refuses ignored native metadata before any table or column
     { action: "createTables", documentId: "doc", tables: [{ id: "Created", columns: [good] }] },
     { action: "createColumns", documentId: "doc", tableId: "People", columns: [good] }
   ]);
+});
+
+
+test("ensure_tables reconciles typed seeds and ignores later extra columns",async()=>{
+  const spec=[{id:"Stages",columns:[{id:"Contact",fields:{type:"DateTime:UTC"}}]},
+    {id:"Enseignants",columns:[{id:"Nom",fields:{type:"Text"}},
+      {id:"Contrats",fields:{type:"Attachments"}}, {id:"Identite",fields:{type:"Any"}}]}];
+  let calls=0;
+  const data=new Map<string,{ref:number;columns:Array<{id:string;fields:{colRef:number;type:string}}>}>(
+    [["Stages",{ref:2,columns:[{id:"Contact",fields:{colRef:20,type:"DateTime:UTC"}},
+      {id:"Extra",fields:{colRef:21,type:"Text"}}]}]]
+  );
+  const {grist}=service(1000,100,2,20,{
+    listTables:async()=>({tables:Array.from(data,([id,t])=>({
+      id,fields:{tableRef:t.ref},columns:t.columns
+    }))}),
+    createTables:async(_id:string,missing:typeof spec)=>{
+      calls++;assert.deepEqual(missing.map(t=>t.id),["Enseignants"]);
+      data.set("Enseignants",{ref:3,columns:[{id:"Nom",fields:{colRef:30,type:"Text"}},
+        {id:"Contrats",fields:{colRef:31,type:"Attachments"}},
+        {id:"Identite",fields:{colRef:32,type:"Any"}}]});
+      return {tables:[{id:"Enseignants"}]};
+    }
+  });
+  const first=await grist.ensureTables("doc",spec) as Record<string,unknown>;
+  assert.equal(first.changed,true);
+  assert.equal(first.persistedSchemaVerified,true);
+  assert.deepEqual(first.tables,[{id:"Stages",created:false},{id:"Enseignants",created:true}]);
+  const second=await grist.ensureTables("doc",spec) as Record<string,unknown>;
+  assert.equal(second.changed,false);assert.equal(calls,1);
+  await assert.rejects(()=>grist.ensureTables("doc",[
+    {id:"Stages",columns:[{id:"Contact",fields:{type:"DateTime:Europe/Paris"}}]},
+    {id:"Other",columns:[{id:"Name",fields:{type:"Text"}}]}
+  ]),/conflicting/);
+  assert.equal(calls,1);
+});
+
+
+test("ensure_tables makes writable initial data columns and rejects formula collisions",async()=>{
+  const spec=[{id:"Classes",columns:[{id:"Code",fields:{type:"Text",isFormula:false}}]}];
+  let writes=0,formula=false;
+  const {grist}=service(1000,100,2,20,{
+    listTables:async()=>({tables:writes?[{id:"Classes",fields:{tableRef:10},
+      columns:[{id:"Code",fields:{colRef:11,type:"Text",isFormula:formula}}]}]:[]}),
+    createTables:async(_doc:string,missing:typeof spec)=>{
+      writes++;assert.deepEqual(missing,spec);
+      return {tables:[{id:"Classes"}]};
+    }
+  });
+  const first=await grist.ensureTables("doc",spec) as Record<string,unknown>;
+  assert.equal(first.changed,true);assert.equal(first.persistedSchemaVerified,true);
+  const replay=await grist.ensureTables("doc",spec) as Record<string,unknown>;
+  assert.equal(replay.changed,false);assert.equal(writes,1);
+  formula=true;
+  await assert.rejects(()=>grist.ensureTables("doc",[
+    ...spec,{id:"Other",columns:[{id:"Name",fields:{type:"Text"}}]}
+  ]),/conflicting/);
+  assert.equal(writes,1);
+});
+
+test("ensure_tables validates the complete batch before writes and fails closed on uncertain state",async()=>{
+  let writes=0,reads=0;
+  const {grist}=service(1000,100,2,10,{
+    listTables:async()=>{reads++;return {tables:[]};},
+    createTables:async()=>{writes++;return {tables:[{id:"Stages"}]};}
+  });
+  for(const malformed of [
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Invalid"}}]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"DateTime:America/New_York"}}]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Attachments:unsafe"}}]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Date",label:"Extra"}}]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Date",isFormula:true}}]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Date",isFormula:false,formula:"0"}}]}],
+    [{id:"Stages",columns:[]}],
+    [{id:"Stages",columns:[{id:"Date",fields:{type:"Date"}}]},
+      {id:"Stages",columns:[{id:"Name",fields:{type:"Text"}}]}]
+  ]){
+    await assert.rejects(()=>grist.ensureTables("doc",malformed),/type|column|Table IDs|needs/);
+  }
+  assert.equal(reads,0);assert.equal(writes,0);
+  const valid=[{id:"Stages",columns:[{id:"Date",fields:{type:"Date"}}]}];
+  await assert.rejects(()=>grist.ensureTables("doc",valid),/do not retry.*blindly/);
+  assert.equal(writes,1);
+  const bad=service(1000,100,2,10,{
+    listTables:async()=>({tables:[{id:"Other",fields:{tableRef:1},
+      columns:[{id:"Name",fields:{type:"Text",colRef:0}}]}]}),
+    createTables:async()=>{writes++;return {tables:[{id:"Stages"}]};}
+  });
+  await assert.rejects(()=>bad.grist.ensureTables("doc",valid),/identity|metadata/);
+  assert.equal(writes,1);
 });

@@ -109,11 +109,13 @@ resource after the fresh Owner proof, as a closed structural projection with
 validated existing table/column IDs and safe built-in user-property or LinkKey
 **names**. The projection excludes values, raw definition JSON, formulas,
 LinkKey tokens and URLs. Unknown, malformed, misplaced or duplicate-name
-definitions remain protected. A separately bounded typed create/replace/delete
+definitions remain protected. A separately bounded typed create/ensure/replace/delete
 target in the existing access_rule_group action requires fresh Owner proof and
 local doc.schema:write, refuses all native user-attribute writes whenever any
 definition is opaque/ambiguous, rejects reserved names and missing stable
 lookup columns, and never accepts raw JSON or arbitrary user properties.
+Ensure creates an absent definition, reuses an equivalent one and refuses
+conflicts. A fresh native ACL snapshot guards creation against stale state.
 Deletion and non-noop replacement refuse existing native ACL dependencies,
 including opaque or noncanonical predicate forms. Typed `match_user_attribute`
 ACL leaves accept only existing structurally verified attribute/field names
@@ -230,6 +232,14 @@ access privileges remain unchanged.
 Hidden fields and saved filters are presentation state. A generated summary
 table has its own native policy. Native roles, sharing and credential
 administration remain in Grist and its deployment.
+
+A same-document Form link requires explicit confirmation and native Owner
+proof. Only the fixed Grist document-open and share-lookup messages are used.
+The socket is constrained to a server-advertised worker on the configured
+origin. The returned home share must match the exact native document and
+document-local link identity. Gia verifies the public Form without credentials
+before persisting the link and protects it in model-facing projections. No
+raw share replies, credentials or public capability keys enter tool results.
 
 ## Document bootstrap
 

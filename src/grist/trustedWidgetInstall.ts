@@ -93,3 +93,50 @@ export function planTrustedWidgetInstall(
   if(optionsJson.length>8192)throw new Error("Trusted widget exceeds native size limit.");
   return {changed:true,options,optionsJson};
 }
+
+/** Replace an approved immutable revision with another approved revision of the
+ * SAME widget, while access and all data-bearing settings are still blank. */
+export function planTrustedWidgetRevisionUpdate(
+  widget: {type:string;options?:unknown},
+  previous: TrustedWidget, next: TrustedWidget
+): {changed:boolean;options:Json;optionsJson:string} {
+  if (widget.type !== "custom" || previous.widgetId !== next.widgetId) {
+    throw new Error("Trusted widget revision requires an existing Custom widget of the same identity.");
+  }
+  const slot = (item: TrustedWidget): string => {
+    const u = new URL(item.url);
+    const path = u.pathname.split("/").map(part =>
+      part === item.revision ? ":revision" :
+        part.startsWith(item.revision + ".") ? ":revision" + part.slice(item.revision.length) : part
+    ).join("/");
+    return u.origin + path;
+  };
+  if (slot(previous) !== slot(next) ||
+      (previous.revision === next.revision && previous.url !== next.url)) {
+    throw new Error("Trusted widget revision must preserve the approved origin and asset path.");
+  }
+  const outer = obj(widget.options), old = customViewOptions(outer);
+  if (!outer || !old) throw new Error("Native custom widget options are incomplete.");
+  const def = (item: TrustedWidget) => ({
+    name:item.name,widgetId:item.widgetId,url:item.url,
+    accessLevel:"none",renderAfterReady:false
+  });
+  if (old.widgetId !== previous.widgetId ||
+      (old.access !== "none" && old.access !== undefined) ||
+      old.url != null || (old.pluginId != null && old.pluginId !== "") ||
+      old.columnsMapping != null || old.widgetOptions != null ||
+      old.renderAfterReady !== false) {
+    throw new Error("Trusted revision replacement requires zero access and empty widget state.");
+  }
+  const current = old.widgetDef;
+  if (isDeepStrictEqual(current,def(next))) {
+    return {changed:false,options:outer,optionsJson:JSON.stringify(outer)};
+  }
+  if (!isDeepStrictEqual(current,def(previous))) {
+    throw new Error("Current widget revision does not match the exact approved source.");
+  }
+  const options:Json = {...outer,customView:JSON.stringify({...old,widgetDef:def(next)})};
+  const optionsJson=JSON.stringify(options);
+  if (optionsJson.length>8192)throw new Error("Trusted widget revision exceeds native size limit.");
+  return {changed:true,options,optionsJson};
+}

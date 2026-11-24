@@ -283,3 +283,51 @@ test("a freshly created native blank custom widget accepts bounded settings", as
   assert.deepEqual(JSON.parse(currentOptions().customView as string), { access: "none", columnsMapping: { title: 11 } });
   assert.deepEqual(result.widget.customWidgetSettings, { access: "none", columnsMapping: { title: "Name" } });
 });
+
+
+test("widget option reset requires native Owner and persists only the reset", async () => {
+  const denied = harness(true, undefined, false);
+  await assert.rejects(denied.service.updatePageWidget("doc-1", 7, 21, {
+    customWidgetSettings: { resetWidgetOptions: true }
+  }), /Native Grist Owner required/);
+  assert.equal(denied.writes.length, 0);
+
+  const permitted = harness();
+  await permitted.service.updatePageWidget("doc-1", 7, 21, {
+    customWidgetSettings: { resetWidgetOptions: true }
+  });
+  assert.equal(permitted.writes.length, 1);
+  const outer = permitted.currentOptions();
+  const inner = JSON.parse(outer.customView as string);
+  assert.equal(inner.widgetOptions, null);
+  assert.equal(inner.access, "none");
+  assert.equal(inner.url, PRIVATE_URL);
+  assert.equal(inner.widgetId, "@example/widget");
+  assert.deepEqual(inner.columnsMapping, { title: 11 });
+  assert.deepEqual(outer.unrelated, { keep: true });
+});
+
+test("MCP update_widget carries Owner-gated reset intent through normalization", async () => {
+  const { service, currentOptions, writes } = harness();
+  const callbacks = new Map<string, (input: any) => Promise<any>>();
+  const server = {
+    registerTool: (name: string, _options: unknown, callback: (input: any) => Promise<any>) => {
+      callbacks.set(name, callback);
+      return {};
+    }
+  } as unknown as McpServer;
+  registerLeanTools(server, service, {
+    maxReadRecords: 200, maxWriteRecords: 50, maxSchemaItems: 100
+  });
+  const reply = await callbacks.get("grist_change_ui")!({
+    action: "update_widget", documentId: "doc-1", pageId: 7, widgetId: 21,
+    update: { customWidgetSettings: { resetWidgetOptions: true } }
+  });
+  assert.equal(reply.isError, undefined, JSON.stringify(reply));
+  assert.equal(writes.length, 1);
+  const native = JSON.parse(currentOptions().customView as string);
+  assert.equal(native.widgetOptions, null);
+  assert.equal(native.widgetId, "@example/widget");
+  assert.equal(native.url, PRIVATE_URL);
+  assert.equal(JSON.stringify(reply).includes("synthetic-secret-marker"), false);
+});

@@ -24,12 +24,19 @@ function readNativeShareOptions(value: unknown): ShareOptions {
   return raw as ShareOptions;
 }
 
-/** Native Forms are public only when their page points to an active native _grist_Shares
- * row as well as the section flags. Never return the share's secret linkId. */
 export function readNativeFormPageShare(
   pagesResponse: unknown, sharesResponse: unknown,
   pageRecordId: number, pageId: number, limit: number
 ): "missing" | "published" {
+  return readNativeFormPageLinkId(pagesResponse, sharesResponse, pageRecordId, pageId, limit)
+    === undefined ? "missing" : "published";
+}
+
+/** Resolve the private, document-local linkId. The public Share.key is a different value. */
+export function readNativeFormPageLinkId(
+  pagesResponse: unknown, sharesResponse: unknown,
+  pageRecordId: number, pageId: number, limit: number
+): string | undefined {
   const records = (response: unknown, label: string) => {
     const root = response !== null && typeof response === "object" && !Array.isArray(response)
       ? response as JsonRecord : undefined;
@@ -63,7 +70,7 @@ export function readNativeFormPageShare(
     throw new Error("Native Form page share reference is malformed.");
   }
   const shares = records(sharesResponse, "share");
-  if (shareRef === 0) return "missing";
+  if (shareRef === 0) return undefined;
   if (pages.some(page => page.id !== pageRecordId && page.fields.shareRef === shareRef)) {
     throw new Error("Native Form page share is reused by another page.");
   }
@@ -83,23 +90,25 @@ export function readNativeFormPageShare(
       (parsed as JsonRecord).publish !== true) {
     throw new Error("Existing native Form share requires separate, explicitly bounded handling.");
   }
-  return "published";
+  if (shares.some(row => row.id !== shareRef && row.fields.linkId === share.fields.linkId)) {
+    throw new Error("Native Form page link identity is ambiguous.");
+  }
+  return share.fields.linkId;
 }
 
-/** Resolve a private share key only from a verified same-document published Form. */
-export function resolvePublishedFormRelativePath(
-  pages: unknown, shares: unknown, pageRecordId: number, pageId: number,
-  formWidgetId: number, limit: number
-): string {
-  if (!Number.isInteger(formWidgetId) || formWidgetId < 1 ||
-      readNativeFormPageShare(pages, shares, pageRecordId, pageId, limit) !== "published") {
-    throw new Error("Form link target must be a verified published native Form.");
+/** Turn off one native Form's publication flag without altering its existing page share.
+ * This does not attest revocation of Grist's separate public home-db share key. */
+export function planFormUnpublication(raw: unknown): {
+  shareOptions: string; changed: boolean;
+} {
+  const before = readNativeShareOptions(raw);
+  if (before.form !== true || typeof before.publish !== "boolean") {
+    throw new Error("Only an explicitly configured native Form can be unpublished.");
   }
-  const pageRows = (pages as {records:Array<{id:number;fields:{viewRef:number;shareRef:number}}>}).records;
-  const shareRows = (shares as {records:Array<{id:number;fields:{linkId:string}}>}).records;
-  const ref = pageRows.find(row => row.id === pageRecordId && row.fields.viewRef === pageId)!.fields.shareRef;
-  const key = shareRows.find(row => row.id === ref)!.fields.linkId;
-  return "/forms/" + key + "/" + formWidgetId;
+  return {
+    shareOptions: JSON.stringify({ form: true, publish: false }),
+    changed: before.publish
+  };
 }
 
 /** Only a separately confirmed, Owner-gated publication intention is writable. */

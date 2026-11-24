@@ -91,6 +91,9 @@ const documentIdSchema = z.string().trim().min(1);
 const tableIdSchema = z.string().trim().min(1);
 const columnIdSchema = z.string().trim().min(1);
 const positiveIdSchema = z.number().int().positive();
+const groupByColumnIdsSchema = z.array(columnIdSchema)
+  .max(MAX_SUMMARY_GROUP_BY_COLUMNS)
+  .refine(ids => new Set(ids).size === ids.length, "Summary group-by column IDs must be unique.");
 const accessPermissionValueSchema = z.enum(["allow", "deny", "unspecified"]);
 const accessRuleLinkKeyNameSchema = z
   .string()
@@ -354,13 +357,20 @@ const customWidgetSettingsUpdateSchema = z
     access: z.enum(["none", "read table", "full"]).optional(),
     confirmDataAccess: z.literal(true).optional(),
     columnsMapping: customWidgetColumnsMappingSchema.nullable().optional(),
-    optionsPatch: dictionarySchema(customWidgetOptionValue, 1).optional()
+    optionsPatch: dictionarySchema(customWidgetOptionValue, 1).optional(),
+    resetWidgetOptions: z.literal(true).optional()
   })
   .strict()
   .refine(
     (value) => value.access !== undefined || value.columnsMapping !== undefined ||
-      value.optionsPatch !== undefined,
-    "At least one of access, columnsMapping or optionsPatch must be supplied."
+      value.optionsPatch !== undefined || value.resetWidgetOptions === true,
+    "At least one of access, columnsMapping, optionsPatch or resetWidgetOptions must be supplied."
+  )
+  .refine(
+    (value) => value.resetWidgetOptions !== true ||
+      (value.optionsPatch === undefined &&
+        (value.access === undefined || value.access === "none")),
+    "Widget option reset cannot be combined with a patch or a data access grant."
   )
   .refine(
     (value) => value.access === undefined || value.access === "none" ||
@@ -620,6 +630,9 @@ function normalizeWidgetUpdate(
               : {}),
             ...(update.customWidgetSettings.optionsPatch !== undefined
               ? { optionsPatch: update.customWidgetSettings.optionsPatch }
+              : {}),
+            ...(update.customWidgetSettings.resetWidgetOptions === true
+              ? { resetWidgetOptions: true as const }
               : {})
           }
         }
@@ -720,6 +733,18 @@ export function registerLeanTools(
   const tableSpecSchema = z.object({
     id: tableIdSchema,
     columns: boundedArray(columnSpecSchema, limits.maxSchemaItems)
+  }).strict();
+  const seedColumnType = z.union([
+    z.enum(["Any", "Text", "Numeric", "Int", "Bool", "Date", "Attachments", "Choice", "ChoiceList"]),
+    z.enum(["DateTime:UTC", "DateTime:Europe/Paris"]),
+    z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
+  ]);
+  const tableSeedSchema=z.object({
+    id:tableIdSchema,
+    columns:boundedArray(z.object({
+      id:columnIdSchema,
+      fields:z.object({type:seedColumnType,isFormula:z.literal(false).optional()}).strict()
+    }).strict(),limits.maxSchemaItems)
   }).strict();
   const tableUpdateSchema = z.object({
     id: tableIdSchema,
@@ -891,17 +916,44 @@ export function registerLeanTools(
     "grist_add_records",
     {
       ...getLeanToolMetadata("grist_add_records"),
-      inputSchema: z
-        .object({
+      inputSchema: z.union([
+        z.object({
           documentId: documentIdSchema,
           tableId: tableIdSchema,
           records: boundedArray(newRecordSchema, limits.maxWriteRecords)
-        })
-        .strict()
+        }).strict(),
+        z.object({
+          action: z.literal("ensure_record"),
+          documentId: documentIdSchema,
+          tableId: tableIdSchema,
+          keyColumnId: columnIdSchema,
+          record: newRecordSchema
+        }).strict(),
+        z.object({
+          action: z.literal("ensure_records"),
+          documentId: documentIdSchema,
+          tableId: tableIdSchema,
+          keyColumnId: columnIdSchema,
+          records: boundedArray(newRecordSchema, Math.min(16, limits.maxWriteRecords))
+            .min(2)
+        }).strict()
+      ])
     },
-    async ({ documentId, tableId, records }) => {
+    async (input) => {
       try {
-        return textResult(await grist.createRecords(documentId, tableId, records));
+        if ("action" in input) {
+          if (input.action === "ensure_records") {
+            return textResult(await grist.ensureRecords(
+              input.documentId, input.tableId, input.keyColumnId, input.records
+            ));
+          }
+          return textResult(await grist.ensureRecord(
+            input.documentId, input.tableId, input.keyColumnId, input.record
+          ));
+        }
+        return textResult(await grist.createRecords(
+          input.documentId, input.tableId, input.records
+        ));
       } catch (error) {
         return errorResult(error);
       }
@@ -1000,6 +1052,33 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("ensure_tables"),
+            documentId: documentIdSchema,
+            tables: boundedArray(tableSeedSchema,limits.maxSchemaItems)
+          }).strict(),
+        z
+          .object({
+            action: z.literal("ensure_columns"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columns: boundedArray(z.object({
+              id: columnIdSchema,
+              fields: z.union([
+                z.object({type: seedColumnType}).strict(),
+                z.object({
+                  type: seedColumnType,
+                  isFormula: z.literal(false)
+                }).strict(),
+                z.object({
+                  type: seedColumnType,
+                  isFormula: z.literal(true),
+                  formula: z.string().min(1).max(4096)
+                    .refine(value=>value.trim().length>0,"Nonempty Grist formula required.")
+                }).strict()
+              ])
+            }).strict(),limits.maxSchemaItems)
+          }).strict(),
+        z.object({
             action: z.literal("create_columns"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1036,6 +1115,12 @@ export function registerLeanTools(
             return textResult(
               await grist.createTables(input.documentId, input.tables)
             );
+          case "ensure_tables":
+            return textResult(await grist.ensureTables(input.documentId,input.tables));
+          case "ensure_columns":
+            return textResult(await grist.ensureColumns(
+              input.documentId,input.tableId,input.columns
+            ));
           case "create_columns":
             return textResult(
               await grist.createColumns(
@@ -1085,6 +1170,52 @@ export function registerLeanTools(
             columns: boundedArray(columnUpdateSchema, limits.maxSchemaItems)
           })
           .strict(),
+        z
+          .object({
+            action: z.literal("replace_column_formula"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            formula: z.string().min(1).max(4096)
+              .refine(v => Boolean(v.trim()) && !v.includes(String.fromCharCode(0)),
+                "Nonempty bounded Grist formula.")
+          }).strict(),
+        z.object({
+            action: z.literal("append_choice_options"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            values: z.array(z.string().min(1).max(120)
+              .refine(value => value.trim() === value &&
+                !/[\u0000-\u001f\u007f]/.test(value), "Plain bounded labels only."))
+              .min(1).max(64)
+              .refine(values => new Set(values).size === values.length, "Choice labels must be unique.")
+          }).strict(),
+        z
+          .object({
+            action: z.literal("reorder_choice_options"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            orderedLabels: z.array(z.string().min(1).max(120)
+              .refine(value => value.trim() === value &&
+                !/[\u0000-\u001f\u007f]/.test(value), "Plain bounded labels only."))
+              .min(2).max(64)
+              .refine(values => new Set(values).size === values.length,
+                "Reordering requires distinct choice labels.")
+          }).strict(),
+        z
+          .object({
+            action: z.literal("set_choice_colors"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            label: z.string().min(1).max(120),
+            colors: z.object({
+              fillColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+              textColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional()
+            }).strict().refine(value => Object.keys(value).length > 0, "At least one color required.")
+          }).strict(),
         z
           .object({
             action: z.literal("update_dropdown_condition"),
@@ -1144,6 +1275,82 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("reorder_column_style_rules"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            columnId: columnIdSchema,
+            orderedFormulas: z.array(z.string().min(1).max(4096)).min(2).max(8)
+              .refine(value => new Set(value).size === value.length,
+                "Column-style formulas must be unique.")
+          })
+          .strict(),
+        z.object({
+          action: z.literal("remove_column_style_rule"),
+          documentId: documentIdSchema,
+          tableId: tableIdSchema,
+          columnId: columnIdSchema,
+          conditionFormula: z.string().min(1).max(4096),
+          confirmRemoveRule: z.literal(true)
+        }).strict(),
+        z.object({
+          action: z.literal("remove_row_style_rule"),
+          documentId: documentIdSchema,
+          tableId: tableIdSchema,
+          conditionFormula: z.string().min(1).max(4096),
+          confirmRemoveRule: z.literal(true)
+        }).strict(),
+        z
+          .object({
+            action: z.literal("reorder_row_style_rules"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            orderedFormulas: z.array(z.string().min(1).max(4096)).min(2).max(8)
+              .refine(value => new Set(value).size === value.length,
+                "Row-style formulas must be unique.")
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal("update_row_style_rule"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            conditionFormula: z.string().min(1).max(4096),
+            style: z.object({
+              fillColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
+              textColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional()
+            }).strict().refine(value => Object.keys(value).length > 0, "Supply at least one color.")
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal("replace_row_style_formula"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            previousFormula: z.string().min(1).max(4096),
+            conditionFormula: z.string().min(1).max(4096)
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal("change_document_user_role"),
+            documentId: documentIdSchema,
+            email: z.string().min(6).max(280),
+            expectedRole: z.enum(["viewers", "editors"]),
+            role: z.enum(["viewers", "editors"]),
+            confirmRoleChange: z.literal(true)
+          })
+          .strict(),
+        z
+          .object({
+            action: z.literal("revoke_document_user"),
+            documentId: documentIdSchema,
+            email: z.string().min(6).max(280),
+            expectedRole: z.enum(["viewers", "editors"]),
+            confirmRevocation: z.literal(true)
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_form_column_options"),
             documentId: documentIdSchema,
             tableId: tableIdSchema,
@@ -1198,7 +1405,7 @@ export function registerLeanTools(
           .object({
             action: z.literal("access_rule_group"),
             documentId: documentIdSchema,
-            mode: z.enum(["create", "replace", "delete"]),
+            mode: z.enum(["create", "ensure", "replace", "delete"]),
             target: z.union([accessRuleTargetSchema, accessUserAttributeTargetSchema]),
             rules: z.array(accessRuleSchema).min(1).max(MAX_ACCESS_RULES_PER_GROUP).optional(),
             definition: accessUserAttributeDefinitionSchema.optional()
@@ -1242,6 +1449,22 @@ export function registerLeanTools(
                 input.columns
               )
             );
+          case "replace_column_formula":
+            return textResult(await grist.replaceColumnFormula(
+              input.documentId, input.tableId, input.columnId, input.formula
+            ));
+          case "append_choice_options":
+            return textResult(await grist.appendChoiceOptions(
+              input.documentId, input.tableId, input.columnId, input.values
+            ));
+          case "reorder_choice_options":
+            return textResult(await grist.reorderChoiceOptions(
+              input.documentId, input.tableId, input.columnId, input.orderedLabels
+            ));
+          case "set_choice_colors":
+            return textResult(await grist.setChoiceColors(
+              input.documentId, input.tableId, input.columnId, input.label, input.colors
+            ));
           case "update_dropdown_condition":
             return textResult(await grist.updateDropdownCondition(
               input.documentId, input.tableId, input.columnId, input.condition
@@ -1269,6 +1492,34 @@ export function registerLeanTools(
                 conditionFormula: input.conditionFormula, style: input.style
               }
             ));
+          case "reorder_column_style_rules":
+            return textResult(await grist.reorderColumnStyleRules(
+              input.documentId, input.tableId, input.columnId, input.orderedFormulas
+            ));
+          case "remove_column_style_rule":
+            return textResult(await grist.removeColumnStyleRule(
+              input.documentId, input.tableId, input.columnId,
+              input.conditionFormula, input.confirmRemoveRule
+            ));
+          case "remove_row_style_rule":
+            return textResult(await grist.removeRowStyleRule(
+              input.documentId, input.tableId, input.conditionFormula, input.confirmRemoveRule
+            ));
+          case "reorder_row_style_rules":
+            return textResult(await grist.reorderRowStyleRules(
+              input.documentId, input.tableId, input.orderedFormulas
+            ));
+          case "update_row_style_rule":
+            return textResult(await grist.updateRowStyleRule(
+              input.documentId, input.tableId, {
+                conditionFormula: input.conditionFormula, style: input.style
+              }
+            ));
+          case "replace_row_style_formula":
+            return textResult(await grist.replaceRowStyleFormula(
+              input.documentId, input.tableId,
+              input.previousFormula, input.conditionFormula
+            ));
           case "update_form_column_options":
             return textResult(await grist.updateFormColumnOptions(
               input.documentId, input.tableId, input.columnId, input.update
@@ -1293,6 +1544,14 @@ export function registerLeanTools(
           case "ensure_owner_schema_guard":
             return textResult(await grist.ensureOwnerSchemaGuard(
               input.documentId, input.confirmSchemaRestriction
+            ));
+          case "change_document_user_role":
+            return textResult(await grist.changeDocumentUserRole(
+              input.documentId, input.email, input.expectedRole, input.role, input.confirmRoleChange
+            ));
+          case "revoke_document_user":
+            return textResult(await grist.revokeDocumentUser(
+              input.documentId, input.email, input.expectedRole, input.confirmRevocation
             ));
           case "grant_document_user":
             return textResult(await grist.grantDocumentUser(
@@ -1330,21 +1589,50 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("ensure_page"),
+            documentId: documentIdSchema,
+            tableId: tableIdSchema,
+            name: z.string().trim().min(1).max(128)
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("add_widget"),
             documentId: documentIdSchema,
             pageId: positiveIdSchema,
             tableId: tableIdSchema,
             type: z.enum(NATIVE_WIDGET_TYPES),
-            groupByColumnIds: z
-              .array(columnIdSchema)
-              .max(MAX_SUMMARY_GROUP_BY_COLUMNS)
-              .refine(
-                (ids) => new Set(ids).size === ids.length,
-                "Summary group-by column IDs must be unique."
-              )
-              .optional()
+            groupByColumnIds: groupByColumnIdsSchema.optional()
           })
-          .strict()
+          .strict(),
+        z.object({
+          action: z.literal("ensure_widget"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema,
+          tableId: tableIdSchema,
+          type: z.enum(NATIVE_WIDGET_TYPES),
+          groupByColumnIds: groupByColumnIdsSchema.optional()
+        }).strict(),
+        z.object({
+          action: z.literal("add_widgets"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema,
+          widgets: z.array(z.object({
+            tableId: tableIdSchema,
+            type: z.enum(NATIVE_WIDGET_TYPES)
+          }).strict()).min(2).max(8)
+        }).strict(),
+        z.object({
+          action: z.literal("ensure_widgets"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema,
+          widgets: z.array(z.object({
+            tableId: tableIdSchema,
+            type: z.enum(NATIVE_WIDGET_TYPES)
+          }).strict()).min(2).max(8)
+            .refine(items => new Set(items.map(item => JSON.stringify([item.tableId,item.type]))).size === items.length,
+              "Widget reconciliation identities must be unique.")
+        }).strict()
       ])
     },
     async (input) => {
@@ -1358,6 +1646,10 @@ export function registerLeanTools(
                 input.name
               )
             );
+          case "ensure_page":
+            return textResult(await grist.ensurePage(
+              input.documentId, input.tableId, input.name
+            ));
           case "add_widget":
             return textResult(
               await grist.addPageWidget(
@@ -1368,6 +1660,18 @@ export function registerLeanTools(
                 input.groupByColumnIds
               )
             );
+          case "ensure_widget":
+            return textResult(await grist.ensurePageWidget(
+              input.documentId, input.pageId, input.tableId, input.type, input.groupByColumnIds
+            ));
+          case "add_widgets":
+            return textResult(await grist.addPageWidgets(
+              input.documentId, input.pageId, input.widgets
+            ));
+          case "ensure_widgets":
+            return textResult(await grist.ensurePageWidgets(
+              input.documentId, input.pageId, input.widgets
+            ));
         }
       } catch (error) {
         return errorResult(error);
@@ -1409,6 +1713,17 @@ export function registerLeanTools(
               )
           })
           .strict(),
+        z.object({
+          action: z.literal("nest_page"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema,
+          parentPageId: positiveIdSchema
+        }).strict(),
+        z.object({
+          action: z.literal("unnest_page"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema
+        }).strict(),
         z
           .object({
             action: z.literal("delete_widget"),
@@ -1445,6 +1760,15 @@ export function registerLeanTools(
           .strict(),
         z
           .object({
+            action: z.literal("unpublish_form"),
+            documentId: documentIdSchema,
+            pageId: positiveIdSchema,
+            widgetId: positiveIdSchema,
+            confirmUnpublish: z.literal(true)
+          })
+          .strict(),
+        z
+          .object({
             action: z.literal("update_form_field_options"),
             documentId: documentIdSchema,
             pageId: positiveIdSchema,
@@ -1468,6 +1792,15 @@ export function registerLeanTools(
             confirmExternalWidget: z.literal(true)
           })
           .strict(),
+        z.object({
+          action: z.literal("update_trusted_widget_revision"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema,
+          widgetId: positiveIdSchema,
+          previousTrustedKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/),
+          trustedKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/),
+          confirmExternalWidget: z.literal(true)
+        }).strict(),
         z
           .object({
             action: z.literal("update_widget"),
@@ -1498,6 +1831,14 @@ export function registerLeanTools(
             return textResult(
               await grist.reorderPages(input.documentId, input.pageIds)
             );
+          case "nest_page":
+            return textResult(await grist.nestPage(
+              input.documentId, input.pageId, input.parentPageId
+            ));
+          case "unnest_page":
+            return textResult(await grist.unnestPage(
+              input.documentId, input.pageId
+            ));
           case "delete_widget":
             return textResult(
               await grist.deletePageWidget(
@@ -1522,6 +1863,10 @@ export function registerLeanTools(
             return textResult(await grist.publishForm(
               input.documentId, input.pageId, input.widgetId, input.confirmPublic
             ));
+          case "unpublish_form":
+            return textResult(await grist.unpublishForm(
+              input.documentId, input.pageId, input.widgetId, input.confirmUnpublish
+            ));
           case "update_form_field_options":
             return textResult(await grist.updateFormFieldOptions(
               input.documentId, input.pageId, input.widgetId,
@@ -1531,6 +1876,11 @@ export function registerLeanTools(
             return textResult(await grist.installTrustedWidget(
               input.documentId, input.pageId, input.widgetId,
               input.trustedKey, input.confirmExternalWidget
+            ));
+          case "update_trusted_widget_revision":
+            return textResult(await grist.updateTrustedWidgetRevision(
+              input.documentId, input.pageId, input.widgetId,
+              input.previousTrustedKey, input.trustedKey, input.confirmExternalWidget
             ));
           case "update_widget":
             return textResult(

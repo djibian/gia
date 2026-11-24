@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   normalizePageOrderSnapshot,
   resolvePageOrderUpdate,
+  resolvePageNestingUpdate,
+  resolvePageUnnestUpdate,
   samePageOrderSnapshot
 } from "../src/grist/pageOrder.js";
 
@@ -178,4 +180,86 @@ test("requires the exact current visible-page set and rejects ambiguous metadata
       ),
     /unsupported indentation shape/
   );
+});
+
+
+test("nests exactly one visible leaf after the intended parent's complete subtree", () => {
+  const source=metadata();
+  const current=normalizePageOrderSnapshot(source.pages,source.views,source.tables);
+  const plan=resolvePageNestingUpdate(current,4,1);
+  assert(plan.changed);
+  assert.equal(plan.pageRecordId,104);
+  assert.equal(plan.indentation,1);
+  assert.deepEqual(plan.expected.visiblePageIds,current.visiblePageIds);
+  assert.deepEqual(plan.expected.pages.map(p=>[p.pageId,p.indentation,p.parentPageId,p.pagePos]),
+    [[1,0,null,1],[2,1,1,2],[3,1,1,3],[4,1,1,4]]);
+  assert(!resolvePageNestingUpdate(plan.expected,4,1).changed,"nesting replay must be a no-op");
+  assert(!resolvePageNestingUpdate(current,2,1).changed,"existing direct child is already nested");
+  assert.throws(()=>resolvePageNestingUpdate(current,4,2), /later leaf sibling/);
+  assert.throws(()=>resolvePageNestingUpdate(current,1,4), /later leaf sibling/);
+  assert.throws(()=>resolvePageNestingUpdate(current,4,4), /distinct visible/);
+  assert(!resolvePageNestingUpdate(current,3,1).changed,"a sibling already owned by parent is unchanged");
+  const opaque={...source.views,records:source.views.records.map(view=>
+    view.id===2?{...view,fields:{name:""}}:view)};
+  const censored=normalizePageOrderSnapshot(source.pages,opaque,source.tables);
+  assert.throws(()=>resolvePageNestingUpdate(censored,4,1), /protected page state/);
+});
+
+test("nesting refuses a non-leaf target, crossing an unrelated sibling, or special parents",()=>{
+  const source=metadata();
+  // A, B, C, D are siblings here; C has a child E, and A cannot adopt D
+  // across its unrelated sibling B.
+  const pages={records:[
+    {id:101,fields:{viewRef:1,indentation:0,pagePos:1}},
+    {id:102,fields:{viewRef:2,indentation:0,pagePos:2}},
+    {id:103,fields:{viewRef:3,indentation:0,pagePos:3}},
+    {id:105,fields:{viewRef:5,indentation:1,pagePos:4}},
+    {id:104,fields:{viewRef:4,indentation:0,pagePos:5}}
+  ]};
+  const views={records:[...source.views.records,{id:5,fields:{name:"E"}}]};
+  const state=normalizePageOrderSnapshot(pages,views,source.tables);
+  assert.throws(()=>resolvePageNestingUpdate(state,4,1), /cross other siblings/);
+  assert.throws(()=>resolvePageNestingUpdate(state,3,2), /later leaf sibling/);
+  assert.throws(()=>resolvePageNestingUpdate(state,3,1), /later leaf sibling/);
+  const specialViews={records:views.records.map(view=>
+    view.id===2?{...view,fields:{name:"GristDocTour"}}:view)};
+  const special=normalizePageOrderSnapshot(pages,specialViews,source.tables);
+  assert.throws(()=>resolvePageNestingUpdate(special,3,2), /visible stable/);
+});
+
+
+test("unnests exactly one final nested leaf, preserving siblings and stable positions", () => {
+  const source=metadata();
+  const current=normalizePageOrderSnapshot(source.pages,source.views,source.tables);
+  assert.throws(()=>resolvePageUnnestUpdate(current,2), /last leaf/);
+  const plan=resolvePageUnnestUpdate(current,3);
+  assert.equal(plan.changed,true);
+  assert.equal(plan.pageRecordId,103);
+  assert.equal(plan.indentation,0);
+  assert.deepEqual(plan.expected.pages.map(p=>[p.pageId,p.indentation,p.parentPageId,p.pagePos]),
+    [[1,0,null,1],[2,1,1,2],[3,0,null,3],[4,0,null,4]]);
+  assert.deepEqual(plan.expected.visiblePageIds,current.visiblePageIds);
+  assert.equal(resolvePageUnnestUpdate(plan.expected,3).changed,false);
+  assert.equal(resolvePageUnnestUpdate(current,4).changed,false);
+  assert.throws(()=>resolvePageUnnestUpdate(current,999), /visible stable/);
+  const nested=resolvePageNestingUpdate(current,4,1).expected;
+  assert.deepEqual(resolvePageUnnestUpdate(nested,4).expected,current);
+});
+
+test("unnesting rejects a parent with descendants and protected ancestor state",()=>{
+  const source=metadata();
+  const nestedPages={records:[
+    {id:101,fields:{viewRef:1,indentation:0,pagePos:1}},
+    {id:102,fields:{viewRef:2,indentation:1,pagePos:2}},
+    {id:103,fields:{viewRef:3,indentation:2,pagePos:3}},
+    {id:104,fields:{viewRef:4,indentation:0,pagePos:4}}
+  ]};
+  const current=normalizePageOrderSnapshot(nestedPages,source.views,source.tables);
+  assert.throws(()=>resolvePageUnnestUpdate(current,2), /last leaf/);
+  const plan=resolvePageUnnestUpdate(current,3);
+  assert.deepEqual(plan.expected.pages.map(p=>p.parentPageId),[null,1,1,null]);
+  const censoredViews={records:source.views.records.map(v=>v.id===2?
+    {...v,fields:{name:""}}:v)};
+  const hidden=normalizePageOrderSnapshot(nestedPages,censoredViews,source.tables);
+  assert.throws(()=>resolvePageUnnestUpdate(hidden,3), /visible stable|protected/);
 });

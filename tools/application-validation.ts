@@ -11,6 +11,8 @@ import {
   waitForUrl
 } from "./grist-harness.js";
 import {
+  TEACHER_A_EMAIL,
+  TEACHER_B_EMAIL,
   type FixtureContext,
   ensureColumn,
   ensurePage,
@@ -201,6 +203,379 @@ async function validateCcf(bridge: string, context: FixtureContext): Promise<voi
   console.log("materially different CCF/pedagogy application: PASS");
 }
 
+
+/**
+ * #295: construct a representative stage-tracking slice using only Gia writes.
+ * The native Grist instance supplies a disposable empty workspace; neither
+ * the source .grist document nor private native actions seed this application.
+ */
+async function validateFromEmptyStageSkeleton(
+  bridge: string, context: FixtureContext
+): Promise<void> {
+  const created = await callTool(bridge, "grist_add_structure", {
+    action: "create_document", workspaceId: context.workspaceId,
+    name: "From-empty synthetic stage acceptance"
+  }) as { documentId?: string; bootstrap?: string };
+  assertThat(typeof created.documentId === "string" && created.bootstrap === "empty",
+    "from_empty_document_bootstrap_failed");
+  const documentId = created.documentId!;
+
+  const tables = [
+    { id: "Classes", columns: [{ id: "Code", fields: { type: "Text" } }] },
+    { id: "Enseignants", columns: [{ id: "Cle", fields: { type: "Text" } }] },
+    { id: "Structures_de_stage", columns: [
+      { id: "Nom", fields: { type: "Text", isFormula: false } },
+      { id: "Statut", fields: { type: "Choice", isFormula: false } }
+    ] },
+    { id: "Stages", columns: [
+      { id: "Code_Stage", fields: { type: "Text" } },
+      { id: "Contact_Le", fields: { type: "DateTime:Europe/Paris", isFormula: false } }
+    ] }
+  ];
+  const ensureTables = () => callTool(bridge, "grist_add_structure", {
+    action: "ensure_tables", documentId, tables
+  });
+  await ensureTables();
+  await ensureTables();
+
+  const ensureColumns = (tableId: string,
+    columns: { id: string; fields: { type: string; isFormula: false } }[]) =>
+    callTool(bridge, "grist_add_structure", {
+      action: "ensure_columns", documentId, tableId, columns
+    }) as Promise<{ changed: boolean; persistedSchemaVerified: boolean }>;
+  const writable = (columns: { id: string; fields: { type: string } }[]) =>
+    columns.map(column => ({
+      id: column.id, fields: { type: column.fields.type, isFormula: false as const }
+    }));
+  const stageColumns = [
+    { id: "Classe", fields: { type: "Ref:Classes" } },
+    { id: "Suivi_par", fields: { type: "Ref:Enseignants" } },
+    { id: "Structure", fields: { type: "Ref:Structures_de_stage" } },
+    { id: "Commentaire", fields: { type: "Text" } },
+    { id: "Justificatifs", fields: { type: "Attachments" } }
+  ];
+  const classColumns = writable([{ id: "Libelle", fields: { type: "Text" } }]);
+  const teacherColumns = writable([{ id: "Email", fields: { type: "Text" } }]);
+  const allStageColumns = writable([...stageColumns,
+    { id: "Statut", fields: { type: "Choice" } }]);
+  for (const [tableId, columns] of [
+    ["Classes", classColumns],
+    ["Enseignants", teacherColumns],
+    ["Stages", allStageColumns]
+  ] as const) {
+    const first = await ensureColumns(tableId, columns);
+    const replay = await ensureColumns(tableId, columns);
+    assertThat(first.changed && first.persistedSchemaVerified &&
+      !replay.changed && replay.persistedSchemaVerified,
+      "from_empty_writable_schema_not_idempotent");
+  }
+
+  await callTool(bridge, "grist_change_structure", {
+    action: "append_choice_options", documentId, tableId: "Stages",
+    columnId: "Statut", values: ["À suivre", "En cours"]
+  });
+  await callTool(bridge, "grist_change_structure", {
+    action: "append_choice_options", documentId, tableId: "Structures_de_stage",
+    columnId: "Statut", values: ["validé", "en attente"]
+  });
+  const setStructureCondition = () => callTool(bridge, "grist_change_structure", {
+    action: "update_dropdown_condition", documentId, tableId: "Stages", columnId: "Structure",
+    condition: { kind: "choice_field_equals_literal", choiceColumnId: "Statut", value: "validé" }
+  }) as Promise<{ changed: boolean; persistedOptionsVerified: boolean }>;
+  const condition = await setStructureCondition();
+  const conditionReplay = await setStructureCondition();
+  assertThat(condition.changed && condition.persistedOptionsVerified &&
+    !conditionReplay.changed && conditionReplay.persistedOptionsVerified,
+    "from_empty_structure_dropdown_not_reconciled");
+  const setStageStyle = () => callTool(bridge, "grist_change_structure", {
+    action: "append_row_style_rule", documentId, tableId: "Stages",
+    conditionFormula: '$Statut == "À suivre"', style: { fillColor: "#FFF3D4" }
+  }) as Promise<{ changed: boolean; persistedStyleVerified: boolean }>;
+  const style = await setStageStyle();
+  const styleReplay = await setStageStyle();
+  assertThat(style.changed && style.persistedStyleVerified &&
+    !styleReplay.changed && styleReplay.persistedStyleVerified, "from_empty_stage_style_not_reconciled");
+
+  const ensureRows = async (tableId: string, keyColumnId: string,
+    fields: Record<string, unknown>[]) =>
+    await callTool(bridge, "grist_add_records", {
+      action: "ensure_records", documentId, tableId, keyColumnId,
+      records: fields.map(item => ({ fields: item }))
+    }) as { recordIds: number[]; changed: boolean };
+  const classes = [
+    { Code: "A", Libelle: "Classe A synthétique" },
+    { Code: "B", Libelle: "Classe B synthétique" }
+  ];
+  const teachers = [
+    { Cle: "T-A", Email: TEACHER_A_EMAIL },
+    { Cle: "T-B", Email: TEACHER_B_EMAIL }
+  ];
+  const classesFirst = await ensureRows("Classes", "Code", classes);
+  const teachersFirst = await ensureRows("Enseignants", "Cle", teachers);
+  const structures = await ensureRows("Structures_de_stage", "Nom", [
+    { Nom: "Structure fictive A", Statut: "validé" },
+    { Nom: "Structure fictive B", Statut: "en attente" }
+  ]);
+  assertThat(classesFirst.recordIds.length === 2 && teachersFirst.recordIds.length === 2,
+    "from_empty_reference_ids_missing");
+  const stageRows = [
+    { Code_Stage: "S-A", Classe: classesFirst.recordIds[0],
+      Suivi_par: teachersFirst.recordIds[0], Structure: structures.recordIds[0],
+      Statut: "À suivre", Commentaire: "Test A" },
+    { Code_Stage: "S-B", Classe: classesFirst.recordIds[1],
+      Suivi_par: teachersFirst.recordIds[1], Statut: "En cours", Commentaire: "Test B" }
+  ];
+  const stagesFirst = await ensureRows("Stages", "Code_Stage", stageRows);
+
+  // Qualify creation/restart of a real Grist Python formula on synthetic rows.
+  // This is an incremental schema operation, not a private native UserAction.
+  const computedSpec = [{
+    id: "Stage_Libelle",
+    fields: { type: "Text", isFormula: true,
+      formula: '$Code_Stage + " | " + $Statut' }
+  }];
+  const ensureComputed = () => callTool(bridge, "grist_add_structure", {
+    action: "ensure_columns", documentId, tableId: "Stages",
+    columns: computedSpec
+  }) as Promise<{ changed: boolean; persistedSchemaVerified: boolean }>;
+  const firstComputed = await ensureComputed();
+  const replayComputed = await ensureComputed();
+  assertThat(firstComputed.changed && firstComputed.persistedSchemaVerified &&
+    !replayComputed.changed && replayComputed.persistedSchemaVerified,
+    "from_empty_formula_schema_not_idempotent");
+
+
+  const ensurePage = () => callTool(bridge, "grist_add_ui", {
+    action: "ensure_page", documentId, tableId: "Stages", name: "Suivi synthétique"
+  }) as Promise<{ page: { id: number }; changed: boolean }>;
+  const firstPage = await ensurePage();
+  assertThat(Number.isInteger(firstPage.page?.id) && firstPage.page.id > 0,
+    "from_empty_page_id_missing");
+  const pageId = firstPage.page.id;
+  const ensureWidget = (type: "record" | "form") =>
+    callTool(bridge, "grist_add_ui", {
+      action: "ensure_widget", documentId, pageId, tableId: "Stages", type
+    }) as Promise<{ widget: { id: number }; changed: boolean }>;
+  const widgetBatch = [
+    { tableId: "Stages", type: "record" as const },
+    { tableId: "Stages", type: "form" as const }
+  ];
+  const ensureWidgets = (widgets: Array<{tableId: string;type: "record"|"form"|"chart"}>) =>
+    callTool(bridge, "grist_add_ui", {
+      action: "ensure_widgets", documentId, pageId, widgets
+    }) as Promise<{ widgets: Array<{id:number;created:boolean}>; changed:boolean;
+      persistedWidgetsVerified:boolean }>;
+  const initialWidgets = await ensureWidgets(widgetBatch);
+  assertThat(initialWidgets.changed && initialWidgets.persistedWidgetsVerified &&
+    initialWidgets.widgets.length === 2 &&
+    initialWidgets.widgets.every(widget => widget.created && widget.id > 0),
+    "from_empty_widget_batch_creation_failed");
+  const batchReplay = await ensureWidgets(widgetBatch);
+  assertThat(!batchReplay.changed && batchReplay.persistedWidgetsVerified &&
+    batchReplay.widgets.every(widget => !widget.created) &&
+    JSON.stringify(initialWidgets.widgets.map(widget => widget.id)) ===
+      JSON.stringify(batchReplay.widgets.map(widget => widget.id)),
+    "from_empty_widget_batch_replay_duplicated_sections");
+  const grid = await ensureWidget("record");
+  const form = await ensureWidget("form");
+  assertThat(!grid.changed && !form.changed &&
+    grid.widget.id === initialWidgets.widgets[0]?.id &&
+    form.widget.id === initialWidgets.widgets[1]?.id &&
+    grid.widget.id !== form.widget.id,
+    "from_empty_widget_id_missing");
+
+  await callTool(bridge, "grist_change_ui", {
+    action: "update_widget", documentId, pageId, widgetId: form.widget.id,
+    update: { visibleFields: [{ columnId: "Code_Stage" },
+      { columnId: "Structure" }, { columnId: "Commentaire" }] }
+  });
+  const layout = {
+    children: [
+      { type: "paragraph", text: "Suivi du stage : informations synthétiques" },
+      { type: "section", children: [
+        { type: "field", columnId: "Code_Stage" },
+        { type: "field", columnId: "Structure" },
+        { type: "field", columnId: "Commentaire" }
+      ] },
+      { type: "submit" }
+    ],
+    submitText: "Envoyer", successText: "Réponse reçue"
+  };
+  await callTool(bridge, "grist_change_ui", {
+    action: "update_form_layout", documentId, pageId,
+    widgetId: form.widget.id, layout
+  });
+  await callTool(bridge, "grist_change_structure", {
+    action: "update_form_column_options", documentId,
+    tableId: "Stages", columnId: "Code_Stage",
+    update: { required: true, question: "Référence du stage" }
+  });
+
+  const extra = await ensureWidgets([
+    ...widgetBatch, { tableId: "Stages", type: "chart" }
+  ]);
+  assertThat(extra.changed && extra.persistedWidgetsVerified &&
+    extra.widgets[0]?.id === grid.widget.id && !extra.widgets[0].created &&
+    extra.widgets[1]?.id === form.widget.id && !extra.widgets[1].created &&
+    extra.widgets[2]?.created && extra.widgets[2].id > 0,
+    "from_empty_widget_partial_batch_not_reconciled");
+
+  const selector = await callTool(bridge, "grist_add_ui", {
+    action: "ensure_widget", documentId, pageId, tableId: "Classes", type: "record"
+  }) as { widget: { id: number } };
+  const selectBy = { sourceWidgetId: selector.widget.id, targetColumnId: "Classe" };
+  await callTool(bridge, "grist_change_ui", {
+    action: "update_widget", documentId, pageId, widgetId: grid.widget.id, update: { selectBy }
+  });
+  const pageWidgets = await callTool(bridge, "grist_inspect", { action: "page_widgets", documentId, pageId }) as {
+    widgets: Array<{ id: number; selectByNormalized?: typeof selectBy }>;
+  };
+  const linked = pageWidgets.widgets.find(widget => widget.id === grid.widget.id)?.selectByNormalized;
+  assertThat(linked?.sourceWidgetId === selectBy.sourceWidgetId && linked.targetColumnId === "Classe",
+    "from_empty_class_stage_link_not_persisted");
+
+  const structurePage = await callTool(bridge, "grist_add_ui", {
+    action: "ensure_page", documentId, tableId: "Structures_de_stage", name: "Formulaire structures"
+  }) as { page: { id: number } };
+  const structureForm = await callTool(bridge, "grist_add_ui", {
+    action: "ensure_widget", documentId, pageId: structurePage.page.id,
+    tableId: "Structures_de_stage", type: "form"
+  }) as { widget: { id: number } };
+  await callTool(bridge, "grist_change_ui", {
+    action: "update_widget", documentId, pageId: structurePage.page.id, widgetId: structureForm.widget.id,
+    update: { visibleFields: [{ columnId: "Nom" }] }
+  });
+  const setStructureFormLayout = () => callTool(bridge, "grist_change_ui", {
+    action: "update_form_layout", documentId, pageId: structurePage.page.id, widgetId: structureForm.widget.id,
+    layout: { children: [{ type: "paragraph", text: "Structure de stage" },
+      { type: "section", children: [{ type: "field", columnId: "Nom" }] }, { type: "submit" }] }
+  }) as Promise<{ changed: boolean; persistedLayoutVerified: boolean }>;
+  const structuresLayout = await setStructureFormLayout();
+  const structuresLayoutReplay = await setStructureFormLayout();
+  assertThat(structuresLayout.changed && structuresLayout.persistedLayoutVerified &&
+    !structuresLayoutReplay.changed && structuresLayoutReplay.persistedLayoutVerified,
+    "from_empty_structure_form_not_reconciled");
+  for (const [formId, expectedColumns] of [
+    [form.widget.id, ["Code_Stage", "Structure", "Commentaire"]], [structureForm.widget.id, ["Nom"]]
+  ] as const) {
+    const preview = await gristApi(context.baseUrl, context.ownerKey,
+      `/api/docs/${encodeURIComponent(documentId)}/forms/${formId}`) as {
+        formFieldsById: Record<string, { colId: string }>;
+      };
+    const actualColumns = Object.values(preview.formFieldsById).map(field => field.colId);
+    assertThat(actualColumns.length === expectedColumns.length &&
+      expectedColumns.every(column => actualColumns.includes(column)), "from_empty_native_form_bindings_wrong");
+  }
+
+  const repeatClasses = await ensureRows("Classes", "Code", classes);
+  const repeatTeachers = await ensureRows("Enseignants", "Cle", teachers);
+  const repeatStages = await ensureRows("Stages", "Code_Stage", stageRows);
+  assertThat(!repeatClasses.changed && !repeatTeachers.changed && !repeatStages.changed,
+    "from_empty_record_replay_created_duplicates");
+  assertThat(JSON.stringify(repeatClasses.recordIds) === JSON.stringify(classesFirst.recordIds) &&
+    JSON.stringify(repeatTeachers.recordIds) === JSON.stringify(teachersFirst.recordIds) &&
+    JSON.stringify(repeatStages.recordIds) === JSON.stringify(stagesFirst.recordIds),
+    "from_empty_replay_lost_stable_record_ids");
+
+  const replayPage = await ensurePage();
+  const replayGrid = await ensureWidget("record");
+  const replayForm = await ensureWidget("form");
+  assertThat(!replayPage.changed && !replayGrid.changed && !replayForm.changed &&
+    replayPage.page.id === pageId && replayGrid.widget.id === grid.widget.id &&
+    replayForm.widget.id === form.widget.id,
+    "from_empty_replay_created_duplicate_ui");
+  await callTool(bridge, "grist_change_ui", {
+    action: "update_form_layout", documentId, pageId,
+    widgetId: form.widget.id, layout
+  });
+
+  const stages = recordsFrom(await gristApi(context.baseUrl, context.ownerKey,
+    "/api/docs/" + encodeURIComponent(documentId) + "/tables/Stages/records"));
+  assertThat(stages.length === 2 &&
+    stages.some(row => row.fields.Code_Stage === "S-A") &&
+    stages.some(row => row.fields.Code_Stage === "S-B"),
+    "from_empty_native_stage_data_incomplete");
+
+  const labels = new Map(stages.map(row =>
+    [row.fields.Code_Stage, row.fields.Stage_Libelle]));
+  assertThat(labels.get("S-A") === "S-A | À suivre" &&
+    labels.get("S-B") === "S-B | En cours",
+    "from_empty_native_formula_values_incomplete");
+  // Changing an existing computed field is separate from creating it.
+  const replaceFormula = () => callTool(bridge, "grist_change_structure", {
+    action: "replace_column_formula", documentId, tableId: "Stages",
+    columnId: "Stage_Libelle", formula: '$Statut + " / " + $Code_Stage'
+  }) as Promise<{ changed: boolean; persistedFormulaVerified: boolean }>;
+  const changedFormula = await replaceFormula();
+  const replayFormula = await replaceFormula();
+  assertThat(changedFormula.changed && changedFormula.persistedFormulaVerified &&
+    !replayFormula.changed && replayFormula.persistedFormulaVerified,
+    "from_empty_formula_replacement_not_idempotent");
+  const recalculated = recordsFrom(await gristApi(context.baseUrl, context.ownerKey,
+    "/api/docs/" + encodeURIComponent(documentId) + "/tables/Stages/records"));
+  const updatedLabels = new Map(recalculated.map(row =>
+    [row.fields.Code_Stage, row.fields.Stage_Libelle]));
+  assertThat(updatedLabels.get("S-A") === "À suivre / S-A" &&
+    updatedLabels.get("S-B") === "En cours / S-B",
+    "from_empty_formula_replacement_not_calculated");
+  const pageState = await mcpPages(bridge, documentId);
+  assertThat(countKeyValue(pageState, "name", "Suivi synthétique") === 1,
+    "from_empty_native_page_not_unique");
+  console.log("from-empty stage and structure forms, dropdown, row style and linked selector: PASS");
+
+  const policies = [
+    {
+      target: { userAttributeName: "Personnel" },
+      definition: { tableId: "Enseignants", lookupColId: "Email",
+        source: { kind: "user_property", property: "Email" } }
+    },
+    {
+      target: { tableId: "Stages" },
+      rules: [
+        { condition: { kind: "user_access", operator: "equals", role: "owner" },
+          permissions: { read: "allow", update: "allow" } },
+        { condition: { kind: "match_user_attribute", operator: "equals", columnId: "Suivi_par",
+          attributeName: "Personnel", attributeColumnId: "id" },
+          permissions: { read: "allow", update: "allow" } },
+        { condition: { kind: "everyone" }, permissions: { read: "deny", update: "deny" } }
+      ]
+    },
+    {
+      target: { tableId: "Stages", columnIds: ["Suivi_par"] },
+      rules: [{ condition: { kind: "user_access", operator: "not_equals", role: "owner" },
+        permissions: { read: "unspecified", update: "deny" } }]
+    }
+  ];
+  const ensurePolicy = (policy: Record<string, unknown>) =>
+    callTool(bridge, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "ensure", ...policy
+    }) as Promise<{ changed: boolean; persistedDefinitionVerified: boolean }>;
+  for (const policy of policies) {
+    const first = await ensurePolicy(policy);
+    const repeat = await ensurePolicy(policy);
+    assertThat(first.changed && first.persistedDefinitionVerified &&
+      !repeat.changed && repeat.persistedDefinitionVerified, "from_empty_acl_not_reconciled");
+  }
+
+  const newStageContext = { ...context, stageDocId: documentId };
+  await assertStageVisibility(newStageContext, context.teacherAKey, "S-A", "S-B");
+  await assertStageVisibility(newStageContext, context.teacherBKey, "S-B", "S-A");
+  const ownStageId = stagesFirst.recordIds[0]!;
+  const otherStageId = stagesFirst.recordIds[1]!;
+  const ownEdit = await updateStage(newStageContext, context.teacherAKey, ownStageId, {
+    Commentaire: "Trace synthétique autorisée"
+  });
+  const otherEdit = await updateStage(newStageContext, context.teacherAKey, otherStageId, {
+    Commentaire: "Écriture interdite"
+  });
+  const reassignment = await updateStage(newStageContext, context.teacherAKey, ownStageId, {
+    Suivi_par: teachersFirst.recordIds[1]
+  });
+  assertThat(ownEdit >= 200 && ownEdit < 300 && otherEdit === 403 && reassignment === 403,
+    `from_empty_native_acl_effect_wrong:${ownEdit}:${otherEdit}:${reassignment}`);
+  console.log("from-empty synthetic stage schema, Form layout and authenticated ACL enforcement: PASS");
+}
+
 async function run(): Promise<void> {
   const baseUrl = process.env.GRIST_TEST_BASE_URL?.trim().replace(/\/$/, "");
   const version = process.env.GRIST_TEST_VERSION?.trim();
@@ -211,13 +586,15 @@ async function run(): Promise<void> {
   const bridge = await startBridge({
     baseUrl,
     apiKey: context.ownerKey,
-    documentIds: [context.genericDocId, context.stageDocId, context.ccfDocId]
+    documentIds: [context.genericDocId, context.stageDocId, context.ccfDocId],
+    workspaceIds: [context.workspaceId]
   });
 
   try {
     await validateExistingGeneric(bridge.baseUrl, context);
     await validateStageTracking(bridge.baseUrl, context);
     await validateCcf(bridge.baseUrl, context);
+    await validateFromEmptyStageSkeleton(bridge.baseUrl, context);
     console.log("semantic rerun/idempotence: PASS");
     console.log("browser escalation: NOT TRIGGERED; material UI and access postconditions were observable through MCP/API semantics");
     console.log(`application validation on Grist Community ${version}: PASS`);
