@@ -122,8 +122,14 @@ function cloneJsonRecord(value: JsonRecord): JsonRecord {
 
 
 /** Patches inert values of an existing widget, never its identity, URL or access. */
-function applyWidgetOptionsPatch(customView: JsonRecord, patch: CustomWidgetOptionsPatch): void {
-  if (typeof customView.widgetId !== "string" || !customView.widgetId.trim()) {
+function isIdentifiedWidget(customView: JsonRecord, approvedDirect: boolean): boolean {
+  return approvedDirect || (typeof customView.widgetId === "string" && customView.widgetId.trim().length > 0);
+}
+
+function applyWidgetOptionsPatch(
+  customView: JsonRecord, patch: CustomWidgetOptionsPatch, approvedDirect: boolean
+): void {
+  if (!isIdentifiedWidget(customView, approvedDirect)) {
     throw new Error("Widget option changes require an already identified custom widget.");
   }
   if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
@@ -170,7 +176,8 @@ function applyWidgetOptionsPatch(customView: JsonRecord, patch: CustomWidgetOpti
 export function resolveCustomWidgetSettingsUpdate(
   widget: WidgetSettingsUpdateTarget,
   tableResponse: unknown,
-  update: CustomWidgetSettingsUpdateInput
+  update: CustomWidgetSettingsUpdateInput,
+  approvedDirect = false
 ): ResolvedCustomWidgetSettingsUpdate {
   if (widget.type !== "custom") {
     throw new Error(`Grist widget ${widget.id} is not a custom widget.`);
@@ -213,8 +220,7 @@ export function resolveCustomWidgetSettingsUpdate(
         (update.access !== undefined && update.access !== "none")) {
       throw new Error("Deactivate widget data access to none before resetting options.");
     }
-    if (typeof currentCustomView.widgetId !== "string" ||
-        !currentCustomView.widgetId.trim()) {
+    if (!isIdentifiedWidget(currentCustomView, approvedDirect)) {
       throw new Error("Widget option reset requires an already identified custom widget.");
     }
     if (currentCustomView.widgetOptions !== undefined &&
@@ -226,7 +232,7 @@ export function resolveCustomWidgetSettingsUpdate(
   }
 
   if (update.optionsPatch !== undefined) {
-    applyWidgetOptionsPatch(customView, update.optionsPatch);
+    applyWidgetOptionsPatch(customView, update.optionsPatch, approvedDirect);
   }
 
   options.customView = JSON.stringify(customView);
