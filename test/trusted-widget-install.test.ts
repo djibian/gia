@@ -38,6 +38,11 @@ test("trusted reference option resolves only approved slots and preserves inacti
   assert.throws(() => planTrustedWidgetReferences({ ...widget, options: {
     ...widget.options, customView: JSON.stringify({ ...view, access: "full" })
   } }, item, references, native), /access none/);
+  for (const altered of [{ mode: "plugin" }, { mode: null }, { sectionId: "internal" }]) {
+    assert.throws(() => planTrustedWidgetReferences({ ...widget, options: {
+      ...widget.options, customView: JSON.stringify({ ...view, ...altered })
+    } }, item, references, native), /exact approved/);
+  }
   for (const invalid of [
     { ...manifest, columnSlots: { name: "unregistered" } },
     { ...manifest, defaults: { display: { href: "https://example.org" } } },

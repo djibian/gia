@@ -70,6 +70,12 @@ function approvedDefinition(item: TrustedWidget): Json {
   };
 }
 
+function isNativeUrlWidget(view: Json): boolean {
+  return (view.mode === undefined || view.mode === "url") &&
+    (view.sectionId == null || view.sectionId === "") &&
+    (view.pluginId == null || view.pluginId === "");
+}
+
 /** Only deployment operators can approve versioned remote origins, never MCP callers. */
 export function approvedWidgets(raw: string | undefined, gristBase: string): TrustedWidget[] {
   if (!raw?.trim()) return [];
@@ -161,9 +167,10 @@ export function planTrustedWidgetReferences(
   const manifest = item.referenceOption;
   const outer = obj(widget.options);
   const current = customViewOptions(outer);
-  if (!manifest || widget.type !== "custom" || !outer || !current || current.access !== "none" ||
+  if (!manifest || widget.type !== "custom" || !outer || !current || !isNativeUrlWidget(current) ||
+      current.access !== "none" ||
       current.widgetId !== item.widgetId || !isDeepStrictEqual(current.widgetDef, approvedDefinition(item)) ||
-      current.url != null || (current.pluginId != null && current.pluginId !== "") ||
+      current.url != null ||
       current.renderAfterReady !== false) {
     throw new Error("Reference configuration requires the exact approved widget installed with access none.");
   }

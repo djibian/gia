@@ -352,7 +352,7 @@ nor provide an external compare-and-set or a blind retry guarantee.
 
 `grist_change_ui(action="configure_trusted_widget_references")` writes one
 managed option of an already installed, exactly matching approved widget
-revision with `access:none`. It requires native Owner proof, `doc.schema:write`
+revision metadata in native URL mode with `access:none`. It requires native Owner proof, `doc.schema:write`
 and `confirmExternalWidget:true`. The deployment entry may declare
 `referenceOption:{key,version,tableSlots,columnSlots,defaults?}`. The
 `columnSlots` map assigns each column slot to its expected table slot.
@@ -365,8 +365,9 @@ and writes the configured key in native widget-owned options with
 table refs and each binding contains `tableRef` and `columnRef`. Gia keeps
 these refs private, verifies the resolved identities and preserves other
 options and access. Identical requests are no-ops and uncertain writes
-require reconciliation. Effective rendering, remote code behavior and a
-later grant of access are independently qualified operations.
+require reconciliation. The saved revision is metadata evidence. Grist's
+browser resolves its catalog and frame URL separately. Effective rendering,
+remote code behavior and any later grant of access require their own qualification.
 
 `grist_change_ui(action="publish_form")` publishes one existing native Form widget and its
 page-linked native share through a private fixed Grist action bundle. The request must
