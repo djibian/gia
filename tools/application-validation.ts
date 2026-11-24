@@ -11,6 +11,8 @@ import {
   waitForUrl
 } from "./grist-harness.js";
 import {
+  TEACHER_A_EMAIL,
+  TEACHER_B_EMAIL,
   type FixtureContext,
   ensureColumn,
   ensurePage,
@@ -305,8 +307,8 @@ async function validateFromEmptyStageSkeleton(
     { Code: "B", Libelle: "Classe B synthétique" }
   ];
   const teachers = [
-    { Cle: "T-A", Email: "prof-a@example.invalid" },
-    { Cle: "T-B", Email: "prof-b@example.invalid" }
+    { Cle: "T-A", Email: TEACHER_A_EMAIL },
+    { Cle: "T-B", Email: TEACHER_B_EMAIL }
   ];
   const classesFirst = await ensureRows("Classes", "Code", classes);
   const teachersFirst = await ensureRows("Enseignants", "Cle", teachers);
@@ -520,6 +522,58 @@ async function validateFromEmptyStageSkeleton(
   assertThat(countKeyValue(pageState, "name", "Suivi synthétique") === 1,
     "from_empty_native_page_not_unique");
   console.log("from-empty stage and structure forms, dropdown, row style and linked selector: PASS");
+
+  const policies = [
+    {
+      target: { userAttributeName: "Personnel" },
+      definition: { tableId: "Enseignants", lookupColId: "Email",
+        source: { kind: "user_property", property: "Email" } }
+    },
+    {
+      target: { tableId: "Stages" },
+      rules: [
+        { condition: { kind: "user_access", operator: "equals", role: "owner" },
+          permissions: { read: "allow", update: "allow" } },
+        { condition: { kind: "match_user_attribute", operator: "equals", columnId: "Suivi_par",
+          attributeName: "Personnel", attributeColumnId: "id" },
+          permissions: { read: "allow", update: "allow" } },
+        { condition: { kind: "everyone" }, permissions: { read: "deny", update: "deny" } }
+      ]
+    },
+    {
+      target: { tableId: "Stages", columnIds: ["Suivi_par"] },
+      rules: [{ condition: { kind: "user_access", operator: "not_equals", role: "owner" },
+        permissions: { read: "unspecified", update: "deny" } }]
+    }
+  ];
+  const ensurePolicy = (policy: Record<string, unknown>) =>
+    callTool(bridge, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "ensure", ...policy
+    }) as Promise<{ changed: boolean; persistedDefinitionVerified: boolean }>;
+  for (const policy of policies) {
+    const first = await ensurePolicy(policy);
+    const repeat = await ensurePolicy(policy);
+    assertThat(first.changed && first.persistedDefinitionVerified &&
+      !repeat.changed && repeat.persistedDefinitionVerified, "from_empty_acl_not_reconciled");
+  }
+
+  const newStageContext = { ...context, stageDocId: documentId };
+  await assertStageVisibility(newStageContext, context.teacherAKey, "S-A", "S-B");
+  await assertStageVisibility(newStageContext, context.teacherBKey, "S-B", "S-A");
+  const ownStageId = stagesFirst.recordIds[0]!;
+  const otherStageId = stagesFirst.recordIds[1]!;
+  const ownEdit = await updateStage(newStageContext, context.teacherAKey, ownStageId, {
+    Commentaire: "Trace synthétique autorisée"
+  });
+  const otherEdit = await updateStage(newStageContext, context.teacherAKey, otherStageId, {
+    Commentaire: "Écriture interdite"
+  });
+  const reassignment = await updateStage(newStageContext, context.teacherAKey, ownStageId, {
+    Suivi_par: teachersFirst.recordIds[1]
+  });
+  assertThat(ownEdit >= 200 && ownEdit < 300 && otherEdit === 403 && reassignment === 403,
+    `from_empty_native_acl_effect_wrong:${ownEdit}:${otherEdit}:${reassignment}`);
+  console.log("from-empty synthetic stage schema, Form layout and authenticated ACL enforcement: PASS");
 }
 
 async function run(): Promise<void> {

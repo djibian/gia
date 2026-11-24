@@ -2241,8 +2241,8 @@ async function run(): Promise<void> {
 
     // Compare a bounded synthetic decision with actual native ordinary
     // R/C/U/D behavior in the compatibility document.
-    const compatibilityPolicy = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
-      action: "access_rule_group", documentId, mode: "create", target: { tableId: ACL_TABLE_ID },
+    const compatibilityPolicyRequest = {
+      action: "access_rule_group", documentId, mode: "ensure", target: { tableId: ACL_TABLE_ID },
       rules: [
         {
           condition: { kind: "match_boolean", columnId: "Enabled", operator: "equals", value: true },
@@ -2253,8 +2253,22 @@ async function run(): Promise<void> {
           permissions: { read: "deny", update: "deny", create: "deny", delete: "deny" }
         }
       ]
-    }), "expected_decision_setup");
-    assert(compatibilityPolicy.persistedDefinitionVerified === true, "expected_policy_not_persisted");
+    };
+    const aclRulesPath = `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_ACLRules/records?hidden=true`;
+    const compatibilityPolicy = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      compatibilityPolicyRequest), "expected_decision_setup");
+    assert(compatibilityPolicy.changed === true && compatibilityPolicy.persistedDefinitionVerified === true,
+      "expected_policy_not_persisted");
+    const persistedCompatibilityPolicy = await gristApi(gristBaseUrl, apiKey, aclRulesPath);
+    const compatibilityPolicyReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      compatibilityPolicyRequest), "expected_decision_replay");
+    assert(compatibilityPolicyReplay.changed === false &&
+      compatibilityPolicyReplay.persistedDefinitionVerified === true, "expected_policy_replay_wrote");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...compatibilityPolicyRequest, rules: compatibilityPolicyRequest.rules.slice(0, 1)
+    });
+    assert(isDeepStrictEqual(await gristApi(gristBaseUrl, apiKey, aclRulesPath), persistedCompatibilityPolicy),
+      "expected_policy_replay_or_conflict_changed_native_rules");
 
     const syntheticFields = [{ name: "Enabled", value: { kind: "boolean", value: true } }];
     for (const operation of ["read", "create", "update", "delete"] as const) {
@@ -2442,16 +2456,25 @@ async function run(): Promise<void> {
       !JSON.stringify(afterNullInspection).includes("LinkKey.Token"),
       "native_null_user_attribute_raw_metadata_leaked");
 
-        const attrCreate = resultJson(await callTool(bridgeBaseUrl,
-      "grist_change_structure", {
-        action: "access_rule_group", documentId, mode: "create",
+    const attrRequest = {
+        action: "access_rule_group", documentId, mode: "ensure",
         target: { userAttributeName: "CompatCreated" },
         definition: { tableId: ACL_TABLE_ID, lookupColId: "ShareToken",
           source: { kind: "user_property", property: "Email" } }
-      }), "native_user_attribute_create");
+    };
+    const attrCreate = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", attrRequest),
+      "native_user_attribute_ensure");
     assert(attrCreate.changed === true && attrCreate.persistedDefinitionVerified === true &&
       attrCreate.effectiveEnforcementVerified === false,
       "native_user_attribute_create_not_verified");
+    const attrReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", attrRequest),
+      "native_user_attribute_ensure_replay");
+    assert(attrReplay.changed === false && attrReplay.persistedDefinitionVerified === true,
+      "native_user_attribute_replay_wrote");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...attrRequest, definition: { ...attrRequest.definition,
+        source: { kind: "link_key", name: "StageToken" } }
+    });
     const attrReplace = resultJson(await callTool(bridgeBaseUrl,
       "grist_change_structure", {
         action: "access_rule_group", documentId, mode: "replace",
@@ -2614,8 +2637,23 @@ async function run(): Promise<void> {
     ]);
     // #295: a distinct blank-document table isolates formula seeds from legacy
     // Form projection fixture metadata and verifies Grist itself owns formula state.
-    await createFixtureTable("CompatFormula", [columnOf("Base", "Text")]);
-    const formulaSeed = [{id:"Echo",fields:{type:"Text",isFormula:true,formula:"$Base"}}];
+    const tableSeed = {
+      action: "ensure_tables", documentId: emptyDocumentId,
+      tables: [{ id: "CompatFormula", columns: [
+        { id: "Base", fields: { type: "Text", isFormula: false } },
+        { id: "Extra", fields: { type: "Any", isFormula: false } }
+      ] }]
+    };
+    const initialMixedTable = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", tableSeed),
+      "native_any_table_seed");
+    const mixedTableReplay = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", tableSeed),
+      "native_any_table_replay");
+    assert(initialMixedTable.changed === true && initialMixedTable.persistedSchemaVerified === true &&
+      mixedTableReplay.changed === false && mixedTableReplay.persistedSchemaVerified === true,
+      "native_any_table_seed_not_verified");
+    const mixedFormula = "$Base if $Base else 0";
+    const formulaSeed = [{id:"Echo",fields:{type:"Text",isFormula:true,formula:"$Base"}},
+      {id:"Mixed",fields:{type:"Any",isFormula:true,formula:mixedFormula}}];
     const createdFormula = resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
       action:"ensure_columns", documentId:emptyDocumentId, tableId:"CompatFormula",
       columns:formulaSeed
@@ -2639,10 +2677,22 @@ async function run(): Promise<void> {
         columns:Array<{id:string;fields:{type:string;isFormula:boolean;formula:string}}>;
       };
     const storedFormula = formulaColumns.columns.find(column=>column.id==="Echo");
+    const storedMixedFormula = formulaColumns.columns.find(column => column.id === "Mixed");
     assert(storedFormula?.fields.type==="Text" && storedFormula.fields.isFormula===true &&
       storedFormula.fields.formula==="$Base" &&
+      storedMixedFormula?.fields.type === "Any" && storedMixedFormula.fields.isFormula === true &&
+      storedMixedFormula.fields.formula === mixedFormula &&
       !formulaColumns.columns.some(column=>column.id==="MustNotCreate"),
       "native_formula_column_state_changed");
+    await callTool(bridgeBaseUrl, "grist_add_records", {
+      documentId: emptyDocumentId, tableId: "CompatFormula",
+      records: [{ fields: { Base: "Synthétique", Extra: 3 } }, { fields: { Base: "", Extra: "saisie" } }]
+    });
+    const mixedRows = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(emptyDocumentId)}/tables/CompatFormula/records`) as MetaRecords;
+    assert(mixedRows.records.some(row => row.fields.Extra === 3 && row.fields.Mixed === "Synthétique") &&
+      mixedRows.records.some(row => row.fields.Extra === "saisie" && row.fields.Mixed === 0),
+      "native_any_data_or_formula_values_changed_type");
 
     const configuredRequest = {
       action: "create_columns", documentId: emptyDocumentId, tableId: "Placements", columns: [

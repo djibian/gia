@@ -253,6 +253,7 @@ export interface AccessRulesSnapshot {
 }
 
 export type AccessRuleMutationMode = "create" | "replace" | "delete" | "noop";
+export type AccessRuleMutationIntent = "create" | "ensure" | "replace" | "delete";
 
 export interface AccessRulePersistedWrite {
   aclFormula: string;
@@ -2215,7 +2216,7 @@ export function projectAccessRuleSimulation(
 export function resolveAccessRuleMutation(
   snapshot: AccessRulesSnapshot,
   targetInput: AccessRuleTarget,
-  mode: "create" | "replace" | "delete",
+  mode: AccessRuleMutationIntent,
   rulesInput?: readonly AccessRuleInput[]
 ): AccessRuleMutationPlan {
   const target = normalizeRequestedTarget(snapshot, targetInput);
@@ -2252,19 +2253,19 @@ export function resolveAccessRuleMutation(
     };
   }
 
-  if (!rulesInput) throw new Error("Create and replace access-rule mutations require rules.");
+  if (!rulesInput) throw new Error("Create, ensure and replace access-rule mutations require rules.");
   const requested = normalizeRequestedRules(
     rulesInput, target, table, userAttributeReferenceContext(snapshot)
   );
 
   if (
-    mode === "replace" &&
+    (mode === "replace" || mode === "ensure") &&
     existing?.normalizedRules &&
     sameNormalizedRules(existing.normalizedRules, requested.normalized)
   ) {
     return {
       mode: "noop",
-      requestedMode: mode,
+      requestedMode: "replace",
       target,
       resourceRecordId: existing.resourceRecordId,
       ruleRecordIds: [...existing.ruleRecordIds],
@@ -2273,10 +2274,14 @@ export function resolveAccessRuleMutation(
       untargetedFingerprint: untargetedFingerprint(snapshot, target)
     };
   }
+  if (mode === "ensure" && existing) {
+    throw new Error("The existing access-rule group differs from the requested definition.");
+  }
 
+  const writeMode = mode === "ensure" ? "create" : mode;
   return {
-    mode,
-    requestedMode: mode,
+    mode: writeMode,
+    requestedMode: writeMode,
     target,
     ...(existing ? { resourceRecordId: existing.resourceRecordId } : {}),
     ruleRecordIds: existing ? [...existing.ruleRecordIds] : [],
@@ -2442,7 +2447,7 @@ function nativeUserAttributeReferences(rule: PersistedRule, targetName: string):
 export function resolveUserAttributeMutation(
   snapshot: AccessRulesSnapshot,
   target: AccessUserAttributeTarget,
-  mode: "create" | "replace" | "delete",
+  mode: AccessRuleMutationIntent,
   definition?: AccessUserAttributeDefinitionInput
 ): AccessUserAttributeMutationPlan {
   const name = target.userAttributeName;
@@ -2465,14 +2470,14 @@ export function resolveUserAttributeMutation(
   if (mode === "create" && existing) {
     throw new Error("A native user attribute already exists with this name.");
   }
-  if (mode !== "create" && !existing) {
+  if ((mode === "replace" || mode === "delete") && !existing) {
     throw new Error("The selected native user attribute does not exist.");
   }
   if (mode === "delete" && definition !== undefined) {
     throw new Error("Delete user-attribute mutations do not accept a definition.");
   }
   if (mode !== "delete" && definition === undefined) {
-    throw new Error("Create/replace user-attribute mutations require a typed definition.");
+    throw new Error("Create, ensure and replace user-attribute mutations require a typed definition.");
   }
   if (definition !== undefined) {
     const { tableId, lookupColId, source } = definition;
@@ -2529,7 +2534,13 @@ export function resolveUserAttributeMutation(
   });
   const selectedRuleId = selected[0]?.id;
   const existingNative = selected[0]?.fields.userAttributes;
-  const unchanged = mode === "replace" && existingNative === nativeDefinition;
+  const sameDefinition = existing && definition && existing.tableId === definition.tableId &&
+    existing.lookupColId === definition.lookupColId && stableJson(existing.source) === stableJson(definition.source);
+  if (mode === "ensure" && existing && !sameDefinition) {
+    throw new Error("The existing native user attribute differs from the requested definition.");
+  }
+  const unchanged = mode === "ensure" ? sameDefinition :
+    mode === "replace" && existingNative === nativeDefinition;
   // An ACL dependency may rely on the lookup table/field. Do not silently
   // rebind an attribute with dependent policies, even when the target is typed.
   if (mode === "replace" && !unchanged) {
@@ -2539,13 +2550,14 @@ export function resolveUserAttributeMutation(
       }
     }
   }
+  const writeMode = mode === "ensure" ? (existing ? "replace" : "create") : mode;
   return {
-    mode: unchanged ? "noop" : mode,
-    requestedMode: mode,
+    mode: unchanged ? "noop" : writeMode,
+    requestedMode: writeMode,
     name,
     ...(selectedRuleId === undefined ? {} : { targetRuleId: selectedRuleId }),
     ...(defaultResourceId === undefined ? {} : { defaultResourceId }),
-    createDefaultResource: mode === "create" && defaultResourceId === undefined,
+    createDefaultResource: writeMode === "create" && defaultResourceId === undefined,
     rulePos: selected[0]?.rulePos ?? nextPosition,
     ...(nativeDefinition === undefined ? {} : { nativeDefinition })
   };

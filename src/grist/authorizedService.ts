@@ -20,6 +20,7 @@ import {
   verifyUserAttributeMutation,
   type AccessPolicyCoverageRequest,
   type AccessRuleInput,
+  type AccessRuleMutationIntent,
   type AccessRuleTarget,
   type AccessRuleSchemaImpactTarget,
   type AccessRuleSimulationRequest,
@@ -2390,13 +2391,18 @@ export class AuthorizedGristService {
   async changeAccessRuleGroup(
     documentIdOrUrl: string,
     target: AccessRuleTarget | AccessUserAttributeTarget,
-    mode: "create" | "replace" | "delete",
+    mode: AccessRuleMutationIntent,
     rules?: readonly AccessRuleInput[],
     definition?: AccessUserAttributeDefinitionInput
   ): Promise<unknown> {
     return this.execute("change_access_rule_group", documentIdOrUrl, 1, async (id) => {
       await this.inner.assertDocumentOwner(id);
       const before = await this.loadAccessRulesSnapshot(id);
+      const checkBeforeEnsure = async () => {
+        if (mode === "ensure" && !isDeepStrictEqual(before, await this.loadAccessRulesSnapshot(id))) {
+          throw new Error("Native access-rule state changed before creation; reconcile first.");
+        }
+      };
       if ("userAttributeName" in target) {
         if (rules !== undefined) {
           throw new Error("User-attribute mutations do not accept access rules.");
@@ -2407,6 +2413,7 @@ export class AuthorizedGristService {
           return { ...base, changed: false, persistedDefinitionVerified: true,
             effectiveEnforcementVerified: false };
         }
+        await checkBeforeEnsure();
         await this.uiActions.mutateUserAttribute(id, plan);
         try {
           const after = await this.loadAccessRulesSnapshot(id);
@@ -2436,6 +2443,7 @@ export class AuthorizedGristService {
         };
       }
 
+      await checkBeforeEnsure();
       await this.uiActions.mutateAccessRuleGroup(id, plan);
       try {
         const after = await this.loadAccessRulesSnapshot(id);

@@ -50,7 +50,7 @@ serialize writes to the same native UI.
 
 The bounded `grist_add_structure(action="ensure_tables")` reconciles an
 initial named-table schema when reconstructing an application from scratch.
-Each table requires one or more explicit typed seed columns (`Text`,
+Each table requires one or more explicit typed seed columns (`Any`, `Text`,
 `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`, `DateTime:Europe/Paris`,
 `Attachments`, `Choice`, `ChoiceList`, `Ref` or `RefList`). A legacy `fields:{type}` seed asserts type alone; a writable
 initial data column uses `fields:{type,isFormula:false}` and must persist a
@@ -107,7 +107,7 @@ data seed is `fields:{type,isFormula:false}` and requires native readback of
 `isFormula:false` for the matching stable ID. A formula seed is
 `fields:{type,isFormula:true,formula:nonemptyGristPython}`, with a 4096-character
 bound and no unrelated native fields. Both use the same closed supported types:
-`Text`, `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`,
+`Any`, `Text`, `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`,
 `DateTime:Europe/Paris`, `Attachments`, `Choice`, `ChoiceList`, `Ref:<table>` and
 `RefList:<table>`. The reference destination and formula dependencies must
 already be valid in native Grist. A matching existing formula is reused without
@@ -623,7 +623,16 @@ Document/page inspection additionally returns `navigationPageIds`, the exact cur
 
 ## Application access rules
 
-Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect(action="access_rules")` returns a normalized view of persisted ordinary table/column access-rule groups, while `grist_change_structure(action="access_rule_group")` accepts exactly one `create`, `replace` or `delete` intention.
+Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect(action="access_rules")` returns a normalized view of persisted ordinary table/column access-rule groups, while `grist_change_structure(action="access_rule_group")` accepts exactly one `create`, `ensure`, `replace` or `delete` intention.
+
+`ensure` requires the existing Owner and document-schema authorization and
+the same typed definition as `create`. It creates an absent group or user
+attribute, reuses an equivalent existing definition, and refuses conflicts
+before writing. Rule order and permissions are part of equivalence. Gia
+rechecks the native ACL snapshot before creation and verifies persisted
+definitions and untargeted state. This does not guarantee compare-and-set
+against external editors or effective native enforcement. Reconcile an
+uncertain native outcome before retrying.
 
 Targets use stable table/column IDs; private ACL resource/rule row IDs remain bridge-internal. Writable conditions are a deliberately small typed subset with no arbitrary literal or formula text: everyone, one native Grist role comparison or a bounded two/three-role `user.Access in/not in` membership, a `user.IsLoggedIn` equality/inequality against a native boolean literal, one same-table record-column comparison with a bounded built-in user property, or one equality/inequality comparison between a stable Text/Any record column and a bounded safe `user.LinkKey.<name>` reference, or a same-column equality/inequality comparison of `rec` and `newRec` for update-only decisions, or a Bool column compared with a native boolean `True`/`False` literal, or an existing Int column compared with the finite numeric flag `0`/`1`, or an existing Text column compared with an exact empty string.  The existing `match_user`, `match_link_key` and Bool-literal `match_boolean` leaves accept an optional `record: "newRec"` to compare the proposed post-change row instead of the current `rec` row. It is valid only for create/update permissions (read/delete must be unspecified). Absence of `record` retains the original `rec` form and normalized shape. These leaves may be combined through finite `all` / `any` / `not` boolean trees; other operand pairs, string/numeric literals and non-role membership forms remain unsupported. LinkKey names are structural policy metadata; LinkKey values and secret-bearing URLs are never accepted or returned. Both native operand orders for the supported LinkKey comparison normalize to the same public `match_link_key` condition, while writes use one canonical formula form. Permissions are explicit `allow|deny|unspecified`; native `S`, `all` and `none` forms are outside the writable subset.
 
@@ -662,7 +671,7 @@ LinkKey values, secret-bearing URLs, raw ACL JSON/formulas or native row IDs are
 model-visible. This is not an evaluation of the native lookup or enforcement.
 The same `grist_change_structure(action="access_rule_group")` also supports a
 closed `target:{userAttributeName:<safe identifier>}` in place of an ordinary
-table/column target. `create` and `replace` require exactly one typed
+table/column target. `create`, `ensure` and `replace` require exactly one typed
 `definition:{tableId,lookupColId,source}`, where source is either
 `{kind:"user_property",property:<bounded native built-in>}` or
 `{kind:"link_key",name:<safe LinkKey name>}`. `delete` accepts no definition.

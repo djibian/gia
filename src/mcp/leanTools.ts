@@ -728,15 +728,16 @@ export function registerLeanTools(
     id: tableIdSchema,
     columns: boundedArray(columnSpecSchema, limits.maxSchemaItems)
   }).strict();
+  const seedColumnType = z.union([
+    z.enum(["Any", "Text", "Numeric", "Int", "Bool", "Date", "Attachments", "Choice", "ChoiceList"]),
+    z.enum(["DateTime:UTC", "DateTime:Europe/Paris"]),
+    z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
+  ]);
   const tableSeedSchema=z.object({
     id:tableIdSchema,
     columns:boundedArray(z.object({
       id:columnIdSchema,
-      fields:z.object({type:z.union([
-        z.enum(["Text","Numeric","Int","Bool","Date","Attachments","Choice","ChoiceList"]),
-        z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
-        z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
-      ]),isFormula:z.literal(false).optional()}).strict()
+      fields:z.object({type:seedColumnType,isFormula:z.literal(false).optional()}).strict()
     }).strict(),limits.maxSchemaItems)
   }).strict();
   const tableUpdateSchema = z.object({
@@ -1057,25 +1058,13 @@ export function registerLeanTools(
             columns: boundedArray(z.object({
               id: columnIdSchema,
               fields: z.union([
-                z.object({type: z.union([
-                  z.enum(["Text","Numeric","Int","Bool","Date","Attachments","Choice","ChoiceList"]),
-                  z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
-                  z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
-                ])}).strict(),
+                z.object({type: seedColumnType}).strict(),
                 z.object({
-                  type: z.union([
-                    z.enum(["Text","Numeric","Int","Bool","Date","Attachments","Choice","ChoiceList"]),
-                    z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
-                    z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
-                  ]),
+                  type: seedColumnType,
                   isFormula: z.literal(false)
                 }).strict(),
                 z.object({
-                  type: z.union([
-                    z.enum(["Text","Numeric","Int","Bool","Date","Attachments","Choice","ChoiceList"]),
-                    z.enum(["DateTime:UTC","DateTime:Europe/Paris"]),
-                    z.string().regex(/^(?:Ref|RefList):[A-Za-z][A-Za-z0-9_]*$/)
-                  ]),
+                  type: seedColumnType,
                   isFormula: z.literal(true),
                   formula: z.string().min(1).max(4096)
                     .refine(value=>value.trim().length>0,"Nonempty Grist formula required.")
@@ -1410,7 +1399,7 @@ export function registerLeanTools(
           .object({
             action: z.literal("access_rule_group"),
             documentId: documentIdSchema,
-            mode: z.enum(["create", "replace", "delete"]),
+            mode: z.enum(["create", "ensure", "replace", "delete"]),
             target: z.union([accessRuleTargetSchema, accessUserAttributeTargetSchema]),
             rules: z.array(accessRuleSchema).min(1).max(MAX_ACCESS_RULES_PER_GROUP).optional(),
             definition: accessUserAttributeDefinitionSchema.optional()
