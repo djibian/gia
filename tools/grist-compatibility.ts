@@ -453,7 +453,7 @@ async function run(): Promise<void> {
     },{
       key: "compat-direct", name: "Compatibility direct widget", widgetId: "@test/compat",
       revision: "v1.0.2", url: "https://widgets.example.org/compat/v1.0.2/index.html",
-      directUrl: true
+      directUrl: true, allowSelectBy: true
     }])
   });
 
@@ -1663,6 +1663,38 @@ async function run(): Promise<void> {
     assert(directView.url === "https://widgets.example.org/compat/v1.0.2/index.html" &&
       directView.widgetId === null && directView.widgetDef === null && directView.access === "none" &&
       directView.widgetOptions.fixtureMode === "test", "trusted_direct_native_selection_wrong");
+
+    const linkedGrid = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "add_widget", documentId: directDocumentId, pageId: directPageId, tableId: directTableId, type: "record"
+    }), "trusted_link_target");
+    const linkedGridId = positiveResultId((linkedGrid.widget as Record<string, unknown>)?.id, "trusted_link_target_id");
+    const sourceLink = {
+      action: "update_widget", documentId: directDocumentId, pageId: directPageId, widgetId: linkedGridId,
+      update: { selectBy: { sourceWidgetId: directId, trustedSourceKey: "compat-direct" } }
+    };
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", sourceLink);
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId: directDocumentId, pageId: directPageId, widgetId: directId,
+      update: { customWidgetSettings: { access: "read table", confirmDataAccess: true } }
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      ...sourceLink, update: { selectBy: { sourceWidgetId: directId } }
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      ...sourceLink, widgetId: directId, update: { selectBy: { sourceWidgetId: linkedGridId } }
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", sourceLink);
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      ...sourceLink, widgetId: directId, update: { selectBy: null }
+    });
+    resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", sourceLink), "trusted_link");
+    resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", sourceLink), "trusted_link_replay");
+    const linkedSections = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(directDocumentId)}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+    const linkedSection = linkedSections.records.find(section => section.id === linkedGridId);
+    assert(linkedSection?.fields.linkSrcSectionRef === directId &&
+      linkedSection.fields.linkSrcColRef === 0 && linkedSection.fields.linkTargetColRef === 0,
+      "trusted_link_native_state_wrong");
 
     const configuredCustom = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_widget", documentId, pageId, widgetId: customWidgetId,

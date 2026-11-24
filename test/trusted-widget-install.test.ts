@@ -1,11 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { approvedWidgets, matchesTrustedWidgetSelection, planTrustedWidgetInstall, planTrustedWidgetReferences,
+import { approvedWidgets, assertTrustedWidgetSelectBySource, matchesTrustedWidgetSelection,
+  planTrustedWidgetInstall, planTrustedWidgetReferences,
   planTrustedWidgetRevisionUpdate } from "../src/grist/trustedWidgetInstall.js";
 
 const base="https://grist.example.org";
 const approved={key:"timeline",name:"Stages timeline",widgetId:"@test/timeline",
   revision:"v1.0.0",url:"https://widgets.example.org/timeline/v1.0.0/index.html"};
+
+test("a trusted linking source must match an approved direct revision with data access", () => {
+  assert.throws(() => approvedWidgets(JSON.stringify([{ ...approved, allowSelectBy: true }]), base));
+  const item = approvedWidgets(JSON.stringify([{ ...approved, directUrl: true, allowSelectBy: true }]), base)[0]!;
+  const installed = planTrustedWidgetInstall({ type: "custom", options: {} }, item);
+  const view = JSON.parse(installed.options.customView as string);
+  const widget = (patch: Record<string, unknown>) =>
+    ({ type: "custom", options: { customView: JSON.stringify({ ...view, ...patch }) } });
+  assert.throws(() => assertTrustedWidgetSelectBySource(widget({}), item));
+  assert.throws(() => assertTrustedWidgetSelectBySource(widget({ access: "full", mode: "plugin" }), item));
+  assert.throws(() => assertTrustedWidgetSelectBySource(widget({ access: "full", widgetId: approved.widgetId }), item));
+  assert.doesNotThrow(() => assertTrustedWidgetSelectBySource(widget({ access: "read table" }), item));
+});
 
 test("direct trusted widgets pin the Grist frame URL without enabling catalog resolution", () => {
   const item = approvedWidgets(JSON.stringify([{ ...approved, directUrl: true }]), base)[0]!;
