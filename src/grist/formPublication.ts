@@ -24,12 +24,19 @@ function readNativeShareOptions(value: unknown): ShareOptions {
   return raw as ShareOptions;
 }
 
-/** Native Forms are public only when their page points to an active native _grist_Shares
- * row as well as the section flags. Never return the share's secret linkId. */
 export function readNativeFormPageShare(
   pagesResponse: unknown, sharesResponse: unknown,
   pageRecordId: number, pageId: number, limit: number
 ): "missing" | "published" {
+  return readNativeFormPageLinkId(pagesResponse, sharesResponse, pageRecordId, pageId, limit)
+    === undefined ? "missing" : "published";
+}
+
+/** Resolve the private, document-local linkId. The public Share.key is a different value. */
+export function readNativeFormPageLinkId(
+  pagesResponse: unknown, sharesResponse: unknown,
+  pageRecordId: number, pageId: number, limit: number
+): string | undefined {
   const records = (response: unknown, label: string) => {
     const root = response !== null && typeof response === "object" && !Array.isArray(response)
       ? response as JsonRecord : undefined;
@@ -63,7 +70,7 @@ export function readNativeFormPageShare(
     throw new Error("Native Form page share reference is malformed.");
   }
   const shares = records(sharesResponse, "share");
-  if (shareRef === 0) return "missing";
+  if (shareRef === 0) return undefined;
   if (pages.some(page => page.id !== pageRecordId && page.fields.shareRef === shareRef)) {
     throw new Error("Native Form page share is reused by another page.");
   }
@@ -83,7 +90,10 @@ export function readNativeFormPageShare(
       (parsed as JsonRecord).publish !== true) {
     throw new Error("Existing native Form share requires separate, explicitly bounded handling.");
   }
-  return "published";
+  if (shares.some(row => row.id !== shareRef && row.fields.linkId === share.fields.linkId)) {
+    throw new Error("Native Form page link identity is ambiguous.");
+  }
+  return share.fields.linkId;
 }
 
 /** Turn off one native Form's publication flag without altering its existing page share.

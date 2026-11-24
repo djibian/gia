@@ -3987,6 +3987,109 @@ async function run(): Promise<void> {
     assert(await readBatchPageLayout() === originalLayout,
       "native_widget_reconciliation_overwrote_page_layout");
 
+    // An actual anonymous submission through a link assembled only from stable native IDs.
+    {
+      const publicDoc = createdDocumentId(resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", {
+        action: "create_document", workspaceId, name: "Compatibility Public Form Link"
+      }), "native_public_form_link_doc"), "create_document");
+      await callTool(bridgeBaseUrl, "grist_add_structure", {
+        action: "ensure_tables", documentId: publicDoc,
+        tables: [{ id: "Responses", columns: [{ id: "Name", fields: { type: "Text", isFormula: false } }] }]
+      });
+      const makeForm = async (name: string) => {
+        const page = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+          action: "ensure_page", documentId: publicDoc, tableId: "Responses", name
+        }), "native_public_form_link_page") as { page: { id: number } };
+        const widget = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+          action: "ensure_widget", documentId: publicDoc, pageId: page.page.id,
+          tableId: "Responses", type: "form"
+        }), "native_public_form_link_widget") as { widget: { id: number } };
+        const ids = { pageId: page.page.id, widgetId: widget.widget.id };
+        await callTool(bridgeBaseUrl, "grist_change_ui", {
+          action: "update_widget", documentId: publicDoc, ...ids,
+          update: { visibleFields: [{ columnId: "Name" }] }
+        });
+        await callTool(bridgeBaseUrl, "grist_change_ui", {
+          action: "update_form_layout", documentId: publicDoc, ...ids,
+          layout: { children: [{ type: "section", children: [{ type: "field", columnId: "Name" }] },
+            { type: "submit" }] }
+        });
+        return ids;
+      };
+      const source = await makeForm("Source");
+      const target = await makeForm("Target");
+      const linkedLayout = {
+        children: [
+          { type: "form_link", label: "Étape suivante", targetPageId: target.pageId, targetWidgetId: target.widgetId },
+          { type: "section", children: [{ type: "field", columnId: "Name" }] },
+          { type: "submit" }
+        ],
+        confirmPublicLink: true
+      };
+      const linkRequest = {
+        action: "update_form_layout", documentId: publicDoc, ...source, layout: linkedLayout
+      };
+      await callToolExpectError(bridgeBaseUrl, "grist_change_ui", linkRequest);
+      await callTool(bridgeBaseUrl, "grist_change_ui", {
+        action: "publish_form", documentId: publicDoc, ...target, confirmPublic: true
+      });
+      await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+        ...linkRequest, layout: { children: linkedLayout.children }
+      });
+      const linked = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", linkRequest),
+        "native_public_form_link_write");
+      const linkedReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", linkRequest),
+        "native_public_form_link_replay");
+      assert(linked.changed === true && linked.persistedLayoutVerified === true &&
+        linkedReplay.changed === false && linkedReplay.persistedLayoutVerified === true,
+        "native_public_form_link_not_reconciled");
+
+      const publicDocPath = "/api/docs/" + encodeURIComponent(publicDoc);
+      const publicSections = await gristApi(gristBaseUrl, apiKey,
+        publicDocPath + "/tables/_grist_Views_section/records?hidden=true") as MetaRecords;
+      const sourceLayout = JSON.parse(String(publicSections.records.find(row => row.id === source.widgetId)
+        ?.fields.layoutSpec)) as { children: Array<{ text?: string }> };
+      const nativeLink = /^\[Étape suivante\]\(\/forms\/([a-zA-Z0-9_-]{1,100})\/([1-9]\d*)\)$/
+        .exec(sourceLayout.children[0]?.text ?? "");
+      assert(nativeLink && Number(nativeLink[2]) === target.widgetId, "native_public_form_link_wrong_target");
+      const key = nativeLink[1]!;
+      const sourceProjection = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+        action: "page_widgets", documentId: publicDoc, pageId: source.pageId
+      }), "native_public_form_link_redacted");
+      assert(![linked, linkedReplay, sourceProjection].some(item => JSON.stringify(item).includes(key)),
+        "native_public_form_link_key_exposed");
+      const anon = (path: string, body?: unknown) => fetch(gristBaseUrl + path, {
+        credentials: "omit", redirect: "error", signal: AbortSignal.timeout(10_000),
+        ...(body === undefined ? {} : {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
+        })
+      }).catch(() => { throw new Error("Native anonymous Form request could not be verified."); });
+      const publicPath = "/api/s/" + key;
+      const preview = await anon(publicPath + "/forms/" + target.widgetId);
+      assert(preview.ok, "native_public_form_real_key_did_not_open");
+      const visibleFields = await preview.json() as { formFieldsById?: Record<string, { colId: string }> };
+      assert(Object.values(visibleFields.formFieldsById ?? {}).some(field => field.colId === "Name"),
+        "native_public_form_real_key_wrong_fields");
+      const html = await anon("/forms/" + key + "/" + target.widgetId);
+      await html.body?.cancel();
+      assert(html.ok && html.headers.get("content-type")?.startsWith("text/html"),
+        "native_public_form_real_link_did_not_serve_html");
+      const denied = await anon(publicPath + "/forms/" + source.widgetId);
+      await denied.body?.cancel();
+      assert(denied.status === 403 || denied.status === 404, "native_public_form_wrong_section_exposed");
+      const sent = await anon(publicPath + "/tables/Responses/records",
+        { records: [{ fields: { Name: "Synthetic anonymous Form response" } }] });
+      await sent.body?.cancel();
+      assert(sent.ok, "native_public_form_submission_denied_" + sent.status);
+      const nativeResponses = await gristApi(gristBaseUrl, apiKey,
+        publicDocPath + "/tables/Responses/records") as MetaRecords;
+      assert(nativeResponses.records.some(row => row.fields.Name === "Synthetic anonymous Form response"),
+        "native_public_form_submission_not_persisted");
+      const publicRows = await anon(publicPath + "/tables/Responses/records");
+      const publicBody = await publicRows.text();
+      assert(!publicBody.includes("Synthetic anonymous Form response"), "native_public_form_responses_exposed");
+    }
+
     console.log(`Grist Community ${version}: PASS`);
     console.log(
       `document=${documentId} workspace=${workspaceId} table=${TABLE_ID} page=${PAGE_NAME} empty=${emptyDocumentId} template=${copiedDocumentId}`

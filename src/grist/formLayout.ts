@@ -4,11 +4,13 @@ import { existingWidgetFields } from "./widgetFields.js";
 
 type JsonRecord = Record<string, unknown>;
 type FormParagraph = { type: "paragraph"; text: string; alignment?: "left" | "center" | "right" | undefined };
+type FormLink = { type: "form_link"; label: string; targetPageId: number; targetWidgetId: number; alignment?: "left" | "center" | "right" | undefined };
 type FormField = { type: "field"; columnId: string };
-type FormSection = { type: "section"; children: readonly (FormField | FormParagraph)[] };
+type FormSection = { type: "section"; children: readonly (FormField | FormParagraph | FormLink)[] };
 type FormSubmit = { type: "submit" };
 export interface FormLayoutInput {
-  children: readonly (FormSection | FormParagraph | FormSubmit)[];
+  children: readonly (FormSection | FormParagraph | FormLink | FormSubmit)[];
+  confirmPublicLink?: true | undefined;
   submitText?: string | undefined;
   successText?: string | undefined;
   anotherResponse?: boolean | undefined;
@@ -34,8 +36,20 @@ function safeText(value: unknown, label: string): string {
   return value;
 }
 
+/** Permit only the private Grist Form-link format emitted by Gia. */
+function safePreviousParagraph(value: unknown, publicPaths: ReadonlySet<string>): void {
+  if (typeof value !== "string") throw new Error("Malformed native Form paragraph.");
+  if (safeNativeFormText(value, 300) === value) return;
+  const match = /^\[([^\[\]()\r\n]{1,100})\]\((\/forms\/[a-zA-Z0-9_-]{1,100}\/[1-9]\d{0,9})\)$/.exec(value);
+  if (!match || !publicPaths.has(match[2]!) || safeNativeFormText(match[1]!, 100) !== match[1]) {
+    throw new Error("Pre-existing Form link is protected or malformed.");
+  }
+}
+
 /** Refuse to replace unsupported native attributes, links or unresolvable field references. */
-function safePreviousLayout(value: unknown, knownFields: ReadonlySet<number>): JsonRecord | undefined {
+function safePreviousLayout(
+  value: unknown, knownFields: ReadonlySet<number>, publicPaths: ReadonlySet<string>
+): JsonRecord | undefined {
   if (value === undefined) return;
   const root = record(value);
   if (!root) throw new Error("Native Form layout is opaque or malformed; refusing overwrite.");
@@ -87,7 +101,7 @@ function safePreviousLayout(value: unknown, knownFields: ReadonlySet<number>): J
       if (!keys(node, ["id", "type", "text", "alignment", "children"])) {
         throw new Error("Unsupported native Form paragraph settings.");
       }
-      safeText(node.text ?? "", "Existing paragraph");
+      safePreviousParagraph(node.text ?? "", publicPaths);
       if (node.alignment !== undefined && !["left", "center", "right"].includes(node.alignment as string)) {
         throw new Error("Unsupported native Form alignment.");
       }
@@ -108,7 +122,8 @@ export function resolveFormLayoutUpdate(
   widget: { id: number; tableRef: number; tableId?: string; layoutSpec?: unknown },
   tables: unknown,
   sectionFields: unknown,
-  input: FormLayoutInput
+  input: FormLayoutInput,
+  publishedFormPaths: ReadonlyMap<string, string> = new Map()
 ): ResolvedFormLayout {
   const fields = existingWidgetFields(widget, tables, sectionFields);
   const columns = tableColumnMaps(widget, tables);
@@ -116,20 +131,37 @@ export function resolveFormLayoutUpdate(
     throw new Error("Native Form field metadata is incomplete; refusing layout write.");
   }
   const fieldsByColumnId = new Map(fields.map(field => [field.columnId, field.fieldId]));
-  const previous = safePreviousLayout(widget.layoutSpec, new Set(fields.map(field => field.fieldId)));
+  const previous = safePreviousLayout(widget.layoutSpec, new Set(fields.map(field => field.fieldId)), new Set(publishedFormPaths.values()));
   if (!Array.isArray(input.children) || !input.children.length || input.children.length > MAX_CHILDREN) {
     throw new Error("Form layout requires a bounded nonempty root.");
   }
   const used = new Set<string>();
   let count = 1, submits = 0;
   const children: JsonRecord[] = [];
-  const paragraph = (node: FormParagraph, position: string): JsonRecord => ({
-    id: "gia_paragraph_" + position, type: "Paragraph",
-    text: safeText(node.text, "Form paragraph"), alignment: node.alignment ?? "left"
-  });
+  const paragraph = (node: FormParagraph | FormLink, position: string): JsonRecord => {
+    let text: string;
+    if (node.type === "form_link") {
+      if (input.confirmPublicLink !== true) throw new Error("Form link requires confirmPublicLink:true.");
+      if (!Number.isInteger(node.targetPageId) || node.targetPageId < 1 ||
+          !Number.isInteger(node.targetWidgetId) || node.targetWidgetId < 1) {
+        throw new Error("Form link target IDs must be positive integers.");
+      }
+      const path = publishedFormPaths.get(node.targetPageId + ":" + node.targetWidgetId);
+      if (!path || !/^\/forms\/[a-zA-Z0-9_-]{1,100}\/[1-9]\d{0,9}$/.test(path)) {
+        throw new Error("Form link target is not resolved to a verified published share.");
+      }
+      if (typeof node.label !== "string" || node.label.length < 1 ||
+          node.label.length > 100 || /[()\r\n]/.test(node.label)) {
+        throw new Error("Form link label must be bounded, nonempty Markdown-safe text.");
+      }
+      text = "[" + safeText(node.label, "Form link label") + "](" + path + ")";
+      if (text.length > 300) throw new Error("Form link exceeds the native text budget.");
+    } else text = safeText(node.text, "Form paragraph");
+    return {id:"gia_paragraph_" + position,type:"Paragraph",text,alignment:node.alignment ?? "left"};
+  };
   for (const [index, node] of input.children.entries()) {
     if (++count > MAX_NODES) throw new Error("Form layout exceeds the node budget.");
-    if (node.type === "paragraph") {
+    if (node.type === "paragraph" || node.type === "form_link") {
       children.push(paragraph(node, String(index)));
     } else if (node.type === "section") {
       if (!Array.isArray(node.children) || !node.children.length ||
@@ -137,7 +169,7 @@ export function resolveFormLayoutUpdate(
       const section: JsonRecord[] = [];
       for (const [inner, child] of node.children.entries()) {
         if (++count > MAX_NODES) throw new Error("Form layout exceeds the node budget.");
-        if (child.type === "paragraph") {
+        if (child.type === "paragraph" || child.type === "form_link") {
           section.push(paragraph(child, index + "_" + inner));
           continue;
         }

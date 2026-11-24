@@ -387,6 +387,19 @@ bindings. It does not add fields to native sections, create share links, publish
 execute submissions or assert rendered behavior. To place a column not already
 present as a native section field, configure the widget fields separately first.
 
+A layout may contain one `{type:"form_link",label,targetPageId,targetWidgetId}`
+at the root or within a section. The request requires `confirmPublicLink:true`
+and native Grist Owner access. Both IDs must resolve to another already
+published Form in the same document. Gia verifies the native page-share
+binding, resolves the separate public key with fixed Grist socket calls on
+the configured origin, and checks the exact public Form endpoint without
+credentials before writing the link. The caller supplies no URL or key.
+Re-read confirms the target and persisted layout. The key is never returned
+through MCP. An earlier protected link can be retained or edited only after
+its target is resolved to that same verified key. Native anonymous submissions
+are tested in disposable Grist qualification, never sent by the runtime.
+Worker routes on another origin and unresolved organization paths fail closed.
+
 `grist_change_ui(action="update_form_field_options")` targets one
 existing native Form section field by page/widget and stable column ID. It
 updates a nonempty subset of `question` (string or null to clear),

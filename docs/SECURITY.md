@@ -233,6 +233,14 @@ Hidden fields and saved filters are presentation state. A generated summary
 table has its own native policy. Native roles, sharing and credential
 administration remain in Grist and its deployment.
 
+A same-document Form link requires explicit confirmation and native Owner
+proof. Only the fixed Grist document-open and share-lookup messages are used.
+The socket is constrained to a server-advertised worker on the configured
+origin. The returned home share must match the exact native document and
+document-local link identity. Gia verifies the public Form without credentials
+before persisting the link and protects it in model-facing projections. No
+raw share replies, credentials or public capability keys enter tool results.
+
 ## Document bootstrap
 
 Creation/copy requires both the explicit deployment workspace ceiling and one
