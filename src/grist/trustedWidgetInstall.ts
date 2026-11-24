@@ -7,6 +7,8 @@ type Json = Record<string, unknown>;
 export interface TrustedWidget {
   key: string; name: string; widgetId: string; revision: string; url: string;
   referenceOption?: ReferenceOptionManifest;
+  directUrl?: true;
+  allowSelectBy?: true;
 }
 interface ReferenceOptionManifest {
   key: string;
@@ -76,6 +78,21 @@ function isNativeUrlWidget(view: Json): boolean {
     (view.pluginId == null || view.pluginId === "");
 }
 
+function approvedSelection(item: TrustedWidget): Json {
+  // Grist deliberately prefers a catalog lookup if either widget ID is present.
+  return item.directUrl === true
+    ? { widgetId: null, widgetDef: null, url: item.url }
+    : { widgetId: item.widgetId, widgetDef: approvedDefinition(item), url: null };
+}
+
+export function matchesTrustedWidgetSelection(options: unknown, item: TrustedWidget): boolean {
+  const view = customViewOptions(obj(options));
+  if (!view || !isNativeUrlWidget(view)) return false;
+  const selection = approvedSelection(item);
+  return Object.entries(selection).every(([key, expected]) =>
+    expected === null ? view[key] == null : isDeepStrictEqual(view[key], expected));
+}
+
 /** Only deployment operators can approve versioned remote origins, never MCP callers. */
 export function approvedWidgets(raw: string | undefined, gristBase: string): TrustedWidget[] {
   if (!raw?.trim()) return [];
@@ -88,16 +105,19 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
   }
   const host = new URL(gristBase).hostname;
   const keys = new Set<string>();
+  const directUrls = new Set<string>();
   return parsed.map((rawEntry): TrustedWidget => {
     const entry = obj(rawEntry);
     if (!entry || Object.keys(entry).some(k =>
-      !["key","name","widgetId","revision","url","referenceOption"].includes(k)) ||
+      !["key","name","widgetId","revision","url","referenceOption","directUrl","allowSelectBy"].includes(k)) ||
       typeof entry.key !== "string" || !KEY.test(entry.key) ||
       typeof entry.name !== "string" || !entry.name.trim() ||
       entry.name.length > 80 || /[<>\u0000-\u001f]/.test(entry.name) ||
       typeof entry.widgetId !== "string" || !ID.test(entry.widgetId) ||
       typeof entry.revision !== "string" || !VERSION.test(entry.revision) ||
-      typeof entry.url !== "string" || entry.url.length > 1024) {
+      typeof entry.url !== "string" || entry.url.length > 1024 ||
+      (entry.directUrl !== undefined && entry.directUrl !== true) ||
+      (entry.allowSelectBy !== undefined && (entry.allowSelectBy !== true || entry.directUrl !== true))) {
       throw new Error("Malformed operator-approved widget entry.");
     }
     if (keys.has(entry.key)) throw new Error("Duplicate trusted widget registry key.");
@@ -113,10 +133,27 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
       !url.pathname.split("/").some(s => s === entry.revision || s.startsWith(entry.revision + "."))) {
       throw new Error("Trusted widget URL must use separate HTTPS origin and versioned path.");
     }
+    if (entry.directUrl === true) {
+      if (directUrls.has(url.href)) throw new Error("Duplicate trusted direct widget URL.");
+      directUrls.add(url.href);
+    }
     return {key:entry.key,name:entry.name,widgetId:entry.widgetId,
       revision:entry.revision,url:url.href,
+      ...(entry.directUrl === true ? { directUrl: true } : {}),
+      ...(entry.allowSelectBy === true ? { allowSelectBy: true } : {}),
       ...(entry.referenceOption === undefined ? {} : { referenceOption: readReferenceOption(entry.referenceOption) })};
   });
+}
+
+export function assertTrustedWidgetSelectBySource(
+  widget: { type: string; options?: unknown }, item: TrustedWidget
+): void {
+  const view = customViewOptions(obj(widget.options));
+  if (item.allowSelectBy !== true || item.directUrl !== true || widget.type !== "custom" ||
+      (view?.access !== "read table" && view?.access !== "full") ||
+      !matchesTrustedWidgetSelection(widget.options, item)) {
+    throw new Error("Select-by requires an active, exactly matching widget approved as a linking source.");
+  }
 }
 
 /** Native Grist customView writer: initial access is always none. */
@@ -126,14 +163,10 @@ export function planTrustedWidgetInstall(
   if (widget.type !== "custom") throw new Error("Widget must be native Custom type.");
   const outer=obj(widget.options), old=customViewOptions(outer);
   if (!outer || !old) throw new Error("Native custom widget options are incomplete.");
-  const widgetDef = approvedDefinition(item);
   const identified=old.widgetId != null || old.widgetDef != null ||
     (typeof old.url === "string" && old.url.length > 0);
   if (identified) {
-    if (old.widgetId === item.widgetId &&
-      isDeepStrictEqual(old.widgetDef,widgetDef) &&
-      (old.url === undefined || old.url === null) &&
-      (old.pluginId === undefined || old.pluginId === "")) {
+    if (matchesTrustedWidgetSelection(outer, item)) {
       return {changed:false,options:outer,optionsJson:JSON.stringify(outer)};
     }
     throw new Error("Custom widget identity is already protected.");
@@ -149,7 +182,7 @@ export function planTrustedWidgetInstall(
       throw new Error("Existing custom widget settings are not blank.");
     }
   }
-  const selected={widgetId:item.widgetId,widgetDef,pluginId:"",url:null,
+  const selected={...approvedSelection(item),pluginId:"",
     access:"none",widgetOptions:null,columnsMapping:null,renderAfterReady:false};
   const options:Json={...outer,customView:JSON.stringify(selected)};
   const optionsJson=JSON.stringify(options);
@@ -167,10 +200,9 @@ export function planTrustedWidgetReferences(
   const manifest = item.referenceOption;
   const outer = obj(widget.options);
   const current = customViewOptions(outer);
-  if (!manifest || widget.type !== "custom" || !outer || !current || !isNativeUrlWidget(current) ||
+  if (!manifest || widget.type !== "custom" || !outer || !current ||
       current.access !== "none" ||
-      current.widgetId !== item.widgetId || !isDeepStrictEqual(current.widgetDef, approvedDefinition(item)) ||
-      current.url != null ||
+      !matchesTrustedWidgetSelection(outer, item) ||
       current.renderAfterReady !== false) {
     throw new Error("Reference configuration requires the exact approved widget installed with access none.");
   }
@@ -226,7 +258,8 @@ export function planTrustedWidgetRevisionUpdate(
   widget: {type:string;options?:unknown},
   previous: TrustedWidget, next: TrustedWidget
 ): {changed:boolean;options:Json;optionsJson:string} {
-  if (widget.type !== "custom" || previous.widgetId !== next.widgetId) {
+  if (widget.type !== "custom" || previous.widgetId !== next.widgetId ||
+      previous.directUrl !== next.directUrl) {
     throw new Error("Trusted widget revision requires an existing Custom widget of the same identity.");
   }
   const slot = (item: TrustedWidget): string => {
@@ -243,21 +276,18 @@ export function planTrustedWidgetRevisionUpdate(
   }
   const outer = obj(widget.options), old = customViewOptions(outer);
   if (!outer || !old) throw new Error("Native custom widget options are incomplete.");
-  if (old.widgetId !== previous.widgetId ||
-      (old.access !== "none" && old.access !== undefined) ||
-      old.url != null || (old.pluginId != null && old.pluginId !== "") ||
+  if ((old.access !== "none" && old.access !== undefined) ||
       old.columnsMapping != null || old.widgetOptions != null ||
       old.renderAfterReady !== false) {
     throw new Error("Trusted revision replacement requires zero access and empty widget state.");
   }
-  const current = old.widgetDef;
-  if (isDeepStrictEqual(current, approvedDefinition(next))) {
+  if (matchesTrustedWidgetSelection(outer, next)) {
     return {changed:false,options:outer,optionsJson:JSON.stringify(outer)};
   }
-  if (!isDeepStrictEqual(current, approvedDefinition(previous))) {
+  if (!matchesTrustedWidgetSelection(outer, previous)) {
     throw new Error("Current widget revision does not match the exact approved source.");
   }
-  const options:Json = {...outer,customView:JSON.stringify({...old,widgetDef:approvedDefinition(next)})};
+  const options:Json = {...outer,customView:JSON.stringify({...old,...approvedSelection(next)})};
   const optionsJson=JSON.stringify(options);
   if (optionsJson.length>8192)throw new Error("Trusted widget revision exceeds native size limit.");
   return {changed:true,options,optionsJson};

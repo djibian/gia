@@ -119,7 +119,8 @@ import {
   type WidgetSortInput
 } from "./widgetSort.js";
 import { existingWidgetFields } from "./widgetFields.js";
-import { approvedWidgets, planTrustedWidgetInstall, planTrustedWidgetReferences,
+import { approvedWidgets, assertTrustedWidgetSelectBySource, matchesTrustedWidgetSelection,
+  planTrustedWidgetInstall, planTrustedWidgetReferences,
   planTrustedWidgetRevisionUpdate, type TrustedWidgetReferences } from "./trustedWidgetInstall.js";
 import {
   resolveWidgetFieldsUpdate,
@@ -135,7 +136,7 @@ export interface PageWidgetUpdateInput {
   description?: string;
   chartType?: GristChartType;
   sort?: readonly WidgetSortInput[] | null;
-  selectBy?: ColumnSelectByInput | null;
+  selectBy?: (ColumnSelectByInput & { trustedSourceKey?: string | undefined }) | null;
   customWidgetSettings?: CustomWidgetSettingsUpdateInput;
   calendarConfig?: CalendarConfigInput;
   gridOptions?: GridOptionsUpdateInput;
@@ -1492,7 +1493,7 @@ export class AuthorizedGristService {
           ?.widgets.find(w => w.id === widgetId);
         if (!installed || !sameJsonValue(installed.options, plan.options) ||
             installed.customWidgetSettingsNormalizationIncomplete ||
-            installed.customWidgetSettings?.widgetId !== approved.widgetId ||
+            !matchesTrustedWidgetSelection(installed.options, approved) ||
             installed.customWidgetSettings?.access !== "none") {
           throw new Error("Native widget identity or initial zero access could not be verified.");
         }
@@ -1545,7 +1546,7 @@ export class AuthorizedGristService {
         const after = await read();
         if (!sameJsonValue(after.options,plan.options) ||
             after.customWidgetSettingsNormalizationIncomplete ||
-            after.customWidgetSettings?.widgetId !== next.widgetId ||
+            !matchesTrustedWidgetSelection(after.options, next) ||
             after.customWidgetSettings?.access !== "none") {
           throw new Error("Trusted widget revision postconditions not verified.");
         }
@@ -1643,8 +1644,21 @@ export class AuthorizedGristService {
     if (grantsWidgetData && update.customWidgetSettings?.confirmDataAccess !== true) {
       throw new Error("Granting custom widget data access requires confirmDataAccess:true.");
     }
+    const trustedSourceKey = update.selectBy?.trustedSourceKey;
+    if (trustedSourceKey !== undefined && (update.selectBy?.sourceColumnId !== undefined ||
+        update.selectBy?.targetColumnId !== undefined ||
+        Object.entries(update).some(([key, value]) => key !== "selectBy" && value !== undefined))) {
+      throw new Error("Trusted custom widget sources require a separate direct select-by update.");
+    }
 
     return this.execute("update_page_widget", documentIdOrUrl, 1, async (id) => {
+      const trustedSource = trustedSourceKey === undefined ? undefined : approvedWidgets(
+        process.env.GIA_TRUSTED_CUSTOM_WIDGETS_JSON, process.env.GRIST_BASE_URL ?? ""
+      ).find(item => item.key === trustedSourceKey && item.allowSelectBy === true);
+      if (trustedSourceKey !== undefined) {
+        if (!trustedSource) throw new Error("Widget is not operator-approved as a select-by source.");
+        await this.inner.assertDocumentOwner(id);
+      }
       const usesColumnSelectBy =
         update.selectBy !== undefined &&
         update.selectBy !== null &&
@@ -1675,7 +1689,13 @@ export class AuthorizedGristService {
       if (!target) {
         throw new Error(`Grist widget ${widgetId} does not exist on page ${pageId}.`);
       }
-      if (grantsWidgetData || update.customWidgetSettings?.resetWidgetOptions === true) {
+      const config = update.customWidgetSettings;
+      const approvedDirect = target.type === "custom" &&
+        target.customWidgetSettings?.widgetId === undefined &&
+        (config?.optionsPatch !== undefined || config?.resetWidgetOptions === true) &&
+        approvedWidgets(process.env.GIA_TRUSTED_CUSTOM_WIDGETS_JSON, process.env.GRIST_BASE_URL ?? "")
+          .some(item => item.directUrl === true && matchesTrustedWidgetSelection(target.options, item));
+      if (grantsWidgetData || config?.resetWidgetOptions === true || approvedDirect) {
         // Raising remote data access or clearing its persisted configuration requires native Owner.
         await this.inner.assertDocumentOwner(id);
       }
@@ -1738,7 +1758,8 @@ export class AuthorizedGristService {
           ? resolveCustomWidgetSettingsUpdate(
               target,
               tableResponse,
-              update.customWidgetSettings
+              update.customWidgetSettings,
+              approvedDirect
             )
           : expectedCalendarConfig;
       if (update.gridOptions !== undefined) {
@@ -1822,13 +1843,30 @@ export class AuthorizedGristService {
             expectedSourceColumnRef = resolved.sourceColumnRef;
             expectedTargetColumnRef = resolved.targetColumnRef;
           } else {
-            assertDirectSelectByAllowed(before, source, target);
+            if (trustedSource) {
+              assertTrustedWidgetSelectBySource(source, trustedSource);
+              if (!source.tableId || source.tableRef < 1) {
+                throw new Error("Trusted select-by requires a verified source table.");
+              }
+            }
+            assertDirectSelectByAllowed(before, source, target, trustedSource !== undefined);
+            if (trustedSource && target.selectBy?.sourceSectionId === sourceWidgetId &&
+                target.selectBy.sourceColumnRef === undefined && target.selectBy.targetColumnRef === undefined) {
+              return { documentId: id, pageId, widget: projectPublicWidget(target) };
+            }
             adapterUpdate.selectBy = { sourceSectionId: sourceWidgetId };
           }
           expectedSourceWidgetId = sourceWidgetId;
         }
       }
 
+      if (trustedSource) {
+        const fresh = await this.loadDocumentUi(id);
+        assertCompleteUiSnapshot(fresh);
+        if (!isDeepStrictEqual(fresh.pages.find(candidate => candidate.id === pageId), page)) {
+          throw new Error("Native select-by page changed before writing; reconcile first.");
+        }
+      }
       await this.uiActions.updatePageWidget(id, widgetId, adapterUpdate);
       try {
         const afterTableResponse =
@@ -1850,6 +1888,15 @@ export class AuthorizedGristService {
         const widget = updatedPage?.widgets.find((candidate) => candidate.id === widgetId);
         if (!widget) {
           throw new Error(`Updated widget ${widgetId} was not found on re-read.`);
+        }
+        if (trustedSource) {
+          const source = updatedPage?.widgets.find(candidate => candidate.id === expectedSourceWidgetId);
+          if (!source || source.tableRef !== widget.tableRef || source.tableId !== widget.tableId ||
+              !isDeepStrictEqual(source, page.widgets.find(candidate => candidate.id === source.id)) ||
+              !sameJsonValue(widget.options, target.options)) {
+            throw new Error("Trusted select-by source or target changed before readback.");
+          }
+          assertTrustedWidgetSelectBySource(source, trustedSource);
         }
         if (expectedTitle !== undefined && widget.title !== expectedTitle) {
           throw new Error(`Updated widget ${widgetId} did not match the requested title on re-read.`);
