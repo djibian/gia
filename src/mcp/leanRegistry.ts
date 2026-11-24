@@ -249,7 +249,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "create_tables: {action,documentId,tables:[{id,columns:[{id,fields?:{label?,type?,isFormula?,formula?,widgetOptions?}}]}]}; create_columns: {action,documentId,tableId,columns:[{id,fields?}]}",
       "Each new table requires at least one column; creation does not accept update-only description or visibleColumnId.",
       "ensure_tables: {action,documentId,tables:[{id,columns:[{id,fields:{type,isFormula?:false}}]}]}; creates only absent seeds, rejects conflicting existing columns and verifies native readback. Extra later columns are preserved.",
-      "ensure_columns: {action,documentId,tableId,columns:[{id,fields:{type,isFormula?:true,formula?:boundedGristPython}}]}; add only absent typed data or typed formula columns, reject changed formula/type, preserve prior IDs and verify complete native formula metadata. Never blindly replay uncertain writes.",
+      "ensure_columns: {action,documentId,tableId,columns:[{id,fields:{type,isFormula?,formula?}}]}; create only absent data or calculated columns. A bounded Grist Python formula with isFormula:false creates an insert-only Text or Choice default. Reject conflicting existing schema or trigger settings, preserve prior IDs and verify native formula metadata. Never blindly replay uncertain writes.",
       "For new configured columns, supply a homogeneous create_columns batch with {id,fields:{type,label?},configuration:{form?:{question?,required?,acceptFromUrl?},dropdownCondition?}}. Reference dropdown conditions use a typed choice/record predicate and existing operand column IDs."
     ],
     constraints: [

@@ -109,7 +109,12 @@ data seed is `fields:{type,isFormula:false}` and requires native readback of
 bound and no unrelated native fields. Both use the same closed supported types:
 `Any`, `Text`, `Numeric`, `Int`, `Bool`, `Date`, `DateTime:UTC`,
 `DateTime:Europe/Paris`, `Attachments`, `Choice`, `ChoiceList`, `Ref:<table>` and
-`RefList:<table>`. The reference destination and formula dependencies must
+`RefList:<table>`. For `Text` and `Choice`, a seed of
+`fields:{type,isFormula:false,formula:nonemptyGristPython}` creates a writable
+column with an insert-only default. Grist evaluates it for an omitted field
+on insertion, preserving explicitly supplied values and subsequent edits.
+Gia verifies the exact formula, insert trigger mode and absence of update
+dependencies. The reference destination and formula dependencies must
 already be valid in native Grist. A matching existing formula is reused without
 rewriting it; for an explicit formula seed a differing formula, an explicit data
 seed targeting a formula column, or a conflicting type

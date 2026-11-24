@@ -2694,6 +2694,43 @@ async function run(): Promise<void> {
       mixedRows.records.some(row => row.fields.Extra === "saisie" && row.fields.Mixed === 0),
       "native_any_data_or_formula_values_changed_type");
 
+    const triggerSeed = {
+      action: "ensure_columns", documentId: emptyDocumentId, tableId: "CompatFormula",
+      columns: [
+        { id: "InitialBase", fields: { type: "Text", isFormula: false, formula: "$Base" } },
+        { id: "InitialStatus", fields: { type: "Choice", isFormula: false, formula: "'New'" } }
+      ]
+    };
+    const triggerCreation = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", triggerSeed),
+      "native_insert_trigger_creation");
+    const triggerReplay = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", triggerSeed),
+      "native_insert_trigger_replay");
+    assert(triggerCreation.changed === true && triggerCreation.persistedSchemaVerified === true &&
+      triggerReplay.changed === false && triggerReplay.persistedSchemaVerified === true,
+      "native_insert_trigger_not_verified");
+    await callTool(bridgeBaseUrl, "grist_add_records", {
+      documentId: emptyDocumentId, tableId: "CompatFormula", records: [{ fields: { Base: "Default" } }]
+    });
+    await callTool(bridgeBaseUrl, "grist_add_records", {
+      documentId: emptyDocumentId, tableId: "CompatFormula",
+      records: [{ fields: { Base: "Override", InitialBase: "Entered", InitialStatus: "Manual" } }]
+    });
+    const readFormulaRows = () => gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(emptyDocumentId)}/tables/CompatFormula/records`) as Promise<MetaRecords>;
+    const inserted = await readFormulaRows();
+    const defaulted = inserted.records.find(row => row.fields.Base === "Default");
+    const overridden = inserted.records.find(row => row.fields.Base === "Override");
+    assert(defaulted?.fields.InitialBase === "Default" && defaulted.fields.InitialStatus === "New" &&
+      overridden?.fields.InitialBase === "Entered" && overridden.fields.InitialStatus === "Manual",
+      "native_insert_trigger_default_or_override_wrong");
+    await callTool(bridgeBaseUrl, "grist_change_records", {
+      action: "update", documentId: emptyDocumentId, tableId: "CompatFormula",
+      records: [{ id: defaulted!.id, fields: { Base: "Changed", InitialStatus: "Edited" } }]
+    });
+    const edited = (await readFormulaRows()).records.find(row => row.id === defaulted!.id);
+    assert(edited?.fields.Base === "Changed" && edited.fields.InitialBase === "Default" &&
+      edited.fields.InitialStatus === "Edited", "native_insert_trigger_recomputed_on_update");
+
     const configuredRequest = {
       action: "create_columns", documentId: emptyDocumentId, tableId: "Placements", columns: [
         { ...columnOf("ActiveMentor", "Ref:Mentors"), configuration: {

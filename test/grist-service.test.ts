@@ -215,6 +215,38 @@ test("ensure_columns explicitly seeds non-formula Choice and refuses formula con
   assert.equal(legacy.changed,false);
 });
 
+test("ensure_columns reconciles a writable default only with the exact native trigger", async () => {
+  const seed = { id: "Status", fields: { type: "Choice", isFormula: false, formula: "'New'" } };
+  const nativeFields: Record<string, unknown> = {
+    ...seed.fields, colRef: 31, recalcWhen: 0, recalcDeps: null
+  };
+  let writes = 0;
+  const { grist } = service(1000, 100, 2, 20, {
+    listColumns: async () => ({
+      columns: writes ? [{ id: seed.id, fields: { ...nativeFields } }] : []
+    }),
+    createColumns: async (_doc: string, _table: string, columns: unknown) => {
+      assert.deepEqual(columns, [{ id: seed.id, fields: { ...seed.fields, recalcWhen: 0 } }]);
+      writes++;
+      return { columns: [{ id: seed.id }] };
+    }
+  });
+  const ensure = () => grist.ensureColumns("doc", "Stages", [seed]) as Promise<{
+    changed: boolean; persistedSchemaVerified: boolean
+  }>;
+  assert.deepEqual(await ensure(), {
+    tableId: "Stages", columns: [{ id: seed.id, created: true }],
+    changed: true, persistedSchemaVerified: true
+  });
+  assert.equal((await ensure()).changed, false);
+  nativeFields.recalcDeps = ["L", 31];
+  await assert.rejects(ensure, /conflicts/);
+  nativeFields.recalcDeps = null;
+  nativeFields.recalcWhen = 1;
+  await assert.rejects(ensure, /conflicts/);
+  assert.equal(writes, 1);
+});
+
 test("ensure_columns refuses missing and malformed formula seeds before native reads", async () => {
   let reads=0,writes=0;
   const {grist}=service(1000,100,2,20,{
@@ -227,6 +259,8 @@ test("ensure_columns refuses missing and malformed formula seeds before native r
     {type:"Numeric",isFormula:true,formula:"   "},
     {type:"Numeric",isFormula:true,formula:"a".repeat(4097)},
     {type:"Numeric",isFormula:false,formula:"$Base"},
+    {type:"Text",isFormula:false,formula:"'a\0b'"},
+    {type:"Choice",isFormula:false,formula:"'New'",recalcWhen:1},
     {type:"Numeric",isFormula:false,widgetOptions:"{}"},
     {type:"Numeric",isFormula:true,formula:"$Base",label:"unrelated"}
   ]) {
