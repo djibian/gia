@@ -342,8 +342,13 @@ test("Native raw-row style removal keeps sibling colors and refuses unsafe helpe
   assert.deepEqual(plan.remainingRules, [state.rules[0]]);
   assert.deepEqual(plan.options, {theme:"dark",rulesOptions:[{fillColor:"#ABCDEF"}]});
   assert.throws(() => planRemoveRowStyleRule(state, "$Qty == 9"), /absent/);
-  assert.throws(() => planRemoveRowStyleRule({...state,rules:[state.rules[0]!] },
-    "$Qty > 10"), /two to eight/);
+  const finalRow = planRemoveRowStyleRule(
+    { ...state, options: plan.options, rules: plan.remainingRules }, "$Qty > 10");
+  assert.equal(finalRow.helperRef, 21);
+  assert.deepEqual(finalRow.remainingRules, []);
+  assert.deepEqual(finalRow.options, { theme: "dark", rulesOptions: [] });
+  assert.throws(() => planRemoveRowStyleRule(
+    { ...state, options: finalRow.options, rules: [] }, "$Qty > 10"), /one to eight/);
   assert.throws(() => planRemoveRowStyleRule({...state,rules:[
     state.rules[0]!, {...state.rules[1]!,formula:"$Qty > 10"}]},
     "$Qty > 10"), /unique/);
@@ -388,8 +393,13 @@ test("Deleting one native column style preserves sibling colors and rejects shar
     { textColor: "#AABBCC" }
   ] });
   assert.throws(() => planRemoveColumnStyleRule(original, "$Qty == 0"));
+  const finalColumn = planRemoveColumnStyleRule(
+    { ...original, options: plan.options, rules: plan.remainingRules }, "$Qty < 0");
+  assert.equal(finalColumn.helperRef, 8);
+  assert.deepEqual(finalColumn.remainingRules, []);
+  assert.deepEqual(finalColumn.options, { theme: "dark", rulesOptions: [] });
   assert.throws(() => planRemoveColumnStyleRule(
-    { ...original, rules: [original.rules[0]!] }, "$Qty > 2"));
+    { ...original, options: finalColumn.options, rules: [] }, "$Qty < 0"), /one to eight/);
   assert.throws(() => planRemoveColumnStyleRule(
     { ...original, rules: [
       original.rules[0]!, { ...original.rules[1]!, formula: "$Qty > 2" }

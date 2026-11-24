@@ -705,7 +705,7 @@ export class GristUiActionsAdapter {
     catch { throw new Error("Trusted remaining row-style options must be JSON."); }
     const state = record(parsed);
     if (!state || !Array.isArray(state.rulesOptions) ||
-        state.rulesOptions.length < 1 || state.rulesOptions.length > 7 ||
+        state.rulesOptions.length > 7 ||
         state.rulesOptions.some(item => !record(item) || !Object.keys(record(item)!).length)) {
       throw new Error("Remaining raw-row style colors must be complete.");
     }
@@ -808,7 +808,7 @@ export class GristUiActionsAdapter {
     catch { throw new Error("Trusted remaining style colors must be JSON."); }
     const options = record(parsed);
     if (!options || !Array.isArray(options.rulesOptions) ||
-        options.rulesOptions.length < 1 || options.rulesOptions.length > 7 ||
+        options.rulesOptions.length > 7 ||
         options.rulesOptions.some(item => !record(item) || !Object.keys(record(item)!).length)) {
       throw new Error("Remaining native style rule colors must be complete.");
     }

@@ -279,7 +279,7 @@ No new MCP tool or widget/publication authority is introduced.
 
 
 `grist_change_structure(action="remove_column_style_rule")` removes exactly one
-uniquely selected native column conditional style from a complete 2–8-rule
+uniquely selected native column conditional style from a complete 1–8-rule
 owner. It requires stable table/column IDs, exact existing `conditionFormula`,
 and `confirmRemoveRule:true`. Gia verifies that the private hidden helper is
 exclusively owned by that column and is not referenced by another column,
@@ -301,7 +301,7 @@ order is a no-op, and unverified writes require reconciliation, not blind replay
 Neither external CAS nor browser-visible precedence is claimed.
 
 `grist_change_structure(action="remove_row_style_rule")` deletes exactly
-one fully configured native raw-table conditional row-style rule among two to
+one fully configured native raw-table conditional row-style rule among one to
 eight unique rules. Only the stable table ID, an exact existing predicate and
 `confirmRemoveRule:true` enter the request. Complete native metadata must prove
 the selected helper belongs exclusively to the table's raw view section, and
@@ -309,7 +309,8 @@ no other column, field or section references it. Gia writes the surviving paired
 style colors and the fixed native helper `RemoveColumn` in one bounded action
 bundle, then verifies surviving ordered refs, formulas, colors, unrelated section
 options and physical removal of the selected helper. Missing, duplicate, shared,
-opaque or truncated owners and last-rule removal fail closed. A repeated removal
+opaque or truncated owners fail closed. Removing the final rule preserves all
+unrelated options and leaves an empty style sequence. A repeated removal
 does not delete another rule. Effects without complete postconditions are
 uncertain and must be inspected before retry; this is not a native CAS, broad
 column-deletion API or browser-rendering proof. The ten-tool interface remains.
