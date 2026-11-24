@@ -3965,6 +3965,38 @@ async function run(): Promise<void> {
     assert(!Object.hasOwn(publicStyledColumn?.fields ?? {}, "rules"),
       "native_conditional_style_refs_exposed");
 
+    // Native removal of the last rule must leave an empty style sequence,
+    // preserve other options, delete only the selected helper and refuse replay.
+    for (const target of [
+      { action: "remove_column_style_rule", columnId: "Name", conditionFormula: "$Qty > 20" },
+      { action: "remove_row_style_rule", conditionFormula: "$Qty > 11" }
+    ]) {
+      const request = { ...target, documentId, tableId: TABLE_ID, confirmRemoveRule: true };
+      const result = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", request),
+        "native_final_style_remove") as {
+          changed: boolean; persistedStyleVerified: boolean; remainingStyleRuleCount: number
+        };
+      assert(result.changed && result.persistedStyleVerified && result.remainingStyleRuleCount === 0,
+        "native_final_style_remove_unverified");
+      await callToolExpectError(bridgeBaseUrl, "grist_change_structure", request);
+    }
+    const [finalStyleColumns, finalStyleSections] = await Promise.all([
+      gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as Promise<MetaRecords>,
+      gristApi(gristBaseUrl, apiKey,
+        `${docPath}/tables/_grist_Views_section/records?hidden=true`) as Promise<MetaRecords>
+    ]);
+    const finalColumnOwner = finalStyleColumns.records.find(row => row.id === column.id);
+    const finalRowOwner = finalStyleSections.records.find(row => row.id === rawSectionRef);
+    const noRules = (value: unknown) => value === null || isDeepStrictEqual(value, ["L"]);
+    assert(noRules(finalColumnOwner?.fields.rules) && noRules(finalRowOwner?.fields.rules) &&
+      !finalStyleColumns.records.some(row => row.id === updatedRefs[1] || row.id === originalRefs[1]) &&
+      isDeepStrictEqual(JSON.parse(String(finalColumnOwner?.fields.widgetOptions)),
+        { ...originalOtherOptions, rulesOptions: [] }) &&
+      isDeepStrictEqual(JSON.parse(String(finalRowOwner?.fields.options)),
+        { ...originalOptions, rulesOptions: [] }),
+      "native_final_style_remove_failed_preservation");
+
     // Qualify an actual Bool user attribute with two authenticated synthetic
     // viewers. Both can read the control table, and only the true flag may
     // read the protected table.

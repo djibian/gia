@@ -199,18 +199,18 @@ export const planReorderColumnStyleRules = planReorderRowStyleRules;
 
 
 /** Drop one uniquely selected rule from a verified native column owner.
- * Keep all remaining helper/color pairs, not an empty implicit style. */
+ * Keep all remaining helper/style pairs, including an empty sequence. */
 export function planRemoveColumnStyleRule(
   sequence: NativeStyleSequence, conditionFormula: string
 ): { helperRef: number; remainingRules: NativeStyleSequence["rules"];
      options: JsonRecord; optionsJson: string } {
   if (typeof conditionFormula !== "string" || !conditionFormula.trim() ||
       conditionFormula.length > MAX_FORMULA || conditionFormula.includes("\0") ||
-      sequence.rules.length < 2 || sequence.rules.length > MAX_CONDITIONAL_STYLE_RULES ||
+      sequence.rules.length < 1 || sequence.rules.length > MAX_CONDITIONAL_STYLE_RULES ||
       new Set(sequence.rules.map(rule => rule.helperRef)).size !== sequence.rules.length ||
       new Set(sequence.rules.map(rule => rule.formula)).size !== sequence.rules.length ||
       sequence.rules.some(rule => !rule.formula.trim() || !Object.keys(rule.style).length)) {
-    throw new Error("Style deletion requires two to eight complete, unique native rules.");
+    throw new Error("Style deletion requires one to eight complete, unique native rules.");
   }
   const matched = sequence.rules.filter(rule => rule.formula === conditionFormula);
   if (matched.length !== 1) {
@@ -266,11 +266,11 @@ export function planRemoveRowStyleRule(
     options: JsonRecord; optionsJson: string} {
   if (typeof conditionFormula !== "string" || !conditionFormula.trim() ||
       conditionFormula.length > MAX_FORMULA || conditionFormula.includes("\0") ||
-      sequence.rules.length < 2 || sequence.rules.length > MAX_CONDITIONAL_STYLE_RULES ||
+      sequence.rules.length < 1 || sequence.rules.length > MAX_CONDITIONAL_STYLE_RULES ||
       new Set(sequence.rules.map(rule => rule.helperRef)).size !== sequence.rules.length ||
       new Set(sequence.rules.map(rule => rule.formula)).size !== sequence.rules.length ||
       sequence.rules.some(rule => !rule.formula.trim() || !Object.keys(rule.style).length)) {
-    throw new Error("Raw-row style deletion requires two to eight complete unique rules.");
+    throw new Error("Raw-row style deletion requires one to eight complete unique rules.");
   }
   const matches = sequence.rules.filter(rule => rule.formula === conditionFormula);
   if (matches.length !== 1) throw new Error("Selected raw-row style formula is absent or ambiguous.");
