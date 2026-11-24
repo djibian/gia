@@ -384,6 +384,15 @@ require reconciliation. The saved revision is metadata evidence. Grist's
 browser resolves its catalog and frame URL separately. Effective rendering,
 remote code behavior and any later grant of access require their own qualification.
 
+To use an approved custom widget as a direct linking source, the operator adds
+`allowSelectBy:true` to its approved `directUrl:true` revision after verifying that the widget
+declares Grist's linking support. The caller makes a standalone
+`update_widget` with `selectBy:{sourceWidgetId,trustedSourceKey}`. Gia requires
+fresh native Owner, the exact approved active source on the same page and
+table, and an acyclic graph. This persists only the directed native link.
+Granting widget data access remains a separate confirmed operation. Native
+metadata verification does not qualify cursor behavior of the remote widget.
+
 `grist_change_ui(action="publish_form")` publishes one existing native Form widget and its
 page-linked native share through a private fixed Grist action bundle. The request must
 include `confirmPublic:true`, a `doc.schema:write` grant and fresh native
