@@ -165,13 +165,13 @@ function selectByGraphValidator(context: DocumentUiContext) {
     context.pages.flatMap((page) => page.widgets.map((widget) => [widget.id, widget] as const))
   );
   const paths = new Map<number, { ancestors: Set<number>; cycle: boolean }>();
-  return (source: GristPageWidget, target: GristPageWidget): void => {
+  return (source: GristPageWidget, target: GristPageWidget, allowTrustedCustom = false): void => {
     if (context.metadataSnapshotIncomplete) throw new Error("Select-by requires a complete and unambiguous page/widget graph.");
     if (source.id === target.id) throw new Error("A Grist widget cannot select itself.");
     if (source.pageId !== target.pageId) {
       throw new Error("Select-by is limited to widgets on the same Grist page.");
     }
-    if (source.type === "chart" || source.type === "custom") {
+    if (source.type === "chart" || (source.type === "custom" && !allowTrustedCustom)) {
       throw new Error(
         `Widget type "${source.type}" is not allowed as a select-by source in this safe subset.`
       );
@@ -205,8 +205,8 @@ function selectByGraphValidator(context: DocumentUiContext) {
 
 export function directSelectByValidator(context: DocumentUiContext) {
   const assertGraphSafe = selectByGraphValidator(context);
-  return (source: GristPageWidget, target: GristPageWidget): void => {
-    assertGraphSafe(source, target);
+  return (source: GristPageWidget, target: GristPageWidget, allowTrustedCustom = false): void => {
+    assertGraphSafe(source, target, allowTrustedCustom);
     if (source.tableRef !== target.tableRef || source.tableId !== target.tableId) {
       throw new Error(
         "This tranche only allows direct select-by between widgets backed by the same Grist table."
@@ -218,9 +218,10 @@ export function directSelectByValidator(context: DocumentUiContext) {
 export function assertDirectSelectByAllowed(
   context: DocumentUiContext,
   source: GristPageWidget,
-  target: GristPageWidget
+  target: GristPageWidget,
+  allowTrustedCustom = false
 ): void {
-  directSelectByValidator(context)(source, target);
+  directSelectByValidator(context)(source, target, allowTrustedCustom);
 }
 
 export function discoverColumnSelectByOptions(

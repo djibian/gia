@@ -8,6 +8,7 @@ export interface TrustedWidget {
   key: string; name: string; widgetId: string; revision: string; url: string;
   referenceOption?: ReferenceOptionManifest;
   directUrl?: true;
+  allowSelectBy?: true;
 }
 interface ReferenceOptionManifest {
   key: string;
@@ -108,14 +109,15 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
   return parsed.map((rawEntry): TrustedWidget => {
     const entry = obj(rawEntry);
     if (!entry || Object.keys(entry).some(k =>
-      !["key","name","widgetId","revision","url","referenceOption","directUrl"].includes(k)) ||
+      !["key","name","widgetId","revision","url","referenceOption","directUrl","allowSelectBy"].includes(k)) ||
       typeof entry.key !== "string" || !KEY.test(entry.key) ||
       typeof entry.name !== "string" || !entry.name.trim() ||
       entry.name.length > 80 || /[<>\u0000-\u001f]/.test(entry.name) ||
       typeof entry.widgetId !== "string" || !ID.test(entry.widgetId) ||
       typeof entry.revision !== "string" || !VERSION.test(entry.revision) ||
       typeof entry.url !== "string" || entry.url.length > 1024 ||
-      (entry.directUrl !== undefined && entry.directUrl !== true)) {
+      (entry.directUrl !== undefined && entry.directUrl !== true) ||
+      (entry.allowSelectBy !== undefined && (entry.allowSelectBy !== true || entry.directUrl !== true))) {
       throw new Error("Malformed operator-approved widget entry.");
     }
     if (keys.has(entry.key)) throw new Error("Duplicate trusted widget registry key.");
@@ -138,8 +140,20 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
     return {key:entry.key,name:entry.name,widgetId:entry.widgetId,
       revision:entry.revision,url:url.href,
       ...(entry.directUrl === true ? { directUrl: true } : {}),
+      ...(entry.allowSelectBy === true ? { allowSelectBy: true } : {}),
       ...(entry.referenceOption === undefined ? {} : { referenceOption: readReferenceOption(entry.referenceOption) })};
   });
+}
+
+export function assertTrustedWidgetSelectBySource(
+  widget: { type: string; options?: unknown }, item: TrustedWidget
+): void {
+  const view = customViewOptions(obj(widget.options));
+  if (item.allowSelectBy !== true || item.directUrl !== true || widget.type !== "custom" ||
+      (view?.access !== "read table" && view?.access !== "full") ||
+      !matchesTrustedWidgetSelection(widget.options, item)) {
+    throw new Error("Select-by requires an active, exactly matching widget approved as a linking source.");
+  }
 }
 
 /** Native Grist customView writer: initial access is always none. */

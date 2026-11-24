@@ -567,7 +567,8 @@ function widgetUpdateSchema() {
         .object({
           sourceWidgetId: positiveIdSchema,
           sourceColumnId: columnIdSchema.optional(),
-          targetColumnId: columnIdSchema.optional()
+          targetColumnId: columnIdSchema.optional(),
+          trustedSourceKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/).optional()
         })
         .strict()
         .nullable()
