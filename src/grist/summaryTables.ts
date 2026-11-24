@@ -177,7 +177,19 @@ export function verifySummaryCreation(
     throw new Error("The generated Grist table does not point to the requested summary source.");
   }
 
-  const sourceColumns = columnMaps(source);
+  const actual = summaryGroupByColumns(summary, columnMaps(source).byRef);
+  if (!sameGrouping(actual, plan.groupByColumnIds)) {
+    throw new Error("Generated summary grouping does not match the requested columns.");
+  }
+
+  return {
+    sourceTableId: plan.sourceTableId,
+    summaryTableId,
+    groupByColumnIds: [...plan.groupByColumnIds]
+  };
+}
+
+function summaryGroupByColumns(summary: JsonRecord, sourceIds: Map<number, string>): Set<string> {
   if (!Array.isArray(summary.columns)) {
     throw new Error("Expanded generated-summary column metadata is unavailable.");
   }
@@ -190,24 +202,69 @@ export function verifySummaryCreation(
     const column = record(value);
     const sourceColRef = positiveInteger(record(column?.fields)?.summarySourceCol);
     if (!sourceColRef) continue;
-    const sourceColumnId = sourceColumns.byRef.get(sourceColRef);
+    const sourceColumnId = sourceIds.get(sourceColRef);
     if (!sourceColumnId || actual.has(sourceColumnId)) {
       throw new Error("Generated summary group-by metadata is incomplete or ambiguous.");
     }
     actual.add(sourceColumnId);
   }
 
-  const expected = new Set(plan.groupByColumnIds);
-  if (
-    actual.size !== expected.size ||
-    [...expected].some((columnId) => !actual.has(columnId))
-  ) {
-    throw new Error("Generated summary grouping does not match the requested columns.");
-  }
+  return actual;
+}
 
-  return {
-    sourceTableId: plan.sourceTableId,
-    summaryTableId,
-    groupByColumnIds: [...plan.groupByColumnIds]
-  };
+function sameGrouping(actual: Set<string>, expected: readonly string[]): boolean {
+  return actual.size === expected.length && expected.every(columnId => actual.has(columnId));
+}
+
+/** Native expanded tables omit hidden columns, which may still be summary keys. */
+export function withNativeSummaryColumns(tableResponse: unknown, columnResponse: unknown, limit: number): unknown {
+  const rows = record(columnResponse)?.records;
+  if (!Array.isArray(rows) || rows.length >= limit) {
+    throw new Error("Complete native summary column metadata is required.");
+  }
+  const refs = new Set<number>();
+  const byTable = new Map<number, JsonRecord[]>();
+  for (const value of rows) {
+    const row = record(value);
+    const fields = record(row?.fields);
+    const parentId = positiveInteger(fields?.parentId);
+    const colRef = positiveInteger(row?.id);
+    const colId = text(fields?.colId);
+    const group = fields?.summarySourceCol;
+    if (!parentId || !colRef || !colId || refs.has(colRef) ||
+        (group !== 0 && !positiveInteger(group))) {
+      throw new Error("Native summary column metadata is incomplete or ambiguous.");
+    }
+    refs.add(colRef);
+    const columns = byTable.get(parentId) ?? [];
+    columns.push({ id: colId, fields: { colRef, summarySourceCol: group } });
+    byTable.set(parentId, columns);
+  }
+  return { tables: tables(tableResponse).map(table => {
+    const ref = tableRef(table);
+    const columns = ref === undefined ? undefined : byTable.get(ref);
+    if (!columns || [...columnMaps(table).byRef].some(([id, name]) =>
+      !columns.some(column => column.id === name && record(column.fields)?.colRef === id))) {
+      throw new Error("Native summary metadata disagrees with the visible schema.");
+    }
+    return { ...table, columns };
+  }) };
+}
+
+export function findSummaryTableRef(tableResponse: unknown, plan: SummaryCreationPlan): number | undefined {
+  const sourceTables = tables(tableResponse);
+  const source = findTableByRef(sourceTables, plan.sourceTableRef);
+  if (!source || tableId(source) !== plan.sourceTableId) {
+    throw new Error("Native summary source table could not be verified.");
+  }
+  const sourceIds = columnMaps(source).byRef;
+  const matching = sourceTables.filter(table =>
+    positiveInteger(record(table.fields)?.summarySourceTable) === plan.sourceTableRef &&
+    sameGrouping(summaryGroupByColumns(table, sourceIds), plan.groupByColumnIds));
+  if (matching.length === 0) return undefined;
+  const ref = tableRef(matching[0]!);
+  if (!ref || matching.length !== 1 || sourceTables.filter(table => tableRef(table) === ref).length !== 1) {
+    throw new Error("Native summary table identity is ambiguous or incomplete.");
+  }
+  return ref;
 }

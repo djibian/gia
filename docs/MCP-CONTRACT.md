@@ -30,18 +30,23 @@ Unselected `grist_help({})` remains a compact ten-tool index. Selecting named to
 `grist_add_structure(action="create_tables")` requires a nonempty `columns` array per new table, matching native Grist TablePost. Missing or empty arrays are refused before any native write; Gia does not invent application columns.
 
 The bounded `grist_add_ui(action="ensure_widget")` reconciles exactly one
-ungrouped native section on an existing page using a unique (page ID, stable
-source table ID, widget type) identity. A sole existing section is reused with
+native section on an existing page using its page ID, stable source table ID,
+widget type and optional `groupByColumnIds`. An omitted grouping selects an
+ordinary section. An empty grouping selects a grand total, and a grouping of
+1–20 unique stable column IDs selects a summary of that set of columns.
+Grouped reconciliation requires fresh native Owner proof. Gia verifies the
+generated summary table using complete native column metadata so a hidden
+grouping column cannot turn an existing section into a false grand total.
+A sole existing section is reused with
 its native widget ID and all configuration preserved. If absent, Gia invokes
 the existing native `CreateViewSection`, verifies the returned ID and re-reads
 the complete UI: earlier widget identities/settings and unrelated pages must
 remain unchanged, with exactly one new matching section. Multiple matching
 sections, incomplete UI state, unavailable tables, or changed pre-write
 metadata fail closed. An uncertain native effect must be re-read before retry.
-This action deliberately does not reconcile summary grouping or multiple
-sections for the same table/type; use `add_widget` with client-owned stable
-IDs for those cases. No new MCP tool, persistent planner or native CAS is
-implied.
+Use `add_widget` with client-owned stable IDs to create intentional duplicates.
+The preflight and native creation are separate requests, so clients must
+serialize writes to the same native UI.
 
 The bounded `grist_add_structure(action="ensure_tables")` reconciles an
 initial named-table schema when reconstructing an application from scratch.
@@ -618,7 +623,16 @@ Document/page inspection additionally returns `navigationPageIds`, the exact cur
 
 ## Application access rules
 
-Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect(action="access_rules")` returns a normalized view of persisted ordinary table/column access-rule groups, while `grist_change_structure(action="access_rule_group")` accepts exactly one `create`, `replace` or `delete` intention.
+Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect(action="access_rules")` returns a normalized view of persisted ordinary table/column access-rule groups, while `grist_change_structure(action="access_rule_group")` accepts exactly one `create`, `ensure`, `replace` or `delete` intention.
+
+`ensure` requires the existing Owner and document-schema authorization and
+the same typed definition as `create`. It creates an absent group or user
+attribute, reuses an equivalent existing definition, and refuses conflicts
+before writing. Rule order and permissions are part of equivalence. Gia
+rechecks the native ACL snapshot before creation and verifies persisted
+definitions and untargeted state. This does not guarantee compare-and-set
+against external editors or effective native enforcement. Reconcile an
+uncertain native outcome before retrying.
 
 Targets use stable table/column IDs; private ACL resource/rule row IDs remain bridge-internal. Writable conditions are a deliberately small typed subset with no arbitrary literal or formula text: everyone, one native Grist role comparison or a bounded two/three-role `user.Access in/not in` membership, a `user.IsLoggedIn` equality/inequality against a native boolean literal, one same-table record-column comparison with a bounded built-in user property, or one equality/inequality comparison between a stable Text/Any record column and a bounded safe `user.LinkKey.<name>` reference, or a same-column equality/inequality comparison of `rec` and `newRec` for update-only decisions, or a Bool column compared with a native boolean `True`/`False` literal, or an existing Int column compared with the finite numeric flag `0`/`1`, or an existing Text column compared with an exact empty string.  The existing `match_user`, `match_link_key` and Bool-literal `match_boolean` leaves accept an optional `record: "newRec"` to compare the proposed post-change row instead of the current `rec` row. It is valid only for create/update permissions (read/delete must be unspecified). Absence of `record` retains the original `rec` form and normalized shape. These leaves may be combined through finite `all` / `any` / `not` boolean trees; other operand pairs, string/numeric literals and non-role membership forms remain unsupported. LinkKey names are structural policy metadata; LinkKey values and secret-bearing URLs are never accepted or returned. Both native operand orders for the supported LinkKey comparison normalize to the same public `match_link_key` condition, while writes use one canonical formula form. Permissions are explicit `allow|deny|unspecified`; native `S`, `all` and `none` forms are outside the writable subset.
 
@@ -657,7 +671,7 @@ LinkKey values, secret-bearing URLs, raw ACL JSON/formulas or native row IDs are
 model-visible. This is not an evaluation of the native lookup or enforcement.
 The same `grist_change_structure(action="access_rule_group")` also supports a
 closed `target:{userAttributeName:<safe identifier>}` in place of an ordinary
-table/column target. `create` and `replace` require exactly one typed
+table/column target. `create`, `ensure` and `replace` require exactly one typed
 `definition:{tableId,lookupColId,source}`, where source is either
 `{kind:"user_property",property:<bounded native built-in>}` or
 `{kind:"link_key",name:<safe LinkKey name>}`. `delete` accepts no definition.
