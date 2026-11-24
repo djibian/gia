@@ -640,8 +640,13 @@ async function validateFromEmptyStageSkeleton(
   assertThat(saved.some(row => row.fields.Nom === submission && row.fields.Statut === "en attente"),
     "from_empty_public_structure_submission_missing_default");
   const publicRows = await anon(publicApi + structureRecords);
-  const publicBody = await publicRows.text();
-  assertThat(!publicBody.includes(submission), "from_empty_public_structure_rows_disclosed");
+  if (publicRows.ok) {
+    assertThat(recordsFrom(await publicRows.json()).length === 0, "from_empty_public_structure_rows_disclosed");
+  } else {
+    await publicRows.body?.cancel();
+    assertThat(publicRows.status === 403 || publicRows.status === 404,
+      "from_empty_public_structure_row_privacy_unverified");
+  }
   const wrongForm = await anon(publicApi + "/forms/" + form.widget.id);
   await wrongForm.body?.cancel();
   assertThat(wrongForm.status === 403 || wrongForm.status === 404, "from_empty_public_stage_wrong_share");
