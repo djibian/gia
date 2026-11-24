@@ -330,8 +330,8 @@ type ColumnSeedState = {
   recalcWhen?: unknown; recalcDeps?: unknown;
 };
 
-// Native Grist RecalcWhen.DEFAULT runs a data formula for missing values on insert.
-const INSERT_TRIGGER_MODE = 0;
+// Native Grist RecalcWhen.DEFAULT runs on insert and on changes to declared dependencies.
+const DEFAULT_TRIGGER_MODE = 0;
 
 /** Complete native column identities and, when present, formula ownership/text. */
 function typedColumnSeedSnapshot(raw: unknown): Map<string,ColumnSeedState> {
@@ -373,7 +373,8 @@ function columnMatchesSeed(
   if (fields.formula === undefined) return true;
   return stored.formula === fields.formula &&
     (fields.isFormula === true ||
-      (stored.recalcWhen === INSERT_TRIGGER_MODE && stored.recalcDeps === null));
+      (stored.recalcWhen === DEFAULT_TRIGGER_MODE &&
+        isDeepStrictEqual(stored.recalcDeps, fields.recalcDeps ?? null)));
 }
 
 function targetSchemaRefs(byId: Map<string, number>, ids: string[]): number[] {
@@ -831,18 +832,35 @@ export class GristService {
         !fields.formula.includes("\0");
       const formulaMode = fields?.isFormula === true ||
         (fields?.isFormula === false && (fields.type === "Text" || fields.type === "Choice"));
+      const dependency = fields?.recalculateOnColumnId;
+      const triggerWithDependency = fields?.isFormula === false && typeof dependency === "string" &&
+        /^[A-Za-z][A-Za-z0-9_]{0,99}$/.test(dependency) && dependency !== column.id;
+      const formulaKeys = triggerWithDependency
+        ? ["type", "isFormula", "formula", "recalculateOnColumnId"] : ["type", "isFormula", "formula"];
       const keys=fields?Object.keys(fields):[];
       if(!fields||typeof fields.type!=="string"||!allowed.test(fields.type)||
         !(keys.length===1&&keys[0]==="type"||
           (keys.length===2&&keys.includes("type")&&fields.isFormula===false)||
-          (keys.length===3&&formula&&formulaMode&&
-           keys.every(key=>["type","isFormula","formula"].includes(key))))) {
+          (keys.length === formulaKeys.length && formula && formulaMode &&
+            keys.every(key => formulaKeys.includes(key))))) {
         throw new Error("Column seeds require a supported type and explicit formula intent. Insert trigger formulas require Text or Choice.");
       }
     }
     const read=()=>this.client.listColumns(documentId,tableId,{hidden:true});
     const before=typedColumnSeedSnapshot(await read());
-    const missing=columns.filter(column=>{
+    const nativeColumns = columns.map(column => {
+      const fields = column.fields!;
+      if (fields.isFormula !== false || fields.formula === undefined) return column;
+      const { recalculateOnColumnId, ...nativeFields } = fields;
+      const dependency = typeof recalculateOnColumnId === "string"
+        ? before.get(recalculateOnColumnId) : undefined;
+      if (recalculateOnColumnId !== undefined && !dependency) {
+        throw new Error("Trigger dependency must be an existing column on the same table.");
+      }
+      return { ...column, fields: { ...nativeFields, recalcWhen: DEFAULT_TRIGGER_MODE,
+        ...(dependency ? { recalcDeps: ["L", dependency.ref] } : {}) } };
+    });
+    const missing=nativeColumns.filter(column=>{
       const stored=before.get(column.id);
       if(stored&&!columnMatchesSeed(stored,column.fields!))
         throw new Error("Existing column seed conflicts with the requested type or formula.");
@@ -855,10 +873,14 @@ export class GristService {
     }
     try {
       const created=projectCreatedItems(
-        await this.client.createColumns(documentId, tableId, missing.map(column =>
-          column.fields?.isFormula === false && column.fields.formula !== undefined
-            ? { ...column, fields: { ...column.fields, recalcWhen: INSERT_TRIGGER_MODE } }
-            : column)),
+        await this.client.createColumns(documentId, tableId, missing.map(column => {
+          const fields = column.fields!;
+          // AddVisibleColumn interprets arrays as multiple metadata rows.
+          // The native RefList converter promotes one numeric ref to a one-item list.
+          return Array.isArray(fields.recalcDeps)
+            ? { ...column, fields: { ...fields, recalcDeps: fields.recalcDeps[1] } }
+            : column;
+        })),
         "columns",missing.length,"string"
       ) as {columns:{id:string}[];resultNormalizationIncomplete?:boolean};
       if(created.resultNormalizationIncomplete||
@@ -870,7 +892,7 @@ export class GristService {
         if(!isDeepStrictEqual(after.get(id),saved))
           throw new Error("Prior native column identity or type changed.");
       }
-      for(const column of columns){
+      for(const column of nativeColumns){
         if(!columnMatchesSeed(after.get(column.id),column.fields!)) {
           throw new Error("New native column type/formula seed could not be verified.");
         }

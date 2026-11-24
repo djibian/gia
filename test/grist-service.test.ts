@@ -261,6 +261,8 @@ test("ensure_columns refuses missing and malformed formula seeds before native r
     {type:"Numeric",isFormula:false,formula:"$Base"},
     {type:"Text",isFormula:false,formula:"'a\0b'"},
     {type:"Choice",isFormula:false,formula:"'New'",recalcWhen:1},
+    {type:"Choice",isFormula:false,formula:"'New'",recalculateOnColumnId:"Computed"},
+    {type:"Choice",isFormula:true,formula:"'New'",recalculateOnColumnId:"Base"},
     {type:"Numeric",isFormula:false,widgetOptions:"{}"},
     {type:"Numeric",isFormula:true,formula:"$Base",label:"unrelated"}
   ]) {
@@ -269,6 +271,34 @@ test("ensure_columns refuses missing and malformed formula seeds before native r
     ]),/type|formula/);
   }
   assert.equal(reads,0);assert.equal(writes,0);
+});
+
+test("ensure_columns resolves a writable trigger dependency to a stable same-table column", async () => {
+  const seed = { id: "Initial", fields: { type: "Text", isFormula: false,
+    formula: "$Base", recalculateOnColumnId: "Base" } };
+  const { recalculateOnColumnId: _stableDependency, ...fields } = seed.fields;
+  const native = { id: seed.id, fields: { ...fields, colRef: 32, recalcWhen: 0, recalcDeps: ["L", 31] } };
+  let writes = 0;
+  const { grist } = service(1000, 100, 2, 20, {
+    listColumns: async () => ({ columns: [
+      { id: "Base", fields: { type: "Text", colRef: 31 } },
+      ...(writes ? [native] : [])
+    ] }),
+    createColumns: async (_doc: string, _table: string, missing: unknown) => {
+      assert.deepEqual(missing, [{ id: seed.id, fields: { ...fields, recalcWhen: 0, recalcDeps: 31 } }]);
+      writes++;
+      return { columns: [{ id: seed.id }] };
+    }
+  });
+  await assert.rejects(() => grist.ensureColumns("doc", "Stages", [{ ...seed, fields: {
+    ...seed.fields, recalculateOnColumnId: "Missing"
+  } }]), /existing column/);
+  const ensure = () => grist.ensureColumns("doc", "Stages", [seed]) as Promise<{ changed: boolean }>;
+  assert.equal((await ensure()).changed, true);
+  assert.equal((await ensure()).changed, false);
+  native.fields.recalcDeps = ["L", 45];
+  await assert.rejects(ensure, /conflicts/);
+  assert.equal(writes, 1);
 });
 
 test("service forwards richer read options and enforces configured maximum", async () => {
