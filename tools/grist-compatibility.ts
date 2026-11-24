@@ -2637,8 +2637,23 @@ async function run(): Promise<void> {
     ]);
     // #295: a distinct blank-document table isolates formula seeds from legacy
     // Form projection fixture metadata and verifies Grist itself owns formula state.
-    await createFixtureTable("CompatFormula", [columnOf("Base", "Text")]);
-    const formulaSeed = [{id:"Echo",fields:{type:"Text",isFormula:true,formula:"$Base"}}];
+    const tableSeed = {
+      action: "ensure_tables", documentId: emptyDocumentId,
+      tables: [{ id: "CompatFormula", columns: [
+        { id: "Base", fields: { type: "Text", isFormula: false } },
+        { id: "Extra", fields: { type: "Any", isFormula: false } }
+      ] }]
+    };
+    const initialMixedTable = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", tableSeed),
+      "native_any_table_seed");
+    const mixedTableReplay = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", tableSeed),
+      "native_any_table_replay");
+    assert(initialMixedTable.changed === true && initialMixedTable.persistedSchemaVerified === true &&
+      mixedTableReplay.changed === false && mixedTableReplay.persistedSchemaVerified === true,
+      "native_any_table_seed_not_verified");
+    const mixedFormula = "$Base if $Base else 0";
+    const formulaSeed = [{id:"Echo",fields:{type:"Text",isFormula:true,formula:"$Base"}},
+      {id:"Mixed",fields:{type:"Any",isFormula:true,formula:mixedFormula}}];
     const createdFormula = resultJson(await callTool(bridgeBaseUrl,"grist_add_structure",{
       action:"ensure_columns", documentId:emptyDocumentId, tableId:"CompatFormula",
       columns:formulaSeed
@@ -2662,10 +2677,22 @@ async function run(): Promise<void> {
         columns:Array<{id:string;fields:{type:string;isFormula:boolean;formula:string}}>;
       };
     const storedFormula = formulaColumns.columns.find(column=>column.id==="Echo");
+    const storedMixedFormula = formulaColumns.columns.find(column => column.id === "Mixed");
     assert(storedFormula?.fields.type==="Text" && storedFormula.fields.isFormula===true &&
       storedFormula.fields.formula==="$Base" &&
+      storedMixedFormula?.fields.type === "Any" && storedMixedFormula.fields.isFormula === true &&
+      storedMixedFormula.fields.formula === mixedFormula &&
       !formulaColumns.columns.some(column=>column.id==="MustNotCreate"),
       "native_formula_column_state_changed");
+    await callTool(bridgeBaseUrl, "grist_add_records", {
+      documentId: emptyDocumentId, tableId: "CompatFormula",
+      records: [{ fields: { Base: "Synthétique", Extra: 3 } }, { fields: { Base: "", Extra: "saisie" } }]
+    });
+    const mixedRows = await gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(emptyDocumentId)}/tables/CompatFormula/records`) as MetaRecords;
+    assert(mixedRows.records.some(row => row.fields.Extra === 3 && row.fields.Mixed === "Synthétique") &&
+      mixedRows.records.some(row => row.fields.Extra === "saisie" && row.fields.Mixed === 0),
+      "native_any_data_or_formula_values_changed_type");
 
     const configuredRequest = {
       action: "create_columns", documentId: emptyDocumentId, tableId: "Placements", columns: [

@@ -150,7 +150,7 @@ test("ensure_columns creates and reuses formula seeds without changing prior sta
   const stored=new Map<string,{ref:number;type:string;isFormula:boolean;formula:string}>([
     ["Base",{ref:30,type:"Numeric",isFormula:false,formula:""}]
   ]);
-  const input=[{id:"Double",fields:{type:"Numeric",isFormula:true,formula:"$Base * 2"}}];
+  const input=[{id:"Double",fields:{type:"Any",isFormula:true,formula:"$Base * 2"}}];
   let writes=0;
   const {grist}=service(1000,100,2,20,{
     listColumns:async()=>({columns:[...stored].map(([id,meta])=>({
@@ -158,7 +158,7 @@ test("ensure_columns creates and reuses formula seeds without changing prior sta
     }))}),
     createColumns:async(_doc:string,_table:string,missing:typeof input)=>{
       writes++;assert.deepEqual(missing,input);
-      stored.set("Double",{ref:31,type:"Numeric",isFormula:true,formula:"$Base * 2"});
+      stored.set("Double",{ref:31,type:"Any",isFormula:true,formula:"$Base * 2"});
       return {columns:[{id:"Double"}]};
     }
   });
@@ -170,12 +170,12 @@ test("ensure_columns creates and reuses formula seeds without changing prior sta
   const repeated=await grist.ensureColumns("doc","Stage",input) as {changed:boolean};
   assert.equal(repeated.changed,false);assert.equal(writes,1);
   await assert.rejects(()=>grist.ensureColumns("doc","Stage",[
-    {id:"Double",fields:{type:"Numeric",isFormula:true,formula:"$Base * 3"}},
+    {id:"Double",fields:{type:"Any",isFormula:true,formula:"$Base * 3"}},
     {id:"MustNotCreate",fields:{type:"Numeric"}}
   ]),/conflicts/);
   // A legacy type-only seed checks the native type but does not assert formula intent.
   const typeOnly=await grist.ensureColumns("doc","Stage",[
-    {id:"Double",fields:{type:"Numeric"}}
+    {id:"Double",fields:{type:"Any"}}
   ]) as {changed:boolean};
   assert.equal(typeOnly.changed,false);
   assert.equal(stored.has("MustNotCreate"),false);assert.equal(writes,1);
@@ -462,7 +462,7 @@ test("column creation refuses ignored native metadata before any table or column
 test("ensure_tables reconciles typed seeds and ignores later extra columns",async()=>{
   const spec=[{id:"Stages",columns:[{id:"Contact",fields:{type:"DateTime:UTC"}}]},
     {id:"Enseignants",columns:[{id:"Nom",fields:{type:"Text"}},
-      {id:"Contrats",fields:{type:"Attachments"}}]}];
+      {id:"Contrats",fields:{type:"Attachments"}}, {id:"Identite",fields:{type:"Any"}}]}];
   let calls=0;
   const data=new Map<string,{ref:number;columns:Array<{id:string;fields:{colRef:number;type:string}}>}>(
     [["Stages",{ref:2,columns:[{id:"Contact",fields:{colRef:20,type:"DateTime:UTC"}},
@@ -475,7 +475,8 @@ test("ensure_tables reconciles typed seeds and ignores later extra columns",asyn
     createTables:async(_id:string,missing:typeof spec)=>{
       calls++;assert.deepEqual(missing.map(t=>t.id),["Enseignants"]);
       data.set("Enseignants",{ref:3,columns:[{id:"Nom",fields:{colRef:30,type:"Text"}},
-        {id:"Contrats",fields:{colRef:31,type:"Attachments"}}]});
+        {id:"Contrats",fields:{colRef:31,type:"Attachments"}},
+        {id:"Identite",fields:{colRef:32,type:"Any"}}]});
       return {tables:[{id:"Enseignants"}]};
     }
   });
