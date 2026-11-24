@@ -1,16 +1,73 @@
 import { isDeepStrictEqual } from "node:util";
 import { isIP } from "node:net";
 import { customViewOptions } from "./customWidgetSettings.js";
+import { tableColumnMaps } from "./tableColumnMaps.js";
 
 type Json = Record<string, unknown>;
 export interface TrustedWidget {
   key: string; name: string; widgetId: string; revision: string; url: string;
+  referenceOption?: ReferenceOptionManifest;
+}
+interface ReferenceOptionManifest {
+  key: string;
+  version: number;
+  tableSlots: string[];
+  columnSlots: Record<string, string>;
+  defaults: Json;
+}
+export interface TrustedWidgetReferences {
+  tables: Record<string, string>;
+  columns: Record<string, string>;
 }
 const KEY = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const VERSION = /^(?:v?[0-9]+\.[0-9]+\.[0-9]+|[0-9a-f]{40})$/;
 const ID = /^[@A-Za-z0-9][@A-Za-z0-9._/-]{0,119}$/;
 function obj(x: unknown): Json | null {
   return x !== null && typeof x === "object" && !Array.isArray(x) ? x as Json : null;
+}
+
+function isOptionKey(key: unknown): key is string {
+  return typeof key === "string" && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key) &&
+    !/^(?:constructor|prototype)$|(?:token|secret|password|credential|api_?key|authorization)/i.test(key);
+}
+
+function safePreset(value: unknown, depth: number): boolean {
+  if (typeof value === "string") {
+    return value.length <= 160 && !/[<>\u0000-\u001f]|(?:https?|javascript|data|file):/i.test(value);
+  }
+  if (typeof value === "number") return Number.isFinite(value) && Math.abs(value) <= 1_000_000;
+  if (typeof value === "boolean" || value === null) return true;
+  const group = obj(value);
+  return depth > 0 && group !== null && Object.keys(group).length <= 12 &&
+    Object.entries(group).every(([key, child]) => isOptionKey(key) && safePreset(child, depth - 1));
+}
+
+function readReferenceOption(raw: unknown): ReferenceOptionManifest {
+  const entry = obj(raw);
+  const slots = obj(entry?.columnSlots);
+  const defaults = entry?.defaults === undefined ? {} : obj(entry.defaults);
+  const version = entry?.version;
+  const tableSlots: unknown = entry?.tableSlots;
+  if (!entry || !isOptionKey(entry.key) || typeof version !== "number" ||
+      !Number.isSafeInteger(version) || version < 1 || version > 9999 ||
+      !Array.isArray(tableSlots) || tableSlots.length < 1 || tableSlots.length > 12 ||
+      !tableSlots.every(isOptionKey) || new Set(tableSlots).size !== tableSlots.length ||
+      !slots || Object.keys(slots).length < 1 || Object.keys(slots).length > 24 ||
+      !Object.entries(slots).every(([key, table]) =>
+        isOptionKey(key) && typeof table === "string" && tableSlots.includes(table)) ||
+      !defaults || ["version", "tables", "bindings"].some(key => Object.hasOwn(defaults, key)) ||
+      !safePreset(defaults, 3) || Object.keys(entry).some(key =>
+        !["key", "version", "tableSlots", "columnSlots", "defaults"].includes(key))) {
+    throw new Error("Malformed operator-approved widget reference option.");
+  }
+  return { key: entry.key, version, tableSlots, columnSlots: slots as Record<string, string>, defaults };
+}
+
+function approvedDefinition(item: TrustedWidget): Json {
+  return {
+    name: item.name, widgetId: item.widgetId, url: item.url,
+    accessLevel: "none", renderAfterReady: false
+  };
 }
 
 /** Only deployment operators can approve versioned remote origins, never MCP callers. */
@@ -28,7 +85,7 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
   return parsed.map((rawEntry): TrustedWidget => {
     const entry = obj(rawEntry);
     if (!entry || Object.keys(entry).some(k =>
-      !["key","name","widgetId","revision","url"].includes(k)) ||
+      !["key","name","widgetId","revision","url","referenceOption"].includes(k)) ||
       typeof entry.key !== "string" || !KEY.test(entry.key) ||
       typeof entry.name !== "string" || !entry.name.trim() ||
       entry.name.length > 80 || /[<>\u0000-\u001f]/.test(entry.name) ||
@@ -51,7 +108,8 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
       throw new Error("Trusted widget URL must use separate HTTPS origin and versioned path.");
     }
     return {key:entry.key,name:entry.name,widgetId:entry.widgetId,
-      revision:entry.revision,url:url.href};
+      revision:entry.revision,url:url.href,
+      ...(entry.referenceOption === undefined ? {} : { referenceOption: readReferenceOption(entry.referenceOption) })};
   });
 }
 
@@ -62,8 +120,7 @@ export function planTrustedWidgetInstall(
   if (widget.type !== "custom") throw new Error("Widget must be native Custom type.");
   const outer=obj(widget.options), old=customViewOptions(outer);
   if (!outer || !old) throw new Error("Native custom widget options are incomplete.");
-  const widgetDef={name:item.name,widgetId:item.widgetId,url:item.url,
-    accessLevel:"none",renderAfterReady:false};
+  const widgetDef = approvedDefinition(item);
   const identified=old.widgetId != null || old.widgetDef != null ||
     (typeof old.url === "string" && old.url.length > 0);
   if (identified) {
@@ -94,6 +151,68 @@ export function planTrustedWidgetInstall(
   return {changed:true,options,optionsJson};
 }
 
+/** Configure one operator-declared option on an exact inactive widget revision. */
+export function planTrustedWidgetReferences(
+  widget: { type: string; options?: unknown },
+  item: TrustedWidget,
+  references: TrustedWidgetReferences,
+  tablesResponse: unknown
+): { changed: boolean; options: Json; optionsJson: string } {
+  const manifest = item.referenceOption;
+  const outer = obj(widget.options);
+  const current = customViewOptions(outer);
+  if (!manifest || widget.type !== "custom" || !outer || !current || current.access !== "none" ||
+      current.widgetId !== item.widgetId || !isDeepStrictEqual(current.widgetDef, approvedDefinition(item)) ||
+      current.url != null || (current.pluginId != null && current.pluginId !== "") ||
+      current.renderAfterReady !== false) {
+    throw new Error("Reference configuration requires the exact approved widget installed with access none.");
+  }
+  const exactSlots = (raw: unknown, expected: string[]): boolean => {
+    const entries = obj(raw);
+    return entries !== null && Object.keys(entries).length === expected.length &&
+      expected.every(key => Object.hasOwn(entries, key) && typeof entries[key] === "string" &&
+        /^[A-Za-z][A-Za-z0-9_]{0,99}$/.test(entries[key]));
+  };
+  if (!exactSlots(references.tables, manifest.tableSlots) ||
+      !exactSlots(references.columns, Object.keys(manifest.columnSlots))) {
+    throw new Error("Provide exactly the approved table and column slots with stable IDs.");
+  }
+  const nativeTables = obj(tablesResponse)?.tables;
+  if (!Array.isArray(nativeTables) || nativeTables.length > 500) {
+    throw new Error("Native widget reference table metadata is incomplete.");
+  }
+  const sourceTables = new Map(manifest.tableSlots.map(slot => {
+    const tableId = references.tables[slot]!;
+    const candidate = nativeTables.find(record => obj(record)?.id === tableId);
+    const tableRef = obj(obj(candidate)?.fields)?.tableRef;
+    if (typeof tableRef !== "number" || !Number.isSafeInteger(tableRef) || tableRef < 1) {
+      throw new Error("A widget table slot does not resolve to complete native metadata.");
+    }
+    const columns = tableColumnMaps({ tableId, tableRef }, tablesResponse);
+    if (!columns) throw new Error("A widget table slot does not resolve to complete native metadata.");
+    return [slot, { tableRef, columns: columns.byId }];
+  }));
+  const tables = Object.fromEntries([...sourceTables].map(([slot, table]) => [slot, table.tableRef]));
+  const bindings = Object.fromEntries(Object.entries(manifest.columnSlots).map(([slot, tableSlot]) => {
+    const table = sourceTables.get(tableSlot)!;
+    const columnRef = table.columns.get(references.columns[slot]!);
+    if (!columnRef) throw new Error("A widget column slot does not resolve on its approved table slot.");
+    return [slot, { tableRef: table.tableRef, columnRef }];
+  }));
+  const expected = { ...manifest.defaults, version: manifest.version, tables, bindings };
+  const widgetOptions = obj(current.widgetOptions);
+  if (current.widgetOptions != null && !widgetOptions) {
+    throw new Error("Existing widget-owned options are opaque.");
+  }
+  if (isDeepStrictEqual(widgetOptions?.[manifest.key], expected)) {
+    return { changed: false, options: outer, optionsJson: JSON.stringify(outer) };
+  }
+  const patched = { ...widgetOptions, [manifest.key]: expected };
+  if (JSON.stringify(patched).length > 4096) throw new Error("Widget-owned options exceed the payload limit.");
+  const options = { ...outer, customView: JSON.stringify({ ...current, widgetOptions: patched }) };
+  return { changed: true, options, optionsJson: JSON.stringify(options) };
+}
+
 /** Replace an approved immutable revision with another approved revision of the
  * SAME widget, while access and all data-bearing settings are still blank. */
 export function planTrustedWidgetRevisionUpdate(
@@ -117,10 +236,6 @@ export function planTrustedWidgetRevisionUpdate(
   }
   const outer = obj(widget.options), old = customViewOptions(outer);
   if (!outer || !old) throw new Error("Native custom widget options are incomplete.");
-  const def = (item: TrustedWidget) => ({
-    name:item.name,widgetId:item.widgetId,url:item.url,
-    accessLevel:"none",renderAfterReady:false
-  });
   if (old.widgetId !== previous.widgetId ||
       (old.access !== "none" && old.access !== undefined) ||
       old.url != null || (old.pluginId != null && old.pluginId !== "") ||
@@ -129,13 +244,13 @@ export function planTrustedWidgetRevisionUpdate(
     throw new Error("Trusted revision replacement requires zero access and empty widget state.");
   }
   const current = old.widgetDef;
-  if (isDeepStrictEqual(current,def(next))) {
+  if (isDeepStrictEqual(current, approvedDefinition(next))) {
     return {changed:false,options:outer,optionsJson:JSON.stringify(outer)};
   }
-  if (!isDeepStrictEqual(current,def(previous))) {
+  if (!isDeepStrictEqual(current, approvedDefinition(previous))) {
     throw new Error("Current widget revision does not match the exact approved source.");
   }
-  const options:Json = {...outer,customView:JSON.stringify({...old,widgetDef:def(next)})};
+  const options:Json = {...outer,customView:JSON.stringify({...old,widgetDef:approvedDefinition(next)})};
   const optionsJson=JSON.stringify(options);
   if (optionsJson.length>8192)throw new Error("Trusted widget revision exceeds native size limit.");
   return {changed:true,options,optionsJson};

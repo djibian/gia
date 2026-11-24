@@ -368,7 +368,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     } }]
   },
   grist_change_ui: {
-    actions: ["rename_page", "delete_page", "reorder_pages", "nest_page", "unnest_page", "delete_widget", "update_layout", "update_form_layout", "publish_form", "unpublish_form", "update_form_field_options", "update_widget", "install_trusted_widget", "update_trusted_widget_revision"],
+    actions: ["rename_page", "delete_page", "reorder_pages", "nest_page", "unnest_page", "delete_widget", "update_layout", "update_form_layout", "publish_form", "unpublish_form", "update_form_field_options", "update_widget", "install_trusted_widget", "update_trusted_widget_revision", "configure_trusted_widget_references"],
     request: [
       "rename_page: {action,documentId,pageId,name}; delete_page: {action,documentId,pageId}; delete_widget: {action,documentId,pageId,widgetId}.",
       "update_form_layout: {action,documentId,pageId,widgetId,layout:{children:[paragraph|section(fields/paragraphs)|submit],submitText?,successText?,anotherResponse?}}; stable column IDs resolved server-side; no publish. With confirmPublicLink:true, one typed form_link can reference another already published Form in the same document; native Owner is required.",
@@ -389,7 +389,8 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
       "customWidgetSettings.resetWidgetOptions:true explicitly clears widget-owned options to native null only after data access is already none; it requires native Owner and preserves the widget identity, URL, mapping and all outer settings. Do not combine with optionsPatch or access escalation.",
       "customWidgetSettings.access read table|full needs confirmDataAccess:true and fresh native document Owner proof, in addition to doc.schema:write. Access none and inert settings updates do not increase widget data authority. Persisted settings are not evidence that remote code is trustworthy.",
       "install_trusted_widget uses a deployment-approved key from GIA_TRUSTED_CUSTOM_WIDGETS_JSON, confirms external code, requires native Owner and starts with access:none; no arbitrary widget URL can enter MCP.",
-      "update_trusted_widget_revision: {action,documentId,pageId,widgetId,previousTrustedKey,trustedKey,confirmExternalWidget:true}; both revisions must be operator-approved for the same widget/asset/origin, current state must match the approved source with access:none and no mapping/options; exact post-read and no-blind-retry."
+      "update_trusted_widget_revision: {action,documentId,pageId,widgetId,previousTrustedKey,trustedKey,confirmExternalWidget:true}; both revisions must be operator-approved for the same widget/asset/origin, current state must match the approved source with access:none and no mapping/options; exact post-read and no-blind-retry.",
+      "configure_trusted_widget_references: {action,documentId,pageId,widgetId,trustedKey,confirmExternalWidget:true,tables:{slot:stableTableId},columns:{slot:stableColumnId}}; configure exactly the operator-approved slots on the exact inactive revision, with native Owner proof and verified readback. Native references stay private."
     ],
     examples: [
       { purpose: "Set all mappings for a calendar with text, date, Boolean and choice columns", arguments: {
