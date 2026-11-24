@@ -224,8 +224,7 @@ async function validateFromEmptyStageSkeleton(
     { id: "Classes", columns: [{ id: "Code", fields: { type: "Text" } }] },
     { id: "Enseignants", columns: [{ id: "Cle", fields: { type: "Text" } }] },
     { id: "Structures_de_stage", columns: [
-      { id: "Nom", fields: { type: "Text", isFormula: false } },
-      { id: "Statut", fields: { type: "Choice", isFormula: false } }
+      { id: "Nom", fields: { type: "Text", isFormula: false } }
     ] },
     { id: "Stages", columns: [
       { id: "Code_Stage", fields: { type: "Text" } },
@@ -237,6 +236,15 @@ async function validateFromEmptyStageSkeleton(
   });
   await ensureTables();
   await ensureTables();
+
+  const structureStatusSeed = () => callTool(bridge, "grist_add_structure", {
+    action: "ensure_columns", documentId, tableId: "Structures_de_stage",
+    columns: [{ id: "Statut", fields: { type: "Choice", isFormula: false, formula: "'en attente'" } }]
+  }) as Promise<{ changed: boolean; persistedSchemaVerified: boolean }>;
+  const initialStatus = await structureStatusSeed();
+  const repeatedStatus = await structureStatusSeed();
+  assertThat(initialStatus.changed && initialStatus.persistedSchemaVerified &&
+    !repeatedStatus.changed && repeatedStatus.persistedSchemaVerified, "from_empty_structure_default_not_reconciled");
 
   const ensureColumns = (tableId: string,
     columns: { id: string; fields: { type: string; isFormula: false } }[]) =>
@@ -574,6 +582,75 @@ async function validateFromEmptyStageSkeleton(
   assertThat(ownEdit >= 200 && ownEdit < 300 && otherEdit === 403 && reassignment === 403,
     `from_empty_native_acl_effect_wrong:${ownEdit}:${otherEdit}:${reassignment}`);
   console.log("from-empty synthetic stage schema, Form layout and authenticated ACL enforcement: PASS");
+
+  const publishForm = (targetPageId: number, widgetId: number) =>
+    callTool(bridge, "grist_change_ui", {
+      action: "publish_form", documentId, pageId: targetPageId, widgetId, confirmPublic: true
+    }) as Promise<{ changed: boolean; persistedPublicationIntentVerified: boolean }>;
+  const structurePageId = structurePage.page.id;
+  const structureFormId = structureForm.widget.id;
+  const publishedStructure = await publishForm(structurePageId, structureFormId);
+  assertThat(publishedStructure.changed && publishedStructure.persistedPublicationIntentVerified,
+    "from_empty_structure_form_not_published");
+  const linkLabel = "Proposer une structure";
+  const connectForms = () => callTool(bridge, "grist_change_ui", {
+    action: "update_form_layout", documentId, pageId, widgetId: form.widget.id,
+    layout: { ...layout, confirmPublicLink: true, children: [
+      { type: "form_link", label: linkLabel, targetPageId: structurePageId, targetWidgetId: structureFormId },
+      ...layout.children
+    ] }
+  }) as Promise<{ changed: boolean; persistedLayoutVerified: boolean }>;
+  const linkedForms = await connectForms();
+  const publishedStage = await publishForm(pageId, form.widget.id);
+  const replayedForms = await connectForms();
+  assertThat(linkedForms.changed && linkedForms.persistedLayoutVerified &&
+    !replayedForms.changed && replayedForms.persistedLayoutVerified &&
+    publishedStage.changed && publishedStage.persistedPublicationIntentVerified &&
+    !(await publishForm(structurePageId, structureFormId)).changed &&
+    !(await publishForm(pageId, form.widget.id)).changed, "from_empty_public_forms_not_reconciled");
+
+  const nativeDocPath = "/api/docs/" + encodeURIComponent(documentId);
+  const nativeSections = recordsFrom(await gristApi(context.baseUrl, context.ownerKey,
+    nativeDocPath + "/tables/_grist_Views_section/records?hidden=true"));
+  const sourceSection = nativeSections.find(row => row.id === form.widget.id);
+  const nativeLayout = JSON.parse(String(sourceSection?.fields.layoutSpec)) as { children: Array<{ text?: string }> };
+  const link = /^\[Proposer une structure\]\(\/forms\/([a-zA-Z0-9_-]{1,100})\/([1-9]\d*)\)$/
+    .exec(nativeLayout.children[0]?.text ?? "");
+  assertThat(link && Number(link[2]) === structureFormId, "from_empty_public_form_link_wrong_target");
+  assertThat(![linkedForms, replayedForms, publishedStructure, publishedStage]
+    .some(result => JSON.stringify(result).includes(link![1]!)), "from_empty_public_form_link_secret_exposed");
+  const publicApi = "/api/s/" + link![1]!;
+  const anon = (path: string, body?: unknown) => fetch(new URL(path, context.baseUrl), {
+    credentials: "omit", redirect: "error", signal: AbortSignal.timeout(10_000),
+    ...(body === undefined ? {} : {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
+    })
+  }).catch(() => { throw new Error("Synthetic anonymous Form request failed."); });
+  const preview = await anon(publicApi + "/forms/" + structureFormId);
+  assertThat(preview.ok, "from_empty_public_structure_form_not_accessible");
+  const publicFields = await preview.json() as { formFieldsById: Record<string, { colId: string }> };
+  assertThat(Object.values(publicFields.formFieldsById).some(field => field.colId === "Nom"),
+    "from_empty_public_structure_form_wrong_fields");
+  const submission = "Structure fictive publiée";
+  const structureRecords = "/tables/Structures_de_stage/records";
+  const sent = await anon(publicApi + structureRecords, { records: [{ fields: { Nom: submission } }] });
+  await sent.body?.cancel();
+  assertThat(sent.ok, "from_empty_public_structure_submission_failed");
+  const saved = recordsFrom(await gristApi(context.baseUrl, context.ownerKey, nativeDocPath + structureRecords));
+  assertThat(saved.some(row => row.fields.Nom === submission && row.fields.Statut === "en attente"),
+    "from_empty_public_structure_submission_missing_default");
+  const publicRows = await anon(publicApi + structureRecords);
+  if (publicRows.ok) {
+    assertThat(recordsFrom(await publicRows.json()).length === 0, "from_empty_public_structure_rows_disclosed");
+  } else {
+    await publicRows.body?.cancel();
+    assertThat(publicRows.status === 403 || publicRows.status === 404,
+      "from_empty_public_structure_row_privacy_unverified");
+  }
+  const wrongForm = await anon(publicApi + "/forms/" + form.widget.id);
+  await wrongForm.body?.cancel();
+  assertThat(wrongForm.status === 403 || wrongForm.status === 404, "from_empty_public_stage_wrong_share");
+  console.log("from-empty public Form link, anonymous submission and native default: PASS");
 }
 
 async function run(): Promise<void> {
