@@ -103,6 +103,17 @@ test("Style formulas and colors are bounded while ACL rules remain separate", ()
   assert.throws(()=>planColumnStyle(state,{...wanted,style:{}}));
 });
 
+test("Native conditional bold is boolean, and partial bold edits preserve existing colors", () => {
+  const state = readNativeColumnStyle(tables,
+    columns(["L", 6], '{"rulesOptions":[{"fillColor":"#112233","fontBold":true}]}'), "Items", "Name", 20);
+  assert.deepEqual(planColumnStyle(state, { ...wanted, style: { fontBold: false } }).options.rulesOptions,
+    [{ fillColor: "#112233", fontBold: false }]);
+  assert.deepEqual(planColumnStyle(state, { ...wanted, style: { textColor: "#ABCDEF" } }).options.rulesOptions,
+    [{ textColor: "#ABCDEF", fontBold: true }]);
+  assert.throws(() => readNativeColumnStyle(tables,
+    columns(["L", 6], '{"rulesOptions":[{"fontBold":"true"}]}'), "Items", "Name", 20), /malformed/);
+});
+
 test("Bounded append preserves ordered native style helpers and avoids duplicate rules", () => {
   const two = {records:[
     {id:4,fields:{parentId:1,colId:"Name",rules:["L",6,8],

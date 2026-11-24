@@ -209,7 +209,10 @@ existing rules, the same closed action only replaces the colors of a **unique
 existing exact `conditionFormula`**, preserving each helper formula, order and
 all other styles; absent/duplicate formula or incomplete state is refused. The Grist
 Python `conditionFormula` uses the existing authorized formula capability,
-never an ACL predicate; colors are closed `#RRGGBB` style fields. Gia resolves
+never an ACL predicate. Native conditional style accepts explicit `#RRGGBB`
+colors and a boolean `fontBold`. A bold-only edit preserves both existing
+colors. Color edits retain the existing bold setting unless explicitly
+changed and keep the existing color replacement semantics. Gia resolves
 stable table/column IDs to private native refs, uses Grist `AddEmptyRule` to
 construct the formula helper and its owner link, then applies formula plus
 `rulesOptions` in one fixed native bundle. Existing nonstyle widget options
@@ -219,7 +222,7 @@ native rule metadata refuses mutation. A partial/transport-uncertain creation is
 replayed: the caller must inspect the column state and reconcile before retry.
 
 A separate `grist_change_structure(action="append_style_rule")` accepts the
-same one-formula/closed-color input and appends **one** native conditional style
+same one-formula/closed-style input and appends **one** native conditional style
 rule, up to eight ordered rules on the column. An identical existing
 formula/style is a verified no-op; an existing matching formula with different
 colors, malformed native helper, incomplete configuration or uncertain metadata
@@ -262,7 +265,7 @@ requires inspection and reconciliation, never blind replay. Row-style
 persistence is not a native rendering/visual acceptance assertion.
 
 
-`grist_change_structure(action="update_row_style_rule")` updates the colors of
+`grist_change_structure(action="update_row_style_rule")` updates the style of
 **one existing unique formula** on the native raw-table row-style sequence.
 The stable `tableId`, exact `conditionFormula` and closed colors are the only
 inputs. A complete native metadata read resolves the raw section, ordered

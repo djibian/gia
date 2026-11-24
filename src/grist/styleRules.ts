@@ -8,7 +8,7 @@ const IDENTIFIER = /^[A-Za-z][A-Za-z0-9_]*$/;
 
 export interface ColumnStyleInput {
   conditionFormula: string;
-  style: { fillColor?: string | undefined; textColor?: string | undefined };
+  style: { fillColor?: string | undefined; textColor?: string | undefined; fontBold?: boolean | undefined };
 }
 export interface NativeStyleState {
   ownerRef: number;
@@ -20,6 +20,11 @@ export interface NativeStyleState {
 function object(value: unknown): JsonRecord | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as JsonRecord : undefined;
+}
+function hasSupportedStyleAttributes(style: JsonRecord): boolean {
+  return Object.entries(style).every(([key, value]) => key === "fontBold"
+    ? typeof value === "boolean"
+    : (key === "fillColor" || key === "textColor") && typeof value === "string" && COLOR.test(value));
 }
 function nativeRows(value: unknown, label: string, limit: number) {
   const records = object(value)?.records;
@@ -76,10 +81,7 @@ function readVerifiedStyleSequence(
     throw new Error("Native conditional style options are protected.");
   }
   const styles: JsonRecord[] = Array.isArray(rawStyles) ? rawStyles as JsonRecord[] : [];
-  if (styles.some(style => Object.keys(style).some(key =>
-        !["fillColor", "textColor"].includes(key)) ||
-      Object.values(style).some(value =>
-        typeof value !== "string" || !COLOR.test(value)))) {
+  if (styles.some(style => !hasSupportedStyleAttributes(style))) {
     throw new Error("Unknown or malformed native style attributes are protected.");
   }
   const rules = refs.map((ref, index) => {
@@ -370,15 +372,10 @@ export function readNativeColumnStyle(
 }
 
 
-/** Modify the colors of exactly one existing formula without touching native helper identity or order. */
+/** Modify the style of exactly one existing formula without changing helper identity or order. */
 export function planExistingColumnStyleUpdate(
   sequence: NativeStyleSequence, conditionFormula: string, style: ColumnStyleInput["style"]
 ): { changed: boolean; options?: JsonRecord; widgetOptions?: string } {
-  const validated = planColumnStyle(
-    { ownerRef: sequence.ownerRef, options: {}, existingStyle: {} },
-    { conditionFormula, style }
-  );
-  const wanted = (validated.options.rulesOptions as JsonRecord[])[0]!;
   if (sequence.rules.some(rule => !rule.formula.trim() || !Object.keys(rule.style).length)) {
     throw new Error("An existing conditional style is incomplete; refusing update.");
   }
@@ -388,7 +385,12 @@ export function planExistingColumnStyleUpdate(
     throw new Error("Conditional style formula is absent or ambiguous; select an existing unique formula.");
   }
   const index = matches[0]!;
-  if (isDeepStrictEqual(sequence.rules[index]!.style, wanted)) return { changed: false };
+  const existingStyle = sequence.rules[index]!.style;
+  const validated = planColumnStyle(
+    { ownerRef: sequence.ownerRef, options: {}, existingStyle }, { conditionFormula, style }
+  );
+  const wanted = (validated.options.rulesOptions as JsonRecord[])[0]!;
+  if (isDeepStrictEqual(existingStyle, wanted)) return { changed: false };
   const options: JsonRecord = {
     ...sequence.options,
     rulesOptions: sequence.rules.map((rule, i) => i === index ? wanted : rule.style)
@@ -411,7 +413,7 @@ export function planAppendColumnStyleRule(
   for (const rule of sequence.rules) {
     if (rule.formula === input.conditionFormula) {
       if (isDeepStrictEqual(rule.style, style)) return { changed: false };
-      throw new Error("Existing conditional style has the same formula but different colors.");
+      throw new Error("Existing conditional style has the same formula but different attributes.");
     }
   }
   if (sequence.rules.length >= MAX_CONDITIONAL_STYLE_RULES) {
@@ -434,12 +436,13 @@ export function planColumnStyle(state: NativeStyleState, input: ColumnStyleInput
       conditionFormula.length > MAX_FORMULA || conditionFormula.includes("\0")) {
     throw new Error("Conditional style formula must be bounded, nonempty Grist Python.");
   }
-  if (!object(style) || !Object.keys(style).length ||
-      Object.keys(style).some(key => !["fillColor", "textColor"].includes(key)) ||
-      Object.values(style).some(value => typeof value !== "string" || !COLOR.test(value))) {
-    throw new Error("Conditional style colors must be explicit #RRGGBB values.");
+  if (!object(style) || !Object.keys(style).length || !hasSupportedStyleAttributes(style)) {
+    throw new Error("Conditional style requires #RRGGBB colors or a boolean fontBold.");
   }
-  const wanted = { ...style };
+  const previous = state.existingStyle;
+  const wanted = style.fillColor === undefined && style.textColor === undefined
+    ? { ...previous, ...style }
+    : { ...(typeof previous.fontBold === "boolean" ? { fontBold: previous.fontBold } : {}), ...style };
   const options = { ...state.options, rulesOptions: [wanted] };
   const widgetOptions = JSON.stringify(options);
   if (widgetOptions.length > MAX_OPTIONS) throw new Error("Style options exceed native bound.");

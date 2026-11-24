@@ -3510,7 +3510,7 @@ async function run(): Promise<void> {
     });
     const styleCreated = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
       action: "style_rules", documentId, tableId: TABLE_ID, columnId: "Name",
-      conditionFormula: "$Qty > 10", style: { fillColor: "#112233" }
+      conditionFormula: "$Qty > 10", style: { fillColor: "#112233", fontBold: true }
     }), "native_style_rule_create") as {changed:boolean;persistedStyleVerified:boolean};
     assert(styleCreated.changed && styleCreated.persistedStyleVerified,
       "native_style_rule_create_not_verified");
@@ -3524,7 +3524,8 @@ async function run(): Promise<void> {
     assert(helper?.fields.formula === "$Qty > 10", "native_style_formula_not_persisted");
     const nativeStyleOptions = styledColumn?.fields.widgetOptions;
     assert(typeof nativeStyleOptions === "string" &&
-      JSON.parse(nativeStyleOptions).rulesOptions?.[0]?.fillColor === "#112233",
+      JSON.parse(nativeStyleOptions).rulesOptions?.[0]?.fillColor === "#112233" &&
+      JSON.parse(nativeStyleOptions).rulesOptions?.[0]?.fontBold === true,
       "native_conditional_style_options_missing");
     const styleRepeated = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
       action: "style_rules", documentId, tableId: TABLE_ID, columnId: "Name",
@@ -3555,6 +3556,7 @@ async function run(): Promise<void> {
     const newOptions = JSON.parse(twoRuleOwner?.fields.widgetOptions as string);
     assert(newOptions.rulesOptions.length === 2 &&
       newOptions.rulesOptions[0].textColor === "#FFFFFF" &&
+      newOptions.rulesOptions[0].fontBold === true &&
       newOptions.rulesOptions[1].fillColor === "#ABCDEF",
       "native_style_append_failed_to_preserve_existing_colors");
     const repeatedAppend = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
@@ -3596,6 +3598,19 @@ async function run(): Promise<void> {
       style: { fillColor: "#445566", textColor: "#FFFFFF" }
     }), "native_multi_style_update_repeat") as {changed:boolean};
     assert(!repeatedStyleUpdate.changed, "native_multi_style_update_not_idempotent");
+    const toggledBold = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "style_rules", documentId, tableId: TABLE_ID, columnId: "Name",
+      conditionFormula: "$Qty >= 10", style: { fontBold: false }
+    }), "native_multi_style_bold_only");
+    const afterBold = await gristApi(gristBaseUrl, apiKey,
+      `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
+    const boldOwner = afterBold.records.find(row => row.id === column.id);
+    const boldOptions = JSON.parse(boldOwner?.fields.widgetOptions as string);
+    assert(toggledBold.changed === true && toggledBold.persistedStyleVerified === true &&
+      isDeepStrictEqual(boldOwner?.fields.rules, updatedRefs) &&
+      isDeepStrictEqual(boldOptions.rulesOptions, [
+        { ...updatedOptions.rulesOptions[0], fontBold: false }, updatedOptions.rulesOptions[1]
+      ]), "native_multi_style_bold_changed_untargeted_state");
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
       action: "style_rules", documentId, tableId: TABLE_ID, columnId: "Name",
       conditionFormula: "$Qty === 17", style: {fillColor:"#112233"}
@@ -3618,7 +3633,7 @@ async function run(): Promise<void> {
     const replacementRefs = replacedOwner?.fields.rules;
     assert(isDeepStrictEqual(replacementRefs, updatedRefs),
       "native_formula_replacement_changed_helper_order");
-    assert(replacedOwner?.fields.widgetOptions === updatedMultiRuleOwner?.fields.widgetOptions,
+    assert(replacedOwner?.fields.widgetOptions === boldOwner?.fields.widgetOptions,
       "native_formula_replacement_changed_owner_options");
     assert(formulaReplacedColumns.records.find(row => row.id === updatedRefs[1])?.fields.formula === "$Qty > 20" &&
       formulaReplacedColumns.records.find(row => row.id === updatedRefs[2])?.fields.formula === "$Qty < 0",
@@ -3659,7 +3674,7 @@ async function run(): Promise<void> {
     assert(isDeepStrictEqual(reorderedOwner?.fields.rules,["L",updatedRefs[2],updatedRefs[1]]),
       "native_column_style_reorder_did_not_change_refs");
     const reorderedColumnOptions = JSON.parse(reorderedOwner?.fields.widgetOptions as string);
-    const oldOptionsWithoutRules = {...updatedOptions};
+    const oldOptionsWithoutRules = {...boldOptions};
     const newOptionsWithoutRules = {...reorderedColumnOptions};
     delete oldOptionsWithoutRules.rulesOptions;
     delete newOptionsWithoutRules.rulesOptions;
@@ -3685,7 +3700,7 @@ async function run(): Promise<void> {
       `${docPath}/tables/_grist_Tables_column/records?hidden=true`) as MetaRecords;
     const restoredColumnOwner = restoredColumnRows.records.find(row=>row.id===column.id);
     assert(isDeepStrictEqual(restoredColumnOwner?.fields.rules,updatedRefs) &&
-      isDeepStrictEqual(JSON.parse(restoredColumnOwner?.fields.widgetOptions as string),updatedOptions),
+      isDeepStrictEqual(JSON.parse(restoredColumnOwner?.fields.widgetOptions as string),boldOptions),
       "native_column_style_reorder_restore_mismatch");
 
     // Remove exactly one existing column conditional rule via the bounded
@@ -3712,7 +3727,7 @@ async function run(): Promise<void> {
       remainingOptions.rulesOptions[0].textColor === "#FFFFFF" &&
       !columnsAfterRemove.records.some(row => row.id === updatedRefs[2]),
       "native_column_style_remove_broke_survivor_or_left_helper");
-    const originalOtherOptions = { ...updatedOptions };
+    const originalOtherOptions = { ...boldOptions };
     delete originalOtherOptions.rulesOptions;
     delete remainingOptions.rulesOptions;
     assert(isDeepStrictEqual(originalOtherOptions, remainingOptions),
@@ -3726,7 +3741,7 @@ async function run(): Promise<void> {
     });
     const rowAdded = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
       action: "append_row_style_rule", documentId, tableId: TABLE_ID,
-      conditionFormula: "$Qty > 10", style: { fillColor: "#ABCDEF" }
+      conditionFormula: "$Qty > 10", style: { fillColor: "#ABCDEF", fontBold: true }
     }), "native_row_style_create") as {
       changed:boolean;persistedStyleVerified:boolean;styleRuleCount:number
     };
@@ -3753,13 +3768,13 @@ async function run(): Promise<void> {
     assert(rowHelper?.fields.colId === "gristHelper_RowConditionalRule" &&
       rowHelper.fields.formula === "$Qty > 10", "native_row_style_helper_invalid");
     const rowOptions = JSON.parse(String(rowOwner?.fields.options)) as {
-      rulesOptions?: Array<{fillColor?:string}>
+      rulesOptions?: Array<{fillColor?:string; fontBold?:boolean}>
     };
-    assert(rowOptions.rulesOptions?.[0]?.fillColor === "#ABCDEF",
+    assert(rowOptions.rulesOptions?.[0]?.fillColor === "#ABCDEF" && rowOptions.rulesOptions[0].fontBold === true,
       "native_row_style_colors_missing");
     const rowRepeat = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", {
       action: "append_row_style_rule", documentId, tableId: TABLE_ID,
-      conditionFormula: "$Qty > 10", style: { fillColor: "#ABCDEF" }
+      conditionFormula: "$Qty > 10", style: { fillColor: "#ABCDEF", fontBold: true }
     }), "native_row_style_noop") as {changed:boolean};
     assert(!rowRepeat.changed, "native_row_style_repeat_replayed");
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
@@ -3784,9 +3799,10 @@ async function run(): Promise<void> {
     assert(isDeepStrictEqual(ownerAfterColor?.fields.rules, rowRefs),
       "native_row_style_color_update_changed_helper_refs");
     const optionsAfterColor = JSON.parse(String(ownerAfterColor?.fields.options)) as {
-      rulesOptions?: Array<{fillColor?:string}>
+      rulesOptions?: Array<{fillColor?:string; fontBold?:boolean}>
     };
-    assert(optionsAfterColor.rulesOptions?.[0]?.fillColor === "#556677",
+    assert(optionsAfterColor.rulesOptions?.[0]?.fillColor === "#556677" &&
+      optionsAfterColor.rulesOptions[0].fontBold === true,
       "native_row_style_color_update_did_not_persist");
     const rowNoop = resultJson(await callTool(bridgeBaseUrl,
       "grist_change_structure", {
