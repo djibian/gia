@@ -223,6 +223,10 @@ async function validateFromEmptyStageSkeleton(
   const tables = [
     { id: "Classes", columns: [{ id: "Code", fields: { type: "Text" } }] },
     { id: "Enseignants", columns: [{ id: "Cle", fields: { type: "Text" } }] },
+    { id: "Structures_de_stage", columns: [
+      { id: "Nom", fields: { type: "Text", isFormula: false } },
+      { id: "Statut", fields: { type: "Choice", isFormula: false } }
+    ] },
     { id: "Stages", columns: [
       { id: "Code_Stage", fields: { type: "Text" } },
       { id: "Contact_Le", fields: { type: "DateTime:Europe/Paris", isFormula: false } }
@@ -246,6 +250,7 @@ async function validateFromEmptyStageSkeleton(
   const stageColumns = [
     { id: "Classe", fields: { type: "Ref:Classes" } },
     { id: "Suivi_par", fields: { type: "Ref:Enseignants" } },
+    { id: "Structure", fields: { type: "Ref:Structures_de_stage" } },
     { id: "Commentaire", fields: { type: "Text" } },
     { id: "Justificatifs", fields: { type: "Attachments" } }
   ];
@@ -269,6 +274,27 @@ async function validateFromEmptyStageSkeleton(
     action: "append_choice_options", documentId, tableId: "Stages",
     columnId: "Statut", values: ["À suivre", "En cours"]
   });
+  await callTool(bridge, "grist_change_structure", {
+    action: "append_choice_options", documentId, tableId: "Structures_de_stage",
+    columnId: "Statut", values: ["validé", "en attente"]
+  });
+  const setStructureCondition = () => callTool(bridge, "grist_change_structure", {
+    action: "update_dropdown_condition", documentId, tableId: "Stages", columnId: "Structure",
+    condition: { kind: "choice_field_equals_literal", choiceColumnId: "Statut", value: "validé" }
+  }) as Promise<{ changed: boolean; persistedOptionsVerified: boolean }>;
+  const condition = await setStructureCondition();
+  const conditionReplay = await setStructureCondition();
+  assertThat(condition.changed && condition.persistedOptionsVerified &&
+    !conditionReplay.changed && conditionReplay.persistedOptionsVerified,
+    "from_empty_structure_dropdown_not_reconciled");
+  const setStageStyle = () => callTool(bridge, "grist_change_structure", {
+    action: "append_row_style_rule", documentId, tableId: "Stages",
+    conditionFormula: '$Statut == "À suivre"', style: { fillColor: "#FFF3D4" }
+  }) as Promise<{ changed: boolean; persistedStyleVerified: boolean }>;
+  const style = await setStageStyle();
+  const styleReplay = await setStageStyle();
+  assertThat(style.changed && style.persistedStyleVerified &&
+    !styleReplay.changed && styleReplay.persistedStyleVerified, "from_empty_stage_style_not_reconciled");
 
   const ensureRows = async (tableId: string, keyColumnId: string,
     fields: Record<string, unknown>[]) =>
@@ -286,11 +312,16 @@ async function validateFromEmptyStageSkeleton(
   ];
   const classesFirst = await ensureRows("Classes", "Code", classes);
   const teachersFirst = await ensureRows("Enseignants", "Cle", teachers);
+  const structures = await ensureRows("Structures_de_stage", "Nom", [
+    { Nom: "Structure fictive A", Statut: "validé" },
+    { Nom: "Structure fictive B", Statut: "en attente" }
+  ]);
   assertThat(classesFirst.recordIds.length === 2 && teachersFirst.recordIds.length === 2,
     "from_empty_reference_ids_missing");
   const stageRows = [
     { Code_Stage: "S-A", Classe: classesFirst.recordIds[0],
-      Suivi_par: teachersFirst.recordIds[0], Statut: "À suivre", Commentaire: "Test A" },
+      Suivi_par: teachersFirst.recordIds[0], Structure: structures.recordIds[0],
+      Statut: "À suivre", Commentaire: "Test A" },
     { Code_Stage: "S-B", Classe: classesFirst.recordIds[1],
       Suivi_par: teachersFirst.recordIds[1], Statut: "En cours", Commentaire: "Test B" }
   ];
@@ -356,13 +387,14 @@ async function validateFromEmptyStageSkeleton(
   await callTool(bridge, "grist_change_ui", {
     action: "update_widget", documentId, pageId, widgetId: form.widget.id,
     update: { visibleFields: [{ columnId: "Code_Stage" },
-      { columnId: "Commentaire" }] }
+      { columnId: "Structure" }, { columnId: "Commentaire" }] }
   });
   const layout = {
     children: [
       { type: "paragraph", text: "Suivi du stage : informations synthétiques" },
       { type: "section", children: [
         { type: "field", columnId: "Code_Stage" },
+        { type: "field", columnId: "Structure" },
         { type: "field", columnId: "Commentaire" }
       ] },
       { type: "submit" }
@@ -387,6 +419,53 @@ async function validateFromEmptyStageSkeleton(
     extra.widgets[1]?.id === form.widget.id && !extra.widgets[1].created &&
     extra.widgets[2]?.created && extra.widgets[2].id > 0,
     "from_empty_widget_partial_batch_not_reconciled");
+
+  const selector = await callTool(bridge, "grist_add_ui", {
+    action: "ensure_widget", documentId, pageId, tableId: "Classes", type: "record"
+  }) as { widget: { id: number } };
+  const selectBy = { sourceWidgetId: selector.widget.id, targetColumnId: "Classe" };
+  await callTool(bridge, "grist_change_ui", {
+    action: "update_widget", documentId, pageId, widgetId: grid.widget.id, update: { selectBy }
+  });
+  const pageWidgets = await callTool(bridge, "grist_inspect", { action: "page_widgets", documentId, pageId }) as {
+    widgets: Array<{ id: number; selectByNormalized?: typeof selectBy }>;
+  };
+  const linked = pageWidgets.widgets.find(widget => widget.id === grid.widget.id)?.selectByNormalized;
+  assertThat(linked?.sourceWidgetId === selectBy.sourceWidgetId && linked.targetColumnId === "Classe",
+    "from_empty_class_stage_link_not_persisted");
+
+  const structurePage = await callTool(bridge, "grist_add_ui", {
+    action: "ensure_page", documentId, tableId: "Structures_de_stage", name: "Formulaire structures"
+  }) as { page: { id: number } };
+  const structureForm = await callTool(bridge, "grist_add_ui", {
+    action: "ensure_widget", documentId, pageId: structurePage.page.id,
+    tableId: "Structures_de_stage", type: "form"
+  }) as { widget: { id: number } };
+  await callTool(bridge, "grist_change_ui", {
+    action: "update_widget", documentId, pageId: structurePage.page.id, widgetId: structureForm.widget.id,
+    update: { visibleFields: [{ columnId: "Nom" }] }
+  });
+  const setStructureFormLayout = () => callTool(bridge, "grist_change_ui", {
+    action: "update_form_layout", documentId, pageId: structurePage.page.id, widgetId: structureForm.widget.id,
+    layout: { children: [{ type: "paragraph", text: "Structure de stage" },
+      { type: "section", children: [{ type: "field", columnId: "Nom" }] }, { type: "submit" }] }
+  }) as Promise<{ changed: boolean; persistedLayoutVerified: boolean }>;
+  const structuresLayout = await setStructureFormLayout();
+  const structuresLayoutReplay = await setStructureFormLayout();
+  assertThat(structuresLayout.changed && structuresLayout.persistedLayoutVerified &&
+    !structuresLayoutReplay.changed && structuresLayoutReplay.persistedLayoutVerified,
+    "from_empty_structure_form_not_reconciled");
+  for (const [formId, expectedColumns] of [
+    [form.widget.id, ["Code_Stage", "Structure", "Commentaire"]], [structureForm.widget.id, ["Nom"]]
+  ] as const) {
+    const preview = await gristApi(context.baseUrl, context.ownerKey,
+      `/api/docs/${encodeURIComponent(documentId)}/forms/${formId}`) as {
+        formFieldsById: Record<string, { colId: string }>;
+      };
+    const actualColumns = Object.values(preview.formFieldsById).map(field => field.colId);
+    assertThat(actualColumns.length === expectedColumns.length &&
+      expectedColumns.every(column => actualColumns.includes(column)), "from_empty_native_form_bindings_wrong");
+  }
 
   const repeatClasses = await ensureRows("Classes", "Code", classes);
   const repeatTeachers = await ensureRows("Enseignants", "Cle", teachers);
@@ -442,6 +521,7 @@ async function validateFromEmptyStageSkeleton(
   const pageState = await mcpPages(bridge, documentId);
   assertThat(countKeyValue(pageState, "name", "Suivi synthétique") === 1,
     "from_empty_native_page_not_unique");
+  console.log("from-empty stage and structure forms, dropdown, row style and linked selector: PASS");
 
   const policies = [
     {
