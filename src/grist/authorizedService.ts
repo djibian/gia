@@ -1811,6 +1811,7 @@ export class AuthorizedGristService {
         adapterUpdate.filters = expectedFilters;
       }
 
+      let reciprocalNativePair = false;
       let expectedSourceWidgetId: number | null | undefined;
       let expectedSourceColumnRef: number | undefined;
       let expectedTargetColumnRef: number | undefined;
@@ -1850,7 +1851,11 @@ export class AuthorizedGristService {
               }
             }
             assertDirectSelectByAllowed(before, source, target, trustedSource !== undefined);
-            if (trustedSource && target.selectBy?.sourceSectionId === sourceWidgetId &&
+            reciprocalNativePair = source.selectBy?.sourceSectionId === widgetId;
+            if (reciprocalNativePair && Object.entries(update).some(([key, value]) => key !== "selectBy" && value !== undefined)) {
+              throw new Error("Reciprocal native cursor links require a separate direct select-by update.");
+            }
+            if ((trustedSource || reciprocalNativePair) && target.selectBy?.sourceSectionId === sourceWidgetId &&
                 target.selectBy.sourceColumnRef === undefined && target.selectBy.targetColumnRef === undefined) {
               return { documentId: id, pageId, widget: projectPublicWidget(target) };
             }
@@ -1860,7 +1865,7 @@ export class AuthorizedGristService {
         }
       }
 
-      if (trustedSource) {
+      if (trustedSource || reciprocalNativePair) {
         const fresh = await this.loadDocumentUi(id);
         assertCompleteUiSnapshot(fresh);
         if (!isDeepStrictEqual(fresh.pages.find(candidate => candidate.id === pageId), page)) {
@@ -1888,6 +1893,12 @@ export class AuthorizedGristService {
         const widget = updatedPage?.widgets.find((candidate) => candidate.id === widgetId);
         if (!widget) {
           throw new Error(`Updated widget ${widgetId} was not found on re-read.`);
+        }
+        if (reciprocalNativePair && (!updatedPage ||
+            !isDeepStrictEqual(updatedPage.widgets.filter(candidate => candidate.id !== widgetId),
+              page.widgets.filter(candidate => candidate.id !== widgetId)) ||
+            !sameJsonValue(widget.options, target.options))) {
+          throw new Error("Reciprocal native cursor link did not preserve the counterpart or other widgets.");
         }
         if (trustedSource) {
           const source = updatedPage?.widgets.find(candidate => candidate.id === expectedSourceWidgetId);

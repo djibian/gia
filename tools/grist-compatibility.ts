@@ -1696,6 +1696,43 @@ async function run(): Promise<void> {
       linkedSection.fields.linkSrcColRef === 0 && linkedSection.fields.linkTargetColRef === 0,
       "trusted_link_native_state_wrong");
 
+    // Same ordinary native table: a grid and a Form may select each other by
+    // cursor, without changing the existing custom widget link or grants.
+    const pairIds: number[] = [];
+    for (const type of ["record", "form"]) {
+      const created = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "add_widget", documentId: directDocumentId, pageId: directPageId,
+        tableId: directTableId, type
+      }), "native_cursor_pair_widget");
+      pairIds.push(positiveResultId((created.widget as Record<string, unknown>)?.id, "native_cursor_pair_id"));
+    }
+    const [pairGrid, pairForm] = pairIds as [number, number];
+    const pairPath = `/api/docs/${encodeURIComponent(directDocumentId)}/tables/_grist_Views_section/records?hidden=true`;
+    const pairBefore = await gristApi(gristBaseUrl, apiKey, pairPath) as MetaRecords;
+    const pairLink = (widgetId: number, sourceWidgetId: number) => callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId: directDocumentId, pageId: directPageId, widgetId,
+      update: { selectBy: { sourceWidgetId } }
+    });
+    resultJson(await pairLink(pairForm, pairGrid), "native_cursor_pair_first");
+    resultJson(await pairLink(pairGrid, pairForm), "native_cursor_pair_second");
+    resultJson(await pairLink(pairGrid, pairForm), "native_cursor_pair_replay");
+    const pairAfter = await gristApi(gristBaseUrl, apiKey, pairPath) as MetaRecords;
+    const pairOnly = (rows: MetaRecords) => rows.records.filter(row => !pairIds.includes(row.id));
+    const hasPairLink = (rows: MetaRecords, target: number, source: number) => {
+      const section = rows.records.find(row => row.id === target);
+      return section?.fields.linkSrcSectionRef === source &&
+        section.fields.linkSrcColRef === 0 && section.fields.linkTargetColRef === 0;
+    };
+    assert(hasPairLink(pairAfter, pairGrid, pairForm) && hasPairLink(pairAfter, pairForm, pairGrid) &&
+      isDeepStrictEqual(pairOnly(pairAfter), pairOnly(pairBefore)), "native_cursor_pair_unverified");
+    resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId: directDocumentId, pageId: directPageId,
+      widgetId: pairGrid, update: { selectBy: null }
+    }), "native_cursor_pair_clear");
+    const pairCleared = await gristApi(gristBaseUrl, apiKey, pairPath) as MetaRecords;
+    assert(hasPairLink(pairCleared, pairForm, pairGrid) && hasPairLink(pairCleared, pairGrid, 0) &&
+      isDeepStrictEqual(pairOnly(pairCleared), pairOnly(pairBefore)), "native_cursor_pair_clear_unverified");
+
     const configuredCustom = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_widget", documentId, pageId, widgetId: customWidgetId,
       update: { customWidgetSettings: { access: "none", columnsMapping: { title: "Name" } } }

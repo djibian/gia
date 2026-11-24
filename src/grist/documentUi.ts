@@ -53,6 +53,8 @@ export interface GristPageWidget {
   pageId: number;
   tableRef: number;
   tableId?: string;
+  /** Internal evidence for native ordinary-table cursor cycles; never projected. */
+  nativeCursorCycleEligible?: true;
   type: string;
   title: string;
   description?: string;
@@ -155,11 +157,11 @@ function jsonText(value: unknown): unknown | undefined {
   }
 }
 
-function tableRefMap(tableResponse: unknown, incomplete: () => void): Map<number, string> {
+function tableRefMap(tableResponse: unknown, incomplete: () => void): Map<number, { id: string; ordinary: boolean }> {
   const root = record(tableResponse);
   if (!Array.isArray(root?.tables)) { incomplete(); return new Map(); }
   const source = root.tables;
-  const result = new Map<number, string>();
+  const result = new Map<number, { id: string; ordinary: boolean }>();
   const seenIds = new Set<string>();
   for (const entry of source) {
     const table = record(entry);
@@ -170,7 +172,7 @@ function tableRefMap(tableResponse: unknown, incomplete: () => void): Map<number
       incomplete(); return new Map();
     }
     seenIds.add(id);
-    result.set(tableRef, id);
+    result.set(tableRef, { id, ordinary: fields?.summarySourceTable === 0 });
   }
   return result;
 }
@@ -213,7 +215,8 @@ export class DocumentUiService {
       if (!pageId || !views.has(pageId) || !pageIds.has(pageId)) { incomplete(); continue; }
 
       const tableRef = ref(section.fields.tableRef);
-      const tableId = tableIds.get(tableRef);
+      const table = tableIds.get(tableRef);
+      const tableId = table?.id;
       if (!tableRef || !tableId) incomplete();
       const description = text(section.fields.description);
       const chartType = text(section.fields.chartType);
@@ -235,6 +238,8 @@ export class DocumentUiService {
         pageId,
         tableRef,
         ...(tableId !== undefined ? { tableId } : {}),
+        ...(table?.ordinary && section.fields.linkSrcColRef === 0 &&
+          section.fields.linkTargetColRef === 0 ? { nativeCursorCycleEligible: true as const } : {}),
         type,
         title: text(section.fields.title) ?? "",
         ...(description !== undefined && description !== "" ? { description } : {}),

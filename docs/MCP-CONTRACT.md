@@ -979,7 +979,12 @@ JWT/JWKS verification enforces: optional `nbf` is enforced, unsupported JOSE cri
 - Page reorder uses a complete current `navigationPageIds` set, preserves the
   full existing hierarchy and special/censored rows, and verifies exact post-state.
 - Select-by uses an advertised exact direct or supported non-summary Ref/RefList
-  link; null clears it. Unsupported links/cycles are rejected.
+  link; null clears it. A reciprocal direct cursor pair is allowed only between
+  two native grid/Card/Card List/Form widgets backed by the same explicitly
+  verified non-summary table on one page, with complete zero-column link
+  metadata. Replay and clearing preserve the counterpart. Larger cycles,
+  column/filter cycles, unverified metadata and custom-widget cycles remain
+  refused. This verifies persisted links, not interactive cursor behavior.
 - Calendar configuration accepts stable IDs for required Title/Start Date and
   optional End Date/All Day/Type mappings. Private native mapping refs remain
   internal and untargeted widget options are preserved.

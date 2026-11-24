@@ -498,7 +498,7 @@ test("widget description can be cleared and is verified as absent", async () => 
   );
 });
 
-test("direct select-by rejects a cycle before any write", async () => {
+test("direct select-by rejects a cycle without verified ordinary-table metadata before any write", async () => {
   const { service, uiCalls } = buildHarness();
 
   await service.createPage("doc-1", "Personnes", "Vue générale");
