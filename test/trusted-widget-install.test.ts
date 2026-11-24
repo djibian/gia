@@ -1,10 +1,56 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { approvedWidgets, planTrustedWidgetInstall, planTrustedWidgetRevisionUpdate } from "../src/grist/trustedWidgetInstall.js";
+import { approvedWidgets, planTrustedWidgetInstall, planTrustedWidgetReferences,
+  planTrustedWidgetRevisionUpdate } from "../src/grist/trustedWidgetInstall.js";
 
 const base="https://grist.example.org";
 const approved={key:"timeline",name:"Stages timeline",widgetId:"@test/timeline",
   revision:"v1.0.0",url:"https://widgets.example.org/timeline/v1.0.0/index.html"};
+
+test("trusted reference option resolves only approved slots and preserves inactive widget metadata", () => {
+  const manifest = { key: "config", version: 2, tableSlots: ["source", "lookup"],
+    columnSlots: { name: "lookup" }, defaults: { display: { compact: true } } };
+  const item = approvedWidgets(JSON.stringify([{ ...approved, referenceOption: manifest }]), base)[0]!;
+  const initial = planTrustedWidgetInstall({ type: "custom", options: { theme: "dark" } }, item);
+  const view = JSON.parse(initial.options.customView as string);
+  const widget = { type: "custom", options: {
+    ...initial.options, customView: JSON.stringify({ ...view, widgetOptions: { keep: "untouched" } })
+  } };
+  const references = { tables: { source: "People", lookup: "Cities" }, columns: { name: "Name" } };
+  const native = { tables: [
+    { id: "People", fields: { tableRef: 10 }, columns: [{ id: "Email", fields: { colRef: 50 } }] },
+    { id: "Cities", fields: { tableRef: 11 }, columns: [{ id: "Name", fields: { colRef: 51 } }] }
+  ] };
+  const plan = planTrustedWidgetReferences(widget, item, references, native);
+  assert.equal(plan.changed, true);
+  assert.equal(plan.options.theme, "dark");
+  assert.deepEqual(JSON.parse(plan.options.customView as string), {
+    ...view, widgetOptions: { keep: "untouched", config: {
+      display: { compact: true }, version: 2, tables: { source: 10, lookup: 11 },
+      bindings: { name: { tableRef: 11, columnRef: 51 } }
+    } }
+  });
+  assert.equal(planTrustedWidgetReferences({ ...widget, options: plan.options }, item, references, native).changed, false);
+  assert.throws(() => planTrustedWidgetReferences(widget, item,
+    { ...references, columns: { name: "Email" } }, native), /approved table/);
+  assert.throws(() => planTrustedWidgetReferences(widget, item,
+    { ...references, tables: { ...references.tables, third: "People" } }, native), /exactly/);
+  assert.throws(() => planTrustedWidgetReferences({ ...widget, options: {
+    ...widget.options, customView: JSON.stringify({ ...view, access: "full" })
+  } }, item, references, native), /access none/);
+  for (const altered of [{ mode: "plugin" }, { mode: null }, { sectionId: "internal" }]) {
+    assert.throws(() => planTrustedWidgetReferences({ ...widget, options: {
+      ...widget.options, customView: JSON.stringify({ ...view, ...altered })
+    } }, item, references, native), /exact approved/);
+  }
+  for (const invalid of [
+    { ...manifest, columnSlots: { name: "unregistered" } },
+    { ...manifest, defaults: { display: { href: "https://example.org" } } },
+    { ...manifest, defaults: { tables: {} } }
+  ]) {
+    assert.throws(() => approvedWidgets(JSON.stringify([{ ...approved, referenceOption: invalid }]), base));
+  }
+});
 test("trusted registry requires distinct HTTPS versioned origin and defaults to deny",()=>{
   assert.deepEqual(approvedWidgets(undefined,base),[]);
   assert.deepEqual(approvedWidgets(JSON.stringify([approved]),base),[approved]);

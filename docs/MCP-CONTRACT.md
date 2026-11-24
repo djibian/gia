@@ -350,6 +350,25 @@ refused: operators must explicitly deactivate and clear their settings before
 an approved revision update. This does not prove the remote code is safe,
 nor provide an external compare-and-set or a blind retry guarantee.
 
+`grist_change_ui(action="configure_trusted_widget_references")` writes one
+managed option of an already installed, exactly matching approved widget
+revision metadata in native URL mode with `access:none`. It requires native Owner proof, `doc.schema:write`
+and `confirmExternalWidget:true`. The deployment entry may declare
+`referenceOption:{key,version,tableSlots,columnSlots,defaults?}`. The
+`columnSlots` map assigns each column slot to its expected table slot.
+Optional `defaults` contains a bounded tree of inert operator-supplied
+settings. The caller supplies exactly `tables:{slot:stableTableId}` and
+`columns:{slot:stableColumnId}`; URLs, settings and numeric native refs
+are absent from the request. Gia resolves references within this document
+and writes the configured key in native widget-owned options with
+`{version,tables,bindings,...defaults}`. The saved tables contain numeric
+table refs and each binding contains `tableRef` and `columnRef`. Gia keeps
+these refs private, verifies the resolved identities and preserves other
+options and access. Identical requests are no-ops and uncertain writes
+require reconciliation. The saved revision is metadata evidence. Grist's
+browser resolves its catalog and frame URL separately. Effective rendering,
+remote code behavior and any later grant of access require their own qualification.
+
 `grist_change_ui(action="publish_form")` publishes one existing native Form widget and its
 page-linked native share through a private fixed Grist action bundle. The request must
 include `confirmPublic:true`, a `doc.schema:write` grant and fresh native

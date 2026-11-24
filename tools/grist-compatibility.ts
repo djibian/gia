@@ -445,7 +445,11 @@ async function run(): Promise<void> {
       revision: "v1.0.0", url: "https://widgets.example.org/compat/v1.0.0/index.html"
     },{
       key: "compat-v2", name: "Compatibility widget", widgetId: "@test/compat",
-      revision: "v1.0.1", url: "https://widgets.example.org/compat/v1.0.1/index.html"
+      revision: "v1.0.1", url: "https://widgets.example.org/compat/v1.0.1/index.html",
+      referenceOption: { key: "fixtureConfig", version: 2,
+        tableSlots: ["items", "customers"],
+        columnSlots: { display: "customers", quantity: "items" },
+        defaults: { layout: { compact: true } } }
     }])
   });
 
@@ -1555,6 +1559,69 @@ async function run(): Promise<void> {
       previousTrustedKey: "compat", trustedKey: "compat-v2", confirmExternalWidget: true
     }), "trusted_revision_repeat") as {changed:boolean};
     assert(!repeatUpgrade.changed, "trusted_revision_repeated");
+
+    const referenceRequest = {
+      action: "configure_trusted_widget_references", documentId, pageId, widgetId: trustedId,
+      trustedKey: "compat-v2", confirmExternalWidget: true,
+      tables: { items: TABLE_ID, customers: "Compat_Customers" },
+      columns: { display: "Name", quantity: "Qty" }
+    };
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      ...referenceRequest, columns: { display: "Qty", quantity: "Qty" }
+    });
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      ...referenceRequest, trustedKey: "compat"
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: trustedId,
+      update: { customWidgetSettings: { optionsPatch: { keepFixture: "keep" } } }
+    });
+    const refResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", referenceRequest),
+      "trusted_reference_options");
+    const refReplay = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", referenceRequest),
+      "trusted_reference_replay");
+    assert(refResult.changed === true && refResult.persistedOptionsVerified === true &&
+      refResult.remoteCodeExecutionQualified === false && refReplay.changed === false &&
+      !JSON.stringify(refResult).includes("columnRef"), "trusted_reference_contract_wrong");
+    const readTrustedView = async () => {
+      const native = await gristApi(gristBaseUrl, apiKey,
+        `/api/docs/${encodeURIComponent(documentId)}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
+      const row = native.records.find(section => section.id === trustedId);
+      return JSON.parse(JSON.parse(row?.fields.options as string).customView);
+    };
+    const readColumn = async (table: string, column: string) => {
+      const native = await gristApi(gristBaseUrl, apiKey,
+        `/api/docs/${encodeURIComponent(documentId)}/tables/${table}/columns`) as {
+          columns: Array<{ id: string; fields: { parentId: number; colRef: number } }>
+        };
+      const fields = native.columns.find(candidate => candidate.id === column)?.fields;
+      assert(fields && fields.parentId > 0 && fields.colRef > 0, "trusted_reference_native_binding_absent");
+      return { tableRef: fields!.parentId, columnRef: fields!.colRef };
+    };
+    const displayBinding = await readColumn("Compat_Customers", "Name");
+    const quantityBinding = await readColumn(TABLE_ID, "Qty");
+    const expectedOptions = {
+      layout: { compact: true }, version: 2,
+      tables: { items: quantityBinding.tableRef, customers: displayBinding.tableRef },
+      bindings: { display: displayBinding, quantity: quantityBinding }
+    };
+    assert(isDeepStrictEqual(await readTrustedView(), {
+      ...upgradedView, widgetOptions: { keepFixture: "keep", fixtureConfig: expectedOptions }
+    }), "trusted_reference_native_state_wrong");
+    const replacedReference = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
+      ...referenceRequest, columns: { display: "Name", quantity: "Name" }
+    }), "trusted_reference_replacement");
+    assert(replacedReference.changed === true && isDeepStrictEqual(
+      (await readTrustedView()).widgetOptions.fixtureConfig.bindings.quantity, await readColumn(TABLE_ID, "Name")
+    ), "trusted_reference_replacement_wrong");
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      action: "update_widget", documentId, pageId, widgetId: trustedId,
+      update: { customWidgetSettings: { access: "read table", confirmDataAccess: true } }
+    });
+    const activeView = await readTrustedView();
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", referenceRequest);
+    assert(activeView.access === "read table" && isDeepStrictEqual(await readTrustedView(), activeView),
+      "trusted_reference_active_widget_changed");
 
     const configuredCustom = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_widget", documentId, pageId, widgetId: customWidgetId,

@@ -1808,6 +1808,18 @@ export function registerLeanTools(
           trustedKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/),
           confirmExternalWidget: z.literal(true)
         }).strict(),
+        z.object({
+          action: z.literal("configure_trusted_widget_references"),
+          documentId: documentIdSchema,
+          pageId: positiveIdSchema,
+          widgetId: positiveIdSchema,
+          trustedKey: z.string().regex(/^[A-Za-z][A-Za-z0-9_-]{0,63}$/),
+          confirmExternalWidget: z.literal(true),
+          tables: dictionarySchema(z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,99}$/), 1)
+            .refine(value => Object.keys(value).length <= 12),
+          columns: dictionarySchema(z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,99}$/), 1)
+            .refine(value => Object.keys(value).length <= 24)
+        }).strict(),
         z
           .object({
             action: z.literal("update_widget"),
@@ -1888,6 +1900,11 @@ export function registerLeanTools(
             return textResult(await grist.updateTrustedWidgetRevision(
               input.documentId, input.pageId, input.widgetId,
               input.previousTrustedKey, input.trustedKey, input.confirmExternalWidget
+            ));
+          case "configure_trusted_widget_references":
+            return textResult(await grist.configureTrustedWidgetReferences(
+              input.documentId, input.pageId, input.widgetId, input.trustedKey,
+              input.confirmExternalWidget, { tables: input.tables, columns: input.columns }
             ));
           case "update_widget":
             return textResult(
