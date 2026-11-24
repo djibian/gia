@@ -2765,7 +2765,9 @@ async function run(): Promise<void> {
       action: "ensure_columns", documentId: emptyDocumentId, tableId: "CompatFormula",
       columns: [
         { id: "InitialBase", fields: { type: "Text", isFormula: false, formula: "$Base" } },
-        { id: "InitialStatus", fields: { type: "Choice", isFormula: false, formula: "'New'" } }
+        { id: "InitialStatus", fields: { type: "Choice", isFormula: false, formula: "'New'" } },
+        { id: "Dependent", fields: { type: "Text", isFormula: false, formula: "$Base",
+          recalculateOnColumnId: "Base" } }
       ]
     };
     const triggerCreation = resultJson(await callTool(bridgeBaseUrl, "grist_add_structure", triggerSeed),
@@ -2788,6 +2790,7 @@ async function run(): Promise<void> {
     const defaulted = inserted.records.find(row => row.fields.Base === "Default");
     const overridden = inserted.records.find(row => row.fields.Base === "Override");
     assert(defaulted?.fields.InitialBase === "Default" && defaulted.fields.InitialStatus === "New" &&
+      defaulted.fields.Dependent === "Default" &&
       overridden?.fields.InitialBase === "Entered" && overridden.fields.InitialStatus === "Manual",
       "native_insert_trigger_default_or_override_wrong");
     await callTool(bridgeBaseUrl, "grist_change_records", {
@@ -2796,7 +2799,18 @@ async function run(): Promise<void> {
     });
     const edited = (await readFormulaRows()).records.find(row => row.id === defaulted!.id);
     assert(edited?.fields.Base === "Changed" && edited.fields.InitialBase === "Default" &&
-      edited.fields.InitialStatus === "Edited", "native_insert_trigger_recomputed_on_update");
+      edited.fields.InitialStatus === "Edited" && edited.fields.Dependent === "Changed",
+      "native_trigger_dependency_not_applied");
+    await callTool(bridgeBaseUrl, "grist_change_records", {
+      action: "update", documentId: emptyDocumentId, tableId: "CompatFormula",
+      records: [{ id: defaulted!.id, fields: { Dependent: "User edit" } }]
+    });
+    await callTool(bridgeBaseUrl, "grist_change_records", {
+      action: "update", documentId: emptyDocumentId, tableId: "CompatFormula",
+      records: [{ id: defaulted!.id, fields: { InitialStatus: "Other edit" } }]
+    });
+    assert((await readFormulaRows()).records.find(row => row.id === defaulted!.id)?.fields.Dependent === "User edit",
+      "native_trigger_recomputed_on_unrelated_update");
 
     const configuredRequest = {
       action: "create_columns", documentId: emptyDocumentId, tableId: "Placements", columns: [

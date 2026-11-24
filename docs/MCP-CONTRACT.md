@@ -113,8 +113,11 @@ bound and no unrelated native fields. Both use the same closed supported types:
 `fields:{type,isFormula:false,formula:nonemptyGristPython}` creates a writable
 column with an insert-only default. Grist evaluates it for an omitted field
 on insertion, preserving explicitly supplied values and subsequent edits.
-Gia verifies the exact formula, insert trigger mode and absence of update
-dependencies. The reference destination and formula dependencies must
+The same seed may include `recalculateOnColumnId` for one distinct existing
+column on the same table. Grist then also evaluates the formula when that
+column is edited. Gia resolves the dependency to a private native column
+reference, verifies exact native trigger metadata and rejects conflicting
+existing dependencies on replay. The reference destination and formula dependencies must
 already be valid in native Grist. A matching existing formula is reused without
 rewriting it; for an explicit formula seed a differing formula, an explicit data
 seed targeting a formula column, or a conflicting type

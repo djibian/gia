@@ -1080,7 +1080,8 @@ export function registerLeanTools(
                 z.object({
                   type: z.enum(["Text", "Choice"]),
                   isFormula: z.literal(false),
-                  formula: seedFormula
+                  formula: seedFormula,
+                  recalculateOnColumnId: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,99}$/).optional()
                 }).strict()
               ])
             }).strict(),limits.maxSchemaItems)
