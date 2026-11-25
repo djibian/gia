@@ -849,7 +849,53 @@ async function validateFromEmptyStageTopology(
         "stage_topology_formula_schema_not_reconciled");
     }
   };
+  const displayFields: Record<string, Record<string, string>> = {
+    Classes: {Professeur_principal: "Identite"},
+    Enseignants: {Classes_PP: "Classe"},
+    Stages: {Eleve: "Identite", Structure_de_stage: "Nom_usuel", Periode: "Periode",
+      Suivi_par: "Identite", Classe: "Classe"},
+    Activites: {Patrenaire: "Nom_usuel", Enseignant: "Identite", Classe: "Classe"},
+    Periodes_de_stage: {Classe: "Classe"},
+    Affectation: {Classe: "Classe", Enseignant: "Identite", Periode: "Periode"},
+    Eleves: {Classe: "Classe"}
+  };
+  const dropdowns = [
+    {columnId: "Structure_de_stage",
+      condition: {kind: "choice_field_equals_literal", choiceColumnId: "Statut", value: "validé"},
+      text: 'choice.Statut == "validé"'},
+    {columnId: "Periode",
+      condition: {kind: "choice_field_equals_record_ref", choiceColumnId: "Classe", recordColumnId: "Classe"},
+      text: "choice.Classe == $Classe"},
+    {columnId: "Suivi_par",
+      condition: {kind: "choice_id_in_record_reflist", recordColumnId: "Enseignants_affectables"},
+      text: "choice.id in $Enseignants_affectables"}
+  ];
+  const configureSchema = async (replay = false) => {
+    for (const [tableId, fields] of Object.entries(displayFields)) {
+      const updated = await callTool(bridge, "grist_change_structure", {
+        action: "update_columns", documentId, tableId,
+        columns: Object.entries(fields).map(([id, visibleColumnId]) => ({
+          id, fields: {visibleColumnId}
+        }))
+      }) as {updatedColumns: Array<{id: string; visibleColumnId: string}>};
+      assertThat(updated.updatedColumns.length === Object.keys(fields).length &&
+        updated.updatedColumns.every(column => fields[column.id] === column.visibleColumnId),
+        "stage_topology_display_column_not_verified");
+    }
+    await callTool(bridge, "grist_change_structure", {
+      action: "append_choice_options", documentId, tableId: "Structures_de_stage",
+      columnId: "Statut", values: ["à vérifier", "validé"]
+    });
+    for (const {columnId, condition} of dropdowns) {
+      const updated = await callTool(bridge, "grist_change_structure", {
+        action: "update_dropdown_condition", documentId, tableId: "Stages", columnId, condition
+      }) as {changed: boolean; persistedOptionsVerified: boolean};
+      assertThat(updated.persistedOptionsVerified && (!replay || !updated.changed),
+        "stage_topology_dropdown_not_reconciled");
+    }
+  };
   await ensureSchema();
+  await configureSchema();
   const ensureData = async () => {
     const ids = new Map<string, number>();
     // Dependency order: no source data, no native import, all writes via Gia.
@@ -989,6 +1035,7 @@ async function validateFromEmptyStageTopology(
   };
   const first = await construct(false);
   await ensureSchema(true);
+  await configureSchema(true);
   assertThat(JSON.stringify(await ensureData()) === JSON.stringify(records),
     "stage_topology_duplicate_records");
   assertThat(JSON.stringify(await construct(true)) === JSON.stringify(first),
@@ -1019,6 +1066,34 @@ async function validateFromEmptyStageTopology(
     }
   }
   assertThat(witnessColumns === 89, "stage_topology_schema_count_wrong");
+  const nativeColumn = (tableId: string, columnId: string) => {
+    const table = tables.find(t => t.fields.tableId === tableId);
+    const matches = columns.filter(col => col.fields.parentId === table?.id && col.fields.colId === columnId);
+    assertThat(table !== undefined && matches.length === 1, "stage_topology_reference_column_missing");
+    return matches[0]!;
+  };
+  let displayCount = 0;
+  for (const [tableId, fields] of Object.entries(displayFields)) {
+    for (const [columnId, visibleColumnId] of Object.entries(fields)) {
+      const source = nativeColumn(tableId, columnId);
+      const targetTable = String(source.fields.type).replace(/^Ref(?:List)?:/, "");
+      const target = nativeColumn(targetTable, visibleColumnId);
+      assertThat(source.fields.visibleCol === target.id, "stage_topology_native_display_column_wrong");
+      displayCount++;
+    }
+  }
+  assertThat(displayCount === 15, "stage_topology_display_count_wrong");
+  for (const {columnId, text} of dropdowns) {
+    const column = nativeColumn("Stages", columnId);
+    const options = JSON.parse(String(column.fields.widgetOptions)) as {
+      dropdownCondition?: {text: string; parsed: string}
+    };
+    assertThat(options.dropdownCondition?.text === text &&
+      typeof options.dropdownCondition.parsed === "string" &&
+      Array.isArray(JSON.parse(options.dropdownCondition.parsed)),
+      "stage_topology_native_dropdown_wrong:" + columnId);
+  }
+  console.log("from-empty stage schema configuration: 15 display references, 3 typed native dropdown predicates, stable replay: PASS");
   const recordIds = new Map(records);
   const row = async (tableId: string) => {
     const rows = await metadata(tableId);
