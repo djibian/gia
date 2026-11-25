@@ -1432,7 +1432,26 @@ async function validateFromEmptyStageTopology(
     action: "ensure_owner_schema_guard", documentId, confirmSchemaRestriction: true
   }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean;
     effectiveEnforcementVerified: boolean}>;
-  const guarded = await guard();
+  let guarded: Awaited<ReturnType<typeof guard>>;
+  try {
+    guarded = await guard();
+  } catch (error) {
+    const after = await metadata("_grist_ACLRules");
+    const resources = await metadata("_grist_ACLResources");
+    const defaultIds = resources.filter(row => row.fields.tableId === "*" && row.fields.colIds === "*").map(row => row.id);
+    const describe = (row: typeof after[number]) => ({
+      id: row.id, resource: row.fields.resource, position: row.fields.rulePos,
+      guard: row.fields.aclFormula === "user.Access != OWNER" && row.fields.permissionsText === "-S",
+      changedFields: Object.keys(row.fields).filter(key =>
+        JSON.stringify(row.fields[key]) !== JSON.stringify(beforeRules.find(previous => previous.id === row.id)?.fields[key]))
+    });
+    console.error("full_witness_schema_guard_native_diagnostic", JSON.stringify({
+      defaultIds, before: beforeRules.map(describe), after: after.map(describe),
+      guardParsed: after.filter(row => row.fields.aclFormula === "user.Access != OWNER" && row.fields.permissionsText === "-S")
+        .map(row => row.fields.aclFormulaParsed)
+    }));
+    throw error;
+  }
   const guardReplay = await guard();
   assertThat(guarded.changed && guarded.persistedDefinitionVerified &&
     !guarded.effectiveEnforcementVerified && !guardReplay.changed &&
