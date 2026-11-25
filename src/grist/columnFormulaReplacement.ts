@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 
 type Json = Record<string, unknown>;
 type Column = { ref: number; fields: Json };
+export type ColumnFormulaKind = "calculated" | "trigger";
 
 function object(value: unknown): Json | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -31,36 +32,49 @@ function snapshot(raw: unknown, limit: number): Map<string, Column> {
   return columns;
 }
 
-function target(columns: ReadonlyMap<string, Column>, columnId: string): Column {
+function target(
+  columns: ReadonlyMap<string, Column>, columnId: string, kind: ColumnFormulaKind
+): Column {
   const found = columns.get(columnId);
-  if (!found || found.fields.isFormula !== true ||
-      typeof found.fields.formula !== "string" ||
+  if (!found || typeof found.fields.formula !== "string" ||
       typeof found.fields.type !== "string" || !found.fields.type) {
     throw new Error("Target must be a verified existing native formula column.");
   }
-  return found;
+  if (kind === "calculated" && found.fields.isFormula === true) return found;
+  if (kind === "trigger" && found.fields.isFormula === false &&
+      ["Text", "Choice"].includes(found.fields.type) && found.fields.formula.trim() &&
+      found.fields.recalcWhen === 0) {
+    const deps = found.fields.recalcDeps;
+    // Match the already supported DEFAULT insert/one-dependency trigger subset.
+    // The private dependency must resolve to another column on this table.
+    if (deps === null || (Array.isArray(deps) && deps.length === 2 &&
+        deps[0] === "L" && deps[1] !== found.ref &&
+        [...columns.values()].some(column => column.ref === deps[1]))) return found;
+  }
+  throw new Error("Target formula kind or native trigger metadata is outside the supported subset.");
 }
 
 /** A formula is ordinary Grist Python, never an ACL expression or raw UserAction. */
 export function planColumnFormulaReplacement(
-  raw: unknown, columnId: string, formula: string, limit: number
+  raw: unknown, columnId: string, formula: string, limit: number,
+  kind: ColumnFormulaKind = "calculated"
 ): { changed: boolean } {
   if (!columnId || typeof formula !== "string" || !formula.trim() ||
       formula.length > 4096 || /[\u0000]/.test(formula)) {
     throw new Error("Replacement requires an existing column and bounded nonempty formula.");
   }
   const before = snapshot(raw, limit);
-  return { changed: target(before, columnId).fields.formula !== formula };
+  return { changed: target(before, columnId, kind).fields.formula !== formula };
 }
 
 /** Confirm the requested formula and preserve every other native column field. */
 export function verifyColumnFormulaReplacement(
   beforeRaw: unknown, afterRaw: unknown, columnId: string,
-  formula: string, limit: number
+  formula: string, limit: number, kind: ColumnFormulaKind = "calculated"
 ): void {
   const before = snapshot(beforeRaw, limit), after = snapshot(afterRaw, limit);
-  target(before, columnId);
-  target(after, columnId);
+  target(before, columnId, kind);
+  target(after, columnId, kind);
   if (before.size !== after.size) throw new Error("Native column set changed.");
   for (const [id, previous] of before) {
     const current = after.get(id);
