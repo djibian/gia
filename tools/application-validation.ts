@@ -1399,6 +1399,87 @@ async function validateFromEmptyStageTopology(
   await updateWitnessRow("Stages", stageB, {Suivi_par: teacherB});
   await configureSyntheticStagePolicy(bridge, documentId);
 
+  // Qualify the native Owner-only schema guard on this same application.
+  // The raw native action is only an adversarial authenticated test probe,
+  // never a new Gia action or a means of constructing witness schema.
+  const schemaProbe = (columnId: string) => gristStatus(context.baseUrl,
+    context.teacherAKey, path + "/apply", {
+      method: "POST", body: JSON.stringify([
+        ["AddColumn", "Verrou", columnId, {type: "Text"}]
+      ])
+    });
+  const beforeProbe = "SchemaProbeBeforeGuard";
+  const deniedProbe = "SchemaProbeDenied";
+  const ownerProbe = "SchemaProbeOwner";
+  const removeProbe = (columnId: string) => callTool(bridge, "grist_change_structure", {
+    action: "delete_columns", documentId, tableId: "Verrou", columnIds: [columnId]
+  });
+  const probeColumns = async () => {
+    const tables = await metadata("_grist_Tables");
+    const lockTable = tables.find(row => row.fields.tableId === "Verrou");
+    assertThat(lockTable, "full_witness_schema_probe_table_missing");
+    return (await metadata("_grist_Tables_column"))
+      .filter(row => row.fields.parentId === lockTable.id);
+  };
+  const beforeColumns = await probeColumns();
+  assertThat(await schemaProbe(beforeProbe) === 200,
+    "full_witness_schema_guard_editor_baseline_denied");
+  assertThat((await probeColumns()).some(row => row.fields.colId === beforeProbe),
+    "full_witness_schema_guard_editor_baseline_not_persisted");
+  await removeProbe(beforeProbe);
+  const beforeRules = await metadata("_grist_ACLRules");
+  const guard = () => callTool(bridge, "grist_change_structure", {
+    action: "ensure_owner_schema_guard", documentId, confirmSchemaRestriction: true
+  }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean;
+    effectiveEnforcementVerified: boolean}>;
+  let guarded: Awaited<ReturnType<typeof guard>>;
+  try {
+    guarded = await guard();
+  } catch (error) {
+    const after = await metadata("_grist_ACLRules");
+    const resources = await metadata("_grist_ACLResources");
+    const defaultIds = resources.filter(row => row.fields.tableId === "*" && row.fields.colIds === "*").map(row => row.id);
+    const describe = (row: typeof after[number]) => ({
+      id: row.id, resource: row.fields.resource, position: row.fields.rulePos,
+      guard: row.fields.aclFormula === "user.Access != OWNER" && row.fields.permissionsText === "-S",
+      changedFields: Object.keys(row.fields).filter(key =>
+        JSON.stringify(row.fields[key]) !== JSON.stringify(beforeRules.find(previous => previous.id === row.id)?.fields[key]))
+    });
+    console.error("full_witness_schema_guard_native_diagnostic", JSON.stringify({
+      defaultIds, before: beforeRules.map(describe), after: after.map(describe),
+      guardParsed: after.filter(row => row.fields.aclFormula === "user.Access != OWNER" && row.fields.permissionsText === "-S")
+        .map(row => row.fields.aclFormulaParsed)
+    }));
+    throw error;
+  }
+  const guardReplay = await guard();
+  assertThat(guarded.changed && guarded.persistedDefinitionVerified &&
+    !guarded.effectiveEnforcementVerified && !guardReplay.changed &&
+    guardReplay.persistedDefinitionVerified, "full_witness_schema_guard_not_reconciled");
+  const afterRules = await metadata("_grist_ACLRules");
+  assertThat(afterRules.length === beforeRules.length + 1 &&
+    afterRules.filter(row => row.fields.aclFormula === "user.Access != OWNER" &&
+      row.fields.permissionsText === "-S").length === 1 &&
+    beforeRules.every(original => afterRules.some(row =>
+      row.id === original.id && JSON.stringify(row.fields) === JSON.stringify(original.fields))),
+    "full_witness_schema_guard_changed_unrelated_policy");
+  assertThat(await schemaProbe(deniedProbe) === 403,
+    "full_witness_schema_guard_editor_not_denied");
+  const ownerColumn = await callTool(bridge, "grist_add_structure", {
+    action: "ensure_columns", documentId, tableId: "Verrou",
+    columns: [{id: ownerProbe, fields: {type: "Text", isFormula: false}}]
+  }) as {changed: boolean; persistedSchemaVerified: boolean};
+  assertThat(ownerColumn.changed && ownerColumn.persistedSchemaVerified &&
+    (await probeColumns()).some(row => row.fields.colId === ownerProbe),
+    "full_witness_schema_guard_owner_write_denied");
+  await removeProbe(ownerProbe);
+  const afterColumns = await probeColumns();
+  assertThat(afterColumns.length === beforeColumns.length &&
+    beforeColumns.every(original => afterColumns.some(row =>
+      row.id === original.id && JSON.stringify(row.fields) === JSON.stringify(original.fields))),
+    "full_witness_schema_guard_probe_not_cleaned");
+  console.log("from-empty full witness: Owner-only schema guard replay, editor schema denial, Owner schema write and preservation: PASS");
+
   // Submit via the same public capability AFTER the ACL installation. The
   // document remains disposable; the owner verifies persistence separately.
   const thirdSubmission = await anonymous(stagePublicPath + "/tables/Stages/records", {

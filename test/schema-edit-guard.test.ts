@@ -80,3 +80,30 @@ test("Owner-only schema guard refuses conflicting, duplicate, malformed and alte
   assert.throws(() => verifyOwnerSchemaGuard(before,
     snapshot([resource], [changedAttribute, guard()]), planOwnerSchemaGuard(before)));
 });
+
+test("Owner-only guard avoids native rulePos collisions across resources", () => {
+  const ordinaryResource = { id: 3, fields: { tableId: "People", colIds: "*" } };
+  const ordinary = { id: 12, fields: {
+    resource: 3, rulePos: 2, aclFormula: "", aclFormulaParsed: "",
+    permissionsText: "+R"
+  } };
+  const fractional = { ...ordinary, id: 13, fields: { ...ordinary.fields, rulePos: 6.5 } };
+  const before = snapshot([resource, ordinaryResource], [attribute, ordinary, fractional]);
+  const plan = planOwnerSchemaGuard(before);
+  assert.equal(plan.rulePos, 7);
+  const added = { ...guard(), fields: { ...guard().fields, rulePos: 7 } };
+  const after = snapshot([resource, ordinaryResource], [attribute, ordinary, fractional, added]);
+  assert.equal(verifyOwnerSchemaGuard(before, after, plan).changed, true);
+  const changedOrdinary = { ...ordinary, fields: { ...ordinary.fields, rulePos: 2.5 } };
+  assert.throws(() => verifyOwnerSchemaGuard(before,
+    snapshot([resource, ordinaryResource], [attribute, changedOrdinary, fractional, added]), plan));
+});
+
+test("Owner-only guard reconciles an exact native guard at a fractional position", () => {
+  const nativeGuard = { ...guard(), fields: { ...guard().fields, rulePos: 1.5 } };
+  const before = snapshot([resource], [attribute, nativeGuard]);
+  const plan = planOwnerSchemaGuard(before);
+  assert.equal(plan.mode, "noop");
+  assert.equal(plan.rulePos, 1.5);
+  assert.equal(verifyOwnerSchemaGuard(before, before, plan).changed, false);
+});
