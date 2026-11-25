@@ -140,7 +140,7 @@ export class GristClient {
     )) as GristDocumentSummary;
   }
 
-  async resolvePublicFormPath(documentId: string, linkId: string, widgetId: number): Promise<string> {
+  async resolvePublicFormPath(documentId: string, linkId: string, widgetId: number, absolute = false): Promise<string> {
     if (!Number.isSafeInteger(widgetId) || widgetId < 1) {
       throw new Error("A stable native Form widget ID is required.");
     }
@@ -157,7 +157,7 @@ export class GristClient {
     if (!response.ok || !response.headers.get("content-type")?.startsWith("application/json")) {
       throw new Error("Native public Form could not be verified.");
     }
-    return "/forms/" + key + "/" + widgetId;
+    return (absolute ? this.baseOrigin : "") + "/forms/" + key + "/" + widgetId;
   }
 
   async listDocumentAccess(documentIdOrUrl: string): Promise<unknown> {
