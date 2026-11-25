@@ -82,7 +82,7 @@ import { applyFormColumnOptions, readFormColumnOptions, type FormColumnOptionsUp
 import { readChoiceColumnState, planAppendChoiceOptions, planReorderChoiceOptions, planSetChoiceColors, type ChoiceColors } from "./choiceOptions.js";
 import { resolveExistingDropdownCondition, type DropdownConditionInput } from "./configuredColumns.js";
 import { planDropdownConditionUpdate } from "./dropdownConditionUpdate.js";
-import { planColumnFormulaReplacement, verifyColumnFormulaReplacement } from "./columnFormulaReplacement.js";
+import { planColumnFormulaReplacement, verifyColumnFormulaReplacement, type ColumnFormulaKind } from "./columnFormulaReplacement.js";
 import { planColumnStyle, readNativeColumnStyleSequence, readNativeRowStyleSequence,
   planAppendColumnStyleRule, planExistingColumnStyleUpdate,
   planExistingStyleFormulaReplacement, planReorderRowStyleRules, planReorderColumnStyleRules,
@@ -2693,14 +2693,15 @@ export class AuthorizedGristService {
 
   /** Idempotent, exact native schema replacement for one existing Grist formula. */
   async replaceColumnFormula(
-    documentIdOrUrl: string, tableId: string, columnId: string, formula: string
+    documentIdOrUrl: string, tableId: string, columnId: string, formula: string,
+    formulaKind: ColumnFormulaKind = "calculated"
   ): Promise<unknown> {
     return this.execute("replace_column_formula", documentIdOrUrl, 1, async id => {
       assertPublicTableId(tableId);
       const limit = this.inner.maxReadRecords > 0 ? this.inner.maxReadRecords : 5000;
       const read = () => this.inner.listColumns(id, tableId, { hidden: true });
       const before = await read();
-      const planned = planColumnFormulaReplacement(before, columnId, formula, limit);
+      const planned = planColumnFormulaReplacement(before, columnId, formula, limit, formulaKind);
       const base = { documentId: id, tableId, columnId };
       if (!planned.changed) {
         return { ...base, changed: false, persistedFormulaVerified: true };
@@ -2709,7 +2710,7 @@ export class AuthorizedGristService {
         await this.inner.updateColumns(id, tableId, [
           { id: columnId, fields: { formula } }
         ]);
-        verifyColumnFormulaReplacement(before, await read(), columnId, formula, limit);
+        verifyColumnFormulaReplacement(before, await read(), columnId, formula, limit, formulaKind);
       } catch (error) {
         throw new SchemaWriteVerificationError("replace_column_formula",
           "Native formula effect may be uncertain; inspect before retry: " +
