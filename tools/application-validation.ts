@@ -877,9 +877,10 @@ async function validateFromEmptyStageTopology(
         columns: Object.entries(fields).map(([id, visibleColumnId]) => ({
           id, fields: {visibleColumnId}
         }))
-      }) as {updatedColumns: Array<{id: string; visibleColumnId: string}>};
+      }) as {updatedColumns: Array<{targetColumnId: string; columnId: string; visibleColumnId: string}>};
       assertThat(updated.updatedColumns.length === Object.keys(fields).length &&
-        updated.updatedColumns.every(column => fields[column.id] === column.visibleColumnId),
+        updated.updatedColumns.every(column => column.targetColumnId === column.columnId &&
+          fields[column.columnId] === column.visibleColumnId),
         "stage_topology_display_column_not_verified");
     }
     await callTool(bridge, "grist_change_structure", {
