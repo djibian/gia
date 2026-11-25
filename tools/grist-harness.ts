@@ -121,6 +121,7 @@ export async function startBridge(options: {
   apiKey: string;
   documentIds: string[];
   workspaceIds?: readonly number[];
+  trustedWidgetsJson?: string;
 }): Promise<{ baseUrl: string; child: ChildProcess }> {
   const port = await freePort();
   const env: NodeJS.ProcessEnv = {
@@ -129,6 +130,9 @@ export async function startBridge(options: {
     GRIST_API_KEY: options.apiKey,
     GRIST_ALLOWED_DOCUMENT_IDS: options.documentIds.join(","),
     GRIST_ALLOWED_WORKSPACE_IDS: (options.workspaceIds ?? []).join(","),
+    ...(options.trustedWidgetsJson === undefined ? {} : {
+      GIA_TRUSTED_CUSTOM_WIDGETS_JSON: options.trustedWidgetsJson
+    }),
     // Full native section/field metadata must fit the acceptance read budget.
     // Use the existing bounded production default for representative topology.
     GRIST_MAX_READ_RECORDS: "5000",
