@@ -2,7 +2,8 @@ import { createServer } from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
 import { isDeepStrictEqual } from "node:util";
 import { leanToolHelp } from "../src/mcp/leanRegistry.js";
-import { createTestApiKey, gristStatus } from "./grist-harness.js";
+import { createTestApiKey, gristStatus, qualifyAnonymousFormRedirect } from "./grist-harness.js";
+import { readOwnerFormShareKey } from "../src/grist/formShareLookup.js";
 import { makeReadinessRequest, matchReadinessSchemas, READINESS_PROTOCOL_VERSION } from "./mcp-readiness-schema.js";
 
 const STATIC_BEARER = "test-static-bearer-0123456789abcdef0123456789abcdef0123456789abcdef";
@@ -4530,6 +4531,32 @@ async function run(): Promise<void> {
       const publicRows = await anon(publicPath + "/tables/Responses/records");
       const publicBody = await publicRows.text();
       assert(!publicBody.includes("Synthetic anonymous Form response"), "native_public_form_responses_exposed");
+
+      // Publish the source only after the cross-share negative check. The
+      // browser is anonymous; the owner-only lookup is confined to this fixture.
+      await callTool(bridgeBaseUrl, "grist_change_ui", {
+        action: "publish_form", documentId: publicDoc, ...source, confirmPublic: true
+      });
+      const [pageRecords, shareRecords] = await Promise.all([
+        gristApi(gristBaseUrl, apiKey, publicDocPath + "/tables/_grist_Pages/records?hidden=true") as Promise<MetaRecords>,
+        gristApi(gristBaseUrl, apiKey, publicDocPath + "/tables/_grist_Shares/records?hidden=true") as Promise<MetaRecords>
+      ]);
+      const sourcePages = pageRecords.records.filter(row => row.fields.viewRef === source.pageId);
+      const sourceShare = shareRecords.records.find(row => row.id === sourcePages[0]?.fields.shareRef);
+      assert(sourcePages.length === 1 && typeof sourceShare?.fields.linkId === "string",
+        "native_public_form_browser_source_share_missing");
+      const ownerDoc = await gristApi(gristBaseUrl, apiKey, publicDocPath) as Record<string, unknown>;
+      const ownerWorker = await gristApi(gristBaseUrl, apiKey, "/api/worker/" + encodeURIComponent(publicDoc));
+      const sourceKey = await readOwnerFormShareKey(gristBaseUrl, ownerDoc, ownerWorker, publicDoc,
+        String(sourceShare?.fields.linkId), apiKey);
+      assert(sourceKey !== key, "native_public_form_browser_source_share_not_distinct");
+      const browserMarker = "Synthetic browser redirect response";
+      await qualifyAnonymousFormRedirect(new URL(gristBaseUrl).origin + "/forms/" + sourceKey + "/" + source.widgetId,
+        new URL(gristBaseUrl).origin + "/forms/" + key + "/" + target.widgetId, browserMarker);
+      const browserRows = await gristApi(gristBaseUrl, apiKey, publicDocPath + "/tables/Responses/records") as MetaRecords;
+      assert(browserRows.records.filter(row => row.fields.Name === browserMarker).length === 1,
+        "native_public_form_browser_response_not_persisted_once");
+      console.log("native anonymous Form success redirect: browser navigation and persisted response PASS");
     }
 
     console.log(`Grist Community ${version}: PASS`);
