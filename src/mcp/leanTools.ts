@@ -559,6 +559,7 @@ const formLayoutUpdateSchema = z.object({
   confirmPublicLink: z.literal(true).optional(),
   submitText: z.string().max(300).optional(),
   successText: z.string().max(300).optional(),
+  successRedirect: z.object({ targetPageId: positiveIdSchema, targetWidgetId: positiveIdSchema }).strict().optional(),
   anotherResponse: z.boolean().optional()
 }).strict();
 
