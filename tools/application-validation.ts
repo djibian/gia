@@ -23,6 +23,28 @@ import {
   setupFixtures
 } from "./application-fixtures.js";
 
+// Reserved origins and inactive widgets qualify metadata only, not remote code.
+const witnessWidgets = [
+  {key: "structures-map", page: "Consultation structures", section: "carte",
+    tableId: "Structures_de_stage", columnId: "Nom_usuel", direct: false},
+  {key: "teacher-geocoder", page: "Liste des enseignants", section: "geocodeur",
+    tableId: "Enseignants", columnId: "Adresse", direct: true},
+  {key: "teacher-map", page: "Liste des enseignants", section: "carte",
+    tableId: "Enseignants", columnId: "Identite", direct: false},
+  {key: "structure-assistant", page: "Assistant structures", section: "assistant",
+    tableId: "Structures_de_stage", columnId: "Nom_usuel", direct: true},
+  {key: "assignment-assistant", page: "Affectation des stages", section: "assistant",
+    tableId: "Classes", columnId: "Classe", direct: true}
+] as const;
+const widgetFixtureUrl = (key: string) => `https://${key}.invalid/v1.0.0/index.html`;
+const widgetFixtureRegistry = JSON.stringify(witnessWidgets.map(spec => ({
+  key: spec.key, name: spec.key, widgetId: `@test/${spec.key}`,
+  revision: "v1.0.0", url: widgetFixtureUrl(spec.key),
+  ...(spec.direct ? {directUrl: true} : {}),
+  referenceOption: {key: "fixtureConfig", version: 1,
+    tableSlots: ["source"], columnSlots: {display: "source"}}
+})));
+
 async function validateExistingGeneric(bridge: string, context: FixtureContext): Promise<void> {
   await ensurePage(bridge, context.genericDocId, "Inventory", "Human Dashboard");
 
@@ -732,7 +754,8 @@ async function validateFromEmptyStageSkeleton(
 /**
  * #295: native ordinary page topology from the witness, with synthetic schema
  * and rows. Five blank Custom sections receive native links from ordinary
- * selectors. External code and the two reciprocal custom-source links are absent.
+ * selectors. Custom metadata uses inert fixtures; external code and the two
+ * reciprocal custom-source links are absent.
  * The source document is not used at runtime.
  */
 async function validateFromEmptyStageTopology(
@@ -1216,7 +1239,66 @@ async function validateFromEmptyStageTopology(
   }
   assertThat(links === 20, "stage_topology_native_link_count_wrong");
   assertThat(blankCustomSections === 5, "stage_topology_custom_section_count_wrong");
-  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 blank Custom), 20 native links, stable replay: PASS");
+  const installed = new Map<number, typeof witnessWidgets[number]>();
+  for (const spec of witnessWidgets) {
+    const pageIndex = pages.findIndex(page => page.name === spec.page);
+    assertThat(pageIndex >= 0, "witness_widget_page_missing");
+    const sectionIndex = pages[pageIndex]!.widgets.findIndex(widget => widget.key === spec.section);
+    assertThat(sectionIndex >= 0 && pages[pageIndex]!.widgets[sectionIndex]?.type === "custom",
+      "witness_widget_target_missing");
+    const pageId = first[pageIndex]!.pageId, widgetId = first[pageIndex]!.widgetIds[sectionIndex]!;
+    assertThat(!installed.has(widgetId), "witness_widget_duplicate_target");
+    installed.set(widgetId, spec);
+    const install = {action: "install_trusted_widget", documentId, pageId, widgetId,
+      trustedKey: spec.key, confirmExternalWidget: true};
+    const configure = {action: "configure_trusted_widget_references", documentId, pageId, widgetId,
+      trustedKey: spec.key, confirmExternalWidget: true,
+      tables: {source: spec.tableId}, columns: {display: spec.columnId}};
+    const result = await callTool(bridge, "grist_change_ui", install) as {
+      changed: boolean; persistedWidgetVerified: boolean; remoteCodeExecutionQualified: boolean
+    };
+    assertThat(result.changed && result.persistedWidgetVerified &&
+      result.remoteCodeExecutionQualified === false, "witness_widget_install_unverified");
+    const config = await callTool(bridge, "grist_change_ui", configure) as {
+      changed: boolean; persistedOptionsVerified: boolean; remoteCodeExecutionQualified: boolean
+    };
+    assertThat(config.changed && config.persistedOptionsVerified &&
+      config.remoteCodeExecutionQualified === false, "witness_widget_binding_unverified");
+    const replay = await callTool(bridge, "grist_change_ui", install) as {changed: boolean};
+    const configReplay = await callTool(bridge, "grist_change_ui", configure) as {changed: boolean};
+    assertThat(!replay.changed && !configReplay.changed, "witness_widget_replay_changed_state");
+  }
+  const configuredSections = await metadata("_grist_Views_section");
+  assertThat(installed.size === 5 && configuredSections.length === sections.length,
+    "witness_widget_native_count_wrong");
+  for (const before of sections) {
+    const after = configuredSections.find(row => row.id === before.id);
+    assertThat(after, "witness_widget_collateral_section_removed");
+    const spec = installed.get(before.id);
+    if (!spec) {
+      assertThat(JSON.stringify(after) === JSON.stringify(before), "witness_widget_collateral_section_changed");
+      continue;
+    }
+    const {options: beforeOptions, ...beforeFields} = before.fields;
+    const {options: afterOptions, ...afterFields} = after!.fields;
+    const {customView: _oldView, ...beforeOuter} = JSON.parse(String(beforeOptions || "{}"));
+    const {customView, ...afterOuter} = JSON.parse(String(afterOptions || "{}"));
+    assertThat(JSON.stringify(beforeFields) === JSON.stringify(afterFields) &&
+      JSON.stringify(beforeOuter) === JSON.stringify(afterOuter), "witness_widget_collateral_options_changed");
+    const view = JSON.parse(String(customView));
+    assertThat(view.access === "none" && (spec.direct
+      ? view.url === widgetFixtureUrl(spec.key) && view.widgetId == null && view.widgetDef == null
+      : view.widgetId === `@test/${spec.key}` && view.widgetDef?.url === widgetFixtureUrl(spec.key) &&
+        view.url == null), "witness_widget_native_identity_or_access_wrong");
+    const tableRef = tables.find(table => table.fields.tableId === spec.tableId)?.id;
+    const columnRef = columns.find(column => column.fields.parentId === tableRef &&
+      column.fields.colId === spec.columnId)?.id;
+    assertThat(tableRef && columnRef, "witness_widget_native_binding_missing");
+    assertThat(JSON.stringify(view.widgetOptions?.fixtureConfig) === JSON.stringify({
+      version: 1, tables: {source: tableRef}, bindings: {display: {tableRef, columnRef}}
+    }), "witness_widget_native_binding_wrong");
+  }
+  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 inert configured Custom), 20 native links, stable replay: PASS");
   // Publication is deliberately confined to this disposable native fixture.
   // No source share key or URL is used, and no public key enters a tool result.
   const formTarget = (tableId: string) => {
@@ -1558,7 +1640,8 @@ async function run(): Promise<void> {
     baseUrl,
     apiKey: context.ownerKey,
     documentIds: [context.genericDocId, context.stageDocId, context.ccfDocId],
-    workspaceIds: [context.workspaceId]
+    workspaceIds: [context.workspaceId],
+    trustedWidgetsJson: widgetFixtureRegistry
   });
 
   try {
