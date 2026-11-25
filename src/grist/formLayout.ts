@@ -13,6 +13,7 @@ export interface FormLayoutInput {
   confirmPublicLink?: true | undefined;
   submitText?: string | undefined;
   successText?: string | undefined;
+  successRedirect?: { targetPageId: number; targetWidgetId: number } | undefined;
   anotherResponse?: boolean | undefined;
 }
 export interface ResolvedFormLayout {
@@ -48,19 +49,22 @@ function safePreviousParagraph(value: unknown, publicPaths: ReadonlySet<string>)
 
 /** Refuse to replace unsupported native attributes, links or unresolvable field references. */
 function safePreviousLayout(
-  value: unknown, knownFields: ReadonlySet<number>, publicPaths: ReadonlySet<string>
+  value: unknown, knownFields: ReadonlySet<number>, publicPaths: ReadonlySet<string>, verifiedRedirect: string | undefined
 ): JsonRecord | undefined {
   if (value === undefined) return;
   const root = record(value);
   if (!root) throw new Error("Native Form layout is opaque or malformed; refusing overwrite.");
   if (Object.keys(root).length === 0) return;
   if (root.type !== "Layout" ||
-      !keys(root, ["id", "type", "children", "submitText", "successText", "anotherResponse"]) ||
+      !keys(root, ["id", "type", "children", "submitText", "successText", "successURL", "anotherResponse"]) ||
       !Array.isArray(root.children)) {
     throw new Error("Native Form layout contains unsupported settings; refusing overwrite.");
   }
   if (root.submitText !== undefined) safeText(root.submitText, "Existing submit text");
   if (root.successText !== undefined) safeText(root.successText, "Existing success text");
+  if (root.successURL !== undefined && root.successURL !== verifiedRedirect) {
+    throw new Error("Pre-existing Form redirect is protected or malformed.");
+  }
   if (root.anotherResponse !== undefined && typeof root.anotherResponse !== "boolean") {
     throw new Error("Native Form response setting is malformed.");
   }
@@ -79,7 +83,7 @@ function safePreviousLayout(
     }
     if ((node.type === "Layout" && depth === 0) || node.type === "Section") {
       if (!keys(node, node.type === "Layout"
-          ? ["id", "type", "children", "submitText", "successText", "anotherResponse"]
+          ? ["id", "type", "children", "submitText", "successText", "successURL", "anotherResponse"]
           : ["id", "type", "children"]) ||
         !Array.isArray(node.children) || node.children.length > MAX_CHILDREN) {
         throw new Error("Unsupported native Form container.");
@@ -123,7 +127,8 @@ export function resolveFormLayoutUpdate(
   tables: unknown,
   sectionFields: unknown,
   input: FormLayoutInput,
-  publishedFormPaths: ReadonlyMap<string, string> = new Map()
+  publishedFormPaths: ReadonlyMap<string, string> = new Map(),
+  verifiedRedirect?: string
 ): ResolvedFormLayout {
   const fields = existingWidgetFields(widget, tables, sectionFields);
   const columns = tableColumnMaps(widget, tables);
@@ -131,7 +136,23 @@ export function resolveFormLayoutUpdate(
     throw new Error("Native Form field metadata is incomplete; refusing layout write.");
   }
   const fieldsByColumnId = new Map(fields.map(field => [field.columnId, field.fieldId]));
-  const previous = safePreviousLayout(widget.layoutSpec, new Set(fields.map(field => field.fieldId)), new Set(publishedFormPaths.values()));
+  if (input.successRedirect) {
+    if (input.confirmPublicLink !== true) throw new Error("Form redirect requires confirmPublicLink:true.");
+    const {targetPageId, targetWidgetId} = input.successRedirect;
+    const path = publishedFormPaths.get(targetPageId + ":" + targetWidgetId);
+    let parsed: URL | undefined;
+    try { if (verifiedRedirect) parsed = new URL(verifiedRedirect); } catch { /* fail closed below */ }
+    if (!path || !/^\/forms\/[a-zA-Z0-9_-]{1,100}\/[1-9]\d{0,9}$/.test(path) ||
+        !parsed || !["http:", "https:"].includes(parsed.protocol) ||
+        parsed.username || parsed.password || parsed.search || parsed.hash ||
+        parsed.pathname !== path || parsed.href !== verifiedRedirect) {
+      throw new Error("Form redirect target is not resolved to a verified published share.");
+    }
+  } else if (verifiedRedirect !== undefined) {
+    throw new Error("Unexpected verified Form redirect.");
+  }
+  const previous = safePreviousLayout(widget.layoutSpec, new Set(fields.map(field => field.fieldId)),
+    new Set(publishedFormPaths.values()), verifiedRedirect);
   if (!Array.isArray(input.children) || !input.children.length || input.children.length > MAX_CHILDREN) {
     throw new Error("Form layout requires a bounded nonempty root.");
   }
@@ -203,6 +224,7 @@ export function resolveFormLayoutUpdate(
     id: previous?.id ?? "gia_root", type: "Layout", children,
     ...(submitText !== undefined ? { submitText: safeText(submitText, "Form submit text") } : {}),
     ...(successText !== undefined ? { successText: safeText(successText, "Form success text") } : {}),
+    ...(verifiedRedirect !== undefined ? { successURL: verifiedRedirect } : {}),
     ...(anotherResponse !== undefined ? { anotherResponse } : {})
   };
   const layoutSpecJson = JSON.stringify(layoutSpec);

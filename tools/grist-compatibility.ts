@@ -4463,7 +4463,8 @@ async function run(): Promise<void> {
           { type: "section", children: [{ type: "field", columnId: "Name" }] },
           { type: "submit" }
         ],
-        confirmPublicLink: true
+        confirmPublicLink: true,
+        successRedirect: { targetPageId: target.pageId, targetWidgetId: target.widgetId }
       };
       const linkRequest = {
         action: "update_form_layout", documentId: publicDoc, ...source, layout: linkedLayout
@@ -4473,7 +4474,7 @@ async function run(): Promise<void> {
         action: "publish_form", documentId: publicDoc, ...target, confirmPublic: true
       });
       await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
-        ...linkRequest, layout: { children: linkedLayout.children }
+        ...linkRequest, layout: { children: linkedLayout.children, successRedirect: linkedLayout.successRedirect }
       });
       const linked = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", linkRequest),
         "native_public_form_link_write");
@@ -4487,11 +4488,13 @@ async function run(): Promise<void> {
       const publicSections = await gristApi(gristBaseUrl, apiKey,
         publicDocPath + "/tables/_grist_Views_section/records?hidden=true") as MetaRecords;
       const sourceLayout = JSON.parse(String(publicSections.records.find(row => row.id === source.widgetId)
-        ?.fields.layoutSpec)) as { children: Array<{ text?: string }> };
+        ?.fields.layoutSpec)) as { children: Array<{ text?: string }>; successURL?: string };
       const nativeLink = /^\[Étape suivante\]\(\/forms\/([a-zA-Z0-9_-]{1,100})\/([1-9]\d*)\)$/
         .exec(sourceLayout.children[0]?.text ?? "");
       assert(nativeLink && Number(nativeLink[2]) === target.widgetId, "native_public_form_link_wrong_target");
       const key = nativeLink[1]!;
+      assert(sourceLayout.successURL === new URL(gristBaseUrl).origin + "/forms/" + key + "/" + target.widgetId,
+        "native_public_form_success_redirect_wrong_target");
       const sourceProjection = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
         action: "page_widgets", documentId: publicDoc, pageId: source.pageId
       }), "native_public_form_link_redacted");

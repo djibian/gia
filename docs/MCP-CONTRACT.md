@@ -433,7 +433,7 @@ final submit element. All field references are supplied as stable column IDs and
 resolved to existing native section-field IDs server-side. The action is
 idempotent for an identical native layout. Omitted submission settings are
 retained. The action refuses opaque/malformed existing layout properties
-(including redirect URLs) and re-reads the persisted layout and stable field
+(including unverified redirect URLs) and re-reads the persisted layout and stable field
 bindings. It does not add fields to native sections, create share links, publish,
 execute submissions or assert rendered behavior. To place a column not already
 present as a native section field, configure the widget fields separately first.
@@ -450,6 +450,16 @@ through MCP. An earlier protected link can be retained or edited only after
 its target is resolved to that same verified key. Native anonymous submissions
 are tested in disposable Grist qualification, never sent by the runtime.
 Worker routes on another origin and unresolved organization paths fail closed.
+
+`layout.successRedirect:{targetPageId,targetWidgetId}` with `confirmPublicLink:true`
+uses the same verified published Form resolution and fresh native Owner gate.
+Grist sanitizes success redirects as absolute HTTP(S) URLs, so Gia constructs the
+absolute URL from its configured origin and verified public path, never caller URL
+text. A simultaneous paragraph link must use that same target. A pre-existing
+redirect may be replayed only when it exactly matches this verified URL; opaque
+or differently targeted redirects are protected. Neither the URL nor the share
+key is returned by Gia. Persisted redirect metadata is not proof of browser
+navigation after submission.
 
 `grist_change_ui(action="update_form_field_options")` targets one
 existing native Form section field by page/widget and stable column ID. It

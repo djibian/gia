@@ -502,9 +502,9 @@ export class GristService {
     return this.client.revokeDocumentUser(id, email);
   }
 
-  async resolvePublicFormPath(documentIdOrUrl: string, linkId: string, widgetId: number): Promise<string> {
+  async resolvePublicFormPath(documentIdOrUrl: string, linkId: string, widgetId: number, absolute = false): Promise<string> {
     const id = await this.accessPolicy.assertDocumentAllowed(documentIdOrUrl);
-    return this.client.resolvePublicFormPath(id, linkId, widgetId);
+    return this.client.resolvePublicFormPath(id, linkId, widgetId, absolute);
   }
 
   async assertDocumentOwner(documentIdOrUrl: string): Promise<void> {
