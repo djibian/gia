@@ -210,6 +210,60 @@ async function validateCcf(bridge: string, context: FixtureContext): Promise<voi
  * The native Grist instance supplies a disposable empty workspace; neither
  * the source .grist document nor private native actions seed this application.
  */
+async function configureSyntheticStagePolicy(bridge: string, documentId: string): Promise<void> {
+  // Synthetic role policy, not a copy of the production application's ACL.
+  const flag = (attributeColumnId: string) => ({
+    kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId
+  });
+  const policies = [
+    {
+      target: { userAttributeName: "Personnel" },
+      definition: { tableId: "Enseignants", lookupColId: "Email",
+        source: { kind: "user_property", property: "Email" } }
+    },
+    {
+      target: { tableId: "Stages" },
+      rules: [
+        { condition: { kind: "user_access", operator: "equals", role: "owner" },
+          permissions: { read: "allow", update: "allow" } },
+        { condition: { kind: "not", condition: flag("Acces_Stages_Actif") },
+          permissions: { read: "deny", update: "deny" } },
+        { condition: flag("Acces_Direction"),
+          permissions: { read: "allow", update: "unspecified" } },
+        { condition: { kind: "all", conditions: [
+          flag("Est_PP"),
+          { kind: "record_in_user_attribute_ref_list", operator: "in", columnId: "Classe",
+            attributeName: "Personnel", attributeColumnId: "Classes_PP" }
+        ] }, permissions: { read: "allow", update: "unspecified" } },
+        { condition: { kind: "match_user_attribute", operator: "equals", columnId: "Suivi_par",
+          attributeName: "Personnel", attributeColumnId: "id" },
+          permissions: { read: "allow", update: "allow" } },
+        { condition: { kind: "everyone" }, permissions: { read: "deny", update: "deny" } }
+      ]
+    },
+    {
+      target: { tableId: "Enseignants" },
+      rules: [{ condition: { kind: "user_access", operator: "not_equals", role: "owner" },
+        permissions: { read: "unspecified", create: "deny", update: "deny", delete: "deny" } }]
+    },
+    {
+      target: { tableId: "Stages", columnIds: ["Suivi_par"] },
+      rules: [{ condition: { kind: "user_access", operator: "not_equals", role: "owner" },
+        permissions: { read: "unspecified", update: "deny" } }]
+    }
+  ];
+  const ensurePolicy = (policy: Record<string, unknown>) =>
+    callTool(bridge, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "ensure", ...policy
+    }) as Promise<{ changed: boolean; persistedDefinitionVerified: boolean }>;
+  for (const policy of policies) {
+    const first = await ensurePolicy(policy);
+    const repeat = await ensurePolicy(policy);
+    assertThat(first.changed && first.persistedDefinitionVerified &&
+      !repeat.changed && repeat.persistedDefinitionVerified, "from_empty_acl_not_reconciled");
+  }
+}
+
 async function validateFromEmptyStageSkeleton(
   bridge: string, context: FixtureContext
 ): Promise<void> {
@@ -539,57 +593,7 @@ async function validateFromEmptyStageSkeleton(
     "from_empty_native_page_not_unique");
   console.log("from-empty stage and structure forms, dropdown, row style and linked selector: PASS");
 
-  // Synthetic role policy, not a copy of the production application's ACL.
-  const flag = (attributeColumnId: string) => ({
-    kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId
-  });
-  const policies = [
-    {
-      target: { userAttributeName: "Personnel" },
-      definition: { tableId: "Enseignants", lookupColId: "Email",
-        source: { kind: "user_property", property: "Email" } }
-    },
-    {
-      target: { tableId: "Stages" },
-      rules: [
-        { condition: { kind: "user_access", operator: "equals", role: "owner" },
-          permissions: { read: "allow", update: "allow" } },
-        { condition: { kind: "not", condition: flag("Acces_Stages_Actif") },
-          permissions: { read: "deny", update: "deny" } },
-        { condition: flag("Acces_Direction"),
-          permissions: { read: "allow", update: "unspecified" } },
-        { condition: { kind: "all", conditions: [
-          flag("Est_PP"),
-          { kind: "record_in_user_attribute_ref_list", operator: "in", columnId: "Classe",
-            attributeName: "Personnel", attributeColumnId: "Classes_PP" }
-        ] }, permissions: { read: "allow", update: "unspecified" } },
-        { condition: { kind: "match_user_attribute", operator: "equals", columnId: "Suivi_par",
-          attributeName: "Personnel", attributeColumnId: "id" },
-          permissions: { read: "allow", update: "allow" } },
-        { condition: { kind: "everyone" }, permissions: { read: "deny", update: "deny" } }
-      ]
-    },
-    {
-      target: { tableId: "Enseignants" },
-      rules: [{ condition: { kind: "user_access", operator: "not_equals", role: "owner" },
-        permissions: { read: "unspecified", create: "deny", update: "deny", delete: "deny" } }]
-    },
-    {
-      target: { tableId: "Stages", columnIds: ["Suivi_par"] },
-      rules: [{ condition: { kind: "user_access", operator: "not_equals", role: "owner" },
-        permissions: { read: "unspecified", update: "deny" } }]
-    }
-  ];
-  const ensurePolicy = (policy: Record<string, unknown>) =>
-    callTool(bridge, "grist_change_structure", {
-      action: "access_rule_group", documentId, mode: "ensure", ...policy
-    }) as Promise<{ changed: boolean; persistedDefinitionVerified: boolean }>;
-  for (const policy of policies) {
-    const first = await ensurePolicy(policy);
-    const repeat = await ensurePolicy(policy);
-    assertThat(first.changed && first.persistedDefinitionVerified &&
-      !repeat.changed && repeat.persistedDefinitionVerified, "from_empty_acl_not_reconciled");
-  }
+  await configureSyntheticStagePolicy(bridge, documentId);
 
   const newStageContext = { ...context, stageDocId: documentId };
   await assertStageVisibility(newStageContext, context.teacherAKey, "S-A", "S-B");
@@ -791,7 +795,8 @@ async function validateFromEmptyStageTopology(
     ["Structures_de_stage", [formula("Statut", "Choice", '"à vérifier"', false)]],
     ["Enseignants", [
       formula("Identite", "Any", '$Prenom + " " + $Nom'),
-      formula("Email", "Text", '"teacher@example.invalid"'),
+      formula("Email", "Text",
+        `${JSON.stringify(TEACHER_A_EMAIL)} if $Cle == "synthetique-Enseignants" else (${JSON.stringify(TEACHER_B_EMAIL)} if $Cle == "synthetique-enseignant-b" else "")`),
       formula("Token_Stages", "Text", '"synthetic-token"', false),
       formula("Lien_Stages", "Text", '"synthetic-link"'),
       formula("Expediteur_Lien_Stages", "Text", '"synthetic-sender"', false),
@@ -1361,6 +1366,103 @@ async function validateFromEmptyStageTopology(
       "stage_topology_cross_form_share_allowed");
   }
   console.log("from-empty stage topology: locale/timezone, conditional styles, both anonymous submissions and native public-row/cross-form denials: PASS");
+
+  // Reuse the same bounded synthetic role policy on the actual full topology,
+  // including its already-published Forms. No source identity or ACL is copied.
+  const ensureWitnessRow = async (tableId: string, fields: Record<string, unknown>) => {
+    const result = await callTool(bridge, "grist_add_records", {
+      action: "ensure_record", documentId, tableId, keyColumnId: "Cle", record: {fields}
+    }) as {recordId: number; persistedRecordVerified: boolean};
+    assertThat(result.recordId > 0 && result.persistedRecordVerified, "full_witness_role_seed_failed");
+    return result.recordId;
+  };
+  const updateWitnessRow = (tableId: string, id: number, fields: Record<string, unknown>) =>
+    callTool(bridge, "grist_change_records", {
+      action: "update", documentId, tableId, records: [{id, fields}]
+    });
+  const teacherA = recordIds.get("Enseignants")!;
+  const teacherB = await ensureWitnessRow("Enseignants", {
+    Cle: "synthetique-enseignant-b", Nom: "Test", Prenom: "Prof B", Acces_Stages_Actif: true
+  });
+  const classA = recordIds.get("Classes")!;
+  const classB = await ensureWitnessRow("Classes", {
+    Cle: "synthetique-classe-b", Classe: "Classe B", Professeur_principal: teacherA
+  });
+  const periodB = await ensureWitnessRow("Periodes_de_stage", {
+    Cle: "synthetique-periode-b", Numero: "1", Classe: classB
+  });
+  const studentC = await ensureWitnessRow("Eleves", {
+    Cle: "synthetique-eleve-c", Nom: "Test", Prenom: "Troisième", Classe: classB
+  });
+  const stageA = recordIds.get("Stages")!;
+  const stageB = submittedStage[0]!.id;
+  await updateWitnessRow("Stages", stageB, {Suivi_par: teacherB});
+  await configureSyntheticStagePolicy(bridge, documentId);
+
+  // Submit via the same public capability AFTER the ACL installation. The
+  // document remains disposable; the owner verifies persistence separately.
+  const thirdSubmission = await anonymous(stagePublicPath + "/tables/Stages/records", {
+    records: [{fields: {Eleve: studentC, Structure_de_stage: recordIds.get("Structures_de_stage"),
+      Periode: periodB}}]
+  });
+  await thirdSubmission.body?.cancel();
+  assertThat(thirdSubmission.ok, "full_witness_form_submission_after_acl_denied");
+  const afterAcl = await metadata("Stages");
+  const third = afterAcl.filter(row => row.fields.Eleve === studentC);
+  assertThat(afterAcl.length === 3 && third.length === 1 &&
+    third[0]?.fields.Classe === classB && third[0]?.fields.Periode === periodB,
+    "full_witness_form_after_acl_not_persisted");
+  const stageC = third[0]!.id;
+  await updateWitnessRow("Stages", stageC, {Suivi_par: teacherA});
+
+  const stagePath = path + "/tables/Stages/records";
+  const rolePath = path + "/tables/Enseignants/records";
+  const roleContext = {...context, stageDocId: documentId};
+  const expectStageIds = async (key: string, expected: number[]) => {
+    const status = await gristStatus(context.baseUrl, key, stagePath, {method: "GET"});
+    if (expected.length === 0 && status === 403) return;
+    assertThat(status === 200, "full_witness_role_read_status:" + status);
+    const rows = recordsFrom(await gristApi(context.baseUrl, key, stagePath));
+    const sorted = (ids: number[]) => [...ids].sort((a, b) => a - b);
+    assertThat(JSON.stringify(sorted(rows.map(row => row.id))) === JSON.stringify(sorted(expected)),
+      "full_witness_role_scope_wrong");
+  };
+  await expectStageIds(context.teacherAKey, [stageA, stageC]);
+  await expectStageIds(context.teacherBKey, [stageB]);
+  const ownEdit = await updateStage(roleContext, context.teacherAKey, stageA,
+    {Commentaire: "Trace synthétique autorisée"});
+  assertThat(ownEdit >= 200 && ownEdit < 300, "full_witness_own_stage_update_denied");
+  assertThat(await updateStage(roleContext, context.teacherAKey, stageB,
+    {Commentaire: "Écriture interdite"}) === 403, "full_witness_foreign_stage_update_allowed");
+  assertThat(await updateStage(roleContext, context.teacherAKey, stageA,
+    {Suivi_par: teacherB}) === 403, "full_witness_stage_reassignment_allowed");
+  assertThat(await gristStatus(context.baseUrl, context.teacherBKey, rolePath, {
+    method: "PATCH", body: JSON.stringify({records: [{id: teacherB, fields: {Acces_Direction: true}}]})
+  }) === 403, "full_witness_self_promotion_allowed");
+  await updateWitnessRow("Enseignants", teacherB, {Classes_PP: ["L", classA]});
+  await expectStageIds(context.teacherBKey, [stageA, stageB]);
+  assertThat(await updateStage(roleContext, context.teacherBKey, stageA,
+    {Commentaire: "PP lecture seulement"}) === 403, "full_witness_pp_foreign_update_allowed");
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: true});
+  await expectStageIds(context.teacherBKey, [stageA, stageB, stageC]);
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Stages_Actif: false});
+  await expectStageIds(context.teacherBKey, []);
+  assertThat(await updateStage(roleContext, context.teacherBKey, stageB,
+    {Commentaire: "Accès désactivé"}) === 403, "full_witness_inactive_update_allowed");
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Stages_Actif: true, Acces_Direction: false});
+  await expectStageIds(context.teacherBKey, [stageA, stageB]);
+  await expectStageIds(context.teacherAKey, [stageA, stageC]);
+  // Recheck public-row confidentiality under the installed role policy.
+  const afterPolicyPublic = await anonymous(stagePublicPath + "/tables/Stages/records");
+  if (afterPolicyPublic.ok) {
+    assertThat(recordsFrom(await afterPolicyPublic.json()).length === 0,
+      "full_witness_public_rows_disclosed_after_acl");
+  } else {
+    await afterPolicyPublic.body?.cancel();
+    assertThat(afterPolicyPublic.status === 403 || afterPolicyPublic.status === 404,
+      "full_witness_public_row_privacy_unverified_after_acl");
+  }
+  console.log("from-empty full witness: native authenticated teacher, class PP, direction, disabled role and public Form coexistence: PASS");
 
 }
 
