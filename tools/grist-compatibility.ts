@@ -4304,6 +4304,47 @@ async function run(): Promise<void> {
         reconciled.widgets.map(widget => widget.id)) &&
       isDeepStrictEqual(incremental.widgets.map(widget => widget.created), [false, false, false, true]),
       "native_widget_reconciliation_incremental_created_wrong_sections");
+    // Two independent custom widgets on the same table are a real application
+    // shape (#295). This qualifies native sections, not external widget code.
+    const customSpec = { tableId: TABLE_ID, type: "custom" };
+    const repeatedSpec = [customSpec, { tableId: TABLE_ID, type: "record" }, customSpec];
+    const customPair = await reconcileWidgets(repeatedSpec);
+    assert(customPair.changed && customPair.persistedWidgetsVerified &&
+      customPair.widgets[0]?.id === batchResult.createdWidgetIds[2] &&
+      customPair.widgets[1]?.id === batchResult.createdWidgetIds[0] &&
+      isDeepStrictEqual(customPair.widgets.map(widget => widget.created), [false, false, true]) &&
+      new Set(customPair.widgets.map(widget => widget.id)).size === 3,
+      "native_repeated_widget_identity_partial_reconciliation_failed");
+    const customReplay = await reconcileWidgets(repeatedSpec);
+    assert(!customReplay.changed && customReplay.persistedWidgetsVerified &&
+      isDeepStrictEqual(customReplay.widgets.map(widget => widget.id),
+        customPair.widgets.map(widget => widget.id)),
+      "native_repeated_widget_identity_replay_failed");
+    await callToolExpectError(bridgeBaseUrl, "grist_add_ui", {
+      action: "ensure_widgets", documentId, pageId: batchPageId,
+      widgets: [customSpec, { tableId: TABLE_ID, type: "record" }]
+    });
+    assert(!(await reconcileWidgets(repeatedSpec)).changed,
+      "native_repeated_widget_identity_excess_changed_state");
+    const duplicatePage = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "ensure_page", documentId, tableId: TABLE_ID, name: "Compat Repeated Widgets"
+    }), "native_repeated_widget_page") as {page: {id: number}};
+    const ensurePair = async () => resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+      action: "ensure_widgets", documentId, pageId: duplicatePage.page.id,
+      widgets: [customSpec, customSpec]
+    }), "native_repeated_widget_pair") as {
+      changed: boolean; persistedWidgetsVerified: boolean;
+      widgets: Array<{id:number;created:boolean}>;
+    };
+    const createdPair = await ensurePair();
+    const replayPair = await ensurePair();
+    assert(createdPair.changed && createdPair.persistedWidgetsVerified &&
+      createdPair.widgets.length === 2 && createdPair.widgets.every(widget => widget.created) &&
+      new Set(createdPair.widgets.map(widget => widget.id)).size === 2 &&
+      !replayPair.changed && replayPair.persistedWidgetsVerified &&
+      isDeepStrictEqual(replayPair.widgets.map(widget => widget.id),
+        createdPair.widgets.map(widget => widget.id)),
+      "native_repeated_widget_identity_from_empty_failed");
     assert(await readBatchPageLayout() === originalLayout,
       "native_widget_reconciliation_overwrote_page_layout");
 

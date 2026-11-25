@@ -896,18 +896,23 @@ planner, transaction, or general uniqueness enforcement under concurrent writers
 
 ## Bounded homogeneous native widget creation
 
-`grist_add_ui(action="ensure_widgets")` reconciles two to eight **distinct**
-ungrouped native section identities on one page, each selected by a stable
-source table ID and native widget type. For each requested identity, exactly
-one existing widget is reused unchanged or a missing widget is created, in
-request order. Duplicate requested identities and ambiguous pre-existing
-matches are refused before writing. Missing widgets are created in a single
+`grist_add_ui(action="ensure_widgets")` reconciles two to eight
+ungrouped native sections on one page, each selected by a stable source table
+ID and native widget type. Repeating an identity explicitly requests that
+many instances; a single occurrence retains its exact-one semantics.
+Existing matches are reused unchanged in ascending stable widget-ID order
+within each identity; the response follows request order. Excess matches or
+inconsistent native table identities are refused before writing. Missing
+widgets are created in a single
 bounded native bundle (one native action when only one is absent); the complete
 post-read checks all original UI, exactly the new widgets, stable identities
 and types. Repeated identical requests are no-ops; partial/uncertain native
-effects require inspection and reconciliation, never blind retries. Multiple
-intentionally duplicated same-table/type sections remain possible using the
-existing explicit `add_widget` operation with caller-owned widget IDs.
+effects require inspection and reconciliation, never blind retries. An existing
+matched slot must retain its ID after creation. The caller owns the mapping
+from returned IDs to individual widget purposes: cardinality reconciliation
+does not identify titles, custom code, access, or configuration. The explicit
+`add_widget` operation remains available when creation rather than
+reconciliation is intended.
 
 `grist_add_ui(action="add_widgets")` creates two to eight ungrouped native
 sections on one existing page, using stable input `{tableId,type}` items and

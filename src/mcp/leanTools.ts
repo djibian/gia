@@ -1633,8 +1633,6 @@ export function registerLeanTools(
             tableId: tableIdSchema,
             type: z.enum(NATIVE_WIDGET_TYPES)
           }).strict()).min(2).max(8)
-            .refine(items => new Set(items.map(item => JSON.stringify([item.tableId,item.type]))).size === items.length,
-              "Widget reconciliation identities must be unique.")
         }).strict()
       ])
     },

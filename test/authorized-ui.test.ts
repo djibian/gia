@@ -275,16 +275,24 @@ test("ensure_widget creates once, reuses the native ID and rejects ambiguous sec
   assert.equal(duplicate.uiCalls.length, 0);
 });
 
-test("ensure_widgets rejects duplicate requests and ambiguous pre-existing sections before writes", async () => {
+test("ensure_widgets reuses explicitly requested duplicate sections and refuses excess matches", async () => {
   const first = buildHarness();
   const duplicatedSpec = [
     { tableId: "Personnes", type: "record" as const },
     { tableId: "Personnes", type: "record" as const }
   ];
-  await assert.rejects(
-    () => first.service.ensurePageWidgets("doc-1", 7, duplicatedSpec),
-    /unique/
-  );
+  await first.service.createPage("doc-1", "Personnes", "Vue générale");
+  await first.service.addPageWidget("doc-1", 7, "Personnes", "record");
+  first.uiCalls.length = 0;
+  const repeated = await first.service.ensurePageWidgets("doc-1", 7, duplicatedSpec) as {
+    changed: boolean; persistedWidgetsVerified: boolean;
+    widgets: Array<{id:number;created:boolean;title:string}>;
+  };
+  assert.equal(repeated.changed, false);
+  assert.equal(repeated.persistedWidgetsVerified, true);
+  assert.deepEqual(repeated.widgets.map(widget => widget.id), [11, 12]);
+  assert.deepEqual(repeated.widgets.map(widget => widget.created), [false, false]);
+  assert.deepEqual(repeated.widgets.map(widget => widget.title), ["Source", ""]);
   assert.deepEqual(first.uiCalls, []);
 
   const second = buildHarness();
