@@ -10,6 +10,7 @@ import {
   stopBridge,
   waitForUrl
 } from "./grist-harness.js";
+import { readOwnerFormShareKey } from "../src/grist/formShareLookup.js";
 import {
   TEACHER_A_EMAIL,
   TEACHER_B_EMAIL,
@@ -871,6 +872,25 @@ async function validateFromEmptyStageTopology(
       text: "choice.id in $Enseignants_affectables"}
   ];
   const configureSchema = async (replay = false) => {
+    for (const update of [{locale: "fr-FR"}, {timezone: "Europe/Paris"}]) {
+      await callTool(bridge, "grist_change_structure", {
+        action: "update_document", documentId, update
+      });
+    }
+    // Synthetic conditional presentation, not claimed to be the source palette.
+    for (const rule of [
+      {action: "append_row_style_rule", tableId: "Stages",
+        conditionFormula: "not $Suivi_par", style: {fillColor: "#FFF3D4", fontBold: true}},
+      {action: "append_style_rule", tableId: "Stages", columnId: "Structure_de_stage_Statut",
+        conditionFormula: '$Structure_de_stage_Statut == "à vérifier"',
+        style: {textColor: "#A00000", fontBold: true}}
+    ]) {
+      const result = await callTool(bridge, "grist_change_structure", {
+        documentId, ...rule
+      }) as {changed: boolean; persistedStyleVerified: boolean};
+      assertThat(result.persistedStyleVerified && (!replay || !result.changed),
+        "stage_topology_style_not_reconciled");
+    }
     for (const [tableId, fields] of Object.entries(displayFields)) {
       const updated = await callTool(bridge, "grist_change_structure", {
         action: "update_columns", documentId, tableId,
@@ -1081,6 +1101,10 @@ async function validateFromEmptyStageTopology(
     metadata("_grist_Views_section"), metadata("_grist_Tables_column"),
     metadata("_grist_Views"), mcpPages(bridge, documentId), metadata("_grist_Tables")
   ]);
+  const docInfo = await metadata("_grist_DocInfo");
+  assertThat(docInfo.length === 1 && docInfo[0]?.fields.timezone === "Europe/Paris" &&
+    JSON.parse(String(docInfo[0]?.fields.documentSettings)).locale === "fr-FR",
+    "stage_topology_document_settings_wrong");
   let witnessColumns = 0;
   for (const tableId of tableIds) {
     const table = tables.find(t => t.fields.tableId === tableId);
@@ -1273,6 +1297,70 @@ async function validateFromEmptyStageTopology(
     row.fields.Statut === "à vérifier").length === 1,
     "stage_topology_structure_submission_missing_default");
   console.log("from-empty stage topology: 8/3 Form fields, native layout replay, linked public Forms and anonymous structure submission: PASS");
+  // Obtain the second disposable native capability without returning it via MCP.
+  const pageRows = await metadata("_grist_Pages");
+  const shareRows = await metadata("_grist_Shares");
+  const stagePages = pageRows.filter(page => page.fields.viewRef === stageForm.pageId);
+  const share = shareRows.find(row => row.id === stagePages[0]?.fields.shareRef);
+  assertThat(stagePages.length === 1 && typeof share?.fields.linkId === "string",
+    "stage_topology_stage_share_missing");
+  const doc = await gristApi(context.baseUrl, context.ownerKey, path) as Record<string, unknown>;
+  const worker = await gristApi(context.baseUrl, context.ownerKey,
+    "/api/worker/" + encodeURIComponent(documentId));
+  const stageKey = await readOwnerFormShareKey(context.baseUrl, doc, worker,
+    documentId, String(share?.fields.linkId), context.ownerKey);
+  assertThat(stageKey !== link![1], "stage_topology_form_shares_not_distinct");
+  const stagePublicPath = "/api/s/" + stageKey;
+  const stagePreview = await anonymous(stagePublicPath + "/forms/" + stageForm.widgetId);
+  assertThat(stagePreview.ok, "stage_topology_stage_form_preview_denied");
+  const stageFields = await stagePreview.json() as {formFieldsById: Record<string, {colId: string}>};
+  const stageBindings = Object.values(stageFields.formFieldsById).map(field => field.colId);
+  assertThat(stageBindings.length === 3 && formSpecs.Stages!.columns.every(id => stageBindings.includes(id)),
+    "stage_topology_stage_public_form_bindings_wrong");
+  // Seed a second student through Gia and approve the existing synthetic structure.
+  const secondStudent = await callTool(bridge, "grist_add_records", {
+    action: "ensure_record", documentId, tableId: "Eleves", keyColumnId: "Cle",
+    record: {fields: {Cle: "synthetique-form-eleve", Nom: "Test", Prenom: "Second",
+      Classe: recordIds.get("Classes")}}
+  }) as {recordId: number; persistedRecordVerified: boolean};
+  assertThat(secondStudent.persistedRecordVerified, "stage_topology_second_student_missing");
+  await callTool(bridge, "grist_change_records", {
+    action: "update", documentId, tableId: "Structures_de_stage",
+    records: [{id: recordIds.get("Structures_de_stage"), fields: {Statut: "validé"}}]
+  });
+  const stageFieldsToSubmit = {Eleve: secondStudent.recordId,
+    Structure_de_stage: recordIds.get("Structures_de_stage"), Periode: recordIds.get("Periodes_de_stage")};
+  const stageSent = await anonymous(stagePublicPath + "/tables/Stages/records",
+    {records: [{fields: stageFieldsToSubmit}]});
+  await stageSent.body?.cancel();
+  assertThat(stageSent.ok, "stage_topology_stage_submission_failed");
+  const stageRows = await metadata("Stages");
+  const submittedStage = stageRows.filter(row => row.fields.Eleve === secondStudent.recordId);
+  assertThat(stageRows.length === 2 && submittedStage.length === 1 &&
+    submittedStage[0]?.fields.Structure_de_stage === stageFieldsToSubmit.Structure_de_stage &&
+    submittedStage[0]?.fields.Periode === stageFieldsToSubmit.Periode &&
+    submittedStage[0]?.fields.Classe === recordIds.get("Classes") &&
+    submittedStage[0]?.fields.Structure_de_stage_Statut === "validé",
+    "stage_topology_stage_submission_not_persisted");
+  for (const [publicBase, tableId, foreignFormId] of [
+    [publicPath, "Structures_de_stage", stageForm.widgetId],
+    [stagePublicPath, "Stages", structureForm.widgetId]
+  ] as const) {
+    const response = await anonymous(publicBase + "/tables/" + tableId + "/records");
+    if (response.ok) {
+      assertThat(recordsFrom(await response.json()).length === 0,
+        "stage_topology_public_rows_disclosed");
+    } else {
+      await response.body?.cancel();
+      assertThat(response.status === 403 || response.status === 404,
+        "stage_topology_public_row_privacy_unverified");
+    }
+    const foreign = await anonymous(publicBase + "/forms/" + foreignFormId);
+    await foreign.body?.cancel();
+    assertThat(foreign.status === 403 || foreign.status === 404,
+      "stage_topology_cross_form_share_allowed");
+  }
+  console.log("from-empty stage topology: locale/timezone, conditional styles, both anonymous submissions and native public-row/cross-form denials: PASS");
 
 }
 
