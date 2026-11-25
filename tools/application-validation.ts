@@ -726,7 +726,8 @@ async function validateFromEmptyStageSkeleton(
 
 /**
  * #295: native ordinary page topology from the witness, with synthetic schema
- * and rows. External widget code and its seven links are deliberately absent.
+ * and rows. Five blank Custom sections are included; external code and its
+ * seven links are deliberately absent.
  * The source document is not used at runtime.
  */
 async function validateFromEmptyStageTopology(
@@ -788,7 +789,7 @@ async function validateFromEmptyStageTopology(
   };
   const records = await ensureData();
   type WidgetSpec = {
-    key: string; tableId: string; type: "record" | "single" | "form";
+    key: string; tableId: string; type: "record" | "single" | "form" | "custom";
     source?: string; targetColumnId?: string; collapsed?: boolean; groupByColumnIds?: string[];
   };
   const grid = (key: string, tableId: string, extras: Partial<WidgetSpec> = {}): WidgetSpec =>
@@ -797,6 +798,7 @@ async function validateFromEmptyStageTopology(
   const pages: Array<{name: string; widgets: WidgetSpec[]}> = [
     {name: "Consultation structures", widgets: [
       grid("structures", "Structures_de_stage"),
+      {...grid("carte", "Structures_de_stage"), type: "custom"},
       {...grid("fiche", "Structures_de_stage", {source: "structures"}), type: "single"}]},
     {name: "Suivi des stages", widgets: [
       grid("stages", "Stages", {source: "enseignant", targetColumnId: "Suivi_par"}),
@@ -822,16 +824,19 @@ async function validateFromEmptyStageTopology(
     {name: "Périodes de stage", widgets: [grid("periodes", "Periodes_de_stage"), lock()]},
     {name: "Liste des activités", widgets: [grid("activites", "Activites"), lock()]},
     {name: "Liste des affectations", widgets: [grid("affectations", "Affectation"), lock()]},
-    {name: "Liste des enseignants", widgets: [grid("enseignants", "Enseignants"), lock()]},
+    {name: "Liste des enseignants", widgets: [grid("enseignants", "Enseignants"),
+      {...grid("geocodeur", "Enseignants"), type: "custom"},
+      {...grid("carte", "Enseignants"), type: "custom"}, lock()]},
     {name: "Liste des élèves", widgets: [grid("eleves", "Eleves"), lock()]},
     {name: "Liste des classes", widgets: [grid("classes", "Classes"),
       grid("periodes", "Periodes_de_stage", {source: "classes", targetColumnId: "Classe"}), lock()]},
     {name: "Liste des stages", widgets: [grid("stages", "Stages"), lock()]},
-    {name: "Assistant structures", widgets: [grid("structures", "Structures_de_stage"), lock()]},
+    {name: "Assistant structures", widgets: [grid("structures", "Structures_de_stage"),
+      {...grid("assistant", "Structures_de_stage"), type: "custom"}, lock()]},
     {name: "Affectation des stages", widgets: [
       grid("affectations", "Affectation", {source: "classes", targetColumnId: "Classe"}),
       grid("stages", "Stages", {source: "classes", targetColumnId: "Classe"}),
-      grid("classes", "Classes"), lock()]}
+      grid("classes", "Classes"), {...grid("assistant", "Classes"), type: "custom"}, lock()]}
   ];
   const construct = async (replay: boolean) => {
     const results: Array<{pageId: number; widgetIds: number[]}> = [];
@@ -906,8 +911,9 @@ async function validateFromEmptyStageTopology(
   ]);
   const allIds = first.flatMap(page => page.widgetIds);
   assertThat(first.length === 15 && new Set(first.map(page => page.pageId)).size === 15 &&
-    allIds.length === 41 && new Set(allIds).size === 41, "stage_topology_cardinality_wrong");
+    allIds.length === 46 && new Set(allIds).size === 46, "stage_topology_cardinality_wrong");
   let links = 0;
+  let blankCustomSections = 0;
   for (let i = 0; i < pages.length; i++) {
     const spec = pages[i]!, actual = first[i]!;
     assertThat(countKeyValue(navigation, "name", spec.name) === 1, "stage_topology_page_name_duplicate");
@@ -924,6 +930,12 @@ async function validateFromEmptyStageTopology(
     for (let j = 0; j < spec.widgets.length; j++) {
       const widget = spec.widgets[j]!, section = pageSections.find(row => row.id === actual.widgetIds[j]);
       assertThat(section?.fields.parentKey === widget.type, "stage_topology_native_widget_type_wrong");
+      if (widget.type === "custom") {
+        blankCustomSections++;
+        const custom = JSON.parse(String(section?.fields.options || "{}")).customView;
+        assertThat(!custom || ((!custom.url && !custom.widgetId) &&
+          (!custom.access || custom.access === "none")), "stage_topology_custom_section_not_blank");
+      }
       if (widget.source) {
         links++;
         const sourceIndex = spec.widgets.findIndex(candidate => candidate.key === widget.source);
@@ -937,7 +949,8 @@ async function validateFromEmptyStageTopology(
     }
   }
   assertThat(links === 15, "stage_topology_native_link_count_wrong");
-  console.log("from-empty ordinary stage topology: 9 base tables, 15 named pages, 41 sections, 15 native links, stable replay: PASS");
+  assertThat(blankCustomSections === 5, "stage_topology_custom_section_count_wrong");
+  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 blank Custom), 15 native links, stable replay: PASS");
 }
 
 async function run(): Promise<void> {
