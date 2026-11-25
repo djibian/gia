@@ -1,4 +1,3 @@
-import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { openDisposableGrist, type DisposableGrist, type QualificationStatus } from "./authorization-qualification.js";
@@ -7,11 +6,14 @@ import {
   assertThat,
   callTool,
   createTestApiKey,
-  freePort,
   gristApi,
   startBridge,
   stopBridge,
-  waitForUrl
+  driverRequest,
+  startBrowser,
+  navigate,
+  inspectPage,
+  delay
 } from "./grist-harness.js";
 
 // Independent browser acceptance of native web-only user.LinkKey context.
@@ -24,7 +26,6 @@ const visibleControl = "LINKKEY_CONTROL_ROW";
 const tableId = "LinkKeyRows";
 
 interface OrgInfo { id: number | string; domain?: string }
-interface DriverState { text: string; url: string }
 
 function docIdFrom(value: unknown): string {
   const candidate = (value && typeof value === "object")
@@ -41,82 +42,6 @@ function webUrl(baseUrl: string, orgDomain: string, documentId: string, token?: 
     "/doc/" + encodeURIComponent(documentId), baseUrl);
   if (token !== undefined) url.searchParams.set("Gate_", token);
   return url.toString();
-}
-
-function driverBinary(): string {
-  if (process.env.CHROMEDRIVER_BIN) return process.env.CHROMEDRIVER_BIN;
-  if (process.env.CHROMEWEBDRIVER) return process.env.CHROMEWEBDRIVER + "/chromedriver";
-  return "chromedriver";
-}
-
-async function driverRequest(driverBase: string, method: string, path: string, payload?: unknown): Promise<unknown> {
-  const response = await fetch(driverBase + path, {
-    method,
-    ...(payload === undefined ? {} : {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload)
-    }),
-    signal: AbortSignal.timeout(25_000)
-  });
-  const message = await response.json() as {
-    value?: unknown; sessionId?: string
-  };
-  const value = message.value;
-  if (!response.ok ||
-      (value && typeof value === "object" && "error" in value)) {
-    throw new Error("webdriver_request_failed");
-  }
-  return value;
-}
-
-async function startBrowser(): Promise<{ driver: ChildProcess; driverBase: string; sessionId: string }> {
-  const driverPort = await freePort();
-  const driverBase = "http://127.0.0.1:" + driverPort;
-  const driver = spawn(driverBinary(), ["--port=" + driverPort], {
-    stdio: "ignore"
-  });
-  try {
-    await new Promise<void>((resolve, reject) => {
-      driver.once("spawn", resolve);
-      driver.once("error", reject);
-    });
-    await waitForUrl(driverBase + "/status", 50);
-    const session = await driverRequest(driverBase, "POST", "/session", {
-      capabilities: {
-        alwaysMatch: {
-          browserName: "chrome",
-          "goog:chromeOptions": {
-            args: ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage",
-              "--window-size=1440,900", "--no-proxy-server"]
-          }
-        }
-      }
-    }) as { sessionId?: unknown };
-    assertThat(typeof session?.sessionId === "string", "webdriver_session_missing");
-    return { driver, driverBase, sessionId: session.sessionId };
-  } catch (error) {
-    driver.kill("SIGTERM");
-    throw error;
-  }
-}
-
-async function navigate(driverBase: string, sessionId: string, url: string): Promise<void> {
-  await driverRequest(driverBase, "POST", "/session/" + sessionId + "/url", { url });
-}
-
-async function inspectPage(driverBase: string, sessionId: string): Promise<DriverState> {
-  const value = await driverRequest(driverBase, "POST",
-    "/session/" + sessionId + "/execute/sync", {
-      script: "return {text: document.body ? document.body.innerText : '', url: location.href};",
-      args: []
-    }) as DriverState;
-  assertThat(typeof value?.text === "string" && typeof value.url === "string",
-    "webdriver_dom_snapshot_invalid");
-  return value;
-}
-
-async function delay(ms: number): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 /** Select the actual native table page; a newly created doc starts on Table1. */
