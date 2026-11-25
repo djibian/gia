@@ -1343,7 +1343,13 @@ export class AuthorizedGristService {
         node.type === "section" ? node.children.filter(child => child.type === "form_link") : []
       );
       if (links.length > 1) throw new Error("A Form layout can contain one native Form link.");
-      const link = links[0];
+      const paragraphLink = links[0];
+      const redirect = layout.successRedirect;
+      if (paragraphLink && redirect && (paragraphLink.targetPageId !== redirect.targetPageId ||
+          paragraphLink.targetWidgetId !== redirect.targetWidgetId)) {
+        throw new Error("A Form link and redirect must use the same verified target.");
+      }
+      const link = paragraphLink ?? redirect;
       if (link) {
         if (layout.confirmPublicLink !== true) throw new Error("Form links require confirmPublicLink:true.");
         await this.inner.assertDocumentOwner(id);
@@ -1374,12 +1380,14 @@ export class AuthorizedGristService {
         return linkId;
       };
       const publicPaths = async (linkId: string | undefined) => {
-        if (!link || !linkId) return new Map<string, string>();
-        const path = await this.inner.resolvePublicFormPath(id, linkId, link.targetWidgetId);
-        return new Map([[link.targetPageId + ":" + link.targetWidgetId, path]]);
+        if (!link || !linkId) return { paths: new Map<string, string>(), redirectUrl: undefined };
+        const resolved = await this.inner.resolvePublicFormPath(id, linkId, link.targetWidgetId, !!redirect);
+        const path = redirect ? new URL(resolved).pathname : resolved;
+        return { paths: new Map([[link.targetPageId + ":" + link.targetWidgetId, path]]),
+          redirectUrl: redirect ? resolved : undefined };
       };
       const nativeLinkId = await targetLinkId(before);
-      const paths = await publicPaths(nativeLinkId);
+      const { paths, redirectUrl } = await publicPaths(nativeLinkId);
       const fields = before[SECTION_FIELDS_METADATA];
       if (nativeLinkId) {
         // The public lookup crosses several native calls. Revalidate the source and
@@ -1396,7 +1404,7 @@ export class AuthorizedGristService {
           throw new Error("Native Form or its share changed during link resolution; reconcile first.");
         }
       }
-      const resolved = resolveFormLayoutUpdate(widget, tables, fields, layout, paths);
+      const resolved = resolveFormLayoutUpdate(widget, tables, fields, layout, paths, redirectUrl);
       const base = { documentId: id, pageId, widgetId };
       if (sameJsonValue(widget.layoutSpec, resolved.layoutSpec)) {
         return { ...base, changed: false, persistedLayoutVerified: true,
@@ -1409,11 +1417,12 @@ export class AuthorizedGristService {
         assertCompleteUiSnapshot(after);
         const current = after.pages.find(page => page.id === pageId)?.widgets
           .find(item => item.id === widgetId);
+        const verified = await publicPaths(await targetLinkId(after));
         if (!current || current.type !== "form" ||
             current.tableRef !== widget.tableRef || current.tableId !== widget.tableId ||
             !sameJsonValue(current.layoutSpec, resolved.layoutSpec) ||
             !sameJsonValue(resolveFormLayoutUpdate(current, currentTables,
-              after[SECTION_FIELDS_METADATA], layout, await publicPaths(await targetLinkId(after)))
+              after[SECTION_FIELDS_METADATA], layout, verified.paths, verified.redirectUrl)
               .layoutSpec, resolved.layoutSpec)) {
           throw new Error("Native Form layout differs from the requested persisted state.");
         }
