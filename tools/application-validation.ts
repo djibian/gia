@@ -742,37 +742,175 @@ async function validateFromEmptyStageTopology(
   const documentId = created.documentId!;
   const tableIds = ["Classes", "Enseignants", "Structures_de_stage", "Stages",
     "Activites", "Verrou", "Periodes_de_stage", "Affectation", "Eleves"];
+  // Stable column IDs and native types from the witness, never source rows,
+  // URLs, identity values or secret-bearing formulas. Historical empty-formula
+  // placeholders are explicit writable columns in this synthetic target.
+  const writable: Record<string, Record<string, string>> = {
+    Classes: {Classe: "Text", Niveau: "Text", Filiere: "Text"},
+    Enseignants: {
+      Nom: "Text", Prenom: "Text", Titre: "Text", Adresse: "Text",
+      Acces_Stages_Actif: "Bool", Acces_Direction: "Bool", Envoyer_Lien_Stages: "Bool",
+      Latitude: "Numeric", Longitude: "Numeric", Adresse_normalisee: "Text",
+      Localisation_validee: "Bool", Sujet_Lien_Stages: "Text", Corps_Lien_Stages: "Text",
+      Classes_PP: "RefList:Classes"
+    },
+    Structures_de_stage: {
+      Nom_usuel: "Text", Numero_d_immatriculation: "Text", Courriel: "Text",
+      Telephone: "Text", Latitude: "Numeric", Longitude: "Numeric", Adresse: "Text",
+      Activites: "ChoiceList", Recommande: "Bool", Service: "Bool", Vente: "Bool",
+      Raison_sociale: "Text", Site_web: "Text", Partenaire: "Bool"
+    },
+    Stages: {
+      Date_de_debut_modifiee: "Date", Date_de_fin_modifiee: "Date", Commentaire: "Text",
+      Type_de_contact: "Choice", Ponctualite: "Choice", Implication: "Choice",
+      Assiduite: "Choice", Prise_d_initiative: "Choice", Autonomie: "Choice", Efficacite: "Choice"
+    },
+    Activites: {Nom: "Any", Nombre_d_eleves: "Numeric", Date: "Date"},
+    Verrou: {A: "Any"},
+    Periodes_de_stage: {Numero: "Text", Date_debut: "Date", Date_fin: "Date"},
+    Affectation: {Stage_a_suivre: "Numeric"},
+    Eleves: {Nom: "Text", Prenom: "Text", Date_de_naissance: "Date", Sexe: "Choice", email: "Any"}
+  };
   const relations: Record<string, Record<string, string>> = {
     Classes: {Professeur_principal: "Enseignants"},
-    Stages: {Classe: "Classes", Suivi_par: "Enseignants", Structure_de_stage: "Structures_de_stage",
+    Stages: {Suivi_par: "Enseignants", Structure_de_stage: "Structures_de_stage",
       Periode: "Periodes_de_stage", Eleve: "Eleves"},
-    Activites: {Patrenaire: "Structures_de_stage"},
+    Activites: {Patrenaire: "Structures_de_stage", Enseignant: "Enseignants", Classe: "Classes"},
     Periodes_de_stage: {Classe: "Classes"},
     Affectation: {Classe: "Classes", Enseignant: "Enseignants", Periode: "Periodes_de_stage"},
     Eleves: {Classe: "Classes"}
   };
-  const ensureSchema = async () => {
+  type FormulaSeed = { id: string; fields: {type: string; isFormula: boolean; formula: string} };
+  const formula = (id: string, type: string, expression: string, isFormula = true): FormulaSeed =>
+    ({id, fields: {type, isFormula, formula: expression}});
+  // Dependencies are constructed before each calculated batch. Identity/link
+  // formulas use deliberately inert synthetic values; this is not an email or
+  // token workflow qualification.
+  const computed: Array<[string, FormulaSeed[]]> = [
+    ["Structures_de_stage", [formula("Statut", "Choice", '"à vérifier"', false)]],
+    ["Enseignants", [
+      formula("Identite", "Any", '$Prenom + " " + $Nom'),
+      formula("Email", "Text", '"teacher@example.invalid"'),
+      formula("Token_Stages", "Text", '"synthetic-token"', false),
+      formula("Lien_Stages", "Text", '"synthetic-link"'),
+      formula("Expediteur_Lien_Stages", "Text", '"synthetic-sender"', false),
+      formula("Id_Envoi_Stages", "Text", '"synthetic-message"', false),
+      formula("Est_PP", "Bool", "bool($Classes_PP)")
+    ]],
+    ["Eleves", [formula("Identite", "Text", '$Prenom + " " + $Nom + " - " + $Classe.Classe')]],
+    ["Stages", [
+      formula("Commune", "Text", "$Structure_de_stage.Adresse"),
+      formula("Structure_de_stage_Statut", "Choice", "$Structure_de_stage.Statut"),
+      formula("Classe", "Ref:Classes", "$Eleve.Classe"),
+      formula("Enseignants_affectables", "RefList:Enseignants",
+        "Affectation.lookupRecords(Classe=$Classe, Periode=$Periode).Enseignant")
+    ]],
+    ["Affectation", [
+      formula("Stages_attribues", "Numeric",
+        "len(Stages.lookupRecords(Classe=$Classe, Periode=$Periode, Suivi_par=$Enseignant))"),
+      formula("Reste_a_attribuer", "Any", "$Stage_a_suivre - $Stages_attribues")
+    ]],
+    ["Periodes_de_stage", [
+      formula("Periode", "Text", '$Classe.Classe + " - " + $Numero'),
+      formula("Effectif", "Numeric", "len(Eleves.lookupRecords(Classe=$Classe))"),
+      formula("Stages_declares", "Numeric", "len(Stages.lookupRecords(Periode=$id))"),
+      formula("Sans_stage", "Numeric", "$Effectif - $Stages_declares"),
+      formula("Stages_attribues", "Numeric",
+        "sum(1 for s in Stages.lookupRecords(Periode=$id) if s.Suivi_par)"),
+      formula("Stages_sans_enseignants", "Numeric", "$Stages_declares - $Stages_attribues")
+    ]],
+    ["Classes", [
+      formula("Nombre_de_periodes_de_stage", "Numeric", "len(Periodes_de_stage.lookupRecords(Classe=$id))")
+    ]]
+  ];
+  const ensureSchema = async (replay = false) => {
     await callTool(bridge, "grist_add_structure", {
       action: "ensure_tables", documentId, tables: tableIds.map(id => ({
         id, columns: [{id: "Cle", fields: {type: "Text", isFormula: false}}]
       }))
     });
-    for (const [tableId, columns] of Object.entries(relations)) {
-      await callTool(bridge, "grist_add_structure", {
+    for (const tableId of tableIds) {
+      const columns = {...writable[tableId],
+        ...Object.fromEntries(Object.entries(relations[tableId] ?? {}).map(([id, target]) => [id, "Ref:" + target]))};
+      const result = await callTool(bridge, "grist_add_structure", {
         action: "ensure_columns", documentId, tableId,
-        columns: Object.entries(columns).map(([id, target]) => ({
-          id, fields: {type: "Ref:" + target, isFormula: false}
+        columns: Object.entries(columns).map(([id, type]) => ({
+          id, fields: {type, isFormula: false}
         }))
-      });
+      }) as {changed: boolean; persistedSchemaVerified: boolean};
+      assertThat(result.persistedSchemaVerified && (!replay || !result.changed),
+        "stage_topology_writable_schema_not_reconciled");
+    }
+    for (const [tableId, columns] of computed) {
+      const result = await callTool(bridge, "grist_add_structure", {
+        action: "ensure_columns", documentId, tableId, columns
+      }) as {changed: boolean; persistedSchemaVerified: boolean};
+      assertThat(result.persistedSchemaVerified && (!replay || !result.changed),
+        "stage_topology_formula_schema_not_reconciled");
+    }
+  };
+  const displayFields: Record<string, Record<string, string>> = {
+    Classes: {Professeur_principal: "Identite"},
+    Enseignants: {Classes_PP: "Classe"},
+    Stages: {Eleve: "Identite", Structure_de_stage: "Nom_usuel", Periode: "Periode",
+      Suivi_par: "Identite", Classe: "Classe"},
+    Activites: {Patrenaire: "Nom_usuel", Enseignant: "Identite", Classe: "Classe"},
+    Periodes_de_stage: {Classe: "Classe"},
+    Affectation: {Classe: "Classe", Enseignant: "Identite", Periode: "Periode"},
+    Eleves: {Classe: "Classe"}
+  };
+  const dropdowns = [
+    {columnId: "Structure_de_stage",
+      condition: {kind: "choice_field_equals_literal", choiceColumnId: "Statut", value: "validé"},
+      text: 'choice.Statut == "validé"'},
+    {columnId: "Periode",
+      condition: {kind: "choice_field_equals_record_ref", choiceColumnId: "Classe", recordColumnId: "Classe"},
+      text: "choice.Classe == $Classe"},
+    {columnId: "Suivi_par",
+      condition: {kind: "choice_id_in_record_reflist", recordColumnId: "Enseignants_affectables"},
+      text: "choice.id in $Enseignants_affectables"}
+  ];
+  const configureSchema = async (replay = false) => {
+    for (const [tableId, fields] of Object.entries(displayFields)) {
+      const updated = await callTool(bridge, "grist_change_structure", {
+        action: "update_columns", documentId, tableId,
+        columns: Object.entries(fields).map(([id, visibleColumnId]) => ({
+          id, fields: {visibleColumnId}
+        }))
+      }) as {updatedColumns: Array<{targetColumnId: string; columnId: string; visibleColumnId: string}>};
+      assertThat(updated.updatedColumns.length === Object.keys(fields).length &&
+        updated.updatedColumns.every(column => column.targetColumnId === column.columnId &&
+          fields[column.columnId] === column.visibleColumnId),
+        "stage_topology_display_column_not_verified");
+    }
+    await callTool(bridge, "grist_change_structure", {
+      action: "append_choice_options", documentId, tableId: "Structures_de_stage",
+      columnId: "Statut", values: ["à vérifier", "validé"]
+    });
+    for (const {columnId, condition} of dropdowns) {
+      const updated = await callTool(bridge, "grist_change_structure", {
+        action: "update_dropdown_condition", documentId, tableId: "Stages", columnId, condition
+      }) as {changed: boolean; persistedOptionsVerified: boolean};
+      assertThat(updated.persistedOptionsVerified && (!replay || !updated.changed),
+        "stage_topology_dropdown_not_reconciled");
     }
   };
   await ensureSchema();
+  await configureSchema();
   const ensureData = async () => {
     const ids = new Map<string, number>();
     // Dependency order: no source data, no native import, all writes via Gia.
     for (const tableId of ["Enseignants", "Structures_de_stage", "Verrou", "Classes",
       "Periodes_de_stage", "Eleves", "Affectation", "Stages", "Activites"]) {
-      const fields: Record<string, unknown> = {Cle: "synthetique-" + tableId};
+      const examples: Record<string, Record<string, unknown>> = {
+        Enseignants: {Nom: "Fictif", Prenom: "Prof", Acces_Stages_Actif: true},
+        Structures_de_stage: {Nom_usuel: "Structure fictive", Adresse: "Commune fictive"},
+        Classes: {Classe: "Classe A"},
+        Periodes_de_stage: {Numero: "1"},
+        Eleves: {Nom: "Fictif", Prenom: "Eleve"},
+        Affectation: {Stage_a_suivre: 2}
+      };
+      const fields: Record<string, unknown> = {Cle: "synthetique-" + tableId, ...examples[tableId]};
       for (const [columnId, target] of Object.entries(relations[tableId] ?? {})) {
         const targetId = ids.get(target);
         assertThat(targetId !== undefined, "stage_topology_reference_order");
@@ -897,7 +1035,8 @@ async function validateFromEmptyStageTopology(
     return results;
   };
   const first = await construct(false);
-  await ensureSchema();
+  await ensureSchema(true);
+  await configureSchema(true);
   assertThat(JSON.stringify(await ensureData()) === JSON.stringify(records),
     "stage_topology_duplicate_records");
   assertThat(JSON.stringify(await construct(true)) === JSON.stringify(first),
@@ -905,10 +1044,75 @@ async function validateFromEmptyStageTopology(
   const path = "/api/docs/" + encodeURIComponent(documentId);
   const metadata = async (table: string) => recordsFrom(await gristApi(context.baseUrl,
     context.ownerKey, path + "/tables/" + table + "/records?hidden=true"));
-  const [sections, columns, views, navigation] = await Promise.all([
+  const [sections, columns, views, navigation, tables] = await Promise.all([
     metadata("_grist_Views_section"), metadata("_grist_Tables_column"),
-    metadata("_grist_Views"), mcpPages(bridge, documentId)
+    metadata("_grist_Views"), mcpPages(bridge, documentId), metadata("_grist_Tables")
   ]);
+  let witnessColumns = 0;
+  for (const tableId of tableIds) {
+    const table = tables.find(t => t.fields.tableId === tableId);
+    assertThat(table !== undefined, "stage_topology_native_table_missing");
+    const expected = [
+      ...Object.entries(writable[tableId] ?? {}).map(([id, type]) => ({id, fields: {type, isFormula: false, formula: ""}})),
+      ...Object.entries(relations[tableId] ?? {}).map(([id, target]) => ({id, fields: {type: "Ref:" + target, isFormula: false, formula: ""}})),
+      ...(computed.find(([id]) => id === tableId)?.[1] ?? [])
+    ];
+    for (const spec of expected) {
+      const matches = columns.filter(col => col.fields.parentId === table.id && col.fields.colId === spec.id);
+      assertThat(matches.length === 1 && matches[0]?.fields.type === spec.fields.type &&
+        matches[0]?.fields.isFormula === spec.fields.isFormula &&
+        String(matches[0]?.fields.formula ?? "") === spec.fields.formula,
+        "stage_topology_native_column_wrong:" + tableId + "." + spec.id);
+      witnessColumns++;
+    }
+  }
+  assertThat(witnessColumns === 89, "stage_topology_schema_count_wrong");
+  const nativeColumn = (tableId: string, columnId: string) => {
+    const table = tables.find(t => t.fields.tableId === tableId);
+    const matches = columns.filter(col => col.fields.parentId === table?.id && col.fields.colId === columnId);
+    assertThat(table !== undefined && matches.length === 1, "stage_topology_reference_column_missing");
+    return matches[0]!;
+  };
+  let displayCount = 0;
+  for (const [tableId, fields] of Object.entries(displayFields)) {
+    for (const [columnId, visibleColumnId] of Object.entries(fields)) {
+      const source = nativeColumn(tableId, columnId);
+      const targetTable = String(source.fields.type).replace(/^Ref(?:List)?:/, "");
+      const target = nativeColumn(targetTable, visibleColumnId);
+      assertThat(source.fields.visibleCol === target.id, "stage_topology_native_display_column_wrong");
+      displayCount++;
+    }
+  }
+  assertThat(displayCount === 15, "stage_topology_display_count_wrong");
+  for (const {columnId, text} of dropdowns) {
+    const column = nativeColumn("Stages", columnId);
+    const options = JSON.parse(String(column.fields.widgetOptions)) as {
+      dropdownCondition?: {text: string; parsed: string}
+    };
+    assertThat(options.dropdownCondition?.text === text &&
+      typeof options.dropdownCondition.parsed === "string" &&
+      Array.isArray(JSON.parse(options.dropdownCondition.parsed)),
+      "stage_topology_native_dropdown_wrong:" + columnId);
+  }
+  console.log("from-empty stage schema configuration: 15 display references, 3 typed native dropdown predicates, stable replay: PASS");
+  const recordIds = new Map(records);
+  const row = async (tableId: string) => {
+    const rows = await metadata(tableId);
+    assertThat(rows.length === 1 && rows[0]?.id === recordIds.get(tableId),
+      "stage_topology_native_row_missing:" + tableId);
+    return rows[0]!.fields;
+  };
+  const [stage, assignment, period, structure] = await Promise.all([
+    row("Stages"), row("Affectation"), row("Periodes_de_stage"), row("Structures_de_stage")
+  ]);
+  assertThat(stage.Classe === recordIds.get("Classes") &&
+    JSON.stringify(stage.Enseignants_affectables) === JSON.stringify(["L", recordIds.get("Enseignants")]) &&
+    stage.Structure_de_stage_Statut === "à vérifier" && structure.Statut === "à vérifier" &&
+    assignment.Stages_attribues === 1 && assignment.Reste_a_attribuer === 1 &&
+    period.Effectif === 1 && period.Stages_declares === 1 && period.Sans_stage === 0 &&
+    period.Stages_attribues === 1 && period.Stages_sans_enseignants === 0,
+    "stage_topology_native_formula_results_wrong");
+  console.log("from-empty stage schema: 89 ordinary witness columns, synthetic formulas/defaults, reference and counter results, stable replay: PASS");
   const allIds = first.flatMap(page => page.widgetIds);
   assertThat(first.length === 15 && new Set(first.map(page => page.pageId)).size === 15 &&
     allIds.length === 46 && new Set(allIds).size === 46, "stage_topology_cardinality_wrong");
