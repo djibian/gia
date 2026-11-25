@@ -812,9 +812,9 @@ export class AuthorizedGristService {
   }
 
   /**
-   * Reconcile a bounded set of unique ungrouped (table, type) widgets on one
-   * page. Create only absent sections in one native bundle; reject ambiguous
-   * identities and never blindly retry a possibly partial native effect.
+   * Reconcile bounded explicit counts of ungrouped (table, type) widgets on
+   * one page. Stable native IDs order indistinguishable instances; refuse
+   * excess matches and never blindly retry a possibly partial native effect.
    */
   async ensurePageWidgets(
     documentIdOrUrl: string, pageId: number,
@@ -830,10 +830,6 @@ export class AuthorizedGristService {
         throw new Error("Unsupported native widget type.");
       }
     }
-    const logical = specs.map(item => JSON.stringify([item.tableId, item.type]));
-    if (new Set(logical).size !== logical.length) {
-      throw new Error("Widget reconciliation identities must be unique.");
-    }
     return this.execute("ensure_page_widgets", documentIdOrUrl, specs.length, async id => {
       const before = await this.loadDocumentUi(id);
       assertCompleteUiSnapshot(before);
@@ -843,21 +839,35 @@ export class AuthorizedGristService {
         ...spec, tableRef: await this.resolveTableRef(id, spec.tableId)
       })));
       const nativeKeys = resolved.map(item => JSON.stringify([item.tableRef, item.type]));
-      if (new Set(nativeKeys).size !== nativeKeys.length) {
-        throw new Error("Widget source identities are ambiguous.");
-      }
-      const find = (page: typeof oldPage) => resolved.map(item =>
-        page.widgets.filter(widget =>
-          widget.tableRef === item.tableRef && widget.type === item.type));
+      const counts = new Map<string, number>();
+      const sourceIds = new Map<number, string>();
+      const ordinals = nativeKeys.map((key, index) => {
+        const item = resolved[index]!;
+        const sourceId = sourceIds.get(item.tableRef);
+        if (sourceId !== undefined && sourceId !== item.tableId) {
+          throw new Error("Widget source identities are ambiguous.");
+        }
+        sourceIds.set(item.tableRef, item.tableId);
+        const ordinal = counts.get(key) ?? 0;
+        counts.set(key, ordinal + 1);
+        return ordinal;
+      });
+      const find = (page: typeof oldPage) => resolved.map((item, index) => {
+        const matches = page.widgets.filter(widget =>
+          widget.tableRef === item.tableRef && widget.type === item.type)
+          .sort((a, b) => a.id - b.id);
+        if (matches.length > counts.get(nativeKeys[index]!)! ||
+            matches.some(widget => widget.tableId !== item.tableId)) {
+          throw new Error("Native widget identity is ambiguous; use explicit stable widget IDs.");
+        }
+        return matches[ordinals[index]!];
+      });
       const previous = find(oldPage);
-      if (previous.some(items => items.length > 1)) {
-        throw new Error("Native widget identity is ambiguous; use explicit stable widget IDs.");
-      }
-      const missing = resolved.filter((_item, index) => previous[index]!.length === 0);
+      const missing = resolved.filter((_item, index) => previous[index] === undefined);
       const base = { documentId: id, pageId };
       if (missing.length === 0) {
-        return { ...base, widgets: previous.map(items => ({
-          ...projectPublicWidget(items[0]!), created: false
+        return { ...base, widgets: previous.map(widget => ({
+          ...projectPublicWidget(widget!), created: false
         })), changed: false, persistedWidgetsVerified: true };
       }
       const fresh = await this.loadDocumentUi(id);
@@ -898,7 +908,8 @@ export class AuthorizedGristService {
           throw new Error("Native widget reconciliation created unexpected sections.");
         }
         const current = find(page);
-        if (current.some(items => items.length !== 1) ||
+        if (current.some((widget, index) => !widget ||
+              (previous[index] !== undefined && previous[index]!.id !== widget.id)) ||
             created.some((entry, index) => {
               const widget = added.find(item => item.id === entry.widgetId);
               return entry.pageId !== pageId || !widget ||
@@ -909,9 +920,9 @@ export class AuthorizedGristService {
             })) {
           throw new Error("Native widget identity or type could not be verified.");
         }
-        return { ...base, widgets: current.map(items => ({
-          ...projectPublicWidget(items[0]!),
-          created: createdIds.has(items[0]!.id)
+        return { ...base, widgets: current.map(widget => ({
+          ...projectPublicWidget(widget!),
+          created: createdIds.has(widget!.id)
         })), changed: true, persistedWidgetsVerified: true };
       } catch (error) {
         const known = created.map(item => item.widgetId);
