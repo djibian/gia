@@ -726,8 +726,8 @@ async function validateFromEmptyStageSkeleton(
 
 /**
  * #295: native ordinary page topology from the witness, with synthetic schema
- * and rows. Five blank Custom sections are included; external code and its
- * seven links are deliberately absent.
+ * and rows. Five blank Custom sections receive native links from ordinary
+ * selectors. External code and the two reciprocal custom-source links are absent.
  * The source document is not used at runtime.
  */
 async function validateFromEmptyStageTopology(
@@ -798,7 +798,7 @@ async function validateFromEmptyStageTopology(
   const pages: Array<{name: string; widgets: WidgetSpec[]}> = [
     {name: "Consultation structures", widgets: [
       grid("structures", "Structures_de_stage"),
-      {...grid("carte", "Structures_de_stage"), type: "custom"},
+      {...grid("carte", "Structures_de_stage", {source: "structures"}), type: "custom"},
       {...grid("fiche", "Structures_de_stage", {source: "structures"}), type: "single"}]},
     {name: "Suivi des stages", widgets: [
       grid("stages", "Stages", {source: "enseignant", targetColumnId: "Suivi_par"}),
@@ -825,18 +825,18 @@ async function validateFromEmptyStageTopology(
     {name: "Liste des activités", widgets: [grid("activites", "Activites"), lock()]},
     {name: "Liste des affectations", widgets: [grid("affectations", "Affectation"), lock()]},
     {name: "Liste des enseignants", widgets: [grid("enseignants", "Enseignants"),
-      {...grid("geocodeur", "Enseignants"), type: "custom"},
-      {...grid("carte", "Enseignants"), type: "custom"}, lock()]},
+      {...grid("geocodeur", "Enseignants", {source: "enseignants"}), type: "custom"},
+      {...grid("carte", "Enseignants", {source: "enseignants"}), type: "custom"}, lock()]},
     {name: "Liste des élèves", widgets: [grid("eleves", "Eleves"), lock()]},
     {name: "Liste des classes", widgets: [grid("classes", "Classes"),
       grid("periodes", "Periodes_de_stage", {source: "classes", targetColumnId: "Classe"}), lock()]},
     {name: "Liste des stages", widgets: [grid("stages", "Stages"), lock()]},
     {name: "Assistant structures", widgets: [grid("structures", "Structures_de_stage"),
-      {...grid("assistant", "Structures_de_stage"), type: "custom"}, lock()]},
+      {...grid("assistant", "Structures_de_stage", {source: "structures"}), type: "custom"}, lock()]},
     {name: "Affectation des stages", widgets: [
       grid("affectations", "Affectation", {source: "classes", targetColumnId: "Classe"}),
       grid("stages", "Stages", {source: "classes", targetColumnId: "Classe"}),
-      grid("classes", "Classes"), {...grid("assistant", "Classes"), type: "custom"}, lock()]}
+      grid("classes", "Classes"), {...grid("assistant", "Classes", {source: "classes"}), type: "custom"}, lock()]}
   ];
   const construct = async (replay: boolean) => {
     const results: Array<{pageId: number; widgetIds: number[]}> = [];
@@ -948,9 +948,9 @@ async function validateFromEmptyStageTopology(
       }
     }
   }
-  assertThat(links === 15, "stage_topology_native_link_count_wrong");
+  assertThat(links === 20, "stage_topology_native_link_count_wrong");
   assertThat(blankCustomSections === 5, "stage_topology_custom_section_count_wrong");
-  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 blank Custom), 15 native links, stable replay: PASS");
+  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 blank Custom), 20 native links, stable replay: PASS");
 }
 
 async function run(): Promise<void> {
