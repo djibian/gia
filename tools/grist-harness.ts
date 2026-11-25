@@ -232,3 +232,120 @@ export function recordsFrom(value: unknown): Array<{ id: number; fields: Record<
     return { id: item.id, fields: item.fields as Record<string, unknown> };
   });
 }
+
+// Shared disposable native browser harness; no production sessions or credentials.
+interface DriverState { text: string; url: string }
+
+function driverBinary(): string {
+  if (process.env.CHROMEDRIVER_BIN) return process.env.CHROMEDRIVER_BIN;
+  if (process.env.CHROMEWEBDRIVER) return process.env.CHROMEWEBDRIVER + "/chromedriver";
+  return "chromedriver";
+}
+
+export async function driverRequest(driverBase: string, method: string, path: string, payload?: unknown): Promise<unknown> {
+  const response = await fetch(driverBase + path, {
+    method,
+    ...(payload === undefined ? {} : {
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
+    }),
+    signal: AbortSignal.timeout(25_000)
+  });
+  const message = await response.json() as {
+    value?: unknown; sessionId?: string
+  };
+  const value = message.value;
+  if (!response.ok ||
+      (value && typeof value === "object" && "error" in value)) {
+    throw new Error("webdriver_request_failed");
+  }
+  return value;
+}
+
+export async function startBrowser(): Promise<{ driver: ChildProcess; driverBase: string; sessionId: string }> {
+  const driverPort = await freePort();
+  const driverBase = "http://127.0.0.1:" + driverPort;
+  const driver = spawn(driverBinary(), ["--port=" + driverPort], {
+    stdio: "ignore"
+  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      driver.once("spawn", resolve);
+      driver.once("error", reject);
+    });
+    await waitForUrl(driverBase + "/status", 50);
+    const session = await driverRequest(driverBase, "POST", "/session", {
+      capabilities: {
+        alwaysMatch: {
+          browserName: "chrome",
+          "goog:chromeOptions": {
+            args: ["--headless=new", "--no-sandbox", "--disable-dev-shm-usage",
+              "--window-size=1440,900", "--no-proxy-server"]
+          }
+        }
+      }
+    }) as { sessionId?: unknown };
+    assertThat(typeof session?.sessionId === "string", "webdriver_session_missing");
+    return { driver, driverBase, sessionId: session.sessionId };
+  } catch (error) {
+    driver.kill("SIGTERM");
+    throw error;
+  }
+}
+
+export async function navigate(driverBase: string, sessionId: string, url: string): Promise<void> {
+  await driverRequest(driverBase, "POST", "/session/" + sessionId + "/url", { url });
+}
+
+export async function inspectPage(driverBase: string, sessionId: string): Promise<DriverState> {
+  const value = await driverRequest(driverBase, "POST",
+    "/session/" + sessionId + "/execute/sync", {
+      script: "return {text: document.body ? document.body.innerText : '', url: location.href};",
+      args: []
+    }) as DriverState;
+  assertThat(typeof value?.text === "string" && typeof value.url === "string",
+    "webdriver_dom_snapshot_invalid");
+  return value;
+}
+
+export async function delay(ms: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+/** Submit one synthetic native Text field in a fresh anonymous browser and
+ * require navigation to the exact published target and a rendered target form. */
+export async function qualifyAnonymousFormRedirect(sourceUrl: string, targetUrl: string, value: string): Promise<void> {
+  const { driver, driverBase, sessionId } = await startBrowser();
+  const sessionPath = "/session/" + sessionId;
+  const fieldSelector = 'form .test-form-field input[type="text"], form .test-form-field textarea';
+  const submitSelector = 'form button[type="submit"]';
+  const waitForForm = async (url: string) => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const ready = await driverRequest(driverBase, "POST", sessionPath + "/execute/sync", {
+        script: "return {url: location.href, fields: document.querySelectorAll(arguments[0]).length, submits: document.querySelectorAll(arguments[1]).length};",
+        args: [fieldSelector, submitSelector]
+      }).catch(() => undefined) as {url?: string; fields?: number; submits?: number} | undefined;
+      if (ready?.url === url && ready.fields === 1 && ready.submits === 1) return;
+      await delay(500);
+    }
+    throw new Error("native_form_browser_expected_page_not_rendered");
+  };
+  const find = async (selector: string): Promise<string> => {
+    const element = await driverRequest(driverBase, "POST", sessionPath + "/element", {
+      using: "css selector", value: selector
+    }) as Record<string, unknown>;
+    const id = element?.["element-6066-11e4-a52e-4f735466cecf"];
+    assertThat(typeof id === "string", "native_form_browser_element_missing");
+    return sessionPath + "/element/" + encodeURIComponent(id);
+  };
+  try {
+    await navigate(driverBase, sessionId, sourceUrl);
+    await waitForForm(sourceUrl);
+    await driverRequest(driverBase, "POST", await find(fieldSelector) + "/value", {text: value});
+    await driverRequest(driverBase, "POST", await find(submitSelector) + "/click", {});
+    await waitForForm(targetUrl);
+  } finally {
+    await driverRequest(driverBase, "DELETE", sessionPath).catch(() => {});
+    driver.kill("SIGTERM");
+  }
+}
