@@ -129,11 +129,16 @@ export async function startBridge(options: {
     GRIST_API_KEY: options.apiKey,
     GRIST_ALLOWED_DOCUMENT_IDS: options.documentIds.join(","),
     GRIST_ALLOWED_WORKSPACE_IDS: (options.workspaceIds ?? []).join(","),
-    GRIST_MAX_READ_RECORDS: "100",
+    // Full native section/field metadata must fit the acceptance read budget.
+    // Use the existing bounded production default for representative topology.
+    GRIST_MAX_READ_RECORDS: "5000",
     GRIST_MAX_WRITE_RECORDS: "50",
     GRIST_WRITE_BATCH_RECORDS: "25",
     GRIST_MAX_SCHEMA_ITEMS: "50",
     MCP_AUTH_MODE: "static",
+    // Disposable application acceptance exercises hundreds of sequential calls
+    // without throttling sleeps; production's bounded default remains unchanged.
+    MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE: "600",
     MCP_BEARER_TOKEN: TEST_BEARER,
     MCP_ALLOWED_HOSTS: "127.0.0.1,localhost",
     HOST: "127.0.0.1",

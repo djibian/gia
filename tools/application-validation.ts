@@ -723,6 +723,236 @@ async function validateFromEmptyStageSkeleton(
   console.log("from-empty public Form link, anonymous submission and native default: PASS");
 }
 
+
+/**
+ * #295: native ordinary page topology from the witness, with synthetic schema
+ * and rows. Five blank Custom sections receive native links from ordinary
+ * selectors. External code and the two reciprocal custom-source links are absent.
+ * The source document is not used at runtime.
+ */
+async function validateFromEmptyStageTopology(
+  bridge: string, context: FixtureContext
+): Promise<void> {
+  const created = await callTool(bridge, "grist_add_structure", {
+    action: "create_document", workspaceId: context.workspaceId,
+    name: "From-empty synthetic stage topology"
+  }) as {documentId?: string; bootstrap?: string};
+  assertThat(typeof created.documentId === "string" && created.bootstrap === "empty",
+    "stage_topology_not_empty");
+  const documentId = created.documentId!;
+  const tableIds = ["Classes", "Enseignants", "Structures_de_stage", "Stages",
+    "Activites", "Verrou", "Periodes_de_stage", "Affectation", "Eleves"];
+  const relations: Record<string, Record<string, string>> = {
+    Classes: {Professeur_principal: "Enseignants"},
+    Stages: {Classe: "Classes", Suivi_par: "Enseignants", Structure_de_stage: "Structures_de_stage",
+      Periode: "Periodes_de_stage", Eleve: "Eleves"},
+    Activites: {Patrenaire: "Structures_de_stage"},
+    Periodes_de_stage: {Classe: "Classes"},
+    Affectation: {Classe: "Classes", Enseignant: "Enseignants", Periode: "Periodes_de_stage"},
+    Eleves: {Classe: "Classes"}
+  };
+  const ensureSchema = async () => {
+    await callTool(bridge, "grist_add_structure", {
+      action: "ensure_tables", documentId, tables: tableIds.map(id => ({
+        id, columns: [{id: "Cle", fields: {type: "Text", isFormula: false}}]
+      }))
+    });
+    for (const [tableId, columns] of Object.entries(relations)) {
+      await callTool(bridge, "grist_add_structure", {
+        action: "ensure_columns", documentId, tableId,
+        columns: Object.entries(columns).map(([id, target]) => ({
+          id, fields: {type: "Ref:" + target, isFormula: false}
+        }))
+      });
+    }
+  };
+  await ensureSchema();
+  const ensureData = async () => {
+    const ids = new Map<string, number>();
+    // Dependency order: no source data, no native import, all writes via Gia.
+    for (const tableId of ["Enseignants", "Structures_de_stage", "Verrou", "Classes",
+      "Periodes_de_stage", "Eleves", "Affectation", "Stages", "Activites"]) {
+      const fields: Record<string, unknown> = {Cle: "synthetique-" + tableId};
+      for (const [columnId, target] of Object.entries(relations[tableId] ?? {})) {
+        const targetId = ids.get(target);
+        assertThat(targetId !== undefined, "stage_topology_reference_order");
+        fields[columnId] = targetId;
+      }
+      const result = await callTool(bridge, "grist_add_records", {
+        action: "ensure_record", documentId, tableId, keyColumnId: "Cle", record: {fields}
+      }) as {recordId: number; persistedRecordVerified: boolean};
+      assertThat(result.recordId > 0 && result.persistedRecordVerified,
+        "stage_topology_record_missing");
+      ids.set(tableId, result.recordId);
+    }
+    return [...ids.entries()];
+  };
+  const records = await ensureData();
+  type WidgetSpec = {
+    key: string; tableId: string; type: "record" | "single" | "form" | "custom";
+    source?: string; targetColumnId?: string; collapsed?: boolean; groupByColumnIds?: string[];
+  };
+  const grid = (key: string, tableId: string, extras: Partial<WidgetSpec> = {}): WidgetSpec =>
+    ({key, tableId, type: "record", ...extras});
+  const lock = (): WidgetSpec => grid("lock", "Verrou", {collapsed: true});
+  const pages: Array<{name: string; widgets: WidgetSpec[]}> = [
+    {name: "Consultation structures", widgets: [
+      grid("structures", "Structures_de_stage"),
+      {...grid("carte", "Structures_de_stage", {source: "structures"}), type: "custom"},
+      {...grid("fiche", "Structures_de_stage", {source: "structures"}), type: "single"}]},
+    {name: "Suivi des stages", widgets: [
+      grid("stages", "Stages", {source: "enseignant", targetColumnId: "Suivi_par"}),
+      {...grid("fiche", "Stages", {source: "stages"}), type: "single"},
+      grid("enseignant", "Enseignants", {collapsed: true})]},
+    {name: "Partenaires", widgets: [
+      grid("structures", "Structures_de_stage"),
+      grid("stages", "Stages", {source: "structures", targetColumnId: "Structure_de_stage"}),
+      grid("activites", "Activites", {source: "structures", targetColumnId: "Patrenaire"})]},
+    {name: "Ma classe", widgets: [
+      grid("classes", "Classes", {source: "enseignants", targetColumnId: "Professeur_principal"}),
+      grid("bilan", "Affectation", {source: "classes", targetColumnId: "Classe",
+        groupByColumnIds: ["Classe", "Enseignant"]}),
+      grid("periodes", "Periodes_de_stage", {source: "classes", targetColumnId: "Classe"}),
+      grid("stages", "Stages", {source: "periodes", targetColumnId: "Periode"}),
+      grid("affectations", "Affectation", {source: "periodes", targetColumnId: "Periode"}),
+      grid("enseignants", "Enseignants", {collapsed: true})]},
+    {name: "Formulaire structures", widgets: [
+      grid("structures", "Structures_de_stage"), {...grid("form", "Structures_de_stage"), type: "form"}, lock()]},
+    {name: "Formulaire stages", widgets: [
+      grid("stages", "Stages", {source: "form"}),
+      {...grid("form", "Stages", {source: "stages"}), type: "form"}, lock()]},
+    {name: "Périodes de stage", widgets: [grid("periodes", "Periodes_de_stage"), lock()]},
+    {name: "Liste des activités", widgets: [grid("activites", "Activites"), lock()]},
+    {name: "Liste des affectations", widgets: [grid("affectations", "Affectation"), lock()]},
+    {name: "Liste des enseignants", widgets: [grid("enseignants", "Enseignants"),
+      {...grid("geocodeur", "Enseignants", {source: "enseignants"}), type: "custom"},
+      {...grid("carte", "Enseignants", {source: "enseignants"}), type: "custom"}, lock()]},
+    {name: "Liste des élèves", widgets: [grid("eleves", "Eleves"), lock()]},
+    {name: "Liste des classes", widgets: [grid("classes", "Classes"),
+      grid("periodes", "Periodes_de_stage", {source: "classes", targetColumnId: "Classe"}), lock()]},
+    {name: "Liste des stages", widgets: [grid("stages", "Stages"), lock()]},
+    {name: "Assistant structures", widgets: [grid("structures", "Structures_de_stage"),
+      {...grid("assistant", "Structures_de_stage", {source: "structures"}), type: "custom"}, lock()]},
+    {name: "Affectation des stages", widgets: [
+      grid("affectations", "Affectation", {source: "classes", targetColumnId: "Classe"}),
+      grid("stages", "Stages", {source: "classes", targetColumnId: "Classe"}),
+      grid("classes", "Classes"), {...grid("assistant", "Classes", {source: "classes"}), type: "custom"}, lock()]}
+  ];
+  const construct = async (replay: boolean) => {
+    const results: Array<{pageId: number; widgetIds: number[]}> = [];
+    for (const page of pages) {
+      const p = await callTool(bridge, "grist_add_ui", {
+        action: "ensure_page", documentId, tableId: page.widgets[0]!.tableId, name: page.name
+      }) as {page: {id: number}; changed: boolean};
+      if (replay) assertThat(!p.changed, "stage_topology_duplicate_page");
+      const pageId = p.page.id;
+      const ids = new Map<string, number>();
+      const ordinary = page.widgets.filter(widget => widget.groupByColumnIds === undefined);
+      const specs = ordinary.map(({tableId, type}) => ({tableId, type}));
+      const batch = await callTool(bridge, "grist_add_ui", {
+        action: "ensure_widgets", documentId, pageId, widgets: specs
+      }) as {widgets: Array<{id: number}>; changed: boolean};
+      if (replay) assertThat(!batch.changed, "stage_topology_duplicate_widgets");
+      assertThat(batch.widgets.length === ordinary.length, "stage_topology_missing_widgets");
+      ordinary.forEach((widget, index) => ids.set(widget.key, batch.widgets[index]!.id));
+      for (const widget of page.widgets.filter(widget => widget.groupByColumnIds !== undefined)) {
+        const summary = await callTool(bridge, "grist_add_ui", {
+          action: "ensure_widget", documentId, pageId, tableId: widget.tableId, type: widget.type,
+          groupByColumnIds: widget.groupByColumnIds
+        }) as {widget: {id: number}; changed: boolean};
+        if (replay) assertThat(!summary.changed, "stage_topology_duplicate_summary");
+        ids.set(widget.key, summary.widget.id);
+      }
+      for (const widget of page.widgets) {
+        const widgetId = ids.get(widget.key)!;
+        if (widget.source) {
+          await callTool(bridge, "grist_change_ui", {
+            action: "update_widget", documentId, pageId, widgetId, update: {selectBy: {
+              sourceWidgetId: ids.get(widget.source),
+              ...(widget.targetColumnId ? {targetColumnId: widget.targetColumnId} : {})
+            }}
+          });
+        }
+        if (widget.type === "form") {
+          await callTool(bridge, "grist_change_ui", {
+            action: "update_widget", documentId, pageId, widgetId,
+            update: {visibleFields: [{columnId: "Cle"}]}
+          });
+          await callTool(bridge, "grist_change_ui", {
+            action: "update_form_layout", documentId, pageId, widgetId,
+            layout: {children: [{type: "section", children: [{type: "field", columnId: "Cle"}]}, {type: "submit"}]}
+          });
+        }
+      }
+      await callTool(bridge, "grist_change_ui", {
+        action: "update_layout", documentId, pageId, layout: {
+          root: {kind: "group", children: page.widgets.filter(w => !w.collapsed).map(w => ({
+            kind: "widget", widgetId: ids.get(w.key)
+          }))},
+          collapsedWidgetIds: page.widgets.filter(w => w.collapsed).map(w => ids.get(w.key))
+        }
+      });
+      results.push({pageId, widgetIds: page.widgets.map(w => ids.get(w.key)!)});
+    }
+    return results;
+  };
+  const first = await construct(false);
+  await ensureSchema();
+  assertThat(JSON.stringify(await ensureData()) === JSON.stringify(records),
+    "stage_topology_duplicate_records");
+  assertThat(JSON.stringify(await construct(true)) === JSON.stringify(first),
+    "stage_topology_ids_changed_on_replay");
+  const path = "/api/docs/" + encodeURIComponent(documentId);
+  const metadata = async (table: string) => recordsFrom(await gristApi(context.baseUrl,
+    context.ownerKey, path + "/tables/" + table + "/records?hidden=true"));
+  const [sections, columns, views, navigation] = await Promise.all([
+    metadata("_grist_Views_section"), metadata("_grist_Tables_column"),
+    metadata("_grist_Views"), mcpPages(bridge, documentId)
+  ]);
+  const allIds = first.flatMap(page => page.widgetIds);
+  assertThat(first.length === 15 && new Set(first.map(page => page.pageId)).size === 15 &&
+    allIds.length === 46 && new Set(allIds).size === 46, "stage_topology_cardinality_wrong");
+  let links = 0;
+  let blankCustomSections = 0;
+  for (let i = 0; i < pages.length; i++) {
+    const spec = pages[i]!, actual = first[i]!;
+    assertThat(countKeyValue(navigation, "name", spec.name) === 1, "stage_topology_page_name_duplicate");
+    const pageSections = sections.filter(section => section.fields.parentId === actual.pageId);
+    assertThat(pageSections.length === spec.widgets.length, "stage_topology_native_section_count_wrong");
+    const nativeLayout = JSON.parse(String(views.find(view => view.id === actual.pageId)?.fields.layoutSpec)) as {
+      children: Array<{leaf: number}>; collapsed?: Array<{leaf: number}>;
+    };
+    const expectedPlaced = spec.widgets.flatMap((widget, index) => widget.collapsed ? [] : [actual.widgetIds[index]]);
+    const expectedCollapsed = spec.widgets.flatMap((widget, index) => widget.collapsed ? [actual.widgetIds[index]] : []);
+    assertThat(JSON.stringify(nativeLayout.children.map(node => node.leaf)) === JSON.stringify(expectedPlaced) &&
+      JSON.stringify((nativeLayout.collapsed ?? []).map(node => node.leaf)) === JSON.stringify(expectedCollapsed),
+      "stage_topology_layout_wrong");
+    for (let j = 0; j < spec.widgets.length; j++) {
+      const widget = spec.widgets[j]!, section = pageSections.find(row => row.id === actual.widgetIds[j]);
+      assertThat(section?.fields.parentKey === widget.type, "stage_topology_native_widget_type_wrong");
+      if (widget.type === "custom") {
+        blankCustomSections++;
+        const custom = JSON.parse(String(section?.fields.options || "{}")).customView;
+        assertThat(!custom || ((!custom.url && !custom.widgetId) &&
+          (!custom.access || custom.access === "none")), "stage_topology_custom_section_not_blank");
+      }
+      if (widget.source) {
+        links++;
+        const sourceIndex = spec.widgets.findIndex(candidate => candidate.key === widget.source);
+        assertThat(section?.fields.linkSrcSectionRef === actual.widgetIds[sourceIndex] &&
+          section?.fields.linkSrcColRef === 0, "stage_topology_native_source_wrong");
+        const target = columns.find(column => column.id === section?.fields.linkTargetColRef);
+        assertThat(widget.targetColumnId ?
+          target?.fields.colId === widget.targetColumnId && target?.fields.parentId === section?.fields.tableRef :
+          section?.fields.linkTargetColRef === 0, "stage_topology_native_target_wrong");
+      }
+    }
+  }
+  assertThat(links === 20, "stage_topology_native_link_count_wrong");
+  assertThat(blankCustomSections === 5, "stage_topology_custom_section_count_wrong");
+  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 blank Custom), 20 native links, stable replay: PASS");
+}
+
 async function run(): Promise<void> {
   const baseUrl = process.env.GRIST_TEST_BASE_URL?.trim().replace(/\/$/, "");
   const version = process.env.GRIST_TEST_VERSION?.trim();
@@ -742,6 +972,7 @@ async function run(): Promise<void> {
     await validateStageTracking(bridge.baseUrl, context);
     await validateCcf(bridge.baseUrl, context);
     await validateFromEmptyStageSkeleton(bridge.baseUrl, context);
+    await validateFromEmptyStageTopology(bridge.baseUrl, context);
     console.log("semantic rerun/idempotence: PASS");
     console.log("browser escalation: NOT TRIGGERED; material UI and access postconditions were observable through MCP/API semantics");
     console.log(`application validation on Grist Community ${version}: PASS`);
