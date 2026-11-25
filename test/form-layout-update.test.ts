@@ -133,3 +133,24 @@ test("Form layout refuses to destroy protected/opaque pre-existing native settin
     assert.throws(() => resolveFormLayoutUpdate(widget(layoutSpec), tables, fields, requested));
   }
 });
+
+test("Form success redirect uses only a confirmed, resolved absolute URL and preserves protected redirects", () => {
+  const layout: FormLayoutInput = {...requested, confirmPublicLink:true,
+    successRedirect:{targetPageId:9,targetWidgetId:17}};
+  const path = "/forms/syntheticShareKey/17";
+  const paths = new Map([["9:17",path]]);
+  const url = "https://grist.example.invalid" + path;
+  const first = resolveFormLayoutUpdate(widget(),tables,fields,layout,paths,url);
+  assert.equal(first.layoutSpec.successURL,url);
+  assert.deepEqual(resolveFormLayoutUpdate(widget(first.layoutSpec),tables,fields,layout,paths,url).layoutSpec,
+    first.layoutSpec);
+  assert.throws(()=>resolveFormLayoutUpdate(widget(),tables,fields,{...layout,confirmPublicLink:undefined},paths,url),/confirmPublicLink/);
+  for (const invalid of [undefined,path,"javascript:alert(1)",url+"?token=x",url+"#x",url.replace("/17","/18")]) {
+    assert.throws(()=>resolveFormLayoutUpdate(widget(),tables,fields,layout,paths,invalid),/not resolved/);
+  }
+  assert.throws(()=>resolveFormLayoutUpdate(widget(first.layoutSpec),tables,fields,requested),/protected/);
+  assert.throws(()=>resolveFormLayoutUpdate(widget({...first.layoutSpec,successURL:"https://other.example.invalid/"}),
+    tables,fields,layout,paths,url),/protected/);
+  const inspected = inspectNativeForm(widget(first.layoutSpec),tables,fields,{forms:1,nodes:20,text:1000});
+  assert.ok(!JSON.stringify(inspected).includes("syntheticShareKey"));
+});
