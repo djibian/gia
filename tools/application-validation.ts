@@ -976,6 +976,28 @@ async function validateFromEmptyStageTopology(
       grid("stages", "Stages", {source: "classes", targetColumnId: "Classe"}),
       grid("classes", "Classes"), {...grid("assistant", "Classes", {source: "classes"}), type: "custom"}, lock()]}
   ];
+  // Stable witness field bindings; instructional text and required-field
+  // choices are synthetic acceptance values, not copied source Form options.
+  type FormSpec = {columns: string[]; required: string[]; title: string};
+  const formSpecs: Record<string, FormSpec> = {
+    Structures_de_stage: {
+      columns: ["Nom_usuel", "Numero_d_immatriculation", "Courriel", "Telephone",
+        "Adresse", "Service", "Vente", "Site_web"],
+      required: ["Nom_usuel"], title: "Proposer une structure de stage"
+    },
+    Stages: {
+      columns: ["Eleve", "Structure_de_stage", "Periode"],
+      required: ["Eleve", "Structure_de_stage", "Periode"], title: "Déclarer un stage"
+    }
+  };
+  const formLayout = (spec: FormSpec) => ({
+    children: [
+      {type: "paragraph", text: spec.title},
+      {type: "section", children: spec.columns.map(columnId => ({type: "field", columnId}))},
+      {type: "submit"}
+    ],
+    submitText: "Envoyer", successText: "Réponse reçue"
+  });
   const construct = async (replay: boolean) => {
     const results: Array<{pageId: number; widgetIds: number[]}> = [];
     for (const page of pages) {
@@ -1012,14 +1034,25 @@ async function validateFromEmptyStageTopology(
           });
         }
         if (widget.type === "form") {
+          const formSpec = formSpecs[widget.tableId]!;
           await callTool(bridge, "grist_change_ui", {
             action: "update_widget", documentId, pageId, widgetId,
-            update: {visibleFields: [{columnId: "Cle"}]}
+            update: {visibleFields: formSpec.columns.map(columnId => ({columnId}))}
           });
-          await callTool(bridge, "grist_change_ui", {
+          const configured = await callTool(bridge, "grist_change_ui", {
             action: "update_form_layout", documentId, pageId, widgetId,
-            layout: {children: [{type: "section", children: [{type: "field", columnId: "Cle"}]}, {type: "submit"}]}
-          });
+            layout: formLayout(formSpec)
+          }) as {changed: boolean; persistedLayoutVerified: boolean};
+          assertThat(configured.persistedLayoutVerified && (!replay || !configured.changed),
+            "stage_topology_form_layout_not_reconciled");
+          for (const columnId of formSpec.required) {
+            const options = await callTool(bridge, "grist_change_ui", {
+              action: "update_form_field_options", documentId, pageId, widgetId, columnId,
+              update: {required: true}
+            }) as {changed: boolean; persistedOptionsVerified: boolean};
+            assertThat(options.persistedOptionsVerified && (!replay || !options.changed),
+              "stage_topology_form_field_options_not_reconciled");
+          }
         }
       }
       await callTool(bridge, "grist_change_ui", {
@@ -1155,6 +1188,92 @@ async function validateFromEmptyStageTopology(
   assertThat(links === 20, "stage_topology_native_link_count_wrong");
   assertThat(blankCustomSections === 5, "stage_topology_custom_section_count_wrong");
   console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 blank Custom), 20 native links, stable replay: PASS");
+  // Publication is deliberately confined to this disposable native fixture.
+  // No source share key or URL is used, and no public key enters a tool result.
+  const formTarget = (tableId: string) => {
+    const index = pages.findIndex(page => page.widgets.some(widget =>
+      widget.type === "form" && widget.tableId === tableId));
+    assertThat(index >= 0, "stage_topology_form_page_missing");
+    const widgetIndex = pages[index]!.widgets.findIndex(widget =>
+      widget.type === "form" && widget.tableId === tableId);
+    return {pageId: first[index]!.pageId, widgetId: first[index]!.widgetIds[widgetIndex]!};
+  };
+  const structureForm = formTarget("Structures_de_stage");
+  const stageForm = formTarget("Stages");
+  for (const [target, spec] of [
+    [structureForm, formSpecs.Structures_de_stage!], [stageForm, formSpecs.Stages!]
+  ] as const) {
+    const preview = await gristApi(context.baseUrl, context.ownerKey,
+      path + "/forms/" + target.widgetId) as {
+        formFieldsById: Record<string, {colId: string}>;
+      };
+    const actual = Object.values(preview.formFieldsById).map(field => field.colId);
+    assertThat(actual.length === spec.columns.length &&
+      spec.columns.every(column => actual.includes(column)),
+      "stage_topology_native_form_bindings_wrong");
+  }
+  const publish = (target: {pageId: number; widgetId: number}) =>
+    callTool(bridge, "grist_change_ui", {
+      action: "publish_form", documentId, ...target, confirmPublic: true
+    }) as Promise<{changed: boolean; persistedPublicationIntentVerified: boolean}>;
+  const structurePublished = await publish(structureForm);
+  assertThat(structurePublished.changed && structurePublished.persistedPublicationIntentVerified,
+    "stage_topology_structure_publication_failed");
+  const label = "Proposer une structure";
+  const layout = formLayout(formSpecs.Stages!);
+  const linkForms = () => callTool(bridge, "grist_change_ui", {
+    action: "update_form_layout", documentId, ...stageForm,
+    layout: {...layout, confirmPublicLink: true, children: [
+      {type: "form_link", label, targetPageId: structureForm.pageId,
+        targetWidgetId: structureForm.widgetId}, ...layout.children
+    ]}
+  }) as Promise<{changed: boolean; persistedLayoutVerified: boolean}>;
+  const linked = await linkForms();
+  const stagePublished = await publish(stageForm);
+  const linkedReplay = await linkForms();
+  assertThat(linked.changed && linked.persistedLayoutVerified &&
+    stagePublished.changed && stagePublished.persistedPublicationIntentVerified &&
+    !linkedReplay.changed && linkedReplay.persistedLayoutVerified &&
+    !(await publish(structureForm)).changed && !(await publish(stageForm)).changed,
+    "stage_topology_public_forms_not_reconciled");
+  const publishedSections = await metadata("_grist_Views_section");
+  const source = publishedSections.find(section => section.id === stageForm.widgetId);
+  const nativeForm = JSON.parse(String(source?.fields.layoutSpec)) as {
+    children: Array<{text?: string}>;
+  };
+  const link = /^\[Proposer une structure\]\(\/forms\/([a-zA-Z0-9_-]{1,100})\/([1-9]\d*)\)$/
+    .exec(nativeForm.children[0]?.text ?? "");
+  assertThat(link && Number(link[2]) === structureForm.widgetId,
+    "stage_topology_public_form_link_wrong");
+  assertThat(![linked, linkedReplay, structurePublished, stagePublished]
+    .some(result => JSON.stringify(result).includes(link![1]!)),
+    "stage_topology_public_form_key_exposed");
+  const publicPath = "/api/s/" + link![1]!;
+  const anonymous = (targetPath: string, body?: unknown) => fetch(
+    new URL(targetPath, context.baseUrl), {
+      credentials: "omit", redirect: "error", signal: AbortSignal.timeout(10000),
+      ...(body === undefined ? {} : {method: "POST",
+        headers: {"content-type": "application/json"}, body: JSON.stringify(body)})
+    }).catch(() => {throw new Error("Synthetic anonymous Form request failed.");});
+  const publicPreview = await anonymous(publicPath + "/forms/" + structureForm.widgetId);
+  assertThat(publicPreview.ok, "stage_topology_structure_form_preview_denied");
+  const fields = await publicPreview.json() as {
+    formFieldsById: Record<string, {colId: string}>;
+  };
+  const actual = Object.values(fields.formFieldsById).map(field => field.colId);
+  assertThat(actual.length === 8 && formSpecs.Structures_de_stage!.columns
+    .every(column => actual.includes(column)), "stage_topology_public_form_bindings_wrong");
+  const submitted = "Structure fictive soumise";
+  const sent = await anonymous(publicPath + "/tables/Structures_de_stage/records",
+    {records: [{fields: {Nom_usuel: submitted}}]});
+  await sent.body?.cancel();
+  assertThat(sent.ok, "stage_topology_structure_submission_failed");
+  const saved = await metadata("Structures_de_stage");
+  assertThat(saved.filter(row => row.fields.Nom_usuel === submitted &&
+    row.fields.Statut === "à vérifier").length === 1,
+    "stage_topology_structure_submission_missing_default");
+  console.log("from-empty stage topology: 8/3 Form fields, native layout replay, linked public Forms and anonymous structure submission: PASS");
+
 }
 
 async function run(): Promise<void> {
