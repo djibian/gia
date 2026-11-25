@@ -1191,6 +1191,7 @@ export function registerLeanTools(
             documentId: documentIdSchema,
             tableId: tableIdSchema,
             columnId: columnIdSchema,
+            formulaKind: z.enum(["calculated", "trigger"]).optional(),
             formula: z.string().min(1).max(4096)
               .refine(v => Boolean(v.trim()) && !v.includes(String.fromCharCode(0)),
                 "Nonempty bounded Grist formula.")
@@ -1454,7 +1455,7 @@ export function registerLeanTools(
             );
           case "replace_column_formula":
             return textResult(await grist.replaceColumnFormula(
-              input.documentId, input.tableId, input.columnId, input.formula
+              input.documentId, input.tableId, input.columnId, input.formula, input.formulaKind
             ));
           case "append_choice_options":
             return textResult(await grist.appendChoiceOptions(

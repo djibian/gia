@@ -290,7 +290,7 @@ const TOOL_GUIDES: Record<string, ToolGuide> = {
     request: [
       "update_document: {action,documentId,update:{name?,type?:'normal'|'template'|'tutorial'}|{timezone:'UTC'|'Europe/Paris'}|{locale:'fr-FR'|'en-US'}}",
       "update_columns: {action,documentId,tableId,columns:[{id,fields:{visibleColumnId?:stableRelatedColumnId,...}}]}; relation display is update-only.",
-      "replace_column_formula: {action,documentId,tableId,columnId,formula:boundedGristPython}; existing formula column only, exact native readback, unrelated schema preserved, identical replay no-op.",
+      "replace_column_formula: {action,documentId,tableId,columnId,formula:boundedGristPython,formulaKind?:\'calculated\'|\'trigger\'}; calculated by default; explicit trigger supports existing Text/Choice DEFAULT formula with zero/one existing dependency. Exact native schema readback, identical replay no-op.",
       "update_form_column_options: {action,documentId,tableId,columnId,update:{question?:string|null,required?:boolean,acceptFromUrl?:boolean}}; preserves other native options.",
       "append_choice_options: {action,documentId,tableId,columnId,values:[unique choice labels]}; appends only missing labels on Choice/ChoiceList columns, preserving order, colors, Form and other settings; max 64, replay no-op.",
       "reorder_choice_options: {action,documentId,tableId,columnId,orderedLabels:[every existing Choice/ChoiceList label in desired order]}; exact 2–64-label permutation, preserving colors and all other native options; repeated order is a no-op.",

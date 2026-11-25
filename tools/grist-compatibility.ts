@@ -2966,6 +2966,50 @@ async function run(): Promise<void> {
     assert((await readFormulaRows()).records.find(row => row.id === defaulted!.id)?.fields.Dependent === "User edit",
       "native_trigger_recomputed_on_unrelated_update");
 
+    // #295: modify existing trigger formula text without changing ownership,
+    // recalc policy, explicit user values or existing records.
+    const beforeTriggerReplacement = await readFormulaRows();
+    const replaceTrigger = {action: "replace_column_formula", documentId: emptyDocumentId,
+      tableId: "CompatFormula", columnId: "Dependent", formula: '$Base + "!"'};
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", replaceTrigger);
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...replaceTrigger, formulaKind: "trigger", columnId: "Base"
+    });
+    for (const spec of [replaceTrigger, {...replaceTrigger, columnId: "InitialStatus", formula: "'Newer'"}]) {
+      const request = {...spec, formulaKind: "trigger"};
+      const changed = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", request),
+        "native_trigger_replacement");
+      const replay = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", request),
+        "native_trigger_replacement_replay");
+      assert(changed.changed === true && changed.persistedFormulaVerified === true &&
+        replay.changed === false && replay.persistedFormulaVerified === true,
+        "native_trigger_replacement_not_verified");
+    }
+    assert(isDeepStrictEqual((await readFormulaRows()).records, beforeTriggerReplacement.records),
+      "native_trigger_replacement_changed_existing_rows");
+    await callTool(bridgeBaseUrl, "grist_add_records", {
+      documentId: emptyDocumentId, tableId: "CompatFormula", records: [{fields: {Base: "After"}}]
+    });
+    const afterTriggerInsert = (await readFormulaRows()).records.find(row => row.fields.Base === "After");
+    assert(afterTriggerInsert?.fields.Dependent === "After!" &&
+      afterTriggerInsert.fields.InitialStatus === "Newer" && afterTriggerInsert.fields.InitialBase === "After",
+      "native_trigger_replacement_insert_default_wrong");
+    await callTool(bridgeBaseUrl, "grist_change_records", {
+      action: "update", documentId: emptyDocumentId, tableId: "CompatFormula",
+      records: [{id: defaulted!.id, fields: {InitialStatus: "Other again"}}]
+    });
+    assert((await readFormulaRows()).records.find(row => row.id === defaulted!.id)?.fields.Dependent === "User edit",
+      "native_replaced_trigger_recomputed_on_unrelated_update");
+    await callTool(bridgeBaseUrl, "grist_change_records", {
+      action: "update", documentId: emptyDocumentId, tableId: "CompatFormula",
+      records: [{id: defaulted!.id, fields: {Base: "Next"}}]
+    });
+    const afterTriggerDependency = (await readFormulaRows()).records.find(row => row.id === defaulted!.id);
+    assert(afterTriggerDependency?.fields.Dependent === "Next!" &&
+      afterTriggerDependency.fields.InitialStatus === "Other again" &&
+      afterTriggerDependency.fields.InitialBase === "Default",
+      "native_replaced_trigger_dependency_wrong");
+
     const configuredRequest = {
       action: "create_columns", documentId: emptyDocumentId, tableId: "Placements", columns: [
         { ...columnOf("ActiveMentor", "Ref:Mentors"), configuration: {

@@ -54,3 +54,37 @@ test("postcondition rejects changed unrelated schema, refs, formulas and non-eff
       ? { ...column, fields: { ...column.fields, colRef: 99 } } : column)
   }, "Calculated", '$Code + "!"', 10));
 });
+
+const trigger = (deps: unknown = ["L", 1], extra: Record<string, unknown> = {}) => ({
+  columns: [...before.columns, {id: "Trigger", fields: {
+    colRef: 4, type: "Text", isFormula: false, formula: "$Code",
+    recalcWhen: 0, recalcDeps: deps, ...extra
+  }}]
+});
+
+test("explicit trigger formula replacement preserves supported DEFAULT ownership and dependency", () => {
+  for (const deps of [null, ["L", 1]]) {
+    const source = trigger(deps);
+    const dest = trigger(deps, {formula: '$Code + "!"'});
+    assert.deepEqual(planColumnFormulaReplacement(source, "Trigger", '$Code + "!"', 10, "trigger"),
+      {changed: true});
+    verifyColumnFormulaReplacement(source, dest, "Trigger", '$Code + "!"', 10, "trigger");
+    assert.deepEqual(planColumnFormulaReplacement(dest, "Trigger", '$Code + "!"', 10, "trigger"),
+      {changed: false});
+    assert.throws(() => planColumnFormulaReplacement(source, "Trigger", "1", 10));
+  }
+  assert.deepEqual(planColumnFormulaReplacement(trigger(null, {type: "Choice"}), "Trigger",
+    "'New'", 10, "trigger"), {changed: true});
+});
+
+test("trigger replacement fails closed on ordinary data, calculated columns and unsupported native dependencies", () => {
+  for (const raw of [trigger(["L", 99]), trigger(["L", 4]), trigger(["L", 1, 2]),
+    trigger(undefined, {recalcDeps: undefined}), trigger(null, {recalcWhen: 1}),
+    trigger(null, {type: "Numeric"}), trigger(null, {formula: ""})]) {
+    assert.throws(() => planColumnFormulaReplacement(raw, "Trigger", "1", 10, "trigger"));
+  }
+  assert.throws(() => planColumnFormulaReplacement(before, "Code", "1", 10, "trigger"));
+  assert.throws(() => planColumnFormulaReplacement(before, "Calculated", "1", 10, "trigger"));
+  assert.throws(() => verifyColumnFormulaReplacement(trigger(), trigger(null, {formula: "1"}),
+    "Trigger", "1", 10, "trigger"));
+});
