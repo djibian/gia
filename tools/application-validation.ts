@@ -931,10 +931,39 @@ async function validateFromEmptyStageTopology(
           fields[column.columnId] === column.visibleColumnId),
         "stage_topology_display_column_not_verified");
     }
-    await callTool(bridge, "grist_change_structure", {
-      action: "append_choice_options", documentId, tableId: "Structures_de_stage",
-      columnId: "Statut", values: ["à vérifier", "validé"]
-    });
+    // Witness choice presentation (labels and colors only, never source rows).
+    const status = ["à vérifier", "refusé", "validé", "à compléter", "doublon"];
+    const assessment = ["pas satisfaisant", "moyen", "satisfaisant"];
+    const choices: Array<[string, string, string[]]> = [
+      ["Structures_de_stage", "Statut", status],
+      ["Stages", "Structure_de_stage_Statut", status],
+      ["Stages", "Type_de_contact", ["Appel", "Visite"]],
+      ...["Ponctualite","Implication","Assiduite","Prise_d_initiative","Autonomie","Efficacite"]
+        .map((id): [string,string,string[]] => ["Stages",id,assessment]),
+      ["Structures_de_stage","Activites",["fromagerie","ehpah","bâtiment","menuiserie"]],
+      ["Eleves","Sexe",["F","M"]]
+    ];
+    for (const [tableId,columnId,values] of choices) {
+      const result = await callTool(bridge,"grist_change_structure",{
+        action:"append_choice_options",documentId,tableId,columnId,values
+      }) as {changed:boolean;persistedOptionsVerified:boolean;choices:string[]};
+      assertThat(result.persistedOptionsVerified && JSON.stringify(result.choices) === JSON.stringify(values)
+        && (!replay || !result.changed), "stage_topology_choices_not_reconciled");
+    }
+    for (const [tableId,columnId] of [["Structures_de_stage","Statut"],["Stages","Structure_de_stage_Statut"]]) {
+      for (const [label,colors] of Object.entries({
+        "à vérifier":{textColor:"#E8D62F"},
+        "refusé":{fillColor:"#FFFFFF",textColor:"#E00A17"},
+        "validé":{textColor:"#2AE028"},
+        "à compléter":{textColor:"#FD9D28"}
+      })) {
+        const result = await callTool(bridge,"grist_change_structure",{
+          action:"set_choice_colors",documentId,tableId,columnId,label,colors
+        }) as {changed:boolean;persistedOptionsVerified:boolean};
+        assertThat(result.persistedOptionsVerified && (!replay || !result.changed),
+          "stage_topology_choice_color_not_reconciled");
+      }
+    }
     for (const {columnId, condition} of dropdowns) {
       const updated = await callTool(bridge, "grist_change_structure", {
         action: "update_dropdown_condition", documentId, tableId: "Stages", columnId, condition

@@ -2777,7 +2777,7 @@ export class AuthorizedGristService {
           id: columnId, fields: { widgetOptions: plan.widgetOptions }
         }]);
         const after = await read();
-        if (after.type !== before.type ||
+        if (!isDeepStrictEqual(after.metadata, before.metadata) ||
             !isDeepStrictEqual(after.options, plan.options)) {
           throw new Error("Native choices did not persist without loss of sibling options.");
         }
@@ -2817,7 +2817,7 @@ export class AuthorizedGristService {
           id: columnId, fields: { widgetOptions: plan.widgetOptions }
         }]);
         const after = await read();
-        if (after.type !== before.type ||
+        if (!isDeepStrictEqual(after.metadata, before.metadata) ||
             !isDeepStrictEqual(after.options, plan.options)) {
           throw new Error("Native choice order or sibling options changed after write.");
         }
@@ -2855,7 +2855,7 @@ export class AuthorizedGristService {
           id: columnId, fields: { widgetOptions: plan.widgetOptions }
         }]);
         const after = await read();
-        if (after.type !== before.type ||
+        if (!isDeepStrictEqual(after.metadata, before.metadata) ||
             !isDeepStrictEqual(after.choices, before.choices) ||
             !isDeepStrictEqual(after.options, plan.options)) {
           throw new Error("Native choice colors or preserved choices differ after write.");
