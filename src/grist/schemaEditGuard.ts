@@ -36,7 +36,7 @@ function exactGuard(rule: NativeRule): boolean {
   return rule.aclFormula === OWNER_SCHEMA_FORMULA &&
     rule.permissionsText === SCHEMA_PERMISSION &&
     canonicalNativePredicate(rule.aclFormulaParsed) &&
-    Number.isSafeInteger(rule.rulePos) && (rule.rulePos ?? 0) > 0 &&
+    Number.isFinite(rule.rulePos) && (rule.rulePos ?? 0) > 0 &&
     (rule.fields.userAttributes === "" ||
       rule.fields.userAttributes === null ||
       rule.fields.userAttributes === undefined) &&
@@ -65,8 +65,8 @@ function defaultPolicy(snapshot: AccessRulesSnapshot): {
   if (rules.some(rule => rule !== guard && !userAttributeOnly(rule))) {
     throw new Error("Existing default ACL contains unsupported policy; refusing schema guard.");
   }
-  if (rules.some(rule => !Number.isSafeInteger(rule.rulePos) ||
-      (rule.rulePos ?? 0) < 1) ||
+  if (rules.some(rule => !Number.isFinite(rule.rulePos) ||
+      (rule.rulePos ?? 0) <= 0) ||
       new Set(rules.map(rule => rule.rulePos)).size !== rules.length) {
     throw new Error("Native default ACL order is ambiguous.");
   }
@@ -81,12 +81,15 @@ function defaultPolicy(snapshot: AccessRulesSnapshot): {
 
 /** Fail closed unless the existing default policy can be preserved exactly. */
 export function planOwnerSchemaGuard(snapshot: AccessRulesSnapshot): OwnerSchemaGuardPlan {
-  const { resource, rules, guard } = defaultPolicy(snapshot);
+  const { resource, guard } = defaultPolicy(snapshot);
   if (guard) return {
     mode: "noop", defaultResourceId: resource!.id, createDefaultResource: false,
     rulePos: guard.rulePos!
   };
-  const rulePos = Math.max(0, ...rules.map(rule => rule.rulePos!)) + 1;
+  // Grist allocates rulePos globally, even across unrelated resources.
+  // A collision can turn an integer request into a fractional position.
+  // Append beyond all existing finite positions, leaving every rule untouched.
+  const rulePos = Math.floor(Math.max(0, ...snapshot.rules.map(rule => rule.rulePos ?? 0))) + 1;
   if (!Number.isSafeInteger(rulePos)) throw new Error("Native ACL position is exhausted.");
   return {
     mode: "create",
