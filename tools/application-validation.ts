@@ -263,7 +263,13 @@ async function validateFromEmptyStageSkeleton(
     { id: "Justificatifs", fields: { type: "Attachments" } }
   ];
   const classColumns = writable([{ id: "Libelle", fields: { type: "Text" } }]);
-  const teacherColumns = writable([{ id: "Email", fields: { type: "Text" } }]);
+  const teacherColumns = writable([
+    { id: "Email", fields: { type: "Text" } },
+    { id: "Acces_Stages_Actif", fields: { type: "Bool" } },
+    { id: "Est_PP", fields: { type: "Bool" } },
+    { id: "Acces_Direction", fields: { type: "Bool" } },
+    { id: "Classes_PP", fields: { type: "RefList:Classes" } }
+  ]);
   const allStageColumns = writable([...stageColumns,
     { id: "Statut", fields: { type: "Choice" } }]);
   for (const [tableId, columns] of [
@@ -315,8 +321,8 @@ async function validateFromEmptyStageSkeleton(
     { Code: "B", Libelle: "Classe B synthétique" }
   ];
   const teachers = [
-    { Cle: "T-A", Email: TEACHER_A_EMAIL },
-    { Cle: "T-B", Email: TEACHER_B_EMAIL }
+    { Cle: "T-A", Email: TEACHER_A_EMAIL, Acces_Stages_Actif: true, Est_PP: false, Acces_Direction: false },
+    { Cle: "T-B", Email: TEACHER_B_EMAIL, Acces_Stages_Actif: true, Est_PP: false, Acces_Direction: false }
   ];
   const classesFirst = await ensureRows("Classes", "Code", classes);
   const teachersFirst = await ensureRows("Enseignants", "Cle", teachers);
@@ -331,7 +337,9 @@ async function validateFromEmptyStageSkeleton(
       Suivi_par: teachersFirst.recordIds[0], Structure: structures.recordIds[0],
       Statut: "À suivre", Commentaire: "Test A" },
     { Code_Stage: "S-B", Classe: classesFirst.recordIds[1],
-      Suivi_par: teachersFirst.recordIds[1], Statut: "En cours", Commentaire: "Test B" }
+      Suivi_par: teachersFirst.recordIds[1], Statut: "En cours", Commentaire: "Test B" },
+    { Code_Stage: "S-C", Classe: classesFirst.recordIds[1],
+      Suivi_par: teachersFirst.recordIds[0], Statut: "En cours", Commentaire: "Test C" }
   ];
   const stagesFirst = await ensureRows("Stages", "Code_Stage", stageRows);
 
@@ -499,9 +507,8 @@ async function validateFromEmptyStageSkeleton(
 
   const stages = recordsFrom(await gristApi(context.baseUrl, context.ownerKey,
     "/api/docs/" + encodeURIComponent(documentId) + "/tables/Stages/records"));
-  assertThat(stages.length === 2 &&
-    stages.some(row => row.fields.Code_Stage === "S-A") &&
-    stages.some(row => row.fields.Code_Stage === "S-B"),
+  assertThat(stages.length === 3 &&
+    ["S-A", "S-B", "S-C"].every(code => stages.some(row => row.fields.Code_Stage === code)),
     "from_empty_native_stage_data_incomplete");
 
   const labels = new Map(stages.map(row =>
@@ -531,6 +538,10 @@ async function validateFromEmptyStageSkeleton(
     "from_empty_native_page_not_unique");
   console.log("from-empty stage and structure forms, dropdown, row style and linked selector: PASS");
 
+  // Synthetic role policy, not a copy of the production application's ACL.
+  const flag = (attributeColumnId: string) => ({
+    kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId
+  });
   const policies = [
     {
       target: { userAttributeName: "Personnel" },
@@ -542,11 +553,25 @@ async function validateFromEmptyStageSkeleton(
       rules: [
         { condition: { kind: "user_access", operator: "equals", role: "owner" },
           permissions: { read: "allow", update: "allow" } },
+        { condition: { kind: "not", condition: flag("Acces_Stages_Actif") },
+          permissions: { read: "deny", update: "deny" } },
+        { condition: flag("Acces_Direction"),
+          permissions: { read: "allow", update: "unspecified" } },
+        { condition: { kind: "all", conditions: [
+          flag("Est_PP"),
+          { kind: "record_in_user_attribute_ref_list", operator: "in", columnId: "Classe",
+            attributeName: "Personnel", attributeColumnId: "Classes_PP" }
+        ] }, permissions: { read: "allow", update: "unspecified" } },
         { condition: { kind: "match_user_attribute", operator: "equals", columnId: "Suivi_par",
           attributeName: "Personnel", attributeColumnId: "id" },
           permissions: { read: "allow", update: "allow" } },
         { condition: { kind: "everyone" }, permissions: { read: "deny", update: "deny" } }
       ]
+    },
+    {
+      target: { tableId: "Enseignants" },
+      rules: [{ condition: { kind: "user_access", operator: "not_equals", role: "owner" },
+        permissions: { read: "unspecified", create: "deny", update: "deny", delete: "deny" } }]
     },
     {
       target: { tableId: "Stages", columnIds: ["Suivi_par"] },
@@ -582,6 +607,51 @@ async function validateFromEmptyStageSkeleton(
   assertThat(ownEdit >= 200 && ownEdit < 300 && otherEdit === 403 && reassignment === 403,
     `from_empty_native_acl_effect_wrong:${ownEdit}:${otherEdit}:${reassignment}`);
   console.log("from-empty synthetic stage schema, Form layout and authenticated ACL enforcement: PASS");
+
+  const stagePath = "/api/docs/" + encodeURIComponent(documentId) + "/tables/Stages/records";
+  const rolePath = "/api/docs/" + encodeURIComponent(documentId) + "/tables/Enseignants/records";
+  const teacherBId = teachersFirst.recordIds[1]!;
+  const roleCodes = async (apiKey: string, expected: string[]) => {
+    const status = await gristStatus(context.baseUrl, apiKey, stagePath, { method: "GET" });
+    if (expected.length === 0 && status === 403) return;
+    assertThat(status === 200, "from_empty_role_read_status:" + status);
+    const rows = recordsFrom(await gristApi(context.baseUrl, apiKey, stagePath));
+    const actual = rows.map(row => row.fields.Code_Stage).sort();
+    assertThat(JSON.stringify(actual) === JSON.stringify([...expected].sort()),
+      "from_empty_role_row_scope_wrong");
+  };
+  const setRoles = (fields: Record<string, unknown>) =>
+    callTool(bridge, "grist_change_records", {
+      action: "update", documentId, tableId: "Enseignants",
+      records: [{ id: teacherBId, fields }]
+    });
+  await roleCodes(context.teacherAKey, ["S-A", "S-C"]);
+  await roleCodes(context.teacherBKey, ["S-B"]);
+  // A real editor must not be able to grant themselves management privileges.
+  const selfPromotion = await gristStatus(context.baseUrl, context.teacherBKey, rolePath, {
+    method: "PATCH", body: JSON.stringify({
+      records: [{ id: teacherBId, fields: { Acces_Direction: true } }]
+    })
+  });
+  assertThat(selfPromotion === 403, "from_empty_role_self_promotion_allowed");
+  await setRoles({ Est_PP: true, Classes_PP: ["L", classesFirst.recordIds[0]] });
+  await roleCodes(context.teacherBKey, ["S-A", "S-B"]);
+  const ppForeignEdit = await updateStage(newStageContext, context.teacherBKey, ownStageId, {
+    Commentaire: "PP lecture seulement"
+  });
+  assertThat(ppForeignEdit === 403, "from_empty_role_pp_foreign_update_allowed");
+  await setRoles({ Acces_Direction: true });
+  await roleCodes(context.teacherBKey, ["S-A", "S-B", "S-C"]);
+  await setRoles({ Acces_Stages_Actif: false });
+  await roleCodes(context.teacherBKey, []);
+  const inactiveEdit = await updateStage(newStageContext, context.teacherBKey, otherStageId, {
+    Commentaire: "Accès désactivé"
+  });
+  assertThat(inactiveEdit === 403, "from_empty_role_inactive_update_allowed");
+  await setRoles({ Acces_Stages_Actif: true, Acces_Direction: false });
+  await roleCodes(context.teacherBKey, ["S-A", "S-B"]);
+  await roleCodes(context.teacherAKey, ["S-A", "S-C"]);
+  console.log("from-empty authenticated teacher, class PP, direction and disabled role boundaries: PASS");
 
   const publishForm = (targetPageId: number, widgetId: number) =>
     callTool(bridge, "grist_change_ui", {
