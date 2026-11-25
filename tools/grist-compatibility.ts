@@ -3093,6 +3093,40 @@ async function run(): Promise<void> {
       ...reorderedChoices, orderedLabels: ["en attente", "refusé"]
     });
 
+    // Calculated choices have the same native presentation options; the formula
+    // and ownership must survive each mutation.
+    await callTool(bridgeBaseUrl, "grist_add_structure", {
+      action: "ensure_columns", documentId: emptyDocumentId, tableId: "CompatChoices",
+      columns: [
+        {id:"CalculatedStatus",fields:{type:"Choice",isFormula:true,formula:"$Status"}},
+        {id:"CalculatedTags",fields:{type:"ChoiceList",isFormula:true,formula:"$Tags"}}
+      ]
+    });
+    for (const [columnId, formula] of [["CalculatedStatus","$Status"],["CalculatedTags","$Tags"]]) {
+      const requests = [
+        {...choicesRequest,columnId},
+        {...colorRequest,columnId},
+        {...reorderedChoices,columnId}
+      ];
+      for (const request of requests) {
+        const changed = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",request),
+          "calculated_choice_mutation");
+        assert(changed.changed === true && changed.persistedOptionsVerified === true,
+          "calculated_choice_write_not_verified");
+        const replay = resultJson(await callTool(bridgeBaseUrl,"grist_change_structure",request),
+          "calculated_choice_replay");
+        assert(replay.changed === false, "calculated_choice_replay_changed");
+      }
+      const current = await gristApi(gristBaseUrl,apiKey,
+        `${configuredDocPath}/tables/CompatChoices/columns`) as {
+          columns: Array<{id:string;fields:{formula:string;isFormula:boolean;widgetOptions:string}}>
+        };
+      const calculated = current.columns.find(column => column.id === columnId);
+      assert(calculated?.fields.isFormula === true && calculated.fields.formula === formula &&
+        isDeepStrictEqual(JSON.parse(calculated.fields.widgetOptions).choices,reorderedChoices.orderedLabels) &&
+        isDeepStrictEqual(JSON.parse(calculated.fields.widgetOptions).choiceOptions["en attente"],colorRequest.colors),
+        "calculated_choice_native_metadata_wrong");
+    }
     const nativeChoiceColumns = await gristApi(gristBaseUrl, apiKey,
       `${configuredDocPath}/tables/CompatChoices/columns`) as {
         columns: Array<{ id: string; fields: { type: string; widgetOptions: string } }>

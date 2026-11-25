@@ -6,7 +6,7 @@ const snapshot = (type = "Choice", widgetOptions = JSON.stringify({
   choices: ["validé"], choiceOptions: { "validé": { fillColor: "#12AB34" } },
   formRequired: true, custom: { protected: "preserved" }
 }), isFormula = false) => ({ columns: [
-  { id: "Status", fields: { type, isFormula, widgetOptions } },
+  { id: "Status", fields: { type, isFormula, ...(isFormula ? {formula: "$Other"} : {}), widgetOptions } },
   { id: "Name", fields: { type: "Text", isFormula: false, widgetOptions: "" } }
 ] });
 
@@ -22,10 +22,20 @@ test("append native Choice labels without modifying existing colors or Form opti
   assert.equal(planAppendChoiceOptions(reread, ["en attente", "validé", "refusé"]).changed, false);
 });
 
-test("ChoiceList is supported but a Text/formula column or malformed metadata is refused", () => {
+test("Choice and ChoiceList formulas are supported; Text or incomplete metadata is refused", () => {
   assert.equal(readChoiceColumnState(snapshot("ChoiceList", ""), "Status", 50).type, "ChoiceList");
   assert.throws(() => readChoiceColumnState(snapshot("Text"), "Status", 50), /Choice or ChoiceList/);
-  assert.throws(() => readChoiceColumnState(snapshot("Choice", "{}", true), "Status", 50), /non-formula/);
+  for (const type of ["Choice", "ChoiceList"]) {
+    const before = readChoiceColumnState(snapshot(type, "{}", true), "Status", 50);
+    assert.equal(before.metadata.formula, "$Other");
+    const appended = planAppendChoiceOptions(before, ["validé", "refusé"]);
+    const after = readChoiceColumnState(snapshot(type, appended.widgetOptions, true), "Status", 50);
+    assert.deepEqual(after.metadata, before.metadata);
+    assert.equal(planSetChoiceColors(after, "validé", {textColor: "#12AB34"}).changed, true);
+    assert.equal(planReorderChoiceOptions(after, ["refusé", "validé"]).changed, true);
+  }
+  assert.throws(() => readChoiceColumnState({columns: [{id:"Status",
+    fields:{type:"Choice",isFormula:true,widgetOptions:"{}"}}]}, "Status", 50), /complete formula metadata/);
   assert.throws(() => readChoiceColumnState(snapshot("Choice", '{"choices":["x","x"]}'), "Status", 50), /ambiguous/);
   assert.throws(() => readChoiceColumnState(snapshot("Choice", '{"choices":null}'), "Status", 50), /malformed/);
   assert.throws(() => readChoiceColumnState({ columns: [] }, "Status", 50), /absent/);

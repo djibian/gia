@@ -19,23 +19,27 @@ function validChoice(value: unknown): value is string {
 /** A complete typed native schema read must precede every choice mutation. */
 export function readChoiceColumnState(
   response: unknown, columnId: string, limit: number
-): { type: "Choice" | "ChoiceList"; options: JsonRecord; choices: string[] } {
+): { type: "Choice" | "ChoiceList"; metadata: JsonRecord; options: JsonRecord; choices: string[] } {
   const options = readFormColumnOptions(response, columnId, limit);
   const columns = record(response)?.columns;
   const column = Array.isArray(columns)
     ? columns.find(item => record(item)?.id === columnId) : undefined;
   const fields = record(record(column)?.fields);
   if (!fields || (fields.type !== "Choice" && fields.type !== "ChoiceList") ||
-      fields.isFormula !== false) {
-    throw new Error("Choice options require an existing non-formula Choice or ChoiceList column.");
+      typeof fields.isFormula !== "boolean" ||
+      (fields.isFormula && (typeof fields.formula !== "string" || !fields.formula.trim()))) {
+    throw new Error("Choice options require an existing Choice or ChoiceList column with complete formula metadata.");
   }
   const raw = options.choices;
   if (raw !== undefined && (!Array.isArray(raw) || raw.length > MAX_NATIVE_CHOICE_OPTIONS ||
       raw.some(value => !validChoice(value)) || new Set(raw).size !== raw.length)) {
     throw new Error("Existing native choices are malformed or ambiguous.");
   }
+  // Presentation edits must not change formula ownership, expression or other schema metadata.
+  const { widgetOptions: _options, ...metadata } = fields;
   return {
     type: fields.type,
+    metadata,
     options,
     choices: raw === undefined ? [] : [...raw as string[]]
   };

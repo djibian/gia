@@ -7,7 +7,7 @@ import { AuthorizedGristService } from "../src/grist/authorizedService.js";
 import type { GristService } from "../src/grist/service.js";
 import type { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
 
-function harness(opts: { denied?: boolean; corrupt?: boolean; type?: string; choices?: string[] } = {}) {
+function harness(opts: { denied?: boolean; corrupt?: boolean; type?: string; choices?: string[]; formula?: boolean; corruptFormula?: boolean } = {}) {
   let reads = 0, writes = 0;
   let raw = JSON.stringify({ choices: opts.choices ?? ["validé"], custom: { keep: true },
     choiceOptions: { "validé": { fillColor: "#12AB34" } }, formRequired: true });
@@ -16,7 +16,8 @@ function harness(opts: { denied?: boolean; corrupt?: boolean; type?: string; cho
     listColumns: async () => {
       reads++;
       return { columns: [{ id: "Status", fields: {
-        type: opts.type ?? "Choice", isFormula: false,
+        type: opts.type ?? "Choice", isFormula: opts.formula ?? false,
+        ...(opts.formula ? {formula: opts.corruptFormula && writes ? "$Changed" : "$Other"} : {}),
         widgetOptions: opts.corrupt && writes ? "{}" : raw
       } }] };
     },
@@ -157,4 +158,25 @@ test("choice reorder denies incomplete, unauthorized and uncertain native outcom
   await assert.rejects(corrupt.service.reorderChoiceOptions("doc","Stages","Status",
     ["refusé","validé"]), /may be uncertain/);
   assert.equal(corrupt.current().writes, 1);
+});
+
+
+test("calculated Choice presentation writes preserve formula metadata and replay", async () => {
+  const h = harness({formula:true});
+  await h.service.appendChoiceOptions("doc","Stages","Status",["refusé"]);
+  await h.service.setChoiceColors("doc","Stages","Status","refusé",{textColor:"#123456"});
+  await h.service.reorderChoiceOptions("doc","Stages","Status",["refusé","validé"]);
+  assert.deepEqual(h.current().options.choices, ["refusé","validé"]);
+  assert.equal(h.current().writes, 3);
+  await h.service.reorderChoiceOptions("doc","Stages","Status",["refusé","validé"]);
+  assert.equal(h.current().writes, 3);
+  for (const action of [
+    (s: AuthorizedGristService) => s.appendChoiceOptions("doc","Stages","Status",["nouveau"]),
+    (s: AuthorizedGristService) => s.setChoiceColors("doc","Stages","Status","validé",{textColor:"#123456"}),
+    (s: AuthorizedGristService) => s.reorderChoiceOptions("doc","Stages","Status",["refusé","validé"])
+  ]) {
+    const corrupt = harness({formula:true,corruptFormula:true,choices:["validé","refusé"]});
+    await assert.rejects(action(corrupt.service), /may be uncertain|may already have succeeded/);
+    assert.equal(corrupt.current().writes, 1);
+  }
 });

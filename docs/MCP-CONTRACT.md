@@ -162,8 +162,8 @@ complete persisted options, and returns an idempotent no-op on re-execution.
 publish forms, accept link-bearing question text, or change native sharing.
 
 `grist_change_structure(action="append_choice_options")` appends up to 64
-unique, nonempty plain-text labels to one existing non-formula native
-`Choice` or `ChoiceList` column. Only missing labels are appended in the
+unique, nonempty plain-text labels to one existing native
+`Choice` or `ChoiceList` column, including calculated columns with complete formula metadata. Only missing labels are appended in the
 caller-supplied order; existing choices are never removed, renamed or reordered.
 Native `widgetOptions.choices` is updated while sibling options, including
 choice colors, Form configuration and conditional styles, remain unchanged.
@@ -175,8 +175,8 @@ concurrent editors still need serialization. This action does not constrain
 row-level data or bypass ACLs, and adds no MCP tool.
 
 `grist_change_structure(action="reorder_choice_options")` reorders the exact
-complete set of 2–64 already configured labels in a native non-formula
-`Choice` or `ChoiceList` column. The caller supplies the entire ordered set;
+complete set of 2–64 already configured labels in a native
+`Choice` or `ChoiceList` column, including calculated columns. The caller supplies the entire ordered set;
 missing, extra, duplicate, malformed or unknown labels fail closed before a write.
 A successful reorder changes only the ordered `widgetOptions.choices` array,
 preserving all choice colors and sibling Form, style and other options. Gia
@@ -189,9 +189,11 @@ replay. It cannot edit record values, authorizations or individual choice names.
 closed `#RRGGBB` colors of a *previously configured* Choice or ChoiceList label.
 It preserves the choice list, other label colors, Form settings and all sibling
 native options; a repeated identical request is a verified no-op. Unknown labels,
-non-choice or formula columns, malformed existing color state, excessive metadata
+non-choice columns, incomplete formula metadata, malformed existing color state, excessive metadata
 and invalid color values are refused before any write. It uses `doc.schema:write`
-and complete native readback, never updates row values or grants.
+and complete native readback, never updates row values or grants. All three choice
+presentation operations verify unchanged formula ownership, expression and other
+native column metadata as well as the requested options.
 Uncertain effects must be reconciled without blind retries.
 
 `grist_change_structure(action="update_dropdown_condition")` applies or clears
