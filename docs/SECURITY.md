@@ -167,13 +167,19 @@ actually exercised. A native API result applies to that API case. A LinkKey
 browser result applies to the tested web-client context. Native production
 qualification is read-only, and any unexercised case remains unqualified.
 
-Custom widget data access is a distinct explicit authority boundary.
-An MCP caller must confirm `confirmDataAccess:true` to select `read table`
-or `full`; Gia also checks a fresh native Grist Owner role before the fixed
-widget metadata write. Ordinary `doc.schema:write` alone cannot grant data to
-an embedded remote widget. Reducing access to `none` or changing inert options
-remains schema-scoped. The selected access level does not prove remote code
-integrity, Grist enforcement or safe use of external services.
+Custom widget data access requires a fresh native Grist Owner role and
+`doc.schema:write`. The deployment registry grants standing authority for
+`read table` or `full` on exact approved direct selections. The existing
+explicit `confirmDataAccess:true` path applies to other selections, including
+catalog mode where Grist can substitute a URL cached by the browser. Initial
+installation still starts at `none`.
+
+Permanent HTTPS URLs may serve evolving, operator-trusted code, including
+multiple entries on one domain. The registered frame hostname must differ from
+Grist's to separate the Grist origin and host cookies. Grist executes the
+widget on the current user's behalf. The registry and readback verify the
+configured metadata. The operator trusts the deployment, redirect behavior
+and its dependencies.
 
 Form-column writes are one-column, schema-gated, complete-snapshot
 read-modify-write operations, refusing ambiguous/truncated native metadata,

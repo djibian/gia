@@ -20,8 +20,8 @@ as oracle, and qualify unknown native behavior before claiming a contract.
    document settings, typed ACL and special schema-policy gaps, preserving
    untargeted state and native Owner enforcement.
 3. **Usable UI:** configure and publish native forms with explicit authority,
-   resolve stable field and inter-component references, and configure trusted,
-   version-pinned custom widgets without arbitrary URLs or code execution.
+   resolve stable field and inter-component references, and qualify the real trusted
+   custom widgets in Grist’s browser using approved maintained URLs.
 4. **Document access:** qualify and, under a separately authorized document-
    scoped capability, configure existing-user shares and publication; never
    expand general account, service-account or organization administration.
@@ -35,8 +35,8 @@ as oracle, and qualify unknown native behavior before claiming a contract.
 
 Do not add a new MCP tool or broad raw-Grists operations speculatively.
 Preserve the ten-tool v2 interface where compatible; a breaking change
-requires a separately justified contract-major decision. Native publication,
-access changes and full widget authority require explicit user authorization.
+requires a separately justified contract-major decision. Native publication and access changes remain separately authorized. The
+operator’s trusted widget registry supplies standing widget approval.
 Current acceptance evidence and the detailed design review live in #295.
 Remove completed work from this Roadmap as it converges.
 

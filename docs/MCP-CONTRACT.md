@@ -343,22 +343,28 @@ verify persisted semantics; concurrent writers still require serialization,
 and an uncertain write must be reconciled before replay. Native metadata
 persistence is not proof of browser rendering.
 
-An operator-approved `grist_change_ui(action="install_trusted_widget")` selects one revisioned HTTPS custom widget on an empty native Custom section. The model provides only a `trustedKey` and `confirmExternalWidget:true`, never arbitrary URL/code. Deployment must configure `GIA_TRUSTED_CUSTOM_WIDGETS_JSON` as a bounded JSON list of `{key,name,widgetId,revision,url}`, with each HTTPS URL on a distinct host and including the revision in its path. Default is deny. Native Owner plus `doc.schema:write` are required. Selection is saved as Grist `customView`, with initial `access:none`, preserving unrelated section options and refusing occupied/customized widgets. Post-read confirms saved identity and access, with uncertain effects never blindly replayed. This is metadata persistence, not a verification of remotely served JavaScript or its subresources: operators must independently audit and host immutable code.
+An operator-approved `grist_change_ui(action="install_trusted_widget")` selects
+one registered HTTPS widget on a blank native Custom section. The deployment
+registry `GIA_TRUSTED_CUSTOM_WIDGETS_JSON` accepts up to 12 entries with
+`{key,name,widgetId,url}`. Widgets may share a domain and use permanent URLs
+with maintained code. Frame URLs use a hostname distinct from Grist and omit
+credentials, queries and fragments. The caller sends a `trustedKey` and
+`confirmExternalWidget:true`. Native Owner and `doc.schema:write` are required.
+Gia verifies the saved identity and initial `access:none`, preserves unrelated
+options and refuses occupied sections. Repeating the completed selection is a
+no-op. An uncertain write requires reconciliation.
 
-An operator may add `directUrl:true` to an approved registry entry to select
-the pinned URL directly. Gia then sets the native frame URL and leaves both
-catalog ID fields empty, so Grist cannot substitute a catalog URL for that
-section. Gia verifies the private URL on readback and returns the approved
-key without disclosing the URL. Operator-approved direct widgets accept the
-same bounded literal option patch and reset with native Owner proof. The
-normal widget access confirmation still applies. An entry without
-`directUrl:true` retains catalog selection, where Grist resolves the URL.
+Use `directUrl:true` to select the registered frame URL directly and leave both
+native catalog ID fields empty. Grist then loads that configured URL without
+catalog substitution. Gia verifies the URL privately and returns the registered
+key. Approved direct widgets accept bounded literal option changes and reset
+with native Owner proof. Catalog selection uses Grist’s native widget ID.
 Catalog widget IDs may include one native named variant suffix such as `#map`.
 This suffix is part of the widget ID. Approved frame URLs still forbid fragments.
 
 A separate `grist_change_ui(action="update_trusted_widget_revision")` replaces
-one previously approved immutable custom-widget revision with another approved
-revision **of the same widget and asset at the same origin and selection mode**. The model supplies
+one explicitly revision-labeled selection with another approved labeled
+selection **of the same widget and asset at the same origin and selection mode**. The optional registry field `revision` labels each asset URL for that operation. The model supplies
 `previousTrustedKey`, `trustedKey`, stable page/widget IDs and
 `confirmExternalWidget:true`; no URL or code enters the call. Native Owner
 and `doc.schema:write` remain mandatory. The persisted widget must exactly
@@ -371,8 +377,7 @@ an approved revision update. This does not prove the remote code is safe,
 nor provide an external compare-and-set or a blind retry guarantee.
 
 `grist_change_ui(action="configure_trusted_widget_references")` writes one
-managed option of an already installed, exactly matching approved widget
-revision metadata in native URL mode with `access:none`. It requires native Owner proof, `doc.schema:write`
+managed option of an already installed widget matching the approved selection in native URL mode with `access:none`. It requires native Owner proof, `doc.schema:write`
 and `confirmExternalWidget:true`. The deployment entry may declare
 `referenceOption:{key,version,tableSlots,columnSlots,defaults?}`. The
 `columnSlots` map assigns each column slot to its expected table slot.
@@ -385,27 +390,27 @@ and writes the configured key in native widget-owned options with
 table refs and each binding contains `tableRef` and `columnRef`. Gia keeps
 these refs private, verifies the resolved identities and preserves other
 options and access. Identical requests are no-ops and uncertain writes
-require reconciliation. The saved revision is metadata evidence. Grist's
+require reconciliation. The saved selection is metadata evidence. Grist's
 browser resolves its catalog and frame URL separately. Effective rendering,
 remote code behavior and any later grant of access require their own qualification.
 
 To use an approved custom widget as a direct linking source, the operator adds
-`allowSelectBy:true` to its approved `directUrl:true` revision after verifying that the widget
+`allowSelectBy:true` to its approved `directUrl:true` entry after verifying that the widget
 declares Grist's linking support. The caller makes a standalone
 `update_widget` with `selectBy:{sourceWidgetId,trustedSourceKey}`. Gia requires
 fresh native Owner, the exact approved active source on the same page and
 table, and normally an acyclic graph. To admit a reciprocal direct cursor
 pair, the operator must additionally set `allowReciprocalCursor:true` on the
-exact revision, after auditing that the widget uses cursor linking only and
+exact entry, after auditing that the widget uses cursor linking only and
 never activates a dynamic selected-row filter under any permitted settings.
 This flag requires both `directUrl:true` and `allowSelectBy:true`. Create the
 ordinary native-to-Custom edge first, then close the pair with the explicit
 trusted source key. Only one Custom and one ordinary native grid/Card/Card
 List/Form on the same verified non-summary table, with complete zero-column
 metadata, are accepted. Replaying either edge is a no-op and requires the
-active exact approved Custom revision and fresh Owner proof. Clear a
+active exact approved Custom selection and fresh Owner proof. Clear a
 reciprocal link before changing a trusted widget revision.
-Granting widget data access remains a separate confirmed operation. Native
+Granting widget data access remains a separate operation under the registered widget policy. Native
 metadata verification does not qualify remote cursor behavior or enforce
 the operator's code audit in the browser.
 
@@ -508,14 +513,19 @@ writes require inspection before retry. This does not remove the remote
 widget, certify its code or grant any remote data access.
 
 `grist_change_ui(action="update_widget", update:{customWidgetSettings:{access}})`
-accepts the native levels `none`, `read table`, and `full`. Granting either
-non-`none` level requires `confirmDataAccess:true`, `doc.schema:write` and a
-fresh **native Grist document Owner** proof, even when the selected level is
-already persisted. Omission of confirmation rejects before any write. Reducing
-access to `none`, changing mappings or patching inert widget-owned options
-does not demand Owner on top of the normal schema grant. The confirmation
-is not stored in the document or echoed as evidence of widget-code integrity;
-remote widget execution and effective access must be qualified separately.
+accepts the native levels `none`, `read table`, and `full`. Both data-bearing
+levels require `doc.schema:write` and fresh native Grist document Owner proof.
+An exact registered `directUrl:true` selection carries standing approval for
+either level. This mode also works for widgets distributed by a catalog.
+Native catalog selections and other selections use the existing
+`confirmDataAccess:true` path, since Grist can substitute a cached catalog URL. A request relying on the registry
+re-reads the widget immediately before the write. Reducing access to `none`
+and schema-scoped inert settings changes use their existing authorization.
+
+Grist runs the configured widget in the browser with the current Grist user’s
+authority. Registry approval covers evolving code served through the approved
+deployment. Persisted selection and grant verification describe metadata.
+Browser behavior and remote code integrity require separate evidence.
 
 ### Individual document sharing (Owner-only)
 

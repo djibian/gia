@@ -97,12 +97,16 @@ test("trusted reference option resolves only approved slots and preserves inacti
     assert.throws(() => approvedWidgets(JSON.stringify([{ ...approved, referenceOption: invalid }]), base));
   }
 });
-test("trusted registry requires distinct HTTPS versioned origin and defaults to deny",()=>{
+test("trusted registry accepts shared-host permanent HTTPS URLs and defaults to deny",()=>{
   assert.deepEqual(approvedWidgets(undefined,base),[]);
   assert.deepEqual(approvedWidgets(JSON.stringify([approved]),base),[approved]);
+  const permanent = [
+    {key:"timeline",name:"Timeline",widgetId:"@test/timeline",url:"https://widgets.example.org/timeline/"},
+    {key:"summary",name:"Summary",widgetId:"@test/summary",url:"https://widgets.example.org/summary/"}
+  ];
+  assert.deepEqual(approvedWidgets(JSON.stringify(permanent),base),permanent);
   for(const entry of [
     {...approved,url:"https://grist.example.org/timeline/v1.0.0/index.html"},
-    {...approved,url:"https://widgets.example.org/timeline/latest/index.html"},
     {...approved,url:"https://widgets.example.org/timeline/v1.0.0/index.html?token=x"},
     {...approved,url:"http://widgets.example.org/timeline/v1.0.0/index.html"},
     {...approved,revision:"latest"}

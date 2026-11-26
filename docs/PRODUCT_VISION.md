@@ -50,6 +50,11 @@ unrestricted sharing, token exposure, global identity management, raw ACL
 formulas or implicit privilege escalation. New document-scoped access and
 publication capabilities require a separately checked owner/grant gate.
 
+Deployment operators can register trusted widgets at permanent HTTPS URLs
+with evolving code. A registered direct URL supplies standing approval for the
+native access the widget needs, including full access. Each grant still
+requires native Grist Owner authority and the schema capability.
+
 ## Design policy
 
 Prefer the small portion of Grist semantics that enables useful application work.

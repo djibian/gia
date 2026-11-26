@@ -235,6 +235,40 @@ test("widget data access requires explicit consent and native Owner before write
   );
 });
 
+test("standing widget grant matches the exact registered selection and still requires native Owner", async (t) => {
+  const url = "https://widgets.example.org/tools/widget/";
+  const beforeRegistry = process.env.GIA_TRUSTED_CUSTOM_WIDGETS_JSON;
+  const beforeBase = process.env.GRIST_BASE_URL;
+  process.env.GIA_TRUSTED_CUSTOM_WIDGETS_JSON = JSON.stringify([
+    { key: "widget", name: "Widget", widgetId: "@example/widget", url, directUrl: true }
+  ]);
+  process.env.GRIST_BASE_URL = "https://grist.example.org";
+  t.after(() => {
+    if (beforeRegistry === undefined) delete process.env.GIA_TRUSTED_CUSTOM_WIDGETS_JSON;
+    else process.env.GIA_TRUSTED_CUSTOM_WIDGETS_JSON = beforeRegistry;
+    if (beforeBase === undefined) delete process.env.GRIST_BASE_URL;
+    else process.env.GRIST_BASE_URL = beforeBase;
+  });
+  const exact = { customView: JSON.stringify({ url, access: "none", widgetId: null }) };
+  const update = { customWidgetSettings: { access: "full" as const } };
+  const allowed = harness(true, exact);
+  await allowed.service.updatePageWidget("doc-1", 7, 21, update);
+  assert.equal(JSON.parse(allowed.currentOptions().customView as string).access, "full");
+  const nonOwner = harness(true, exact, false);
+  await assert.rejects(nonOwner.service.updatePageWidget("doc-1", 7, 21, update), /Native Grist Owner/);
+  assert.equal(nonOwner.writes.length, 0);
+  const unknown = harness(true, { customView: JSON.stringify({ url: url + "other", access: "none" }) });
+  await assert.rejects(unknown.service.updatePageWidget("doc-1", 7, 21, update), /confirmDataAccess:true/);
+  assert.equal(unknown.writes.length, 0);
+  const catalog = harness(true, { customView: JSON.stringify({
+    widgetId: "@example/widget", widgetDef: { name: "Widget", widgetId: "@example/widget",
+      url, accessLevel: "none", renderAfterReady: false },
+    url: null, access: "none", pluginId: ""
+  }) });
+  await assert.rejects(catalog.service.updatePageWidget("doc-1", 7, 21, update), /confirmDataAccess:true/);
+  assert.equal(catalog.writes.length, 0);
+});
+
 test("registered inspect and change callbacks never return private custom options", async () => {
   const { service, currentOptions, writes } = harness();
   const callbacks = new Map<string, (input: any) => Promise<any>>();

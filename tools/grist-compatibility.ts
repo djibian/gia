@@ -453,7 +453,7 @@ async function run(): Promise<void> {
         defaults: { layout: { compact: true } } }
     },{
       key: "compat-direct", name: "Compatibility direct widget", widgetId: "@test/compat",
-      revision: "v1.0.2", url: "https://widgets.example.org/compat/v1.0.2/index.html",
+      url: "https://widgets.example.org/compat/index.html",
       directUrl: true, allowSelectBy: true
     },{
       key: "compat-cursor", name: "Compatibility cursor widget", widgetId: "@test/cursor",
@@ -1667,7 +1667,7 @@ async function run(): Promise<void> {
       `/api/docs/${encodeURIComponent(directDocumentId)}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
     const directRow = directSections.records.find(section => section.id === directId);
     const directView = JSON.parse(JSON.parse(directRow?.fields.options as string).customView);
-    assert(directView.url === "https://widgets.example.org/compat/v1.0.2/index.html" &&
+    assert(directView.url === "https://widgets.example.org/compat/index.html" &&
       directView.widgetId === null && directView.widgetDef === null && directView.access === "none" &&
       directView.widgetOptions.fixtureMode === "test", "trusted_direct_native_selection_wrong");
 
@@ -1682,7 +1682,7 @@ async function run(): Promise<void> {
     await callToolExpectError(bridgeBaseUrl, "grist_change_ui", sourceLink);
     await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_widget", documentId: directDocumentId, pageId: directPageId, widgetId: directId,
-      update: { customWidgetSettings: { access: "read table", confirmDataAccess: true } }
+      update: { customWidgetSettings: { access: "full" } }
     });
     await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
       ...sourceLink, update: { selectBy: { sourceWidgetId: directId } }
@@ -1699,6 +1699,9 @@ async function run(): Promise<void> {
     const linkedSections = await gristApi(gristBaseUrl, apiKey,
       `/api/docs/${encodeURIComponent(directDocumentId)}/tables/_grist_Views_section/records?hidden=true`) as MetaRecords;
     const linkedSection = linkedSections.records.find(section => section.id === linkedGridId);
+    const activeDirect = linkedSections.records.find(section => section.id === directId);
+    assert(JSON.parse(JSON.parse(activeDirect?.fields.options as string).customView).access === "full",
+      "trusted_standing_full_access_not_persisted");
     assert(linkedSection?.fields.linkSrcSectionRef === directId &&
       linkedSection.fields.linkSrcColRef === 0 && linkedSection.fields.linkTargetColRef === 0,
       "trusted_link_native_state_wrong");
