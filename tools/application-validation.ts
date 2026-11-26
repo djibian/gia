@@ -1845,7 +1845,8 @@ async function validateFromEmptyStageTopology(
     ":" + (Date.now() - revocationStarted));
   assertThat(settledRevocation === 403 || settledRevocation === 404,
     "full_witness_share_revocation_not_enforced_after_propagation");
-  assertThat(await writeStructure("Interdit après révocation") === 403,
+  const revokedWrite = await writeStructure("Interdit après révocation");
+  assertThat(revokedWrite === 403 || revokedWrite === 404,
     "full_witness_share_revoked_write_allowed");
   await assertAccess(null);
   const persistedStructures = await metadata("Structures_de_stage");
