@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   assertThat,
   callTool,
@@ -2942,16 +2943,45 @@ async function validateFromEmptyStageTopology(
   }
   console.log("from-empty witness: source-shaped LinkKey lookup, browser PP and ordinary visibility, missing/wrong/disabled keys: PASS");
   if (qualifyLiveWidgets) {
+    const alternateStructure = (await metadata("Structures_de_stage"))
+      .find(row => row.fields.Nom_usuel === finalFormName);
+    assertThat(alternateStructure, "witness_live_alternate_structure_missing");
     await updateWitnessRow("Structures_de_stage", recordIds.get("Structures_de_stage")!, {
       Latitude: 47.218, Longitude: -1.553
     });
+    await updateWitnessRow("Structures_de_stage", alternateStructure.id, {
+      Latitude: 45.764, Longitude: 4.835
+    });
     // This civic address can be sent to the geocoding service with synthetic data.
-    await updateWitnessRow("Enseignants", teacherA, {Adresse: "1 place du Capitole 31000 Toulouse"});
+    await updateWitnessRow("Enseignants", teacherA, {
+      Adresse: "1 place du Capitole 31000 Toulouse", Localisation_validee: true
+    });
+    await callTool(bridge, "grist_change_records", {
+      action: "update", documentId, tableId: "Stages",
+      records: [stageA, stageB].map(id => ({id, fields: {Suivi_par: 0}}))
+    });
+    const unassignedStages = await metadata("Stages");
+    assertThat(unassignedStages.filter(row => [stageA, stageB].includes(row.id) && row.fields.Suivi_par === 0)
+      .length === 2, "witness_live_assignment_seed_wrong");
     const browser = await startBrowser();
     const session = "/session/" + browser.sessionId;
     const request = (method: string, endpoint: string, payload?: unknown) =>
       driverRequest(browser.driverBase, method, session + endpoint, payload);
     const go = (url: URL) => navigate(browser.driverBase, browser.sessionId, url.href);
+    const execute = (script: string, args: unknown[]) =>
+      request("POST", "/execute/sync", {script, args});
+    const click = (selector: string) => execute(`
+      const node = document.querySelector(arguments[0]);
+      if (!node || node.disabled || !node.getClientRects().length) return false;
+      node.click();
+      return true;`, [selector]);
+    const waitFor = async (check: () => Promise<unknown>, label: string) => {
+      for (let attempt = 0; attempt < 40; attempt++) {
+        if (await check()) return;
+        await delay(500);
+      }
+      throw new Error(label);
+    };
     const behavior: Readonly<Record<string, {selector: string; text?: string}>> = {
       "structures-map": {selector: '#map .leaflet-marker-icon[title="Structure fictive"]'},
       "teacher-geocoder": {selector: ".menu .centered-column:last-child button.primary"},
@@ -2999,9 +3029,22 @@ async function validateFromEmptyStageTopology(
                 args: [wanted.selector, wanted.text ?? "", expected.origin, expected.pathname, spec.access, spec.key]
               }) as typeof observed;
               if (spec.key === "teacher-geocoder" && observed?.asset && observed.access && observed.behavior) {
-                await request("POST", "/execute/sync", {
-                  script: "document.querySelector(arguments[0]).click();", args: [wanted.selector]
-                });
+                assertThat(await click(wanted.selector), "witness_live_geocode_click_failed");
+              }
+              if (observed?.asset && observed.access && observed.behavior) {
+                if (spec.key === "structures-map") {
+                  await waitFor(() => click(`#map .leaflet-marker-icon[title="${finalFormName}"]`),
+                    "witness_live_map_alternate_marker_unavailable");
+                } else if (spec.key === "structure-assistant") {
+                  await execute(`const input = document.querySelector('#search');
+                    input.value = arguments[0];
+                    input.dispatchEvent(new Event('input', {bubbles: true}));`, [finalFormName]);
+                  await waitFor(() => click("#local-results .result-card button"),
+                    "witness_live_structure_alternate_result_unavailable");
+                } else if (spec.key === "assignment-assistant") {
+                  await waitFor(() => click("#generate"), "witness_live_generate_unavailable");
+                  await waitFor(() => click("#apply"), "witness_live_apply_unavailable");
+                }
               }
             } finally {
               await request("POST", "/frame", {id: null});
@@ -3012,6 +3055,13 @@ async function validateFromEmptyStageTopology(
         }
         assertThat(observed?.asset && observed.access && observed.behavior,
           "witness_live_widget_unqualified:" + spec.key + ":" + JSON.stringify(observed ?? "no-ready-frame"));
+        if (spec.reciprocal) {
+          await waitFor(() => execute(`const cursor = document.querySelector(arguments[0]);
+            return cursor?.closest('.gridview_row')?.textContent.includes(arguments[1]) === true;`,
+          [`.test-viewlayout-section-${gridId} .selected_cursor`, finalFormName]),
+          "witness_live_reciprocal_grid_cursor_unverified:" + spec.key);
+          console.log("from-empty Chromium widget: " + spec.key + " moves the native linked grid cursor: PASS");
+        }
         if (spec.key === "teacher-geocoder") {
           for (let attempt = 0; attempt < 40; attempt++) {
             const geocoded = await teacherRecord(teacherA);
@@ -3022,6 +3072,28 @@ async function validateFromEmptyStageTopology(
             await delay(500);
           }
           console.log("from-empty Chromium widget: geocoding wrote the mapped fields of the synthetic native row: PASS");
+        }
+        if (spec.key === "assignment-assistant") {
+          await waitFor(async () => (await metadata("Stages"))
+            .filter(row => [stageA, stageB].includes(row.id) && row.fields.Suivi_par === teacherA).length === 2,
+          "witness_live_assignment_native_write_unverified");
+          const assigned = await metadata("Stages");
+          const displayId = nativeColumn("Stages", "Suivi_par").fields.displayCol;
+          const displayColumn = columns.find(column => column.id === displayId)?.fields.colId;
+          const identity = (await teacherRecord(teacherA)).Identite;
+          assertThat(typeof displayColumn === "string" && typeof identity === "string",
+            "witness_live_assignment_display_helper_missing");
+          assertThat(assigned.length === unassignedStages.length, "witness_live_assignment_row_count_changed");
+          for (const before of unassignedStages) {
+            const after = assigned.find(row => row.id === before.id);
+            const expected = [stageA, stageB].includes(before.id)
+              ? {...before.fields, Suivi_par: teacherA, [displayColumn]: identity} : before.fields;
+            const changedFields = [...new Set([...Object.keys(expected), ...Object.keys(after?.fields ?? {})])]
+              .filter(column => !isDeepStrictEqual(after?.fields[column], expected[column]));
+            assertThat(after && changedFields.length === 0,
+              "witness_live_assignment_changed_untargeted_data:" + changedFields.join(","));
+          }
+          console.log("from-empty Chromium widget: allocation wrote only the two intended assignments: PASS");
         }
         console.log("from-empty Chromium widget: " + spec.key + " ready and mapped data behavior: PASS");
       }
