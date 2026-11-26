@@ -1647,14 +1647,16 @@ async function validateFromEmptyStageTopology(
   const structurePublished = await publish(structureForm);
   assertThat(structurePublished.changed && structurePublished.persistedPublicationIntentVerified,
     "stage_topology_structure_publication_failed");
-  const label = "Proposer une structure";
   const layout = formLayout(formSpecs.Stages!);
   const linkForms = () => callTool(bridge, "grist_change_ui", {
     action: "update_form_layout", documentId, ...stageForm,
-    layout: {...layout, confirmPublicLink: true, children: [
-      {type: "form_link", label, targetPageId: structureForm.pageId,
-        targetWidgetId: structureForm.widgetId}, ...layout.children
-    ]}
+    layout: {...layout, confirmPublicLink: true, children: layout.children.map(node =>
+      node.type === "section" ? {...node, children: [
+        ...node.children!.slice(0, 2),
+        {type: "form_link", label: "formulaire", prefix: "Vous pouvez ajouter votre structure de stage via ce ",
+          targetPageId: structureForm.pageId, targetWidgetId: structureForm.widgetId},
+        ...node.children!.slice(2)
+      ]} : node)}
   }) as Promise<{changed: boolean; persistedLayoutVerified: boolean}>;
   const linked = await linkForms();
   const stagePublished = await publish(stageForm);
@@ -1667,10 +1669,10 @@ async function validateFromEmptyStageTopology(
   const publishedSections = await metadata("_grist_Views_section");
   const source = publishedSections.find(section => section.id === stageForm.widgetId);
   const nativeForm = JSON.parse(String(source?.fields.layoutSpec)) as {
-    children: Array<{text?: string}>;
+    children: Array<{children?: Array<{text?: string}>}>;
   };
-  const link = /^\[Proposer une structure\]\(\/forms\/([a-zA-Z0-9_-]{1,100})\/([1-9]\d*)\)$/
-    .exec(nativeForm.children[0]?.text ?? "");
+  const link = /^Vous pouvez ajouter votre structure de stage via ce \[formulaire\]\(\/forms\/([a-zA-Z0-9_-]{1,100})\/([1-9]\d*)\)$/
+    .exec(nativeForm.children[1]?.children?.[2]?.text ?? "");
   assertThat(link && Number(link[2]) === structureForm.widgetId,
     "stage_topology_public_form_link_wrong");
   assertThat(![linked, linkedReplay, structurePublished, stagePublished]
