@@ -24,7 +24,7 @@ export interface TrustedWidgetReferences {
 }
 const KEY = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const VERSION = /^(?:v?[0-9]+\.[0-9]+\.[0-9]+|[0-9a-f]{40})$/;
-const ID = /^[@A-Za-z0-9][@A-Za-z0-9._/-]{0,119}$/;
+const ID = /^[@A-Za-z0-9][@A-Za-z0-9._/-]*(?:#[A-Za-z0-9][A-Za-z0-9._-]*)?$/;
 function obj(x: unknown): Json | null {
   return x !== null && typeof x === "object" && !Array.isArray(x) ? x as Json : null;
 }
@@ -114,7 +114,7 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
       typeof entry.key !== "string" || !KEY.test(entry.key) ||
       typeof entry.name !== "string" || !entry.name.trim() ||
       entry.name.length > 80 || /[<>\u0000-\u001f]/.test(entry.name) ||
-      typeof entry.widgetId !== "string" || !ID.test(entry.widgetId) ||
+      typeof entry.widgetId !== "string" || entry.widgetId.length > 120 || !ID.test(entry.widgetId) ||
       typeof entry.revision !== "string" || !VERSION.test(entry.revision) ||
       typeof entry.url !== "string" || entry.url.length > 1024 ||
       (entry.directUrl !== undefined && entry.directUrl !== true) ||

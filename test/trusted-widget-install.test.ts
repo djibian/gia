@@ -109,6 +109,20 @@ test("trusted registry requires distinct HTTPS versioned origin and defaults to 
   ])assert.throws(()=>approvedWidgets(JSON.stringify([entry]),base));
   assert.throws(()=>approvedWidgets(JSON.stringify([approved,approved]),base));
 });
+
+test("preserves the named variant of a native catalog widget ID", () => {
+  const catalog = { ...approved, widgetId: "@test/timeline#compact" };
+  const [item] = approvedWidgets(JSON.stringify([catalog]), base);
+  const installed = planTrustedWidgetInstall({ type: "custom", options: {} }, item!);
+  const view = JSON.parse(installed.options.customView as string);
+  assert.equal(view.widgetId, catalog.widgetId);
+  assert.equal(view.widgetDef.widgetId, catalog.widgetId);
+  assert.equal(view.access, "none");
+  for (const widgetId of ["@test/timeline#", "@test/timeline##compact", "@test/timeline#compact/path",
+    "@test/timeline#compact mode", "@test/timeline#compact\n", `@test/timeline#${"a".repeat(120)}`]) {
+    assert.throws(() => approvedWidgets(JSON.stringify([{ ...catalog, widgetId }]), base));
+  }
+});
 test("trusted widget native selection keeps zero access and refuses identity replacement",()=>{
   const planned=planTrustedWidgetInstall({type:"custom",options:{}},approved);
   assert(planned.changed);

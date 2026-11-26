@@ -353,6 +353,8 @@ key without disclosing the URL. Operator-approved direct widgets accept the
 same bounded literal option patch and reset with native Owner proof. The
 normal widget access confirmation still applies. An entry without
 `directUrl:true` retains catalog selection, where Grist resolves the URL.
+Catalog widget IDs may include one native named variant suffix such as `#map`.
+This suffix is part of the widget ID. Approved frame URLs still forbid fragments.
 
 A separate `grist_change_ui(action="update_trusted_widget_revision")` replaces
 one previously approved immutable custom-widget revision with another approved

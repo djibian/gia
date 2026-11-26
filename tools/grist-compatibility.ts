@@ -442,10 +442,10 @@ async function run(): Promise<void> {
   const bridge = startBridge({
     ...bridgeEnvironment({ gristBaseUrl, apiKey, documentId, workspaceId, port }),
     GIA_TRUSTED_CUSTOM_WIDGETS_JSON: JSON.stringify([{
-      key: "compat", name: "Compatibility widget", widgetId: "@test/compat",
+      key: "compat", name: "Compatibility widget", widgetId: "@test/compat#compact",
       revision: "v1.0.0", url: "https://widgets.example.org/compat/v1.0.0/index.html"
     },{
-      key: "compat-v2", name: "Compatibility widget", widgetId: "@test/compat",
+      key: "compat-v2", name: "Compatibility widget", widgetId: "@test/compat#compact",
       revision: "v1.0.1", url: "https://widgets.example.org/compat/v1.0.1/index.html",
       referenceOption: { key: "fixtureConfig", version: 2,
         tableSlots: ["items", "customers"],
@@ -1538,7 +1538,8 @@ async function run(): Promise<void> {
       "/api/docs/" + encodeURIComponent(documentId) + "/tables/_grist_Views_section/records?hidden=true") as MetaRecords;
     const trustedRow = trustedNative.records.find(row => row.id === trustedId);
     const trustedView = JSON.parse(JSON.parse(trustedRow?.fields.options as string).customView);
-    assert(trustedView.widgetId === "@test/compat" && trustedView.access === "none" &&
+    assert(trustedView.widgetId === "@test/compat#compact" &&
+      trustedView.widgetDef.widgetId === "@test/compat#compact" && trustedView.access === "none" &&
       trustedView.widgetDef.url === "https://widgets.example.org/compat/v1.0.0/index.html",
       "trusted_widget_native_identity_or_zero_access_missing");
     const repeatedInstall = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
@@ -1561,7 +1562,8 @@ async function run(): Promise<void> {
     const upgradedRow = upgradedRows.records.find(row => row.id === trustedId);
     const upgradedView = JSON.parse(JSON.parse(upgradedRow?.fields.options as string).customView);
     assert(upgradedView.widgetDef.url === "https://widgets.example.org/compat/v1.0.1/index.html" &&
-      upgradedView.widgetId === "@test/compat" && upgradedView.access === "none" &&
+      upgradedView.widgetId === "@test/compat#compact" &&
+      upgradedView.widgetDef.widgetId === "@test/compat#compact" && upgradedView.access === "none" &&
       upgradedView.columnsMapping == null, "trusted_revision_native_state_wrong");
     const repeatUpgrade = resultJson(await callTool(bridgeBaseUrl, "grist_change_ui", {
       action: "update_trusted_widget_revision", documentId, pageId, widgetId: trustedId,
