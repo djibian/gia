@@ -212,6 +212,103 @@ async function run({ baseUrl, version }: DisposableGrist): Promise<void> {
           observed: observed ?? "UNKNOWN", status }));
         if (status !== "PASS") process.exitCode = 1;
       }
+
+      // Qualify the source application's stronger indirection: a bounded
+      // LinkKey user-attribute lookup followed by typed row/flag predicates.
+      // Build the additional schema and policy with Gia. Synthetic secret
+      // values stay solely in the native disposable seed harness.
+      const personnelTable = "LinkKeyPersonnel";
+      await callTool(bridge.baseUrl, "grist_add_structure", {
+        action: "ensure_tables", documentId, tables: [{id: personnelTable, columns: [
+          {id: "Lookup", fields: {type: "Text", isFormula: false}},
+          {id: "Active", fields: {type: "Bool", isFormula: false}}
+        ]}]
+      });
+      await callTool(bridge.baseUrl, "grist_add_structure", {
+        action: "ensure_columns", documentId, tableId, columns: [
+          {id: "AssignedTo", fields: {type: "Ref:" + personnelTable, isFormula: false}}
+        ]
+      });
+      await applyActions(baseUrl, ownerKey, documentId, [
+        ["AddRecord", personnelTable, 1, {Lookup: tokenA, Active: true}],
+        ["AddRecord", personnelTable, 2, {Lookup: tokenB, Active: true}],
+        ["UpdateRecord", tableId, 1, {AssignedTo: 1}],
+        ["UpdateRecord", tableId, 2, {AssignedTo: 2}]
+      ]);
+      const ensureAttribute = () => callTool(bridge.baseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "ensure",
+        target: {userAttributeName: "Personnel"},
+        definition: {tableId: personnelTable, lookupColId: "Lookup",
+          source: {kind: "link_key", name: "Gate"}}
+      }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean}>;
+      const attribute = await ensureAttribute(), attributeReplay = await ensureAttribute();
+      assertThat(attribute.changed && attribute.persistedDefinitionVerified &&
+        !attributeReplay.changed && attributeReplay.persistedDefinitionVerified,
+        "linkkey_attribute_not_reconciled");
+      const ownerCondition = {kind: "user_access", operator: "equals", role: "owner"};
+      const everyone = {kind: "everyone"};
+      const full = {read: "allow", update: "allow", create: "allow", delete: "allow"};
+      const deny = {read: "deny", update: "deny", create: "deny", delete: "deny"};
+      const read = {read: "allow", update: "unspecified", create: "unspecified", delete: "unspecified"};
+      const controlCondition = {kind: "all", conditions: [
+        {kind: "match_boolean", columnId: "PublicControl", operator: "equals", value: true},
+        {kind: "user_access", operator: "equals", role: "viewer"},
+        {kind: "user_login_status", operator: "equals", value: true}
+      ]};
+      const ensurePolicy = (target: Record<string, unknown>, rules: unknown[]) =>
+        callTool(bridge.baseUrl, "grist_change_structure", {
+          action: "access_rule_group", documentId, mode: "ensure", target, rules
+        }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean}>;
+      for (const [target, rules] of [
+        [{tableId: personnelTable}, [
+          {condition: ownerCondition, permissions: full}, {condition: everyone, permissions: deny}
+        ]],
+        [{tableId, columnIds: ["Gate"]}, [
+          {condition: {kind: "user_access", operator: "not_equals", role: "owner"},
+            permissions: {read: "deny", update: "unspecified"}}
+        ]]
+      ] as const) {
+        const applied = await ensurePolicy(target, [...rules]);
+        const replay = await ensurePolicy(target, [...rules]);
+        assertThat(applied.changed && applied.persistedDefinitionVerified &&
+          !replay.changed && replay.persistedDefinitionVerified, "linkkey_attribute_protection_not_reconciled");
+      }
+      const attributeRules = [
+        {condition: ownerCondition, permissions: full},
+        {condition: controlCondition, permissions: read},
+        {condition: {kind: "all", conditions: [
+          {kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId: "Active"},
+          {kind: "match_user_attribute", operator: "equals", columnId: "AssignedTo",
+            attributeName: "Personnel", attributeColumnId: "id"}
+        ]}, permissions: read},
+        {condition: everyone, permissions: deny}
+      ];
+      const replaced = await callTool(bridge.baseUrl, "grist_change_structure", {
+        action: "access_rule_group", documentId, mode: "replace",
+        target: {tableId}, rules: attributeRules
+      }) as {changed: boolean; persistedDefinitionVerified: boolean};
+      const reconciled = await ensurePolicy({tableId}, attributeRules);
+      assertThat(replaced.changed && replaced.persistedDefinitionVerified &&
+        !reconciled.changed && reconciled.persistedDefinitionVerified, "linkkey_attribute_policy_not_reconciled");
+      const attributeScope = "authenticated_viewer_link_key_user_attribute_visibility";
+      const qualifyAttribute = async (id: string, expected: Exclude<VisibleRows, "both">, token?: string) => {
+        const observed = await observePage(driverBase, sessionId, urlFor(token)).catch(() => undefined);
+        const status = linkKeyVisibilityStatus(expected, observed);
+        const rendered = await inspectPage(driverBase, sessionId);
+        const noVisibleToken = ![tokenA, tokenB].some(marker => rendered.text.includes(marker));
+        console.log(JSON.stringify({version, surface, scope: attributeScope, id, expected,
+          observed: observed ?? "UNKNOWN", status, noVisibleToken}));
+        if (status !== "PASS" || !noVisibleToken) process.exitCode = 1;
+      };
+      for (const {id, expected, token} of cases) await qualifyAttribute(id, expected, token);
+      const setActive = (active: boolean) => callTool(bridge.baseUrl, "grist_change_records", {
+        action: "update", documentId, tableId: personnelTable,
+        records: [{id: 2, fields: {Active: active}}]
+      });
+      await setActive(false);
+      await qualifyAttribute("disabled-lookup-row", "none", tokenB);
+      await setActive(true);
+      await qualifyAttribute("reactivated-lookup-row", "beta", tokenB);
     } finally {
       await driverRequest(driverBase, "DELETE", "/session/" + sessionId).catch(() => {});
       driver.kill("SIGTERM");

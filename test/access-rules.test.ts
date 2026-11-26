@@ -1543,6 +1543,39 @@ test("native user-attribute create plans a single default resource and verifies 
   assert.throws(() => verifyUserAttributeMutation(before, altered, plan), /uniquely verified/);
 });
 
+test("native fractional ACL positions permit attribute replay and append without rewriting siblings", () => {
+  const resources = [{ id: 1, fields: { tableId: "*", colIds: "*" } }];
+  const definition = { tableId: "Projects", lookupColId: "ShareToken",
+    source: { kind: "link_key" as const, name: "StageToken" } };
+  const target = { userAttributeName: "Mentor" };
+  const native = JSON.stringify({
+    name: "Mentor", tableId: "Projects", lookupColId: "ShareToken", charId: "LinkKey.StageToken"
+  });
+  const row = { id: 10, fields: { resource: 1, rulePos: 0.5,
+    userAttributes: native, aclFormula: "", aclFormulaParsed: "", permissionsText: "" } };
+  const state = snapshot(resources, [row]);
+  const replay = resolveUserAttributeMutation(state, target, "ensure", definition);
+  assert.equal(replay.mode, "noop");
+  assert.equal(replay.rulePos, 0.5);
+  assert.equal(resolveUserAttributeMutation(state, target, "replace", definition).mode, "noop");
+  assert.equal(resolveUserAttributeMutation(state, target, "delete").rulePos, 0.5);
+  const changed = resolveUserAttributeMutation(state, target, "replace", {
+    ...definition, source: { kind: "link_key", name: "OtherToken" }
+  });
+  assert.equal(changed.rulePos, 0.5);
+  const added = resolveUserAttributeMutation(state, {userAttributeName: "OtherMentor"}, "ensure", definition);
+  assert.equal(added.mode, "create");
+  assert.equal(added.rulePos, 1);
+  const newRow = { id: 11, fields: { ...row.fields, rulePos: added.rulePos,
+    userAttributes: added.nativeDefinition } };
+  assert.equal(verifyUserAttributeMutation(state, snapshot(resources, [row, newRow]), added)
+    .persistedDefinitionVerified, true);
+  const exhausted = snapshot(resources, [{...row, fields: {...row.fields, rulePos: Number.MAX_SAFE_INTEGER}}]);
+  assert.equal(resolveUserAttributeMutation(exhausted, target, "ensure", definition).mode, "noop");
+  assert.throws(() => resolveUserAttributeMutation(exhausted, {userAttributeName: "OtherMentor"}, "ensure", definition),
+    /Cannot allocate a finite native user-attribute rule position/);
+});
+
 test("native user-attribute replacement preserves identity and unrelated policy rows", () => {
   const existingRaw = JSON.stringify({
     name: "Mentor", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
