@@ -1163,6 +1163,18 @@ export class AuthorizedGristService {
         layout,
         page.widgets.map((widget) => widget.id)
       );
+      const result = (current: typeof page, changed: boolean) => ({
+        documentId: id,
+        changed,
+        page: {
+          ...projectPublicPage(current),
+          widgetCount: current.widgets.length,
+          widgetIds: current.widgets.map(widget => widget.id)
+        }
+      });
+      if (sameJsonValue(page.layoutNormalized, resolved.expectedLayout)) {
+        return result(page, false);
+      }
       await this.uiActions.updatePageLayout(id, pageId, resolved.layoutSpecJson);
 
       try {
@@ -1180,15 +1192,7 @@ export class AuthorizedGristService {
             `Updated page ${pageId} did not match the requested normalized layout on re-read.`
           );
         }
-        const { widgets } = updatedPage;
-        return {
-          documentId: id,
-          page: {
-            ...projectPublicPage(updatedPage),
-            widgetCount: widgets.length,
-            widgetIds: widgets.map((widget) => widget.id)
-          }
-        };
+        return result(updatedPage, true);
       } catch (error) {
         throw new UiWriteVerificationError(
           "update_page_layout",
