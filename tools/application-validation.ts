@@ -1195,6 +1195,70 @@ async function validateFromEmptyStageTopology(
           }
         }
       }
+      if (page.name === "Ma classe") {
+        // Grist automatically aggregates Numeric source columns, but the
+        // source's Any Reste_a_attribuer is a separate summary-only formula.
+        // Resolve the generated table through Gia, never a source native ID.
+        const discovered = await callTool(bridge, "grist_discover", {
+          action: "tables", documentId
+        }) as {tables: Array<{id: string; fields: {
+          isSummary?: boolean; summarySourceTableId?: string
+        }}>};
+        const summaries = discovered.tables.filter(t => t.fields.isSummary &&
+          t.fields.summarySourceTableId === "Affectation");
+        assertThat(summaries.length === 1, "stage_topology_summary_table_ambiguous");
+        const summaryTableId = summaries[0]!.id;
+        const ensured = await callTool(bridge, "grist_add_structure", {
+          action: "ensure_columns", documentId, tableId: summaryTableId,
+          columns: [formula("Reste_a_attribuer", "Numeric", "$Stage_a_suivre - $Stages_attribues")]
+        }) as {changed: boolean; persistedSchemaVerified: boolean};
+        assertThat(ensured.persistedSchemaVerified && ensured.changed === !replay,
+          "stage_topology_summary_formula_not_reconciled");
+        // Visible fields, explicit widths and titles from the authorized
+        // source projection, keyed by logical widget purpose. No source
+        // row values, native IDs or opaque options are transferred.
+        const presentation: Array<{
+          key: string; title?: string; fields: Array<[string, number?]>;
+        }> = [
+          {key: "classes", fields: [["Classe"], ["Niveau"], ["Professeur_principal", 222]]},
+          {key: "bilan", title: "Répartition annuelle par enseignant",
+            fields: [["Enseignant"], ["count"], ["Stage_a_suivre"], ["Stages_attribues"], ["Reste_a_attribuer"]]},
+          {key: "periodes", title: "Bilan annuel",
+            fields: [["Numero"], ["Date_debut"], ["Date_fin"], ["Effectif"], ["Stages_declares"],
+              ["Sans_stage", 78], ["Stages_attribues", 107], ["Stages_sans_enseignants", 155]]},
+          {key: "stages", title: "Stages de la période",
+            fields: [["Eleve", 212], ["Structure_de_stage", 218], ["Commune", 137],
+              ["Suivi_par", 250], ["Type_de_contact", 152], ["Commentaire", 295]]},
+          {key: "affectations", title: "Répartition de la période",
+            fields: [["Enseignant"], ["Stage_a_suivre"], ["Stages_attribues", 131], ["Reste_a_attribuer", 135]]},
+          {key: "enseignants", fields: [["Identite", 272]]}
+        ];
+        for (const spec of presentation) {
+          const widgetId = ids.get(spec.key)!;
+          await callTool(bridge, "grist_change_ui", {
+            action: "update_widget", documentId, pageId, widgetId,
+            update: {
+              ...(spec.title === undefined ? {} : {title: spec.title}),
+              visibleFields: spec.fields.map(([columnId, width]) =>
+                ({columnId, ...(width === undefined ? {} : {width})}))
+            }
+          });
+        }
+        const configured = await callTool(bridge, "grist_inspect", {
+          action: "page_widgets", documentId, pageId
+        }) as {widgets: Array<{id: number; title?: string;
+          visibleFields?: Array<{columnId: string; width?: number}>}>};
+        for (const spec of presentation) {
+          const widget = configured.widgets.find(w => w.id === ids.get(spec.key));
+          assertThat(widget?.visibleFields?.length === spec.fields.length &&
+            (spec.title === undefined || widget.title === spec.title) &&
+            spec.fields.every(([columnId, width], index) =>
+              widget.visibleFields?.[index]?.columnId === columnId &&
+              (width === undefined || widget.visibleFields[index]?.width === width)),
+            "stage_topology_class_presentation_wrong:" + spec.key);
+        }
+        console.log("from-empty Ma classe: six widget field orders, explicit widths and four titles: PASS");
+      }
       const layout = layoutFor(page, ids);
       const layoutResult = await callTool(bridge, "grist_change_ui", {
         action: "update_layout", documentId, pageId, layout
@@ -1288,6 +1352,23 @@ async function validateFromEmptyStageTopology(
     period.Effectif === 1 && period.Stages_declares === 1 && period.Sans_stage === 0 &&
     period.Stages_attribues === 1 && period.Stages_sans_enseignants === 0,
     "stage_topology_native_formula_results_wrong");
+  const summaryTables = tables.filter(t => t.fields.summarySourceTable ===
+    tables.find(source => source.fields.tableId === "Affectation")?.id);
+  assertThat(summaryTables.length === 1, "stage_topology_native_summary_ambiguous");
+  const summaryTableId = String(summaryTables[0]!.fields.tableId);
+  for (const [id, expression] of [
+    ["Stage_a_suivre", "SUM($group.Stage_a_suivre)"],
+    ["Stages_attribues", "SUM($group.Stages_attribues)"],
+    ["Reste_a_attribuer", "$Stage_a_suivre - $Stages_attribues"]
+  ] as const) {
+    const col = nativeColumn(summaryTableId, id);
+    assertThat(col.fields.type === "Numeric" && col.fields.isFormula === true &&
+      col.fields.formula === expression, "stage_topology_native_summary_formula_wrong:" + id);
+  }
+  const summaryRows = await metadata(summaryTableId);
+  assertThat(summaryRows.length === 1 && summaryRows[0]?.fields.Stage_a_suivre === 2 &&
+    summaryRows[0]?.fields.Stages_attribues === 1 && summaryRows[0]?.fields.Reste_a_attribuer === 1,
+    "stage_topology_native_summary_results_wrong");
   assertThat(stage.Commune === "Commune Fictive",
     "stage_topology_native_commune_formula_wrong");
   // A zero allocation must exclude an otherwise matching teacher; a stage
