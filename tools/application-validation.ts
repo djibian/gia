@@ -1196,6 +1196,24 @@ async function validateFromEmptyStageTopology(
         }
       }
       if (page.name === "Ma classe") {
+        // Grist automatically aggregates Numeric source columns, but the
+        // source's Any Reste_a_attribuer is a separate summary-only formula.
+        // Resolve the generated table through Gia, never a source native ID.
+        const discovered = await callTool(bridge, "grist_discover", {
+          action: "tables", documentId
+        }) as {tables: Array<{id: string; fields: {
+          isSummary?: boolean; summarySourceTableId?: string
+        }}>};
+        const summaries = discovered.tables.filter(t => t.fields.isSummary &&
+          t.fields.summarySourceTableId === "Affectation");
+        assertThat(summaries.length === 1, "stage_topology_summary_table_ambiguous");
+        const summaryTableId = summaries[0]!.id;
+        const ensured = await callTool(bridge, "grist_add_structure", {
+          action: "ensure_columns", documentId, tableId: summaryTableId,
+          columns: [formula("Reste_a_attribuer", "Numeric", "$Stage_a_suivre - $Stages_attribues")]
+        }) as {changed: boolean; persistedSchemaVerified: boolean};
+        assertThat(ensured.persistedSchemaVerified && ensured.changed === !replay,
+          "stage_topology_summary_formula_not_reconciled");
         // Visible fields, explicit widths and titles from the authorized
         // source projection, keyed by logical widget purpose. No source
         // row values, native IDs or opaque options are transferred.
@@ -1334,6 +1352,23 @@ async function validateFromEmptyStageTopology(
     period.Effectif === 1 && period.Stages_declares === 1 && period.Sans_stage === 0 &&
     period.Stages_attribues === 1 && period.Stages_sans_enseignants === 0,
     "stage_topology_native_formula_results_wrong");
+  const summaryTables = tables.filter(t => t.fields.summarySourceTable ===
+    tables.find(source => source.fields.tableId === "Affectation")?.id);
+  assertThat(summaryTables.length === 1, "stage_topology_native_summary_ambiguous");
+  const summaryTableId = String(summaryTables[0]!.fields.tableId);
+  for (const [id, expression] of [
+    ["Stage_a_suivre", "SUM($group.Stage_a_suivre)"],
+    ["Stages_attribues", "SUM($group.Stages_attribues)"],
+    ["Reste_a_attribuer", "$Stage_a_suivre - $Stages_attribues"]
+  ] as const) {
+    const col = nativeColumn(summaryTableId, id);
+    assertThat(col.fields.type === "Numeric" && col.fields.isFormula === true &&
+      col.fields.formula === expression, "stage_topology_native_summary_formula_wrong:" + id);
+  }
+  const summaryRows = await metadata(summaryTableId);
+  assertThat(summaryRows.length === 1 && summaryRows[0]?.fields.Stage_a_suivre === 2 &&
+    summaryRows[0]?.fields.Stages_attribues === 1 && summaryRows[0]?.fields.Reste_a_attribuer === 1,
+    "stage_topology_native_summary_results_wrong");
   assertThat(stage.Commune === "Commune Fictive",
     "stage_topology_native_commune_formula_wrong");
   // A zero allocation must exclude an otherwise matching teacher; a stage
