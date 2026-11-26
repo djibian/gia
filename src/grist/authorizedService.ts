@@ -1532,7 +1532,7 @@ export class AuthorizedGristService {
   }
 
 
-  /** Change only a fully approved immutable widget revision before any data access. */
+  /** Change the URL of an approved revision-labeled widget before data access. */
   async updateTrustedWidgetRevision(
     documentIdOrUrl: string, pageId: number, widgetId: number,
     previousTrustedKey: string, trustedKey: string, confirmExternalWidget: true
@@ -1670,9 +1670,6 @@ export class AuthorizedGristService {
     }
     const grantsWidgetData = update.customWidgetSettings?.access !== undefined &&
       update.customWidgetSettings.access !== "none";
-    if (grantsWidgetData && update.customWidgetSettings?.confirmDataAccess !== true) {
-      throw new Error("Granting custom widget data access requires confirmDataAccess:true.");
-    }
     const trustedSourceKey = update.selectBy?.trustedSourceKey;
     if (trustedSourceKey !== undefined && (update.selectBy?.sourceColumnId !== undefined ||
         update.selectBy?.targetColumnId !== undefined ||
@@ -1719,11 +1716,17 @@ export class AuthorizedGristService {
         throw new Error(`Grist widget ${widgetId} does not exist on page ${pageId}.`);
       }
       const config = update.customWidgetSettings;
-      const approvedDirect = target.type === "custom" &&
+      const needsStandingGrant = grantsWidgetData && config?.confirmDataAccess !== true;
+      const needsDirectOptions = target.type === "custom" &&
         target.customWidgetSettings?.widgetId === undefined &&
-        (config?.optionsPatch !== undefined || config?.resetWidgetOptions === true) &&
+        (config?.optionsPatch !== undefined || config?.resetWidgetOptions === true);
+      const registeredDirect = target.type === "custom" && (needsStandingGrant || needsDirectOptions) &&
         approvedWidgets(process.env.GIA_TRUSTED_CUSTOM_WIDGETS_JSON, process.env.GRIST_BASE_URL ?? "")
           .some(item => item.directUrl === true && matchesTrustedWidgetSelection(target.options, item));
+      if (needsStandingGrant && !registeredDirect) {
+        throw new Error("Granting data access outside a registered direct selection requires confirmDataAccess:true.");
+      }
+      const approvedDirect = needsDirectOptions && registeredDirect;
       if (grantsWidgetData || config?.resetWidgetOptions === true || approvedDirect) {
         // Raising remote data access or clearing its persisted configuration requires native Owner.
         await this.inner.assertDocumentOwner(id);
@@ -1915,6 +1918,16 @@ export class AuthorizedGristService {
         assertCompleteUiSnapshot(fresh);
         if (!isDeepStrictEqual(fresh.pages.find(candidate => candidate.id === pageId), page)) {
           throw new Error("Native select-by page changed before writing; reconcile first.");
+        }
+      }
+      if (needsStandingGrant) {
+        const fresh = await this.loadDocumentUi(id);
+        assertCompleteUiSnapshot(fresh);
+        const current = fresh.pages.find(candidate => candidate.id === pageId)
+          ?.widgets.find(candidate => candidate.id === widgetId);
+        if (current?.type !== target.type || current.tableRef !== target.tableRef ||
+            !sameJsonValue(current.options, target.options)) {
+          throw new Error("Trusted widget changed before granting data access; reconcile first.");
         }
       }
       await this.uiActions.updatePageWidget(id, widgetId, adapterUpdate);

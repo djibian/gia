@@ -377,11 +377,6 @@ const customWidgetSettingsUpdateSchema = z
       (value.optionsPatch === undefined &&
         (value.access === undefined || value.access === "none")),
     "Widget option reset cannot be combined with a patch or a data access grant."
-  )
-  .refine(
-    (value) => value.access === undefined || value.access === "none" ||
-      value.confirmDataAccess === true,
-    "Granting custom widget data access requires confirmDataAccess:true."
   );
 
 const widgetVisibleFieldsSchema = z

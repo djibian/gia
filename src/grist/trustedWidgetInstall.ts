@@ -5,7 +5,8 @@ import { tableColumnMaps } from "./tableColumnMaps.js";
 
 type Json = Record<string, unknown>;
 export interface TrustedWidget {
-  key: string; name: string; widgetId: string; revision: string; url: string;
+  key: string; name: string; widgetId: string; url: string;
+  revision?: string;
   referenceOption?: ReferenceOptionManifest;
   directUrl?: true;
   allowSelectBy?: true;
@@ -94,7 +95,7 @@ export function matchesTrustedWidgetSelection(options: unknown, item: TrustedWid
     expected === null ? view[key] == null : isDeepStrictEqual(view[key], expected));
 }
 
-/** Only deployment operators can approve versioned remote origins, never MCP callers. */
+/** The deployment registry approves exact widget URLs, including maintained URLs. */
 export function approvedWidgets(raw: string | undefined, gristBase: string): TrustedWidget[] {
   if (!raw?.trim()) return [];
   if (raw.length > 8192) throw new Error("Trusted widget registry exceeds the maximum size.");
@@ -104,7 +105,7 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
   if (!Array.isArray(parsed) || parsed.length > 12) {
     throw new Error("Trusted widget registry must contain at most 12 entries.");
   }
-  const host = new URL(gristBase).hostname;
+  const gristHost = new URL(gristBase).hostname;
   const keys = new Set<string>();
   const directUrls = new Set<string>();
   return parsed.map((rawEntry): TrustedWidget => {
@@ -115,7 +116,8 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
       typeof entry.name !== "string" || !entry.name.trim() ||
       entry.name.length > 80 || /[<>\u0000-\u001f]/.test(entry.name) ||
       typeof entry.widgetId !== "string" || entry.widgetId.length > 120 || !ID.test(entry.widgetId) ||
-      typeof entry.revision !== "string" || !VERSION.test(entry.revision) ||
+      (entry.revision !== undefined &&
+        (typeof entry.revision !== "string" || !VERSION.test(entry.revision))) ||
       typeof entry.url !== "string" || entry.url.length > 1024 ||
       (entry.directUrl !== undefined && entry.directUrl !== true) ||
       (entry.allowSelectBy !== undefined && (entry.allowSelectBy !== true || entry.directUrl !== true)) ||
@@ -130,18 +132,18 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
     catch { throw new Error("Trusted widget URL must be HTTPS."); }
     if (url.protocol !== "https:" || url.username || url.password ||
       url.search || url.hash || entry.url.includes("?") || entry.url.includes("#") ||
-      url.hostname === host || !url.hostname.includes(".") ||
+      url.hostname === gristHost || !url.hostname.includes(".") ||
       url.hostname === "localhost" || url.hostname.endsWith(".localhost") ||
-      isIP(url.hostname) !== 0 ||
-      !url.pathname.split("/").some(s => s === entry.revision || s.startsWith(entry.revision + "."))) {
-      throw new Error("Trusted widget URL must use separate HTTPS origin and versioned path.");
+      isIP(url.hostname) !== 0) {
+      throw new Error("Trusted widget URL must use HTTPS on a host distinct from Grist, without credentials, query or fragment.");
     }
     if (entry.directUrl === true) {
       if (directUrls.has(url.href)) throw new Error("Duplicate trusted direct widget URL.");
       directUrls.add(url.href);
     }
     return {key:entry.key,name:entry.name,widgetId:entry.widgetId,
-      revision:entry.revision,url:url.href,
+      url:url.href,
+      ...(typeof entry.revision === "string" ? { revision: entry.revision } : {}),
       ...(entry.directUrl === true ? { directUrl: true } : {}),
       ...(entry.allowSelectBy === true ? { allowSelectBy: true } : {}),
       ...(entry.allowReciprocalCursor === true ? { allowReciprocalCursor: true } : {}),
@@ -194,7 +196,7 @@ export function planTrustedWidgetInstall(
   return {changed:true,options,optionsJson};
 }
 
-/** Configure one operator-declared option on an exact inactive widget revision. */
+/** Configure one operator-declared option on an exact inactive widget selection. */
 export function planTrustedWidgetReferences(
   widget: { type: string; options?: unknown },
   item: TrustedWidget,
@@ -256,7 +258,7 @@ export function planTrustedWidgetReferences(
   return { changed: true, options, optionsJson: JSON.stringify(options) };
 }
 
-/** Replace an approved immutable revision with another approved revision of the
+/** Replace an explicitly labeled revision with another approved revision of the
  * SAME widget, while access and all data-bearing settings are still blank. */
 export function planTrustedWidgetRevisionUpdate(
   widget: {type:string;options?:unknown},
@@ -266,15 +268,18 @@ export function planTrustedWidgetRevisionUpdate(
       previous.directUrl !== next.directUrl) {
     throw new Error("Trusted widget revision requires an existing Custom widget of the same identity.");
   }
-  const slot = (item: TrustedWidget): string => {
+  const slot = (item: TrustedWidget): string | null => {
+    if (item.revision === undefined) return null;
+    const revision = item.revision;
     const u = new URL(item.url);
-    const path = u.pathname.split("/").map(part =>
-      part === item.revision ? ":revision" :
-        part.startsWith(item.revision + ".") ? ":revision" + part.slice(item.revision.length) : part
-    ).join("/");
+    const parts = u.pathname.split("/");
+    if (!parts.some(part => part === revision || part.startsWith(revision + "."))) return null;
+    const path = parts.map(part => part === revision || part.startsWith(revision + ".")
+      ? ":revision" + part.slice(revision.length) : part).join("/");
     return u.origin + path;
   };
-  if (slot(previous) !== slot(next) ||
+  const previousSlot = slot(previous);
+  if (previousSlot === null || previousSlot !== slot(next) ||
       (previous.revision === next.revision && previous.url !== next.url)) {
     throw new Error("Trusted widget revision must preserve the approved origin and asset path.");
   }
