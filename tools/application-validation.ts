@@ -907,20 +907,29 @@ async function validateFromEmptyStageTopology(
       condition: {kind: "choice_id_in_record_reflist", recordColumnId: "Enseignants_affectables"},
       text: "choice.id in $Enseignants_affectables"}
   ];
+  // Non-secret source predicates and palette; no source row or native ID is used.
+  const contactStyles = [
+    {columnId: "Courriel", conditionFormula: [
+      "import re", "", "not re.match(",
+      '    r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$",',
+      '    $Courriel or ""', ")"
+    ].join("\n")},
+    {columnId: "Telephone", conditionFormula: [
+      "import re", "", "not re.match(",
+      '    r"^(\\d{2}\\.){4}\\d{2}$",',
+      '    ($Telephone or "").strip()', ")"
+    ].join("\n")}
+  ].map(rule => ({action: "append_style_rule", tableId: "Structures_de_stage",
+    ...rule, style: {fillColor: "#FFFFFF", textColor: "#E00A17", fontBold: true}}));
   const configureSchema = async (replay = false) => {
     for (const update of [{locale: "fr-FR"}, {timezone: "Europe/Paris"}]) {
       await callTool(bridge, "grist_change_structure", {
         action: "update_document", documentId, update
       });
     }
-    // Synthetic conditional presentation, not claimed to be the source palette.
-    for (const rule of [
-      {action: "append_row_style_rule", tableId: "Stages",
-        conditionFormula: "not $Suivi_par", style: {fillColor: "#FFF3D4", fontBold: true}},
-      {action: "append_style_rule", tableId: "Stages", columnId: "Structure_de_stage_Statut",
-        conditionFormula: '$Structure_de_stage_Statut == "à vérifier"',
-        style: {textColor: "#A00000", fontBold: true}}
-    ]) {
+    // The source also contains a raw-row helper with an empty formula.
+    // It is not a configured predicate and is deliberately not reconstructed.
+    for (const rule of contactStyles) {
       const result = await callTool(bridge, "grist_change_structure", {
         documentId, ...rule
       }) as {changed: boolean; persistedStyleVerified: boolean};
@@ -1313,6 +1322,22 @@ async function validateFromEmptyStageTopology(
     assertThat(table !== undefined && matches.length === 1, "stage_topology_reference_column_missing");
     return matches[0]!;
   };
+  const contactHelpers = contactStyles.map(rule => {
+    const column = nativeColumn(rule.tableId, rule.columnId);
+    const refs = column.fields.rules;
+    assertThat(Array.isArray(refs) && refs[0] === "L" && refs.length === 2,
+      "stage_topology_contact_style_ref_wrong:" + rule.columnId);
+    const helper = columns.find(col => col.id === refs[1]);
+    assertThat(helper !== undefined && helper.fields.parentId === column.fields.parentId &&
+      helper.fields.isFormula === true && helper.fields.formula === rule.conditionFormula &&
+      typeof helper.fields.colId === "string",
+      "stage_topology_contact_style_formula_wrong:" + rule.columnId);
+    const style = JSON.parse(String(column.fields.widgetOptions)).rulesOptions;
+    assertThat(Array.isArray(style) && style.length === 1 &&
+      style[0].fillColor === rule.style.fillColor && style[0].textColor === rule.style.textColor &&
+      style[0].fontBold === true, "stage_topology_contact_style_palette_wrong:" + rule.columnId);
+    return String(helper.fields.colId);
+  });
   let displayCount = 0;
   for (const [tableId, fields] of Object.entries(displayFields)) {
     for (const [columnId, visibleColumnId] of Object.entries(fields)) {
@@ -1352,6 +1377,24 @@ async function validateFromEmptyStageTopology(
     period.Effectif === 1 && period.Stages_declares === 1 && period.Sans_stage === 0 &&
     period.Stages_attribues === 1 && period.Stages_sans_enseignants === 0,
     "stage_topology_native_formula_results_wrong");
+  const contactId = recordIds.get("Structures_de_stage");
+  const updateContact = (fields: Record<string, unknown>) =>
+    callTool(bridge, "grist_change_records", {
+      action: "update", documentId, tableId: "Structures_de_stage",
+      records: [{id: contactId, fields}]
+    });
+  for (const [fields, expected] of [
+    [{Courriel: "contact@example.invalid", Telephone: " 02.40.02.28.33 "}, false],
+    [{Courriel: "invalide", Telephone: "0240022833"}, true],
+    [{Courriel: "", Telephone: ""}, true]
+  ] as const) {
+    await updateContact(fields);
+    const actual = await row("Structures_de_stage");
+    assertThat(contactHelpers.every(id => actual[id] === expected),
+      "stage_topology_contact_style_native_evaluation_wrong");
+  }
+  await updateContact({Courriel: structure.Courriel, Telephone: structure.Telephone});
+  console.log("from-empty stage schema: exact contact conditional styles and native valid/invalid/empty evaluation: PASS");
   const summaryTables = tables.filter(t => t.fields.summarySourceTable ===
     tables.find(source => source.fields.tableId === "Affectation")?.id);
   assertThat(summaryTables.length === 1, "stage_topology_native_summary_ambiguous");
