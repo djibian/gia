@@ -2621,6 +2621,101 @@ async function validateFromEmptyStageTopology(
   console.log("from-empty witness: four stage ACL groups, scoped PP assignment, narrow contact writes, public Form and replay: PASS");
 
   console.log("from-empty witness: Classes and Periodes_de_stage policies, class-statistic column confidentiality, native PP/direction permissions and replay: PASS");
+  // Reconstruct the four source Enseignants groups at the end of the witness.
+  // The earlier synthetic Email identity binding stays in place for API probes.
+  const teacherOwn = {kind: "all", conditions: [
+    {kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId: "Acces_Stages_Actif"},
+    {kind: "match_user_attribute", operator: "equals", columnId: "id",
+      attributeName: "Personnel", attributeColumnId: "id"}
+  ]};
+  const teacherPP = {kind: "all", conditions: [
+    {kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId: "Acces_Stages_Actif"},
+    {kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId: "Est_PP"}
+  ]};
+  const ownFormula = "user.Personnel.Acces_Stages_Actif and rec.id == user.Personnel.id";
+  const confidential = ["Token_Stages", "Id_Envoi_Stages", "Expediteur_Lien_Stages",
+    "Sujet_Lien_Stages", "Corps_Lien_Stages", "Envoyer_Lien_Stages", "Lien_Stages", "Est_PP", "Classes_PP"];
+  const teacherPolicies = [
+    {mode: "replace", target: {tableId: "Enseignants"}, rules: [
+      {condition: owner, permissions: all},
+      {condition: direction, permissions: {read: "allow", create: "allow", update: "deny", delete: "allow"}},
+      {condition: teacherOwn, permissions: readOnly}, {condition: everyone, permissions: none}
+    ], expected: [["user.Access==OWNER", "+CRUD"], [dirFormula, "+CRD-U"],
+      [ownFormula, "+R-CUD"], ["", "-CRUD"]]},
+    {mode: "ensure", target: {tableId: "Enseignants",
+      columnIds: ["Titre", "Nom", "Prenom", "Adresse", "Acces_Stages_Actif", "Acces_Direction"]},
+      rules: [{condition: direction, permissions: {read: "unspecified", update: "allow"}}],
+      expected: [[dirFormula, "+U"]]},
+    {mode: "ensure", target: {tableId: "Enseignants", columnIds: confidential}, rules: [
+      {condition: direction, permissions: {read: "deny", update: "deny"}},
+      {condition: teacherOwn, permissions: {read: "deny", update: "deny"}}
+    ], expected: [[dirFormula, "-RU"], [ownFormula, "-RU"]]},
+    {mode: "ensure", target: {tableId: "Enseignants", columnIds: ["Identite"]},
+      rules: [{condition: teacherPP, permissions: {read: "allow", update: "unspecified"}}],
+      expected: [["user.Personnel.Acces_Stages_Actif and user.Personnel.Est_PP", "+R"]]}
+  ];
+  for (const {mode, target, rules, expected} of teacherPolicies) {
+    const mutate = (intent: string) => callTool(bridge, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: intent, target, rules
+    }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean}>;
+    const first = await mutate(mode), replay = await mutate("ensure");
+    assertThat(first.changed && first.persistedDefinitionVerified &&
+      !replay.changed && replay.persistedDefinitionVerified, "witness_teacher_source_acl_not_reconciled");
+    const resources = (await metadata("_grist_ACLResources")).filter(row =>
+      row.fields.tableId === target.tableId && (target.columnIds === undefined ?
+        row.fields.colIds === "*" : typeof row.fields.colIds === "string" &&
+        JSON.stringify(row.fields.colIds.split(",").sort()) === JSON.stringify([...target.columnIds].sort())));
+    assertThat(resources.length === 1, "witness_teacher_source_acl_resource_wrong");
+    const native = (await metadata("_grist_ACLRules"))
+      .filter(row => row.fields.resource === resources[0]!.id)
+      .sort((a,b) => Number(a.fields.rulePos) - Number(b.fields.rulePos));
+    assertThat(native.length === expected.length && native.every((rule, i) =>
+      compactFormula(rule.fields.aclFormula) === compactFormula(expected[i]![0]) &&
+      rule.fields.permissionsText === expected[i]![1]), "witness_teacher_source_acl_native_wrong");
+  }
+  const teacherRecord = async (id: number) => (await metadata("Enseignants")).find(row => row.id === id)!.fields;
+  const ordinaryTeachers = await readTable(context.teacherAKey, "Enseignants");
+  assertThat(ordinaryTeachers.length === 1 && ordinaryTeachers[0]?.id === teacherA,
+    "witness_teacher_source_acl_own_scope_wrong");
+  const isCensored = (value: unknown) => value === undefined || JSON.stringify(value) === '["C"]';
+  assertThat(confidential.every(columnId => isCensored(ordinaryTeachers[0]!.fields[columnId])),
+    "witness_teacher_source_acl_own_confidentiality_wrong");
+  const ppTeachers = await readTable(context.teacherBKey, "Enseignants");
+  const ppOther = ppTeachers.find(row => row.id === teacherA);
+  assertThat(ppOther && ppOther.fields.Identite === (await teacherRecord(teacherA)).Identite &&
+    isCensored(ppOther.fields.Nom) && confidential.every(columnId => isCensored(ppOther.fields[columnId])),
+    "witness_teacher_source_acl_pp_identity_scope_wrong");
+  const patchTeacher = (key: string, fields: Record<string, unknown>) =>
+    gristStatus(context.baseUrl, key, path + "/tables/Enseignants/records", {
+      method: "PATCH", body: JSON.stringify({records: [{id: teacherA, fields}]})
+    });
+  const initialTeacher = await teacherRecord(teacherA);
+  assertThat(await patchTeacher(context.teacherAKey, {Nom: "Interdit enseignant"}) === 403 &&
+    JSON.stringify(await teacherRecord(teacherA)) === JSON.stringify(initialTeacher),
+    "witness_teacher_source_acl_self_write_allowed");
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: true});
+  const directionTeachers = await readTable(context.teacherBKey, "Enseignants");
+  const directionOther = directionTeachers.find(row => row.id === teacherA);
+  assertThat(directionOther && directionOther.fields.Nom === initialTeacher.Nom &&
+    directionTeachers.every(row => confidential.every(columnId => isCensored(row.fields[columnId]))),
+    "witness_teacher_source_acl_direction_scope_wrong");
+  const allowedTeacherWrite = await patchTeacher(context.teacherBKey, {Nom: "Nom synthétique direction"});
+  const changedTeacher = await teacherRecord(teacherA);
+  assertThat(allowedTeacherWrite >= 200 && allowedTeacherWrite < 300 &&
+    changedTeacher.Nom === "Nom synthétique direction", "witness_teacher_source_acl_direction_write_denied");
+  assertThat(await patchTeacher(context.teacherBKey, {Token_Stages: "synthetic-denied-marker"}) === 403 &&
+    JSON.stringify(await teacherRecord(teacherA)) === JSON.stringify(changedTeacher),
+    "witness_teacher_source_acl_confidential_write_allowed");
+  await updateWitnessRow("Enseignants", teacherA, {Nom: initialTeacher.Nom});
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: false});
+  const restoredPP = (await readTable(context.teacherBKey, "Enseignants")).find(row => row.id === teacherA);
+  assertThat(restoredPP && isCensored(restoredPP.fields.Nom),
+    "witness_teacher_source_acl_direction_restriction_not_restored");
+  await expectStageIds(context.teacherAKey, [stageA, stageC]);
+  await expectStageIds(context.teacherBKey, [stageA, stageB]);
+  console.log("from-empty witness: four teacher ACL groups, native identity visibility, confidentiality, narrow updates and replay: PASS");
+
+
 
 }
 
