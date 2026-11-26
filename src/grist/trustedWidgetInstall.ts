@@ -9,6 +9,7 @@ export interface TrustedWidget {
   referenceOption?: ReferenceOptionManifest;
   directUrl?: true;
   allowSelectBy?: true;
+  allowReciprocalCursor?: true;
 }
 interface ReferenceOptionManifest {
   key: string;
@@ -109,7 +110,7 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
   return parsed.map((rawEntry): TrustedWidget => {
     const entry = obj(rawEntry);
     if (!entry || Object.keys(entry).some(k =>
-      !["key","name","widgetId","revision","url","referenceOption","directUrl","allowSelectBy"].includes(k)) ||
+      !["key","name","widgetId","revision","url","referenceOption","directUrl","allowSelectBy","allowReciprocalCursor"].includes(k)) ||
       typeof entry.key !== "string" || !KEY.test(entry.key) ||
       typeof entry.name !== "string" || !entry.name.trim() ||
       entry.name.length > 80 || /[<>\u0000-\u001f]/.test(entry.name) ||
@@ -117,7 +118,9 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
       typeof entry.revision !== "string" || !VERSION.test(entry.revision) ||
       typeof entry.url !== "string" || entry.url.length > 1024 ||
       (entry.directUrl !== undefined && entry.directUrl !== true) ||
-      (entry.allowSelectBy !== undefined && (entry.allowSelectBy !== true || entry.directUrl !== true))) {
+      (entry.allowSelectBy !== undefined && (entry.allowSelectBy !== true || entry.directUrl !== true)) ||
+      (entry.allowReciprocalCursor !== undefined &&
+        (entry.allowReciprocalCursor !== true || entry.allowSelectBy !== true || entry.directUrl !== true))) {
       throw new Error("Malformed operator-approved widget entry.");
     }
     if (keys.has(entry.key)) throw new Error("Duplicate trusted widget registry key.");
@@ -141,6 +144,7 @@ export function approvedWidgets(raw: string | undefined, gristBase: string): Tru
       revision:entry.revision,url:url.href,
       ...(entry.directUrl === true ? { directUrl: true } : {}),
       ...(entry.allowSelectBy === true ? { allowSelectBy: true } : {}),
+      ...(entry.allowReciprocalCursor === true ? { allowReciprocalCursor: true } : {}),
       ...(entry.referenceOption === undefined ? {} : { referenceOption: readReferenceOption(entry.referenceOption) })};
   });
 }

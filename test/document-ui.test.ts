@@ -248,6 +248,19 @@ test("native reciprocal cursor pairs require verified ordinary tables and direct
   verify(build(ordinary, "record", 9), false);
   verify(build(ordinary, "custom"), false);
   verify(build(ordinary, "record", 0, "custom"), false);
+  const customPair = build(ordinary, "custom");
+  const [customSource, nativeTarget] = customPair.pages[0]!.widgets;
+  assert.doesNotThrow(() => assertDirectSelectByAllowed(customPair, customSource!, nativeTarget!, true, true));
+  assert.throws(() => assertDirectSelectByAllowed(customPair, customSource!, nativeTarget!, false, true), /not allowed/);
+  const reverseReplay = build(ordinary, "record", 0, "custom", 1);
+  const [nativeSource, customTarget] = reverseReplay.pages[0]!.widgets;
+  assert.doesNotThrow(() => assertDirectSelectByAllowed(reverseReplay, nativeSource!, customTarget!, false, true));
+  const reverseNew = build(ordinary, "record", 0, "custom");
+  const [reverseSource, reverseTarget] = reverseNew.pages[0]!.widgets;
+  assert.throws(() => assertDirectSelectByAllowed(reverseNew, reverseSource!, reverseTarget!, false, true), /cycle/);
+  const customColumn = build(ordinary, "custom", 9);
+  const [columnSource, columnTarget] = customColumn.pages[0]!.widgets;
+  assert.throws(() => assertDirectSelectByAllowed(customColumn, columnSource!, columnTarget!, true, true), /cycle/);
   const [source, target] = context.pages[0]!.widgets;
   assert.throws(() => resolveColumnSelectByAllowed(context, ordinary, source!, target!,
     { sourceWidgetId: 1, targetColumnId: "Other" }), /cycle/);

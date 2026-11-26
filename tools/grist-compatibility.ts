@@ -455,6 +455,10 @@ async function run(): Promise<void> {
       key: "compat-direct", name: "Compatibility direct widget", widgetId: "@test/compat",
       revision: "v1.0.2", url: "https://widgets.example.org/compat/v1.0.2/index.html",
       directUrl: true, allowSelectBy: true
+    },{
+      key: "compat-cursor", name: "Compatibility cursor widget", widgetId: "@test/cursor",
+      revision: "v1.0.0", url: "https://widgets.example.org/cursor/v1.0.0/index.html",
+      directUrl: true, allowSelectBy: true, allowReciprocalCursor: true
     }])
   });
 
@@ -1696,6 +1700,54 @@ async function run(): Promise<void> {
     assert(linkedSection?.fields.linkSrcSectionRef === directId &&
       linkedSection.fields.linkSrcColRef === 0 && linkedSection.fields.linkTargetColRef === 0,
       "trusted_link_native_state_wrong");
+
+    // Approved cursor-only custom revision: verify native reciprocal metadata
+    // and replay from both edges. The inert fixture does not execute remote code.
+    const cursorIds: number[] = [];
+    for (const type of ["custom", "record"]) {
+      const created = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
+        action: "add_widget", documentId: directDocumentId, pageId: directPageId, tableId: directTableId, type
+      }), "trusted_cursor_pair_widget");
+      cursorIds.push(positiveResultId((created.widget as Record<string, unknown>)?.id, "trusted_cursor_pair_id"));
+    }
+    const [cursorCustom, cursorGrid] = cursorIds as [number, number];
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      ...directRequest, widgetId: cursorCustom, trustedKey: "compat-cursor"
+    });
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      ...sourceLink, widgetId: cursorCustom,
+      update: { customWidgetSettings: { access: "read table", confirmDataAccess: true } }
+    });
+    const ordinaryEdge = { ...sourceLink, widgetId: cursorCustom,
+      update: { selectBy: { sourceWidgetId: cursorGrid } } };
+    const cursorEdge = { ...sourceLink, widgetId: cursorGrid,
+      update: { selectBy: { sourceWidgetId: cursorCustom, trustedSourceKey: "compat-cursor" } } };
+    const readCursorSections = () => gristApi(gristBaseUrl, apiKey,
+      `/api/docs/${encodeURIComponent(directDocumentId)}/tables/_grist_Views_section/records?hidden=true`) as Promise<MetaRecords>;
+    await callTool(bridgeBaseUrl, "grist_change_ui", ordinaryEdge);
+    const cursorBefore = await readCursorSections();
+    await callToolExpectError(bridgeBaseUrl, "grist_change_ui", {
+      ...cursorEdge, update: { selectBy: { sourceWidgetId: cursorCustom } }
+    });
+    assert(isDeepStrictEqual(await readCursorSections(), cursorBefore), "trusted_cursor_unapproved_changed_state");
+    await callTool(bridgeBaseUrl, "grist_change_ui", cursorEdge);
+    const cursorAfter = await readCursorSections();
+    const gridRow = cursorAfter.records.find(row => row.id === cursorGrid);
+    const customRow = cursorAfter.records.find(row => row.id === cursorCustom);
+    assert(gridRow?.fields.linkSrcSectionRef === cursorCustom &&
+      customRow?.fields.linkSrcSectionRef === cursorGrid &&
+      gridRow.fields.linkSrcColRef === 0 && gridRow.fields.linkTargetColRef === 0 &&
+      customRow.fields.linkSrcColRef === 0 && customRow.fields.linkTargetColRef === 0 &&
+      isDeepStrictEqual(cursorAfter.records.filter(row => row.id !== cursorGrid),
+        cursorBefore.records.filter(row => row.id !== cursorGrid)), "trusted_cursor_pair_native_state_wrong");
+    await callTool(bridgeBaseUrl, "grist_change_ui", ordinaryEdge);
+    await callTool(bridgeBaseUrl, "grist_change_ui", cursorEdge);
+    assert(isDeepStrictEqual(await readCursorSections(), cursorAfter), "trusted_cursor_pair_replay_changed_state");
+    await callTool(bridgeBaseUrl, "grist_change_ui", {
+      ...cursorEdge, update: { selectBy: null }
+    });
+    assert(isDeepStrictEqual(await readCursorSections(), cursorBefore), "trusted_cursor_pair_clear_wrong");
+    console.log("trusted same-table custom cursor pair: native persistence, replay, clear: PASS");
 
     // Same ordinary native table: a grid and a Form may select each other by
     // cursor, without changing the existing custom widget link or grants.
