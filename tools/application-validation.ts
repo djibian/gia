@@ -2213,6 +2213,112 @@ async function validateFromEmptyStageTopology(
   await expectStageIds(context.teacherBKey, [stageA, stageB]);
   console.log("from-empty witness: three source-derived table ACL groups, no-write replay, teacher/direction native permissions and public Form coexistence: PASS");
 
+  // Source-derived Classes and Periodes_de_stage table policies, and the
+  // separate ordered column rule that prevents leaking class statistics.
+  const ppFor = (columnId: string) => ({kind: "all", conditions: [
+    {kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId: "Acces_Stages_Actif"},
+    {kind: "record_in_user_attribute_ref_list", operator: "in", columnId,
+      attributeName: "Personnel", attributeColumnId: "Classes_PP"}
+  ]});
+  const metrics = ["Effectif", "Sans_stage", "Stages_attribues", "Stages_declares", "Stages_sans_enseignants"];
+  const read = {read: "allow", update: "unspecified"}, noRead = {read: "deny", update: "unspecified"};
+  const dirFormula = "user.Personnel.Acces_Stages_Actif and user.Personnel.Acces_Direction";
+  const ppFormula = (columnId: string) =>
+    "user.Personnel.Acces_Stages_Actif and rec." + columnId + " in user.Personnel.Classes_PP";
+  const classPeriodPolicies = [
+    {target: {tableId: "Classes"}, rules: [
+      {condition: owner, permissions: all},
+      {condition: direction, permissions: all},
+      {condition: ppFor("id"), permissions: readOnly},
+      {condition: everyone, permissions: none}
+    ], expected: [["user.Access==OWNER", "+CRUD"], [dirFormula, "+CRUD"],
+      [ppFormula("id"), "+R-CUD"], ["", "-CRUD"]]},
+    {target: {tableId: "Periodes_de_stage"}, rules: [
+      {condition: owner, permissions: all},
+      {condition: direction, permissions: all},
+      {condition: everyone, permissions: readOnly}
+    ], expected: [["user.Access==OWNER", "+CRUD"], [dirFormula, "+CRUD"], ["", "+R-CUD"]]},
+    {target: {tableId: "Periodes_de_stage", columnIds: metrics}, rules: [
+      {condition: owner, permissions: read},
+      {condition: direction, permissions: read},
+      {condition: ppFor("Classe"), permissions: read},
+      {condition: everyone, permissions: noRead}
+    ], expected: [["user.Access==OWNER", "+R"], [dirFormula, "+R"],
+      [ppFormula("Classe"), "+R"], ["", "-R"]]}
+  ];
+  for (const {target, rules, expected} of classPeriodPolicies) {
+    const ensure = () => callTool(bridge, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "ensure", target, rules
+    }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean}>;
+    const first = await ensure(), replay = await ensure();
+    assertThat(first.changed && first.persistedDefinitionVerified &&
+      !replay.changed && replay.persistedDefinitionVerified, "witness_class_period_acl_not_reconciled");
+    const sameColumns = (value: unknown) => target.columnIds === undefined ? value === "*" :
+      typeof value === "string" &&
+      JSON.stringify(value.split(",").sort()) === JSON.stringify([...target.columnIds].sort());
+    const resources = (await metadata("_grist_ACLResources")).filter(row =>
+      row.fields.tableId === target.tableId && sameColumns(row.fields.colIds));
+    assertThat(resources.length === 1, "witness_class_period_acl_resource_wrong");
+    const native = (await metadata("_grist_ACLRules"))
+      .filter(row => row.fields.resource === resources[0]!.id)
+      .sort((a, b) => Number(a.fields.rulePos) - Number(b.fields.rulePos));
+    assertThat(native.length === expected.length && native.every((rule, i) =>
+      compactFormula(rule.fields.aclFormula) === compactFormula(expected[i]![0]) &&
+      rule.fields.permissionsText === expected[i]![1]), "witness_class_period_acl_native_wrong");
+  }
+  await updateWitnessRow("Enseignants", teacherA, {Classes_PP: ["L"]});
+  await updateWitnessRow("Enseignants", teacherB, {Classes_PP: ["L", classA]});
+  const classRows = (key: string) => readTable(key, "Classes");
+  assertThat((await classRows(context.teacherAKey)).length === 0,
+    "witness_class_acl_ordinary_teacher_read_allowed");
+  const ppClasses = await classRows(context.teacherBKey);
+  assertThat(ppClasses.length === 1 && ppClasses[0]?.id === classA,
+    "witness_class_acl_pp_scope_wrong");
+  const periods = (key: string) => readTable(key, "Periodes_de_stage");
+  const nativePeriods = await metadata("Periodes_de_stage");
+  const periodA = recordIds.get("Periodes_de_stage")!;
+  const checkPeriods = async (key: string, allowed: number[]) => {
+    const visible = await periods(key);
+    for (const id of [periodA, periodB]) {
+      const row = visible.find(item => item.id === id);
+      const actual = nativePeriods.find(item => item.id === id);
+      assertThat(row && actual && row.fields.Numero === actual.fields.Numero,
+        "witness_period_acl_public_columns_unavailable");
+      for (const col of metrics) {
+        const value = row.fields[col];
+        assertThat(allowed.includes(id) ? JSON.stringify(value) === JSON.stringify(actual.fields[col]) :
+          value === undefined || JSON.stringify(value) === '["C"]',
+          "witness_period_acl_metric_visibility_wrong:" + col);
+      }
+    }
+  };
+  await checkPeriods(context.teacherAKey, []);
+  await checkPeriods(context.teacherBKey, [periodA]);
+  const classOriginal = (await metadata("Classes")).find(row => row.id === classA)!.fields.Classe;
+  const patchClass = (key: string, value: string) => gristStatus(context.baseUrl, key,
+    path + "/tables/Classes/records", {method: "PATCH", body: JSON.stringify({
+      records: [{id: classA, fields: {Classe: value}}]
+    })});
+  assertThat(await patchClass(context.teacherBKey, "Classe interdite") === 403 &&
+    (await metadata("Classes")).find(row => row.id === classA)!.fields.Classe === classOriginal,
+    "witness_class_acl_pp_write_allowed");
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: true});
+  const directionClasses = await classRows(context.teacherBKey);
+  assertThat(directionClasses.some(row => row.id === classA) && directionClasses.some(row => row.id === classB),
+    "witness_class_acl_direction_scope_wrong");
+  await checkPeriods(context.teacherBKey, [periodA, periodB]);
+  const classMarker = "Classe synthétique direction";
+  const classWrite = await patchClass(context.teacherBKey, classMarker);
+  assertThat(classWrite >= 200 && classWrite < 300 &&
+    (await metadata("Classes")).find(row => row.id === classA)!.fields.Classe === classMarker,
+    "witness_class_acl_direction_write_denied");
+  await updateWitnessRow("Classes", classA, {Classe: classOriginal});
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: false});
+  await checkPeriods(context.teacherBKey, [periodA]);
+  await expectStageIds(context.teacherAKey, [stageA, stageC]);
+  await expectStageIds(context.teacherBKey, [stageA, stageB]);
+  console.log("from-empty witness: Classes and Periodes_de_stage policies, class-statistic column confidentiality, native PP/direction permissions and replay: PASS");
+
 }
 
 async function run(): Promise<void> {
