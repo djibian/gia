@@ -460,6 +460,8 @@ function comparableUserAttributeField(
   context?: UserAttributeReferenceContext
 ): boolean {
   const lookupTableId = context?.names.get(attributeName);
+  // A native record id is meaningful only within its own table.
+  if (columnId === "id") return attributeColumnId === "id" && lookupTableId === table.id;
   const recordType = table.columns.get(columnId)?.type;
   if (!lookupTableId || !recordType) return false;
   if (attributeColumnId === "id") return recordType === `Ref:${lookupTableId}`;
@@ -582,6 +584,7 @@ function parseLeafCondition(
     const attributeColumnId = attributeMatch ? attributeMatch[5]! : reverseAttributeMatch![2]!;
     if (!operator || !validLinkKeyName(attributeName) ||
         !SAFE_IDENTIFIER.test(attributeColumnId) ||
+        (columnId === "id" && recordScope !== "rec") ||
         !comparableUserAttributeField(table, columnId, attributeName, attributeColumnId, attributes)) {
       return undefined;
     }
@@ -879,6 +882,7 @@ function serializeLeafCondition(
     if (!validLinkKeyName(condition.attributeName) ||
         !SAFE_IDENTIFIER.test(condition.attributeColumnId) ||
         !SAFE_IDENTIFIER.test(condition.columnId) ||
+        (condition.columnId === "id" && condition.record === "newRec") ||
         (condition.operator !== "equals" && condition.operator !== "not_equals") ||
         !comparableUserAttributeField(
           table, condition.columnId, condition.attributeName, condition.attributeColumnId, attributes

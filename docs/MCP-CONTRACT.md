@@ -787,7 +787,10 @@ reverse native operand order normalized identically. The user attribute must
 already be structurally verified and unambiguous on the native default ACL
 resource. Target and source fields must be comparable: native Text/Choice,
 matching Int/Numeric/Bool, same-target Ref, or the native `id` field compared
-to `Ref:<lookup table>`. No literal values, arbitrary attr traversal, raw
+to `Ref:<lookup table>`. A native `rec.id` may also compare to the lookup
+row's `id` only when the record table is that exact lookup table;
+`newRec.id` and cross-table numeric ID comparisons are refused in this leaf.
+No literal values, arbitrary attr traversal, raw
 formulas, unknown fields or unrestricted coercions are supported. Optional
 `newRec` is create/update-only, consistent with existing typed leaves.
 Deleting **or rebinding** a user-attribute definition refuses existing ACL
