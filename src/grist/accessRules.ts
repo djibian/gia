@@ -2283,13 +2283,23 @@ export function resolveAccessRuleMutation(
   }
 
   const writeMode = mode === "ensure" ? "create" : mode;
+  // Grist rulePos is a global PositionNumber column. Reusing small positions
+  // can collide with other resources and reorder rules during native writes.
+  // Append a fresh ordered block without moving any persisted sibling.
+  const lastPosition = snapshot.rules.reduce(
+    (max, rule) => Math.max(max, rule.rulePos ?? 0), 0
+  );
+  const firstPosition = Math.floor(lastPosition) + 1;
+  if (!Number.isSafeInteger(firstPosition + requested.writes.length - 1)) {
+    throw new Error("Cannot allocate safe native ACL rule positions.");
+  }
   return {
     mode: writeMode,
     requestedMode: writeMode,
     target,
     ...(existing ? { resourceRecordId: existing.resourceRecordId } : {}),
     ruleRecordIds: existing ? [...existing.ruleRecordIds] : [],
-    rules: requested.writes,
+    rules: requested.writes.map((rule, index) => ({ ...rule, rulePos: firstPosition + index })),
     normalizedRules: requested.normalized,
     untargetedFingerprint: untargetedFingerprint(snapshot, target)
   };
