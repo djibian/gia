@@ -196,7 +196,7 @@ function selectByGraphValidator(context: DocumentUiContext) {
   );
   const paths = new Map<number, { ancestors: Set<number>; cycle: boolean }>();
   return (source: GristPageWidget, target: GristPageWidget, allowTrustedCustom = false,
-    allowNativeCursorPair = false): void => {
+    allowDirectCursorPair = false, allowTrustedCustomCursorPair = false): void => {
     if (context.metadataSnapshotIncomplete) throw new Error("Select-by requires a complete and unambiguous page/widget graph.");
     if (source.id === target.id) throw new Error("A Grist widget cannot select itself.");
     if (source.pageId !== target.pageId) {
@@ -226,14 +226,18 @@ function selectByGraphValidator(context: DocumentUiContext) {
       paths.set(source.id, path);
     }
     if (path.ancestors.has(target.id)) {
-      // Grist permits same-table cursor cycles. Deliberately support only a
-      // reciprocal pair of native widgets, with explicit ordinary-table and
-      // zero-column metadata. Custom row filters are browser state, so never
-      // extend this exception to custom widgets, summaries or column links.
+      // Grist permits same-table cursor cycles, never dynamic row-filter cycles.
+      // Only the caller's fresh Owner-checked, revision-specific approval can
+      // admit a Custom source; the reverse ordinary edge is replay-only.
       const nativeCursor = (widget: GristPageWidget) =>
-        widget.nativeCursorCycleEligible === true &&
         ["record", "single", "detail", "form"].includes(widget.type);
-      if (allowNativeCursorPair && nativeCursor(source) && nativeCursor(target) &&
+      const approvedPair = allowTrustedCustomCursorPair &&
+        ((source.type === "custom" && allowTrustedCustom && nativeCursor(target)) ||
+          (nativeCursor(source) && target.type === "custom" &&
+            target.selectBy?.sourceSectionId === source.id));
+      if (allowDirectCursorPair && source.nativeCursorCycleEligible === true &&
+          target.nativeCursorCycleEligible === true &&
+          ((nativeCursor(source) && nativeCursor(target)) || approvedPair) &&
           source.tableId !== undefined && source.tableId === target.tableId &&
           source.tableRef === target.tableRef &&
           source.selectBy?.sourceSectionId === target.id &&
@@ -250,8 +254,9 @@ function selectByGraphValidator(context: DocumentUiContext) {
 
 export function directSelectByValidator(context: DocumentUiContext) {
   const assertGraphSafe = selectByGraphValidator(context);
-  return (source: GristPageWidget, target: GristPageWidget, allowTrustedCustom = false): void => {
-    assertGraphSafe(source, target, allowTrustedCustom, true);
+  return (source: GristPageWidget, target: GristPageWidget, allowTrustedCustom = false,
+    allowTrustedCustomCursorPair = false): void => {
+    assertGraphSafe(source, target, allowTrustedCustom, true, allowTrustedCustomCursorPair);
     if (source.tableRef !== target.tableRef || source.tableId !== target.tableId) {
       throw new Error(
         "This tranche only allows direct select-by between widgets backed by the same Grist table."
@@ -264,9 +269,10 @@ export function assertDirectSelectByAllowed(
   context: DocumentUiContext,
   source: GristPageWidget,
   target: GristPageWidget,
-  allowTrustedCustom = false
+  allowTrustedCustom = false,
+  allowTrustedCustomCursorPair = false
 ): void {
-  directSelectByValidator(context)(source, target, allowTrustedCustom);
+  directSelectByValidator(context)(source, target, allowTrustedCustom, allowTrustedCustomCursorPair);
 }
 
 export function discoverColumnSelectByOptions(

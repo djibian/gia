@@ -10,6 +10,13 @@ const approved={key:"timeline",name:"Stages timeline",widgetId:"@test/timeline",
 
 test("a trusted linking source must match an approved direct revision with data access", () => {
   assert.throws(() => approvedWidgets(JSON.stringify([{ ...approved, allowSelectBy: true }]), base));
+  assert.throws(() => approvedWidgets(JSON.stringify([{ ...approved, directUrl: true,
+    allowReciprocalCursor: true }]), base));
+  assert.throws(() => approvedWidgets(JSON.stringify([{ ...approved, directUrl: true,
+    allowSelectBy: true, allowReciprocalCursor: false }]), base));
+  const cursor = approvedWidgets(JSON.stringify([{ ...approved, directUrl: true,
+    allowSelectBy: true, allowReciprocalCursor: true }]), base)[0]!;
+  assert.equal(cursor.allowReciprocalCursor, true);
   const item = approvedWidgets(JSON.stringify([{ ...approved, directUrl: true, allowSelectBy: true }]), base)[0]!;
   const installed = planTrustedWidgetInstall({ type: "custom", options: {} }, item);
   const view = JSON.parse(installed.options.customView as string);

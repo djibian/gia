@@ -392,9 +392,20 @@ To use an approved custom widget as a direct linking source, the operator adds
 declares Grist's linking support. The caller makes a standalone
 `update_widget` with `selectBy:{sourceWidgetId,trustedSourceKey}`. Gia requires
 fresh native Owner, the exact approved active source on the same page and
-table, and an acyclic graph. This persists only the directed native link.
+table, and normally an acyclic graph. To admit a reciprocal direct cursor
+pair, the operator must additionally set `allowReciprocalCursor:true` on the
+exact revision, after auditing that the widget uses cursor linking only and
+never activates a dynamic selected-row filter under any permitted settings.
+This flag requires both `directUrl:true` and `allowSelectBy:true`. Create the
+ordinary native-to-Custom edge first, then close the pair with the explicit
+trusted source key. Only one Custom and one ordinary native grid/Card/Card
+List/Form on the same verified non-summary table, with complete zero-column
+metadata, are accepted. Replaying either edge is a no-op and requires the
+active exact approved Custom revision and fresh Owner proof. Clear a
+reciprocal link before changing a trusted widget revision.
 Granting widget data access remains a separate confirmed operation. Native
-metadata verification does not qualify cursor behavior of the remote widget.
+metadata verification does not qualify remote cursor behavior or enforce
+the operator's code audit in the browser.
 
 `grist_change_ui(action="publish_form")` publishes one existing native Form widget and its
 page-linked native share through a private fixed Grist action bundle. The request must
@@ -1025,9 +1036,11 @@ JWT/JWKS verification enforces: optional `nbf` is enforced, unsupported JOSE cri
   link; null clears it. A reciprocal direct cursor pair is allowed only between
   two native grid/Card/Card List/Form widgets backed by the same explicitly
   verified non-summary table on one page, with complete zero-column link
-  metadata. Replay and clearing preserve the counterpart. Larger cycles,
-  column/filter cycles, unverified metadata and custom-widget cycles remain
-  refused. This verifies persisted links, not interactive cursor behavior.
+  metadata, or the separately operator-approved Custom/native pair described
+  above. Replay and clearing preserve the counterpart. Larger cycles,
+  column/filter cycles, unverified metadata and unapproved custom-widget
+  cycles remain refused. This verifies persisted links, not interactive
+  cursor behavior.
   A native record selector may also filter a native summary grid by one
   explicit group-by column whose source and generated column both have the
   exact single-Ref type pointing to the selector's verified ordinary table.

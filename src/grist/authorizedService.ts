@@ -1553,9 +1553,14 @@ export class AuthorizedGristService {
       const read = async () => {
         const snapshot = await this.loadDocumentUi(id);
         assertCompleteUiSnapshot(snapshot);
-        const widget = snapshot.pages.find(page => page.id === pageId)
-          ?.widgets.find(candidate => candidate.id === widgetId);
+        const page = snapshot.pages.find(page => page.id === pageId);
+        const widget = page?.widgets.find(candidate => candidate.id === widgetId);
         if (!widget) throw new Error("Native widget is absent from its intended page.");
+        if (widget.selectBy?.sourceSectionId !== undefined &&
+            page?.widgets.some(candidate => candidate.id === widget.selectBy?.sourceSectionId &&
+              candidate.selectBy?.sourceSectionId === widgetId)) {
+          throw new Error("Clear the reciprocal cursor link before changing a trusted widget revision.");
+        }
         return widget;
       };
       const before = await read();
@@ -1835,7 +1840,7 @@ export class AuthorizedGristService {
         adapterUpdate.filters = expectedFilters;
       }
 
-      let reciprocalNativePair = false;
+      let reciprocalCursorPair = false;
       let expectedSourceWidgetId: number | null | undefined;
       let expectedSourceColumnRef: number | undefined;
       let expectedTargetColumnRef: number | undefined;
@@ -1874,12 +1879,28 @@ export class AuthorizedGristService {
                 throw new Error("Trusted select-by requires a verified source table.");
               }
             }
-            assertDirectSelectByAllowed(before, source, target, trustedSource !== undefined);
-            reciprocalNativePair = source.selectBy?.sourceSectionId === widgetId;
-            if (reciprocalNativePair && Object.entries(update).some(([key, value]) => key !== "selectBy" && value !== undefined)) {
-              throw new Error("Reciprocal native cursor links require a separate direct select-by update.");
+            let allowTrustedCustomCursorPair = trustedSource?.allowReciprocalCursor === true;
+            // The ordinary edge is created first. Once the pair exists,
+            // replaying that edge must be a no-op, never a new cycle creation.
+            if (!trustedSource && target.type === "custom" &&
+                source.selectBy?.sourceSectionId === widgetId &&
+                target.selectBy?.sourceSectionId === sourceWidgetId) {
+              const approvedTarget = approvedWidgets(process.env.GIA_TRUSTED_CUSTOM_WIDGETS_JSON,
+                process.env.GRIST_BASE_URL ?? "").find(item => item.allowReciprocalCursor === true &&
+                  matchesTrustedWidgetSelection(target.options, item));
+              if (approvedTarget) {
+                await this.inner.assertDocumentOwner(id);
+                assertTrustedWidgetSelectBySource(target, approvedTarget);
+                allowTrustedCustomCursorPair = true;
+              }
             }
-            if ((trustedSource || reciprocalNativePair) && target.selectBy?.sourceSectionId === sourceWidgetId &&
+            assertDirectSelectByAllowed(before, source, target, trustedSource !== undefined,
+              allowTrustedCustomCursorPair);
+            reciprocalCursorPair = source.selectBy?.sourceSectionId === widgetId;
+            if (reciprocalCursorPair && Object.entries(update).some(([key, value]) => key !== "selectBy" && value !== undefined)) {
+              throw new Error("Reciprocal cursor links require a separate direct select-by update.");
+            }
+            if ((trustedSource || reciprocalCursorPair) && target.selectBy?.sourceSectionId === sourceWidgetId &&
                 target.selectBy.sourceColumnRef === undefined && target.selectBy.targetColumnRef === undefined) {
               return { documentId: id, pageId, widget: projectPublicWidget(target) };
             }
@@ -1889,7 +1910,7 @@ export class AuthorizedGristService {
         }
       }
 
-      if (trustedSource || reciprocalNativePair) {
+      if (trustedSource || reciprocalCursorPair) {
         const fresh = await this.loadDocumentUi(id);
         assertCompleteUiSnapshot(fresh);
         if (!isDeepStrictEqual(fresh.pages.find(candidate => candidate.id === pageId), page)) {
@@ -1918,11 +1939,11 @@ export class AuthorizedGristService {
         if (!widget) {
           throw new Error(`Updated widget ${widgetId} was not found on re-read.`);
         }
-        if (reciprocalNativePair && (!updatedPage ||
+        if (reciprocalCursorPair && (!updatedPage ||
             !isDeepStrictEqual(updatedPage.widgets.filter(candidate => candidate.id !== widgetId),
               page.widgets.filter(candidate => candidate.id !== widgetId)) ||
             !sameJsonValue(widget.options, target.options))) {
-          throw new Error("Reciprocal native cursor link did not preserve the counterpart or other widgets.");
+          throw new Error("Reciprocal cursor link did not preserve the counterpart or other widgets.");
         }
         if (trustedSource) {
           const source = updatedPage?.widgets.find(candidate => candidate.id === expectedSourceWidgetId);
