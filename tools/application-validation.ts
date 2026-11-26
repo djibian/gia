@@ -2221,7 +2221,7 @@ async function validateFromEmptyStageTopology(
       attributeName: "Personnel", attributeColumnId: "Classes_PP"}
   ]});
   const metrics = ["Effectif", "Sans_stage", "Stages_attribues", "Stages_declares", "Stages_sans_enseignants"];
-  const read = {read: "allow"}, noRead = {read: "deny"};
+  const read = {read: "allow", update: "unspecified"}, noRead = {read: "deny", update: "unspecified"};
   const dirFormula = "user.Personnel.Acces_Stages_Actif and user.Personnel.Acces_Direction";
   const ppFormula = (columnId: string) =>
     "user.Personnel.Acces_Stages_Actif and rec." + columnId + " in user.Personnel.Classes_PP";
