@@ -104,6 +104,12 @@ head; passing a listed version is not a blanket guarantee for every Grist behavi
 or an untested server version. Compatibility follows the executable probes.
 The domain-shaped fixtures are test consumers, never product requirements.
 
+Application preservation exercises maintained widget URLs on the disposable
+from-empty witness when its acceptance script changes or the workflow is
+dispatched with `live_widgets`. The browser checks the actual loaded frame,
+Grist's ready handshake and an observable mapped-data behavior for each
+widget. Ordinary preservation runs use inert registry entries.
+
 To run against a disposable local Grist with test login enabled:
 
 ```sh
