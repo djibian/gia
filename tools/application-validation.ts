@@ -19,7 +19,9 @@ import {
 } from "./grist-harness.js";
 import { readOwnerFormShareKey } from "../src/grist/formShareLookup.js";
 import type { AccessRuleCondition, AccessRuleTarget, NormalizedAccessRule } from "../src/grist/accessRules.js";
+import { openDisposableGrist } from "./authorization-qualification.js";
 import {
+  OWNER_EMAIL,
   TEACHER_A_EMAIL,
   TEACHER_B_EMAIL,
   type FixtureContext,
@@ -31,7 +33,16 @@ import {
   setupFixtures
 } from "./application-fixtures.js";
 
-// Reserved inert origins qualify native metadata only, never remote code.
+const qualifyLiveWidgets = process.env.GIA_TEST_LIVE_WIDGETS === "1";
+const liveWidgetUrls: Readonly<Record<string, string>> = {
+  "structures-map": "https://gristgouv.github.io/gristlabs-widgets/map/index.html",
+  "teacher-geocoder": "https://betagouv.github.io/grist-custom-widgets-fr-admin/geocode",
+  "teacher-mail": "https://djibian.github.io/grist-widgets/widgets/outlook-mail-compose/",
+  "structure-assistant": "https://djibian.github.io/grist-widgets/previews/structure-picker/widgets/structure-picker/",
+  "assignment-assistant": "https://djibian.github.io/grist-widgets/previews/internship-supervisor-assignment/widgets/internship-supervisor-assignment/"
+};
+
+// The regular preservation run checks Grist metadata using inert entries.
 const witnessWidgets: ReadonlyArray<{
   key: string;
   page: string;
@@ -83,11 +94,13 @@ const assignmentOption = {
   defaults: {optimization: {geography: {enabled: true, priority: "forte"},
     diversity: {enabled: true, priority: "moyenne"}}}
 } as const;
-const widgetFixtureUrl = (key: string) => `https://${key}.invalid/v1.0.0/index.html`;
+const widgetFixtureUrl = (key: string) => qualifyLiveWidgets
+  ? liveWidgetUrls[key]!
+  : `https://widgets.invalid/${key}/`;
 const widgetFixtureRegistry = JSON.stringify(witnessWidgets.map(spec => ({
   key: spec.key, name: spec.key, widgetId: `@test/${spec.key}`,
-  revision: "v1.0.0", url: widgetFixtureUrl(spec.key),
-  ...(spec.direct ? {directUrl: true} : {}),
+  url: widgetFixtureUrl(spec.key),
+  ...(qualifyLiveWidgets || spec.direct ? {directUrl: true} : {}),
   ...(spec.reciprocal ? {allowSelectBy: true, allowReciprocalCursor: true} : {}),
   ...(spec.key === "assignment-assistant" ? {referenceOption: assignmentOption} : {})
 })));
@@ -869,7 +882,7 @@ async function validateFromEmptyStageTopology(
       formula("Email", "Text",
         `${JSON.stringify(TEACHER_A_EMAIL)} if $Cle == "synthetique-Enseignants" else (${JSON.stringify(TEACHER_B_EMAIL)} if $Cle == "synthetique-enseignant-b" else "")`),
       formula("Token_Stages", "Text", '"synthetic-token"', false),
-      formula("Lien_Stages", "Text", '"synthetic-link"'),
+      formula("Lien_Stages", "Text", '"https://example.invalid/stages/synthetic"'),
       formula("Expediteur_Lien_Stages", "Text", '"synthetic-sender"', false),
       formula("Id_Envoi_Stages", "Text", '"synthetic-message"', false),
       formula("Est_PP", "Bool", "bool($Classes_PP)")
@@ -1632,7 +1645,7 @@ async function validateFromEmptyStageTopology(
     assertThat(JSON.stringify(beforeFields) === JSON.stringify(afterFields) &&
       JSON.stringify(beforeOuter) === JSON.stringify(afterOuter), "witness_widget_collateral_options_changed");
     const view = JSON.parse(String(customView));
-    assertThat(view.access === "none" && (spec.direct
+    assertThat(view.access === "none" && (qualifyLiveWidgets || spec.direct
       ? view.url === widgetFixtureUrl(spec.key) && view.widgetId == null && view.widgetDef == null
       : view.widgetId === `@test/${spec.key}` && view.widgetDef?.url === widgetFixtureUrl(spec.key) &&
         view.url == null), "witness_widget_native_identity_or_access_wrong");
@@ -1659,7 +1672,8 @@ async function validateFromEmptyStageTopology(
     }
     await callTool(bridge, "grist_change_ui", {
       action: "update_widget", documentId, pageId: Number(after!.fields.parentId), widgetId: before.id,
-      update: {customWidgetSettings: {access: spec.access, confirmDataAccess: true}}
+      update: {customWidgetSettings: {access: spec.access,
+        ...(!qualifyLiveWidgets && !spec.direct ? {confirmDataAccess: true} : {})}}
     });
   }
   const activeSections = await metadata("_grist_Views_section");
@@ -1677,8 +1691,8 @@ async function validateFromEmptyStageTopology(
       fields: {...before.fields, options: JSON.stringify(expectedOptions)}}),
       "witness_widget_native_data_access_wrong:" + spec.key);
   }
-  console.log("from-empty witness: five inert widget mappings, assignment references, literal settings and confirmed access: PASS");
-  // Close the source-derived reciprocal cursor pairs using approved inert revisions.
+  console.log("from-empty witness: five widget mappings, assignment references, literal settings and approved access: PASS");
+  // Close the source-derived reciprocal cursor pairs using registered widget URLs.
   for (const spec of witnessWidgets.filter(widget => widget.reciprocal)) {
     const pageIndex = pages.findIndex(page => page.name === spec.page);
     const pageSpec = pages[pageIndex]!;
@@ -1715,7 +1729,7 @@ async function validateFromEmptyStageTopology(
   const attached = new Set(first.flatMap(page => page.widgetIds));
   assertThat(linkedSections.filter(row => attached.has(row.id) &&
     Number(row.fields.linkSrcSectionRef) > 0).length === 22, "witness_full_link_count_wrong");
-  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 inert configured Custom), 22 native links including 2 reciprocal Custom pairs, nested page layouts and no-write layout replay: PASS");
+  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 configured Custom), 22 native links including 2 reciprocal Custom pairs, nested page layouts and no-write layout replay: PASS");
   // Publication is deliberately confined to this disposable native fixture.
   // No source share key or URL is used, and no public key enters a tool result.
   const formTarget = (tableId: string) => {
@@ -2927,13 +2941,104 @@ async function validateFromEmptyStageTopology(
     driver.kill("SIGTERM");
   }
   console.log("from-empty witness: source-shaped LinkKey lookup, browser PP and ordinary visibility, missing/wrong/disabled keys: PASS");
+  if (qualifyLiveWidgets) {
+    await updateWitnessRow("Structures_de_stage", recordIds.get("Structures_de_stage")!, {
+      Latitude: 47.218, Longitude: -1.553
+    });
+    // This civic address can be sent to the geocoding service with synthetic data.
+    await updateWitnessRow("Enseignants", teacherA, {Adresse: "1 place du Capitole 31000 Toulouse"});
+    const browser = await startBrowser();
+    const session = "/session/" + browser.sessionId;
+    const request = (method: string, endpoint: string, payload?: unknown) =>
+      driverRequest(browser.driverBase, method, session + endpoint, payload);
+    const go = (url: URL) => navigate(browser.driverBase, browser.sessionId, url.href);
+    const behavior: Readonly<Record<string, {selector: string; text?: string}>> = {
+      "structures-map": {selector: '#map .leaflet-marker-icon[title="Structure fictive"]'},
+      "teacher-geocoder": {selector: ".menu .centered-column:last-child button.primary"},
+      "teacher-mail": {selector: "#recipientValue", text: TEACHER_A_EMAIL},
+      "structure-assistant": {selector: "#selected-summary .selected-title", text: "Structure fictive"},
+      "assignment-assistant": {selector: "#analysis .analysis-grid"}
+    };
+    try {
+      const ownerLogin = new URL("/test/login", context.baseUrl);
+      ownerLogin.searchParams.set("username", OWNER_EMAIL);
+      ownerLogin.searchParams.set("name", "Owner");
+      await go(ownerLogin);
+      for (const spec of witnessWidgets) {
+        const pageIndex = pages.findIndex(page => page.name === spec.page);
+        const {pageId, widgetIds} = first[pageIndex]!;
+        const widgets = pages[pageIndex]!.widgets;
+        const customId = widgetIds[widgets.findIndex(widget => widget.key === spec.section)];
+        const gridId = widgetIds[widgets.findIndex(widget => widget.tableId === spec.tableId && widget.type === "record")];
+        const rowId = recordIds.get(spec.tableId);
+        assertThat(customId && gridId && rowId, "witness_live_widget_target_missing:" + spec.key);
+        const url = new URL("/o/" + encodeURIComponent(orgDomain) + "/doc/" +
+          encodeURIComponent(documentId) + "/p/" + pageId, context.baseUrl);
+        url.hash = `a1.s${gridId}.r${rowId}`;
+        await go(url);
+        let observed: {asset: boolean; access: boolean; behavior: boolean} | undefined;
+        const wanted = behavior[spec.key]!;
+        const expected = new URL(widgetFixtureUrl(spec.key));
+        for (let attempt = 0; attempt < 40; attempt++) {
+          const frames = await request("POST", "/elements", {using: "css selector",
+            value: `.test-viewlayout-section-${customId} iframe.test-custom-widget-ready`
+          }) as unknown[];
+          if (frames.length === 1) {
+            await request("POST", "/frame", {id: frames[0]});
+            try {
+              observed = await request("POST", "/execute/sync", {
+                script: `const node = document.querySelector(arguments[0]);
+                  const path = value => value.endsWith('/') ? value.slice(0, -1) : value;
+                  return {
+                    asset: location.origin === arguments[2] &&
+                      path(location.pathname) === path(arguments[3]),
+                    access: new URLSearchParams(location.search).get('access') === arguments[4],
+                    behavior: Boolean(node && (!arguments[1] || node.textContent.trim() === arguments[1]) &&
+                      (arguments[5] !== 'teacher-mail' || document.querySelector('#openOutlook[href][aria-disabled="false"]')))
+                  };`,
+                args: [wanted.selector, wanted.text ?? "", expected.origin, expected.pathname, spec.access, spec.key]
+              }) as typeof observed;
+              if (spec.key === "teacher-geocoder" && observed?.asset && observed.access && observed.behavior) {
+                await request("POST", "/execute/sync", {
+                  script: "document.querySelector(arguments[0]).click();", args: [wanted.selector]
+                });
+              }
+            } finally {
+              await request("POST", "/frame", {id: null});
+            }
+            if (observed?.asset && observed.access && observed.behavior) break;
+          }
+          await delay(500);
+        }
+        assertThat(observed?.asset && observed.access && observed.behavior,
+          "witness_live_widget_unqualified:" + spec.key + ":" + JSON.stringify(observed ?? "no-ready-frame"));
+        if (spec.key === "teacher-geocoder") {
+          for (let attempt = 0; attempt < 40; attempt++) {
+            const geocoded = await teacherRecord(teacherA);
+            if (typeof geocoded.Latitude === "number" && geocoded.Latitude > 43 && geocoded.Latitude < 44 &&
+                typeof geocoded.Longitude === "number" && geocoded.Longitude > 1 && geocoded.Longitude < 2 &&
+                typeof geocoded.Adresse_normalisee === "string" && geocoded.Adresse_normalisee.includes("Toulouse")) break;
+            assertThat(attempt < 39, "witness_live_geocode_native_write_unverified");
+            await delay(500);
+          }
+          console.log("from-empty Chromium widget: geocoding wrote the mapped fields of the synthetic native row: PASS");
+        }
+        console.log("from-empty Chromium widget: " + spec.key + " ready and mapped data behavior: PASS");
+      }
+    } finally {
+      await request("DELETE", "").catch(() => {});
+      browser.driver.kill("SIGTERM");
+    }
+  }
 }
 
 async function run(): Promise<void> {
-  const baseUrl = process.env.GRIST_TEST_BASE_URL?.trim().replace(/\/$/, "");
   const version = process.env.GRIST_TEST_VERSION?.trim();
-  assertThat(baseUrl, "missing_grist_test_base_url");
   assertThat(version, "missing_grist_test_version");
+  const baseUrl = qualifyLiveWidgets
+    ? (await openDisposableGrist(process.env.GIA_QUALIFICATION_CONTAINER ?? "", version)).baseUrl
+    : process.env.GRIST_TEST_BASE_URL?.trim().replace(/\/$/, "");
+  assertThat(baseUrl, "missing_grist_test_base_url");
   await waitForUrl(`${baseUrl}/api/orgs`);
   const context = await setupFixtures(baseUrl);
   const bridge = await startBridge({
