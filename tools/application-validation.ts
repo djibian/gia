@@ -811,13 +811,14 @@ async function validateFromEmptyStageTopology(
   type FormulaSeed = { id: string; fields: {type: string; isFormula: boolean; formula: string} };
   const formula = (id: string, type: string, expression: string, isFormula = true): FormulaSeed =>
     ({id, fields: {type, isFormula, formula: expression}});
-  // Dependencies are constructed before each calculated batch. Identity/link
-  // formulas use deliberately inert synthetic values; this is not an email or
-  // token workflow qualification.
+  // Dependencies are constructed before each calculated batch. Ordinary business
+  // formulas match the source schema; email/token/link delivery uses deliberately
+  // inert synthetic values and is not qualified here.
   const computed: Array<[string, FormulaSeed[]]> = [
     ["Structures_de_stage", [formula("Statut", "Choice", '"à vérifier"', false)]],
     ["Enseignants", [
-      formula("Identite", "Any", '$Prenom + " " + $Nom'),
+      formula("Identite", "Any",
+        "f\"{$Titre} {$Nom} {$Prenom}\".strip()"),
       formula("Email", "Text",
         `${JSON.stringify(TEACHER_A_EMAIL)} if $Cle == "synthetique-Enseignants" else (${JSON.stringify(TEACHER_B_EMAIL)} if $Cle == "synthetique-enseignant-b" else "")`),
       formula("Token_Stages", "Text", '"synthetic-token"', false),
@@ -826,27 +827,33 @@ async function validateFromEmptyStageTopology(
       formula("Id_Envoi_Stages", "Text", '"synthetic-message"', false),
       formula("Est_PP", "Bool", "bool($Classes_PP)")
     ]],
-    ["Eleves", [formula("Identite", "Text", '$Prenom + " " + $Nom + " - " + $Classe.Classe')]],
+    ["Eleves", [formula("Identite", "Text",
+        "f\"{$Prenom} {$Nom} - {$Classe.Classe}\"")]],
     ["Stages", [
-      formula("Commune", "Text", "$Structure_de_stage.Adresse"),
+      formula("Commune", "Text",
+        "import re\n\nadresse = ($Structure_de_stage.Adresse or \"\").strip()\n\nm = re.search(r\"\\b\\d{5}\\s+([^,;]+)\", adresse)\n\nreturn m.group(1).strip().title() if m else \"\""),
       formula("Structure_de_stage_Statut", "Choice", "$Structure_de_stage.Statut"),
       formula("Classe", "Ref:Classes", "$Eleve.Classe"),
       formula("Enseignants_affectables", "RefList:Enseignants",
-        "Affectation.lookupRecords(Classe=$Classe, Periode=$Periode).Enseignant")
+        "[\n    a.Enseignant\n    for a in Affectation.lookupRecords(\n        Classe=$Classe,\n        Periode=$Periode\n    )\n    if a.Enseignant and a.Stage_a_suivre > 0\n]")
     ]],
     ["Affectation", [
       formula("Stages_attribues", "Numeric",
-        "len(Stages.lookupRecords(Classe=$Classe, Periode=$Periode, Suivi_par=$Enseignant))"),
+        "sum(\n    1 for s in Stages.lookupRecords(\n        Suivi_par=$Enseignant,\n        Classe=$Classe,\n        Periode=$Periode\n    )\n    if s.Structure_de_stage\n)"),
       formula("Reste_a_attribuer", "Any", "$Stage_a_suivre - $Stages_attribues")
     ]],
     ["Periodes_de_stage", [
-      formula("Periode", "Text", '$Classe.Classe + " - " + $Numero'),
+      formula("Periode", "Text",
+        "if $Numero:\n    debut_str = f\"{$Date_debut.day:02d}/{$Date_debut.month:02d}/{$Date_debut.year}\" if $Date_debut else \"\"\n    fin_str = f\"{$Date_fin.day:02d}/{$Date_fin.month:002d}/{$Date_fin.year}\" if $Date_fin else \"\"\n\n    if debut_str and fin_str:\n        return f\"{$Numero} - {$Classe.Classe} - {debut_str} au {fin_str}\"\n    elif debut_str:\n        return f\"{$Numero} - {$Classe.Classe} - {debut_str}\"\n    elif fin_str:\n        return f\"{$Numero} - {$Classe.Classe} - {fin_str}\"\n\"\""),
       formula("Effectif", "Numeric", "len(Eleves.lookupRecords(Classe=$Classe))"),
-      formula("Stages_declares", "Numeric", "len(Stages.lookupRecords(Periode=$id))"),
-      formula("Sans_stage", "Numeric", "$Effectif - $Stages_declares"),
+      formula("Stages_declares", "Numeric",
+        "stages = Stages.lookupRecords(Periode=$id)\n\nlen({\n    s.Eleve.id\n    for s in stages\n    if s.Eleve and s.Structure_de_stage\n})"),
+      formula("Sans_stage", "Numeric",
+        "max(0, $Effectif - $Stages_declares)"),
       formula("Stages_attribues", "Numeric",
-        "sum(1 for s in Stages.lookupRecords(Periode=$id) if s.Suivi_par)"),
-      formula("Stages_sans_enseignants", "Numeric", "$Stages_declares - $Stages_attribues")
+        "sum(\n    1 for s in Stages.lookupRecords(Periode=$id)\n    if s.Structure_de_stage and s.Suivi_par\n)"),
+      formula("Stages_sans_enseignants", "Numeric",
+        "sum(\n    1 for s in Stages.lookupRecords(Periode=$id)\n    if s.Structure_de_stage and not s.Suivi_par\n)")
     ]],
     ["Classes", [
       formula("Nombre_de_periodes_de_stage", "Numeric", "len(Periodes_de_stage.lookupRecords(Classe=$id))")
@@ -981,7 +988,7 @@ async function validateFromEmptyStageTopology(
       "Periodes_de_stage", "Eleves", "Affectation", "Stages", "Activites"]) {
       const examples: Record<string, Record<string, unknown>> = {
         Enseignants: {Nom: "Fictif", Prenom: "Prof", Acces_Stages_Actif: true},
-        Structures_de_stage: {Nom_usuel: "Structure fictive", Adresse: "Commune fictive"},
+        Structures_de_stage: {Nom_usuel: "Structure fictive", Adresse: "00000 commune fictive"},
         Classes: {Classe: "Classe A"},
         Periodes_de_stage: {Numero: "1"},
         Eleves: {Nom: "Fictif", Prenom: "Eleve"},
@@ -1226,7 +1233,33 @@ async function validateFromEmptyStageTopology(
     period.Effectif === 1 && period.Stages_declares === 1 && period.Sans_stage === 0 &&
     period.Stages_attribues === 1 && period.Stages_sans_enseignants === 0,
     "stage_topology_native_formula_results_wrong");
-  console.log("from-empty stage schema: 89 ordinary witness columns, synthetic formulas/defaults, reference and counter results, stable replay: PASS");
+  assertThat(stage.Commune === "Commune Fictive",
+    "stage_topology_native_commune_formula_wrong");
+  // A zero allocation must exclude an otherwise matching teacher; a stage
+  // without a structure must not count as declared or assigned.
+  const changeWitness = (tableId: string, fields: Record<string, unknown>) =>
+    callTool(bridge, "grist_change_records", {
+      action: "update", documentId, tableId, records: [{id: recordIds.get(tableId), fields}]
+    });
+  await changeWitness("Affectation", {Stage_a_suivre: 0});
+  const unallocated = (await row("Stages")).Enseignants_affectables;
+  assertThat(unallocated == null || JSON.stringify(unallocated) === JSON.stringify(["L"]),
+    "stage_topology_zero_allocation_teacher_included");
+  await changeWitness("Affectation", {Stage_a_suivre: 2});
+  await changeWitness("Stages", {Structure_de_stage: 0});
+  const absentAssignment = await row("Affectation");
+  const absentPeriod = await row("Periodes_de_stage");
+  assertThat(absentAssignment.Stages_attribues === 0 && absentAssignment.Reste_a_attribuer === 2 &&
+    absentPeriod.Stages_declares === 0 && absentPeriod.Sans_stage === 1 &&
+    absentPeriod.Stages_attribues === 0 && absentPeriod.Stages_sans_enseignants === 0,
+    "stage_topology_missing_structure_counted");
+  await changeWitness("Stages", {Structure_de_stage: recordIds.get("Structures_de_stage")});
+  assertThat(JSON.stringify((await row("Stages")).Enseignants_affectables) ===
+    JSON.stringify(["L", recordIds.get("Enseignants")]) &&
+    (await row("Affectation")).Stages_attribues === 1 &&
+    (await row("Periodes_de_stage")).Stages_declares === 1,
+    "stage_topology_formula_restore_wrong");
+  console.log("from-empty stage schema: 89 ordinary witness columns, native business formulas, zero-allocation and missing-structure negatives, stable replay: PASS");
   const allIds = first.flatMap(page => page.widgetIds);
   assertThat(first.length === 15 && new Set(first.map(page => page.pageId)).size === 15 &&
     allIds.length === 46 && new Set(allIds).size === 46, "stage_topology_cardinality_wrong");
