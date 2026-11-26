@@ -142,7 +142,7 @@ export async function startBridge(options: {
     MCP_AUTH_MODE: "static",
     // Disposable application acceptance exercises hundreds of sequential calls
     // without throttling sleeps; production's bounded default remains unchanged.
-    MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE: "600",
+    MCP_PRINCIPAL_RATE_LIMIT_PER_MINUTE: "1000",
     MCP_BEARER_TOKEN: TEST_BEARER,
     MCP_ALLOWED_HOSTS: "127.0.0.1,localhost",
     HOST: "127.0.0.1",
