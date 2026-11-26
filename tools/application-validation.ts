@@ -1029,7 +1029,7 @@ async function validateFromEmptyStageTopology(
     {name: "Partenaires", widgets: [
       grid("structures", "Structures_de_stage"),
       grid("stages", "Stages", {source: "structures", targetColumnId: "Structure_de_stage"}),
-      grid("activites", "Activites", {source: "structures", targetColumnId: "Patrenaire"})]},
+      grid("activites", "Activites", {source: "structures", targetColumnId: "Patrenaire", collapsed: true})]},
     {name: "Ma classe", widgets: [
       grid("classes", "Classes", {source: "enseignants", targetColumnId: "Professeur_principal"}),
       grid("bilan", "Affectation", {source: "classes", targetColumnId: "Classe",
@@ -1060,6 +1060,61 @@ async function validateFromEmptyStageTopology(
       grid("stages", "Stages", {source: "classes", targetColumnId: "Classe"}),
       grid("classes", "Classes"), {...grid("assistant", "Classes", {source: "classes"}), type: "custom"}, lock()]}
   ];
+  // Page layout uses logical keys, never the source document's native IDs.
+  // The historically unplaced Partenaires activity widget is explicitly
+  // collapsed. The two incomplete source Form page layouts use only their
+  // supported projected tree, not their opaque metadata.
+  type LayoutNode = {kind: "widget"; widgetId: number; size?: number} |
+    {kind: "group"; children: LayoutNode[]; size?: number};
+  const layoutFor = (page: typeof pages[number], ids: Map<string, number>) => {
+    const leaf = (key: string, size?: number): LayoutNode => {
+      const widgetId = ids.get(key);
+      assertThat(widgetId !== undefined, "stage_topology_layout_key_missing");
+      return {kind: "widget", widgetId: widgetId!, ...(size === undefined ? {} : {size})};
+    };
+    const group = (children: LayoutNode[], size?: number): LayoutNode =>
+      ({kind: "group", children, ...(size === undefined ? {} : {size})});
+    let root: LayoutNode;
+    switch (page.name) {
+      case "Consultation structures":
+        root = group([leaf("structures", 76.66666666666667),
+          group([leaf("carte", 130), leaf("fiche", 125)], 123.33333333333333)]);
+        break;
+      case "Suivi des stages":
+        root = group([group([leaf("stages", 96.66666666666667),
+          leaf("fiche", 103.33333333333333)], 170)]);
+        break;
+      case "Ma classe":
+        root = group([leaf("classes", 65),
+          group([leaf("periodes", 136.66666666666669), leaf("bilan", 63.333333333333314)]),
+          leaf("stages"), leaf("affectations")]);
+        break;
+      case "Formulaire structures":
+        root = group([group([leaf("structures"), leaf("form")])]);
+        break;
+      case "Formulaire stages":
+        root = group([group([leaf("stages"), leaf("form")])]);
+        break;
+      case "Liste des enseignants":
+        root = group([leaf("enseignants", 86.66666666666667),
+          group([leaf("geocodeur"), leaf("carte")], 113.33333333333333)]);
+        break;
+      case "Liste des classes":
+        root = group([group([leaf("classes"), leaf("periodes")])]);
+        break;
+      case "Assistant structures":
+        root = group([leaf("structures", 56.66666666666667), leaf("assistant", 113.33333333333333)]);
+        break;
+      case "Affectation des stages":
+        root = group([group([leaf("classes", 64.96388888888887),
+          leaf("affectations", 120.64722222222221)], 79.52777777777777),
+          leaf("stages", 85.20833333333334), leaf("assistant", 176.0972222222222)]);
+        break;
+      default:
+        root = group(page.widgets.filter(w => !w.collapsed).map(w => leaf(w.key)));
+    }
+    return {root, collapsedWidgetIds: page.widgets.filter(w => w.collapsed).map(w => ids.get(w.key)!)};
+  };
   // Stable witness field bindings; instructional text and required-field
   // choices are synthetic acceptance values, not copied source Form options.
   type FormSpec = {columns: string[]; required: string[]; title: string};
@@ -1139,14 +1194,13 @@ async function validateFromEmptyStageTopology(
           }
         }
       }
-      await callTool(bridge, "grist_change_ui", {
-        action: "update_layout", documentId, pageId, layout: {
-          root: {kind: "group", children: page.widgets.filter(w => !w.collapsed).map(w => ({
-            kind: "widget", widgetId: ids.get(w.key)
-          }))},
-          collapsedWidgetIds: page.widgets.filter(w => w.collapsed).map(w => ids.get(w.key))
-        }
-      });
+      const layout = layoutFor(page, ids);
+      const layoutResult = await callTool(bridge, "grist_change_ui", {
+        action: "update_layout", documentId, pageId, layout
+      }) as {changed: boolean; page: {layoutNormalized: unknown}};
+      assertThat((!replay || !layoutResult.changed) &&
+        JSON.stringify(layoutResult.page.layoutNormalized) ===
+          JSON.stringify({...layout, unplacedWidgetIds: []}), "stage_topology_layout_replay_wrong");
       results.push({pageId, widgetIds: page.widgets.map(w => ids.get(w.key)!)});
     }
     return results;
@@ -1270,14 +1324,17 @@ async function validateFromEmptyStageTopology(
     assertThat(countKeyValue(navigation, "name", spec.name) === 1, "stage_topology_page_name_duplicate");
     const pageSections = sections.filter(section => section.fields.parentId === actual.pageId);
     assertThat(pageSections.length === spec.widgets.length, "stage_topology_native_section_count_wrong");
-    const nativeLayout = JSON.parse(String(views.find(view => view.id === actual.pageId)?.fields.layoutSpec)) as {
-      children: Array<{leaf: number}>; collapsed?: Array<{leaf: number}>;
-    };
-    const expectedPlaced = spec.widgets.flatMap((widget, index) => widget.collapsed ? [] : [actual.widgetIds[index]]);
-    const expectedCollapsed = spec.widgets.flatMap((widget, index) => widget.collapsed ? [actual.widgetIds[index]] : []);
-    assertThat(JSON.stringify(nativeLayout.children.map(node => node.leaf)) === JSON.stringify(expectedPlaced) &&
-      JSON.stringify((nativeLayout.collapsed ?? []).map(node => node.leaf)) === JSON.stringify(expectedCollapsed),
-      "stage_topology_layout_wrong");
+    const nativeLayout = JSON.parse(String(views.find(view => view.id === actual.pageId)?.fields.layoutSpec));
+    const expected = layoutFor(spec, new Map(spec.widgets.map((widget, index) =>
+      [widget.key, actual.widgetIds[index]!])));
+    const encode = (node: LayoutNode): Record<string, unknown> => ({
+      ...(node.kind === "widget" ? {leaf: node.widgetId} : {children: node.children.map(encode)}),
+      ...(node.size === undefined ? {} : {size: node.size})
+    });
+    assertThat(JSON.stringify(nativeLayout) === JSON.stringify({
+      ...encode(expected.root), ...(expected.collapsedWidgetIds.length ?
+        {collapsed: expected.collapsedWidgetIds.map(leaf => ({leaf}))} : {})
+    }), "stage_topology_layout_wrong");
     for (let j = 0; j < spec.widgets.length; j++) {
       const widget = spec.widgets[j]!, section = pageSections.find(row => row.id === actual.widgetIds[j]);
       assertThat(section?.fields.parentKey === widget.type, "stage_topology_native_widget_type_wrong");
@@ -1360,7 +1417,7 @@ async function validateFromEmptyStageTopology(
       version: 1, tables: {source: tableRef}, bindings: {display: {tableRef, columnRef}}
     }), "witness_widget_native_binding_wrong");
   }
-  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 inert configured Custom), 20 native links, stable replay: PASS");
+  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 inert configured Custom), 20 native links, nested page layouts and no-write layout replay: PASS");
   // Publication is deliberately confined to this disposable native fixture.
   // No source share key or URL is used, and no public key enters a tool result.
   const formTarget = (tableId: string) => {
