@@ -1152,27 +1152,32 @@ async function validateFromEmptyStageTopology(
     }
     return {root, collapsedWidgetIds: page.widgets.filter(w => w.collapsed).map(w => ids.get(w.key)!)};
   };
-  // Stable witness field bindings; instructional text remains synthetic.
+  // Source layout text and stable field order; no source share keys or row IDs.
   // Required/prefill defaults are configured on the native columns above.
-  type FormSpec = {columns: string[]; title: string};
+  type FormSpec = {columns: string[]; title: string; description: string; submitText?: string; successText?: string};
   const formSpecs: Record<string, FormSpec> = {
     Structures_de_stage: {
-      columns: ["Nom_usuel", "Numero_d_immatriculation", "Courriel", "Telephone",
-        "Adresse", "Service", "Vente", "Site_web"],
-      title: "Proposer une structure de stage"
+      columns: ["Nom_usuel", "Adresse", "Numero_d_immatriculation", "Courriel", "Telephone", "Site_web",
+        "Service", "Vente"],
+      title: "# **Demande d'ajout d'une structure de stage**",
+      description: "Ce formulaire permet de demander l'ajout d'une structure de stage qui sera validée par les enseignants."
     },
     Stages: {
       columns: ["Eleve", "Structure_de_stage", "Periode"],
-      title: "Déclarer un stage"
+      title: "# **Demande d'ajout d'un stage**",
+      description: "Ce formulaire permet de demander l'ajout de votre stage dans une structure de stage déjà répertoriée.",
+      submitText: "Envoyer", successText: "Votre stage a été envoyé"
     }
   };
   const formLayout = (spec: FormSpec) => ({
     children: [
-      {type: "paragraph", text: spec.title},
+      {type: "paragraph", text: spec.title, alignment: "center"},
+      {type: "paragraph", text: spec.description, alignment: "center"},
       {type: "section", children: spec.columns.map(columnId => ({type: "field", columnId}))},
       {type: "submit"}
     ],
-    submitText: "Envoyer", successText: "Réponse reçue"
+    ...(spec.submitText !== undefined ? {submitText: spec.submitText} : {}),
+    ...(spec.successText !== undefined ? {successText: spec.successText} : {})
   });
   const construct = async (replay: boolean) => {
     const results: Array<{pageId: number; widgetIds: number[]}> = [];
@@ -1672,12 +1677,34 @@ async function validateFromEmptyStageTopology(
     children: Array<{children?: Array<{text?: string}>}>;
   };
   const link = /^Vous pouvez ajouter votre structure de stage via ce \[formulaire\]\(\/forms\/([a-zA-Z0-9_-]{1,100})\/([1-9]\d*)\)$/
-    .exec(nativeForm.children[1]?.children?.[2]?.text ?? "");
+    .exec(nativeForm.children[2]?.children?.[2]?.text ?? "");
   assertThat(link && Number(link[2]) === structureForm.widgetId,
     "stage_topology_public_form_link_wrong");
   assertThat(![linked, linkedReplay, structurePublished, stagePublished]
     .some(result => JSON.stringify(result).includes(link![1]!)),
     "stage_topology_public_form_key_exposed");
+  // Native layout, not the Gia response, is the oracle for the exact source text and order.
+  for (const [target, spec] of [[structureForm, formSpecs.Structures_de_stage!],
+    [stageForm, formSpecs.Stages!]] as const) {
+    const section = publishedSections.find(row => row.id === target.widgetId);
+    const native = JSON.parse(String(section?.fields.layoutSpec)) as {
+      children: Array<{type: string; text?: string; alignment?: string; children?: Array<{type: string; leaf?: number}>}>;
+      submitText?: string; successText?: string;
+    };
+    assertThat(native.children.length === 4 &&
+      native.children[0]?.text === spec.title && native.children[0]?.alignment === "center" &&
+      native.children[1]?.text === spec.description && native.children[1]?.alignment === "center" &&
+      native.children[3]?.type === "Submit" &&
+      native.submitText === spec.submitText && native.successText === spec.successText,
+      "stage_topology_source_form_prose_wrong");
+    const preview = await gristApi(context.baseUrl, context.ownerKey, path + "/forms/" + target.widgetId) as {
+      formFieldsById: Record<string, {colId: string}>;
+    };
+    const order = native.children[2]?.children?.filter(node => node.type === "Field")
+      .map(node => preview.formFieldsById[String(node.leaf)]?.colId);
+    assertThat(JSON.stringify(order) === JSON.stringify(spec.columns),
+      "stage_topology_source_form_field_order_wrong");
+  }
   const publicPath = "/api/s/" + link![1]!;
   const anonymous = (targetPath: string, body?: unknown) => fetch(
     new URL(targetPath, context.baseUrl), {
