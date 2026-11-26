@@ -2168,6 +2168,83 @@ async function validateFromEmptyStageTopology(
         id: recordIds.get(tableId), fields: {[columnId]: value}
       }]})
     });
+
+  // Source-derived student policy: table reads and narrow direction edits
+  // are separate native resource groups. No source student data is used.
+  const studentPP = {kind: "all", conditions: [
+    {kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId: "Acces_Stages_Actif"},
+    {kind: "record_in_user_attribute_ref_list", operator: "in", columnId: "Classe",
+      attributeName: "Personnel", attributeColumnId: "Classes_PP"}
+  ]};
+  const studentDirFormula = "user.Personnel.Acces_Stages_Actif and user.Personnel.Acces_Direction";
+  const studentPolicies = [
+    {target: {tableId: "Eleves"}, rules: [
+      {condition: owner, permissions: all}, {condition: direction, permissions: readOnly},
+      {condition: studentPP, permissions: readOnly}, {condition: everyone, permissions: none}
+    ], expected: [["user.Access==OWNER", "+CRUD"], [studentDirFormula, "+R-CUD"],
+      ["user.Personnel.Acces_Stages_Actif and rec.Classe in user.Personnel.Classes_PP", "+R-CUD"], ["", "-CRUD"]]},
+    {target: {tableId: "Eleves", columnIds: ["Identite"]},
+      rules: [{condition: direction, permissions: {read: "unspecified", update: "deny"}}],
+      expected: [[studentDirFormula, "-U"]]},
+    {target: {tableId: "Eleves", columnIds: ["Nom", "Prenom", "Sexe", "Date_de_naissance", "Classe"]},
+      rules: [{condition: direction, permissions: {read: "unspecified", update: "allow"}}],
+      expected: [[studentDirFormula, "+U"]]}
+  ];
+  for (const {target, rules, expected} of studentPolicies) {
+    const ensure = () => callTool(bridge, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "ensure", target, rules
+    }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean}>;
+    const first = await ensure(), replay = await ensure();
+    assertThat(first.changed && first.persistedDefinitionVerified &&
+      !replay.changed && replay.persistedDefinitionVerified, "witness_student_acl_not_reconciled");
+    const resources = (await metadata("_grist_ACLResources")).filter(row =>
+      row.fields.tableId === "Eleves" && (target.columnIds === undefined ?
+        row.fields.colIds === "*" : typeof row.fields.colIds === "string" &&
+        JSON.stringify(row.fields.colIds.split(",").sort()) === JSON.stringify([...target.columnIds].sort())));
+    assertThat(resources.length === 1, "witness_student_acl_resource_wrong");
+    const native = (await metadata("_grist_ACLRules"))
+      .filter(row => row.fields.resource === resources[0]!.id)
+      .sort((a, b) => Number(a.fields.rulePos) - Number(b.fields.rulePos));
+    assertThat(native.length === expected.length && native.every((rule, i) =>
+      compactFormula(rule.fields.aclFormula) === compactFormula(expected[i]![0]) &&
+      rule.fields.permissionsText === expected[i]![1]), "witness_student_acl_native_wrong");
+  }
+  await updateWitnessRow("Enseignants", teacherA, {Classes_PP: ["L"]});
+  await updateWitnessRow("Enseignants", teacherB, {Classes_PP: ["L", classA]});
+  const studentA = recordIds.get("Eleves")!;
+  const allStudents = await metadata("Eleves");
+  const idsOf = (rows: Array<{id: number}>) => rows.map(row => row.id).sort((a,b) => a-b);
+  const ppStudentIds = allStudents.filter(row => row.fields.Classe === classA).map(row => row.id).sort((a,b) => a-b);
+  assertThat(ppStudentIds.includes(studentA) && allStudents.some(row => row.id === studentC) &&
+    !ppStudentIds.includes(studentC), "witness_student_acl_seed_not_discriminating");
+  assertThat((await readTable(context.teacherAKey, "Eleves")).length === 0,
+    "witness_student_acl_ordinary_teacher_read_allowed");
+  assertThat(JSON.stringify(idsOf(await readTable(context.teacherBKey, "Eleves"))) === JSON.stringify(ppStudentIds),
+    "witness_student_acl_pp_scope_wrong");
+  const beforeStudent = allStudents.find(row => row.id === studentA)!.fields;
+  const readStudent = async () => (await metadata("Eleves")).find(row => row.id === studentA)!.fields;
+  assertThat(await patchTable(context.teacherBKey, "Eleves", "Nom", "Interdit PP") === 403 &&
+    JSON.stringify(await readStudent()) === JSON.stringify(beforeStudent),
+    "witness_student_acl_pp_write_allowed");
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: true});
+  assertThat(JSON.stringify(idsOf(await readTable(context.teacherBKey, "Eleves"))) === JSON.stringify(idsOf(allStudents)),
+    "witness_student_acl_direction_scope_wrong");
+  const studentMarker = "Nom synthétique direction";
+  const studentWrite = await patchTable(context.teacherBKey, "Eleves", "Nom", studentMarker);
+  const afterStudent = await readStudent();
+  assertThat(studentWrite >= 200 && studentWrite < 300 && afterStudent.Nom === studentMarker,
+    "witness_student_acl_direction_field_write_denied");
+  assertThat(await patchTable(context.teacherBKey, "Eleves", "Cle", "cle-interdite") === 403 &&
+    JSON.stringify(await readStudent()) === JSON.stringify(afterStudent),
+    "witness_student_acl_direction_unlisted_field_write_allowed");
+  await updateWitnessRow("Eleves", studentA, {Nom: beforeStudent.Nom});
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: false});
+  assertThat(JSON.stringify(idsOf(await readTable(context.teacherBKey, "Eleves"))) === JSON.stringify(ppStudentIds),
+    "witness_student_acl_direction_restriction_not_restored");
+  await expectStageIds(context.teacherAKey, [stageA, stageC]);
+  await expectStageIds(context.teacherBKey, [stageA, stageB]);
+  console.log("from-empty witness: three student ACL groups, authenticated PP/direction row scope, narrow field updates, denial preservation and replay: PASS");
+
   for (const [tableId, columnId] of [
     ["Structures_de_stage", "Adresse"], ["Activites", "Nom"], ["Verrou", "A"]
   ] as const) {
