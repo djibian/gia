@@ -136,6 +136,7 @@ test("authorized page layout update emits one bounded BoxSpec write and verifies
     collapsedWidgetIds: [12]
   }) as {
     documentId: string;
+    changed: boolean;
     page: {
       id: number;
       layoutNormalized?: unknown;
@@ -156,6 +157,7 @@ test("authorized page layout update emits one bounded BoxSpec write and verifies
     }
   ]);
   assert.equal(result.documentId, "doc-1");
+  assert.equal(result.changed, true);
   assert.equal(result.page.id, 7);
   assert.deepEqual(result.page.widgetIds, [11, 12]);
   assert.equal(result.page.widgetCount, 2);
@@ -164,6 +166,19 @@ test("authorized page layout update emits one bounded BoxSpec write and verifies
     collapsedWidgetIds: [12],
     unplacedWidgetIds: []
   });
+});
+
+test("page layout replay preserves native collapsed size and performs no write", async () => {
+  const { service, writes } = harness({
+    initialLayoutSpec: JSON.stringify({leaf: 11, size: 75, collapsed: [{leaf: 12, size: 25}]})
+  });
+  const result = await service.updatePageLayout("doc-1", 7, {
+    root: {kind: "widget", widgetId: 11, size: 75},
+    collapsedWidgetIds: [12]
+  }) as {changed: boolean; page: {widgetIds: number[]}};
+  assert.equal(result.changed, false);
+  assert.deepEqual(result.page.widgetIds, [11, 12]);
+  assert.deepEqual(writes, []);
 });
 
 test("page layout post-write divergence is a non-retryable verification failure", async () => {
