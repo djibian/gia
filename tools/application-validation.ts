@@ -1195,6 +1195,52 @@ async function validateFromEmptyStageTopology(
           }
         }
       }
+      if (page.name === "Ma classe") {
+        // Visible fields, explicit widths and titles from the authorized
+        // source projection, keyed by logical widget purpose. No source
+        // row values, native IDs or opaque options are transferred.
+        const presentation: Array<{
+          key: string; title?: string; fields: Array<[string, number?]>;
+        }> = [
+          {key: "classes", fields: [["Classe"], ["Niveau"], ["Professeur_principal", 222]]},
+          {key: "bilan", title: "Répartition annuelle par enseignant",
+            fields: [["Enseignant"], ["count"], ["Stage_a_suivre"], ["Stages_attribues"], ["Reste_a_attribuer"]]},
+          {key: "periodes", title: "Bilan annuel",
+            fields: [["Numero"], ["Date_debut"], ["Date_fin"], ["Effectif"], ["Stages_declares"],
+              ["Sans_stage", 78], ["Stages_attribues", 107], ["Stages_sans_enseignants", 155]]},
+          {key: "stages", title: "Stages de la période",
+            fields: [["Eleve", 212], ["Structure_de_stage", 218], ["Commune", 137],
+              ["Suivi_par", 250], ["Type_de_contact", 152], ["Commentaire", 295]]},
+          {key: "affectations", title: "Répartition de la période",
+            fields: [["Enseignant"], ["Stage_a_suivre"], ["Stages_attribues", 131], ["Reste_a_attribuer", 135]]},
+          {key: "enseignants", fields: [["Identite", 272]]}
+        ];
+        for (const spec of presentation) {
+          const widgetId = ids.get(spec.key)!;
+          await callTool(bridge, "grist_change_ui", {
+            action: "update_widget", documentId, pageId, widgetId,
+            update: {
+              ...(spec.title === undefined ? {} : {title: spec.title}),
+              visibleFields: spec.fields.map(([columnId, width]) =>
+                ({columnId, ...(width === undefined ? {} : {width})}))
+            }
+          });
+        }
+        const configured = await callTool(bridge, "grist_inspect", {
+          action: "page_widgets", documentId, pageId
+        }) as {widgets: Array<{id: number; title?: string;
+          visibleFields?: Array<{columnId: string; width?: number}>}>};
+        for (const spec of presentation) {
+          const widget = configured.widgets.find(w => w.id === ids.get(spec.key));
+          assertThat(widget?.visibleFields?.length === spec.fields.length &&
+            (spec.title === undefined || widget.title === spec.title) &&
+            spec.fields.every(([columnId, width], index) =>
+              widget.visibleFields?.[index]?.columnId === columnId &&
+              (width === undefined || widget.visibleFields[index]?.width === width)),
+            "stage_topology_class_presentation_wrong:" + spec.key);
+        }
+        console.log("from-empty Ma classe: six widget field orders, explicit widths and four titles: PASS");
+      }
       const layout = layoutFor(page, ids);
       const layoutResult = await callTool(bridge, "grist_change_ui", {
         action: "update_layout", documentId, pageId, layout
