@@ -922,7 +922,33 @@ async function validateFromEmptyStageTopology(
     ].join("\n")}
   ].map(rule => ({action: "append_style_rule", tableId: "Structures_de_stage",
     ...rule, style: {fillColor: "#FFFFFF", textColor: "#E00A17", fontBold: true}}));
+  // Source Form defaults are column-owned, not per-section overrides.
+  // Preserve required/prefill semantics; use generic question text instead of
+  // transferring source-specific example contact details or addresses.
+  const formDefaults: Array<{tableId: string; columnId: string;
+    update: {question?: string; required?: boolean; acceptFromUrl?: boolean}}> = [
+    {tableId: "Structures_de_stage", columnId: "Nom_usuel",
+      update: {question: "Nom usuel", required: true, acceptFromUrl: false}},
+    {tableId: "Structures_de_stage", columnId: "Numero_d_immatriculation",
+      update: {question: "Numéro d'immatriculation (SIREN ou SIRET)"}},
+    {tableId: "Structures_de_stage", columnId: "Courriel", update: {question: "Courriel"}},
+    {tableId: "Structures_de_stage", columnId: "Telephone", update: {question: "Téléphone"}},
+    {tableId: "Structures_de_stage", columnId: "Adresse",
+      update: {question: "Adresse", required: true}},
+    {tableId: "Structures_de_stage", columnId: "Service", update: {required: false}},
+    {tableId: "Stages", columnId: "Eleve", update: {question: "Elève", required: true}},
+    {tableId: "Stages", columnId: "Structure_de_stage",
+      update: {question: "Structure de stage", required: true}},
+    {tableId: "Stages", columnId: "Periode", update: {required: true}}
+  ];
   const configureSchema = async (replay = false) => {
+    for (const spec of formDefaults) {
+      const result = await callTool(bridge, "grist_change_structure", {
+        action: "update_form_column_options", documentId, ...spec
+      }) as {changed: boolean; persistedOptionsVerified: boolean};
+      assertThat(result.persistedOptionsVerified && (!replay || !result.changed),
+        "witness_form_column_defaults_not_reconciled");
+    }
     for (const update of [{locale: "fr-FR"}, {timezone: "Europe/Paris"}]) {
       await callTool(bridge, "grist_change_structure", {
         action: "update_document", documentId, update
@@ -1126,18 +1152,18 @@ async function validateFromEmptyStageTopology(
     }
     return {root, collapsedWidgetIds: page.widgets.filter(w => w.collapsed).map(w => ids.get(w.key)!)};
   };
-  // Stable witness field bindings; instructional text and required-field
-  // choices are synthetic acceptance values, not copied source Form options.
-  type FormSpec = {columns: string[]; required: string[]; title: string};
+  // Stable witness field bindings; instructional text remains synthetic.
+  // Required/prefill defaults are configured on the native columns above.
+  type FormSpec = {columns: string[]; title: string};
   const formSpecs: Record<string, FormSpec> = {
     Structures_de_stage: {
       columns: ["Nom_usuel", "Numero_d_immatriculation", "Courriel", "Telephone",
         "Adresse", "Service", "Vente", "Site_web"],
-      required: ["Nom_usuel"], title: "Proposer une structure de stage"
+      title: "Proposer une structure de stage"
     },
     Stages: {
       columns: ["Eleve", "Structure_de_stage", "Periode"],
-      required: ["Eleve", "Structure_de_stage", "Periode"], title: "Déclarer un stage"
+      title: "Déclarer un stage"
     }
   };
   const formLayout = (spec: FormSpec) => ({
@@ -1195,14 +1221,6 @@ async function validateFromEmptyStageTopology(
           }) as {changed: boolean; persistedLayoutVerified: boolean};
           assertThat(configured.persistedLayoutVerified && (!replay || !configured.changed),
             "stage_topology_form_layout_not_reconciled");
-          for (const columnId of formSpec.required) {
-            const options = await callTool(bridge, "grist_change_ui", {
-              action: "update_form_field_options", documentId, pageId, widgetId, columnId,
-              update: {required: true}
-            }) as {changed: boolean; persistedOptionsVerified: boolean};
-            assertThat(options.persistedOptionsVerified && (!replay || !options.changed),
-              "stage_topology_form_field_options_not_reconciled");
-          }
         }
       }
       if (page.name === "Ma classe") {
@@ -1323,6 +1341,16 @@ async function validateFromEmptyStageTopology(
     assertThat(table !== undefined && matches.length === 1, "stage_topology_reference_column_missing");
     return matches[0]!;
   };
+  for (const {tableId, columnId, update} of formDefaults) {
+    const actual = JSON.parse(String(nativeColumn(tableId, columnId).fields.widgetOptions));
+    for (const [key, value] of Object.entries(update)) {
+      const nativeKey = key === "required" ? "formRequired" :
+        key === "acceptFromUrl" ? "formAcceptFromUrl" : key;
+      assertThat(actual[nativeKey] === value,
+        "witness_form_column_default_wrong:" + tableId + "." + columnId + "." + key);
+    }
+  }
+  console.log("from-empty witness: native column-owned Form required/prefill defaults and question semantics, replay: PASS");
   const contactHelpers = contactStyles.map(rule => {
     const column = nativeColumn(rule.tableId, rule.columnId);
     const refs = column.fields.rules;
@@ -1665,12 +1693,12 @@ async function validateFromEmptyStageTopology(
     .every(column => actual.includes(column)), "stage_topology_public_form_bindings_wrong");
   const submitted = "Structure fictive soumise";
   const sent = await anonymous(publicPath + "/tables/Structures_de_stage/records",
-    {records: [{fields: {Nom_usuel: submitted}}]});
+    {records: [{fields: {Nom_usuel: submitted, Adresse: "Adresse fictive"}}]});
   await sent.body?.cancel();
   assertThat(sent.ok, "stage_topology_structure_submission_failed");
   const saved = await metadata("Structures_de_stage");
   assertThat(saved.filter(row => row.fields.Nom_usuel === submitted &&
-    row.fields.Statut === "à vérifier").length === 1,
+    row.fields.Adresse === "Adresse fictive" && row.fields.Statut === "à vérifier").length === 1,
     "stage_topology_structure_submission_missing_default");
   console.log("from-empty stage topology: 8/3 Form fields, native layout replay, linked public Forms and anonymous structure submission: PASS");
   // Obtain the second disposable native capability without returning it via MCP.
