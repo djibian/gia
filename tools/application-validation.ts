@@ -1,17 +1,24 @@
+import { randomUUID } from "node:crypto";
 import {
   assertThat,
   callTool,
   containsValue,
   countKeyValue,
   createTestApiKey,
+  delay,
+  driverRequest,
   gristApi,
   gristStatus,
+  inspectPage,
+  navigate,
   recordsFrom,
+  startBrowser,
   startBridge,
   stopBridge,
   waitForUrl
 } from "./grist-harness.js";
 import { readOwnerFormShareKey } from "../src/grist/formShareLookup.js";
+import type { AccessRuleCondition, AccessRuleTarget, NormalizedAccessRule } from "../src/grist/accessRules.js";
 import {
   TEACHER_A_EMAIL,
   TEACHER_B_EMAIL,
@@ -2803,8 +2810,123 @@ async function validateFromEmptyStageTopology(
   await expectStageIds(context.teacherBKey, [stageA, stageB]);
   console.log("from-empty witness: four teacher ACL groups, native identity visibility, confidentiality, narrow updates and replay: PASS");
 
-
-
+  // The API fixtures first use an Email attribute. Stage a LinkKey attribute
+  // alongside it and rebind the typed rules before retiring the Email lookup.
+  const tokenA = randomUUID(), tokenB = randomUUID();
+  await updateWitnessRow("Enseignants", teacherA, {Token_Stages: tokenA});
+  await updateWitnessRow("Enseignants", teacherB, {Token_Stages: tokenB});
+  const labels = ["LINKKEY_STAGE_A", "LINKKEY_STAGE_B", "LINKKEY_STAGE_C"] as const;
+  for (const [stageId, label] of [[stageA, labels[0]], [stageB, labels[1]], [stageC, labels[2]]] as const) {
+    await updateWitnessRow("Stages", stageId, {Cle: label});
+  }
+  const linkAttribute = "PersonnelLinkKey";
+  const setPersonnelLookup = () => callTool(bridge, "grist_change_structure", {
+    action: "access_rule_group", documentId, mode: "ensure", target: {userAttributeName: linkAttribute},
+    definition: {tableId: "Enseignants", lookupColId: "Token_Stages", source: {kind: "link_key", name: "Token"}}
+  }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean}>;
+  const added = await setPersonnelLookup();
+  const replay = await setPersonnelLookup();
+  assertThat(added.changed && added.persistedDefinitionVerified &&
+    !replay.changed && replay.persistedDefinitionVerified, "witness_link_key_attribute_not_reconciled");
+  const currentPolicy = await callTool(bridge, "grist_inspect", {action: "access_rules", documentId}) as {
+    groups: Array<{
+      target: AccessRuleTarget;
+      editable: boolean;
+      dependencies: {userAttributeFields?: Array<{attributeName: string}>};
+      rules?: NormalizedAccessRule[];
+    }>;
+  };
+  const rebind = (condition: AccessRuleCondition): AccessRuleCondition => {
+    if (condition.kind === "all" || condition.kind === "any") {
+      return {...condition, conditions: condition.conditions.map(rebind)};
+    }
+    if (condition.kind === "not") return {...condition, condition: rebind(condition.condition)};
+    if ("attributeName" in condition && condition.attributeName === "Personnel") {
+      return {...condition, attributeName: linkAttribute};
+    }
+    return condition;
+  };
+  const dependent = currentPolicy.groups.filter(group =>
+    group.dependencies.userAttributeFields?.some(field => field.attributeName === "Personnel"));
+  assertThat(dependent.some(group => group.target.tableId === "Stages"), "witness_link_key_dependent_rules_missing");
+  for (const group of dependent) {
+    assertThat(group.editable && group.rules, "witness_link_key_dependent_rule_protected");
+    const rules = group.rules.map(rule => ({...rule, condition: rebind(rule.condition)}));
+    const persist = (mode: "replace" | "ensure") => callTool(bridge, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode, target: group.target, rules
+    }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean}>;
+    const replaced = await persist("replace");
+    const repeated = await persist("ensure");
+    assertThat(replaced.changed && replaced.persistedDefinitionVerified &&
+      !repeated.changed && repeated.persistedDefinitionVerified, "witness_link_key_group_not_reconciled");
+  }
+  const retired = await callTool(bridge, "grist_change_structure", {
+    action: "access_rule_group", documentId, mode: "delete", target: {userAttributeName: "Personnel"}
+  }) as {changed: boolean; persistedDefinitionVerified: boolean};
+  assertThat(retired.changed && retired.persistedDefinitionVerified, "witness_link_key_email_attribute_not_retired");
+  // A successful earlier Email lookup must no longer convey access.
+  await expectStageIds(context.teacherAKey, []);
+  await expectStageIds(context.teacherBKey, []);
+  const document = await gristApi(context.baseUrl, context.ownerKey, path) as {id: string; urlId?: string | null};
+  assertThat(document.id === documentId || document.urlId === documentId, "witness_link_key_document_mismatch");
+  const documentRoutes = new Set([document.id, document.urlId].filter(
+    (value): value is string => typeof value === "string").map(encodeURIComponent));
+  const orgs = await gristApi(context.baseUrl, context.ownerKey, "/api/orgs") as Array<{domain?: string}>;
+  const orgDomain = orgs[0]?.domain ?? "docs";
+  const pageId = first[pages.findIndex(page => page.name === "Partenaires")]?.pageId;
+  assertThat(pageId, "witness_link_key_page_missing");
+  const route = new URL("/o/" + encodeURIComponent(orgDomain) + "/doc/" + encodeURIComponent(documentId) +
+    "/p/" + pageId, context.baseUrl);
+  const {driver, driverBase, sessionId} = await startBrowser();
+  try {
+    const login = new URL("/test/login", context.baseUrl);
+    login.searchParams.set("username", TEACHER_A_EMAIL);
+    login.searchParams.set("name", "Teacher A");
+    await navigate(driverBase, sessionId, login.toString());
+    const checkBrowser = async (name: string, key: string | undefined, expected: readonly string[]) => {
+      const url = new URL(route);
+      if (key) url.searchParams.set("Token_", key);
+      await navigate(driverBase, sessionId, url.toString());
+      let matchingReads = 0;
+      let observed: {origin: boolean; document: boolean; page: boolean;
+        key: boolean; control: boolean; labels: string[]} | undefined;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const result = await inspectPage(driverBase, sessionId);
+        const current = new URL(result.url);
+        const found = labels.filter(label => result.text.includes(label));
+        observed = {
+          origin: current.origin === route.origin,
+          document: current.pathname.split("/").some(segment => documentRoutes.has(segment)),
+          page: current.pathname.endsWith("/p/" + pageId),
+          key: current.searchParams.get("Token_") === (key ?? null),
+          control: result.text.includes("synthetique-Structures_de_stage"),
+          labels: found
+        };
+        const loaded = observed.origin && observed.document && observed.page && observed.key && observed.control;
+        assertThat(![tokenA, tokenB].some(token => result.text.includes(token)),
+          "witness_link_key_token_visible:" + name);
+        if (loaded && JSON.stringify(found) === JSON.stringify(expected)) {
+          if (++matchingReads === 3) return;
+        } else {
+          matchingReads = 0;
+        }
+        await delay(500);
+      }
+      throw new Error("witness_link_key_browser_scope_unverified:" + name + ":" + JSON.stringify(observed));
+    };
+    await checkBrowser("ordinary", tokenA, [labels[0], labels[2]]);
+    await checkBrowser("principal", tokenB, [labels[0], labels[1]]);
+    await checkBrowser("absent", undefined, []);
+    await checkBrowser("wrong", randomUUID(), []);
+    await updateWitnessRow("Enseignants", teacherB, {Acces_Stages_Actif: false});
+    await checkBrowser("disabled", tokenB, []);
+    await updateWitnessRow("Enseignants", teacherB, {Acces_Stages_Actif: true});
+    await checkBrowser("reactivated", tokenB, [labels[0], labels[1]]);
+  } finally {
+    await driverRequest(driverBase, "DELETE", "/session/" + sessionId).catch(() => {});
+    driver.kill("SIGTERM");
+  }
+  console.log("from-empty witness: source-shaped LinkKey lookup, browser PP and ordinary visibility, missing/wrong/disabled keys: PASS");
 }
 
 async function run(): Promise<void> {
@@ -2829,7 +2951,6 @@ async function run(): Promise<void> {
     await validateFromEmptyStageSkeleton(bridge.baseUrl, context);
     await validateFromEmptyStageTopology(bridge.baseUrl, context);
     console.log("semantic rerun/idempotence: PASS");
-    console.log("browser escalation: NOT TRIGGERED; material UI and access postconditions were observable through MCP/API semantics");
     console.log(`application validation on Grist Community ${version}: PASS`);
   } finally {
     await stopBridge(bridge.child);
