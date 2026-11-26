@@ -107,8 +107,12 @@ The domain-shaped fixtures are test consumers, never product requirements.
 Application preservation exercises maintained widget URLs on the disposable
 from-empty witness when its acceptance script changes or the workflow is
 dispatched with `live_widgets`. The browser checks the actual loaded frame,
-Grist's ready handshake and an observable mapped-data behavior for each
-widget. Ordinary preservation runs use inert registry entries.
+Grist's ready handshake and mapped-data behavior. It checks cursor effects
+from the Map and Structure Assistant in their native grids, re-reads the
+geocoded and reassigned synthetic rows, and verifies that the Outlook draft
+contains the native calculated personal link. The LinkKey browser cases
+exercise those links against the newly created document. Ordinary
+preservation runs use inert registry entries.
 
 To run against a disposable local Grist with test login enabled:
 
