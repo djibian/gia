@@ -873,8 +873,8 @@ async function validateFromEmptyStageTopology(
   const formula = (id: string, type: string, expression: string, isFormula = true): FormulaSeed =>
     ({id, fields: {type, isFormula, formula: expression}});
   // Dependencies are constructed before each calculated batch. Ordinary business
-  // formulas match the source schema; email/token/link delivery uses deliberately
-  // inert synthetic values and is not qualified here.
+  // formulas match the source schema; identity and token values remain synthetic.
+  // Personal links are bound to the new document after its pages are created.
   const computed: Array<[string, FormulaSeed[]]> = [
     ["Structures_de_stage", [formula("Statut", "Choice", '"à vérifier"', false)]],
     ["Enseignants", [
@@ -2892,6 +2892,27 @@ async function validateFromEmptyStageTopology(
   assertThat(pageId, "witness_link_key_page_missing");
   const route = new URL("/o/" + encodeURIComponent(orgDomain) + "/doc/" + encodeURIComponent(documentId) +
     "/p/" + pageId, context.baseUrl);
+  // Bind the calculated personal link to the newly created native page, never
+  // the source document. Only the disposable fixture's random tokens are used.
+  const replacePersonalLink = () => callTool(bridge, "grist_change_structure", {
+    action: "replace_column_formula", documentId, tableId: "Enseignants",
+    columnId: "Lien_Stages",
+    formula: JSON.stringify(route.href + "?Token_=") + ' + $Token_Stages if $Token_Stages else ""'
+  }) as Promise<{changed: boolean; persistedFormulaVerified: boolean}>;
+  const changedLink = await replacePersonalLink();
+  const replayedLink = await replacePersonalLink();
+  assertThat(changedLink.changed && changedLink.persistedFormulaVerified &&
+    !replayedLink.changed && replayedLink.persistedFormulaVerified, "witness_personal_link_formula_replay");
+  const readPersonalLink = async (teacherId: number, key: string) => {
+    const expected = new URL(route);
+    expected.searchParams.set("Token_", key);
+    const actual = (await teacherRecord(teacherId)).Lien_Stages;
+    assertThat(typeof actual === "string" && actual === expected.href, "witness_personal_link_wrong");
+    return actual as string;
+  };
+  const linkA = await readPersonalLink(teacherA, tokenA);
+  const linkB = await readPersonalLink(teacherB, tokenB);
+  assertThat(linkA !== linkB, "witness_personal_links_not_distinct");
   const {driver, driverBase, sessionId} = await startBrowser();
   try {
     const login = new URL("/test/login", context.baseUrl);
@@ -2899,8 +2920,8 @@ async function validateFromEmptyStageTopology(
     login.searchParams.set("name", "Teacher A");
     await navigate(driverBase, sessionId, login.toString());
     const checkBrowser = async (name: string, key: string | undefined, expected: readonly string[]) => {
-      const url = new URL(route);
-      if (key) url.searchParams.set("Token_", key);
+      const url = new URL(key === tokenA ? linkA : key === tokenB ? linkB : route.href);
+      if (key && key !== tokenA && key !== tokenB) url.searchParams.set("Token_", key);
       await navigate(driverBase, sessionId, url.toString());
       let matchingReads = 0;
       let observed: {origin: boolean; document: boolean; page: boolean;
@@ -2941,7 +2962,7 @@ async function validateFromEmptyStageTopology(
     await driverRequest(driverBase, "DELETE", "/session/" + sessionId).catch(() => {});
     driver.kill("SIGTERM");
   }
-  console.log("from-empty witness: source-shaped LinkKey lookup, browser PP and ordinary visibility, missing/wrong/disabled keys: PASS");
+  console.log("from-empty witness: generated personal links to the new page, source-shaped LinkKey lookup, browser PP and ordinary visibility, missing/wrong/disabled keys: PASS");
   if (qualifyLiveWidgets) {
     const alternateStructure = (await metadata("Structures_de_stage"))
       .find(row => row.fields.Nom_usuel === finalFormName);
@@ -3024,9 +3045,15 @@ async function validateFromEmptyStageTopology(
                       path(location.pathname) === path(arguments[3]),
                     access: new URLSearchParams(location.search).get('access') === arguments[4],
                     behavior: Boolean(node && (!arguments[1] || node.textContent.trim() === arguments[1]) &&
-                      (arguments[5] !== 'teacher-mail' || document.querySelector('#openOutlook[href][aria-disabled="false"]')))
+                      (arguments[5] !== 'teacher-mail' || (() => {
+                        const draft = document.querySelector('#openOutlook[href][aria-disabled="false"]');
+                        const body = document.querySelector('#bodyPreview');
+                        return Boolean(draft && body?.textContent.includes(arguments[6]) &&
+                          new URL(draft.href).searchParams.get('body')?.includes(arguments[6]));
+                      })()))
                   };`,
-                args: [wanted.selector, wanted.text ?? "", expected.origin, expected.pathname, spec.access, spec.key]
+                args: [wanted.selector, wanted.text ?? "", expected.origin, expected.pathname, spec.access, spec.key,
+                  spec.key === "teacher-mail" ? linkA : ""]
               }) as typeof observed;
               if (spec.key === "teacher-geocoder" && observed?.asset && observed.access && observed.behavior) {
                 assertThat(await click(wanted.selector), "witness_live_geocode_click_failed");
