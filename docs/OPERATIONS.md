@@ -53,6 +53,7 @@ credentials, runtime logs or private Grist data belong in published source.
 | `MCP_BEARER_TOKEN` | static authentication only; random value of at least 32 characters; absent in OAuth mode |
 | `OAUTH_ISSUER`, `OAUTH_JWKS_URI`, `MCP_RESOURCE_URI` | OAuth mode: HTTPS issuer, JWKS and canonical public `/mcp` resource |
 | `MCP_CAPABILITIES` | static principal capability ceiling, with three baseline capabilities by default. Add `doc:download` explicitly to enable native full-data copying in static or OAuth mode |
+| `GIA_TRUSTED_CUSTOM_WIDGETS_JSON` | operator registry of approved HTTPS widget URLs, empty by default. A matching `directUrl:true` selection carries standing widget approval under the [MCP contract](MCP-CONTRACT.md) |
 | `GRIST_MAX_READ_RECORDS` | `5000` |
 | `GRIST_MAX_WRITE_RECORDS` | `500` |
 | `GRIST_WRITE_BATCH_RECORDS` | positive sequential batch size; `200` |

@@ -27,15 +27,13 @@ The supported subset and its limits are defined by the contract and executable t
 Business applications such as teaching, stage tracking, CRM or inventory are
 consumers and test cases. Their schemas and policy choices never drive core architecture.
 
-## Selected finite application-creation goal
+## Application construction
 
-The owner selected [#295](https://github.com/djibian/gia/issues/295):
-an MCP client must be able to construct, configure, publish with explicit
-authorization, and qualify a functional Grist Community application from an
-empty document. The representative stage-tracking application is an acceptance
-case, **not** Gia runtime business logic or a general Grist feature-parity
-mandate. A full native document copy is complementary, never acceptance proof
-for building from scratch.
+An MCP client can build, configure and qualify a Grist Community application
+from an empty document. The [native application tests](DEVELOPMENT.md#native-grist-regressions)
+exercise a representative stage-tracking application with synthetic data,
+including document settings, UI, policy, Forms, trusted widgets and sharing.
+Full native document copying serves a separate use case.
 
 The client retains application specifications, orchestration, symbolic
 cross-component references, dependency ordering and restart progress.
@@ -45,10 +43,8 @@ native authorization and publication. Inspection must distinguish incomplete
 or protected state from absence; synthetic authenticated tests, not merely
 persisted policy simulations, qualify access boundaries.
 
-The selection does not authorize arbitrary widget URLs, publication,
-unrestricted sharing, token exposure, global identity management, raw ACL
-formulas or implicit privilege escalation. New document-scoped access and
-publication capabilities require a separately checked owner/grant gate.
+Publication and document access changes use their own explicit authorization
+and native Owner checks. The operator registry defines approved widget URLs.
 
 Deployment operators can register trusted widgets at permanent HTTPS URLs
 with evolving code. A registered direct URL supplies standing approval for the
