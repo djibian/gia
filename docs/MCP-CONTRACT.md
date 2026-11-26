@@ -557,6 +557,19 @@ uncertain and not blindly retryable; non-CAS native sharing changes must
 be serialized and reconciled. No native authorization decision or invitation
 delivery is certified by this persisted write.
 
+All three individual sharing operations verify **persisted** access only.
+Native Grist can continue to use an earlier effective document role after
+a confirmed change, including allowing reads or writes after revocation or
+downgrade. Grist Community 1.7.16–1.7.20 uses a nominal 5000 ms document
+authorization cache, distinct from its invalidated permission-list cache.
+The disposable application qualification on 1.7.19 records immediate
+authorization outcomes separately and checks restrictions after a fixture-only
+6 s interval. This is sampled native behavior, not an upper bound, an
+instantaneous revocation guarantee, or a proof across workers, sessions or
+deployments. Gia does not wait for, invalidate or bypass native authorization
+caches; clients must not treat persisted verification as proof that effective
+access has changed or retry uncertain mutations to accelerate propagation.
+
 One invocation represents one bounded semantic intention. Manager-style tools use a closed `action` discriminator; they do not accept an arbitrary operation list or a generic Grist `/apply` payload.
 
 Expanded column discovery (`grist_discover(columns)` and
