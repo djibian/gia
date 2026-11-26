@@ -24,24 +24,25 @@ import {
   setupFixtures
 } from "./application-fixtures.js";
 
-// Reserved origins and inactive widgets qualify metadata only, not remote code.
+// Reserved inert origins qualify native metadata only, never remote code.
 const witnessWidgets = [
   {key: "structures-map", page: "Consultation structures", section: "carte",
-    tableId: "Structures_de_stage", columnId: "Nom_usuel", direct: false},
+    tableId: "Structures_de_stage", columnId: "Nom_usuel", direct: true, reciprocal: true},
   {key: "teacher-geocoder", page: "Liste des enseignants", section: "geocodeur",
-    tableId: "Enseignants", columnId: "Adresse", direct: true},
+    tableId: "Enseignants", columnId: "Adresse", direct: true, reciprocal: false},
   {key: "teacher-map", page: "Liste des enseignants", section: "carte",
-    tableId: "Enseignants", columnId: "Identite", direct: false},
+    tableId: "Enseignants", columnId: "Identite", direct: false, reciprocal: false},
   {key: "structure-assistant", page: "Assistant structures", section: "assistant",
-    tableId: "Structures_de_stage", columnId: "Nom_usuel", direct: true},
+    tableId: "Structures_de_stage", columnId: "Nom_usuel", direct: true, reciprocal: true},
   {key: "assignment-assistant", page: "Affectation des stages", section: "assistant",
-    tableId: "Classes", columnId: "Classe", direct: true}
+    tableId: "Classes", columnId: "Classe", direct: true, reciprocal: false}
 ] as const;
 const widgetFixtureUrl = (key: string) => `https://${key}.invalid/v1.0.0/index.html`;
 const widgetFixtureRegistry = JSON.stringify(witnessWidgets.map(spec => ({
   key: spec.key, name: spec.key, widgetId: `@test/${spec.key}`,
   revision: "v1.0.0", url: widgetFixtureUrl(spec.key),
   ...(spec.direct ? {directUrl: true} : {}),
+  ...(spec.reciprocal ? {allowSelectBy: true, allowReciprocalCursor: true} : {}),
   referenceOption: {key: "fixtureConfig", version: 1,
     tableSlots: ["source"], columnSlots: {display: "source"}}
 })));
@@ -755,8 +756,8 @@ async function validateFromEmptyStageSkeleton(
 /**
  * #295: native ordinary page topology from the witness, with synthetic schema
  * and rows. Five blank Custom sections receive native links from ordinary
- * selectors. Custom metadata uses inert fixtures; external code and the two
- * reciprocal custom-source links are absent.
+ * selectors. Custom metadata uses inert fixtures, including the two
+ * reciprocal custom-source links; external code execution is not qualified.
  * The source document is not used at runtime.
  */
 async function validateFromEmptyStageTopology(
@@ -1542,7 +1543,51 @@ async function validateFromEmptyStageTopology(
       version: 1, tables: {source: tableRef}, bindings: {display: {tableRef, columnRef}}
     }), "witness_widget_native_binding_wrong");
   }
-  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 inert configured Custom), 20 native links, nested page layouts and no-write layout replay: PASS");
+  // Close the two source-derived reciprocal cursor pairs, after separately
+  // granting synthetic read access to their explicitly approved inert revisions.
+  // No real widget URL, source ID or source data is transferred.
+  for (const spec of witnessWidgets.filter(widget => widget.reciprocal)) {
+    const pageIndex = pages.findIndex(page => page.name === spec.page);
+    const pageSpec = pages[pageIndex]!;
+    const actual = first[pageIndex]!;
+    const customIndex = pageSpec.widgets.findIndex(widget => widget.key === spec.section);
+    const sourceKey = pageSpec.widgets[customIndex]?.source;
+    const sourceIndex = pageSpec.widgets.findIndex(widget => widget.key === sourceKey);
+    assertThat(customIndex >= 0 && sourceIndex >= 0 &&
+      pageSpec.widgets[sourceIndex]?.type === "record", "witness_cursor_pair_target_missing");
+    const customId = actual.widgetIds[customIndex]!, gridId = actual.widgetIds[sourceIndex]!;
+    const request = {action: "update_widget", documentId, pageId: actual.pageId};
+    await callTool(bridge, "grist_change_ui", {
+      ...request, widgetId: customId, update: {
+        customWidgetSettings: {access: "read table", confirmDataAccess: true}
+      }
+    });
+    const before = await metadata("_grist_Views_section");
+    const custom = before.find(row => row.id === customId);
+    const grid = before.find(row => row.id === gridId);
+    assertThat(custom?.fields.linkSrcSectionRef === gridId &&
+      grid?.fields.linkSrcSectionRef === 0 &&
+      JSON.parse(JSON.parse(String(custom?.fields.options)).customView).access === "read table",
+      "witness_cursor_pair_precondition_wrong");
+    const close = {...request, widgetId: gridId,
+      update: {selectBy: {sourceWidgetId: customId, trustedSourceKey: spec.key}}};
+    await callTool(bridge, "grist_change_ui", close);
+    const after = await metadata("_grist_Views_section");
+    const expected = before.map(row => row.id === gridId ?
+      {...row, fields: {...row.fields, linkSrcSectionRef: customId, linkSrcColRef: 0, linkTargetColRef: 0}} : row);
+    assertThat(JSON.stringify(after) === JSON.stringify(expected), "witness_cursor_pair_native_state_wrong");
+    await callTool(bridge, "grist_change_ui", close);
+    await callTool(bridge, "grist_change_ui", {
+      ...request, widgetId: customId, update: {selectBy: {sourceWidgetId: gridId}}
+    });
+    assertThat(JSON.stringify(await metadata("_grist_Views_section")) === JSON.stringify(after),
+      "witness_cursor_pair_replay_changed_state");
+  }
+  const linkedSections = await metadata("_grist_Views_section");
+  const attached = new Set(first.flatMap(page => page.widgetIds));
+  assertThat(linkedSections.filter(row => attached.has(row.id) &&
+    Number(row.fields.linkSrcSectionRef) > 0).length === 22, "witness_full_link_count_wrong");
+  console.log("from-empty stage topology: 9 base tables, 15 named pages, 46 sections (5 inert configured Custom), 22 native links including 2 reciprocal Custom pairs, nested page layouts and no-write layout replay: PASS");
   // Publication is deliberately confined to this disposable native fixture.
   // No source share key or URL is used, and no public key enters a tool result.
   const formTarget = (tableId: string) => {
