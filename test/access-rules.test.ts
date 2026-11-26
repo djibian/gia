@@ -394,12 +394,12 @@ test("creates bounded canonical ACL writes and verifies preservation", () => {
     {
       aclFormula: "rec.OwnerEmail == user.Email",
       permissionsText: "+RU",
-      rulePos: 1
+      rulePos: 2
     },
     {
       aclFormula: "",
       permissionsText: "-RU",
-      rulePos: 2
+      rulePos: 3
     }
   ]);
 
@@ -2031,4 +2031,26 @@ test("E1-D3 retains unknown coverage for opaque ACL conditions, without leaked l
     reasons: ["resource_target"], conditionCoverage: "unknown"
   }]);
   assert.doesNotMatch(JSON.stringify(result), /private-secret|aclFormula/);
+});
+
+
+test("ACL group replacement allocates ordered positions beyond fractional siblings", () => {
+  const resource = { id: 2, fields: { tableId: "Projects", colIds: "*" } };
+  const sibling = { id: 3, fields: { tableId: "Projects", colIds: "Title" } };
+  const makeRule = (id: number, resource: number, rulePos: number) => ({
+    id, fields: { resource, rulePos, aclFormula: "", aclFormulaParsed: "", permissionsText: "-R" }
+  });
+  const current = snapshot([resource, sibling], [makeRule(20, 2, 1), makeRule(30, 3, 8.5)]);
+  const rules = [
+    { condition: { kind: "match_user" as const, operator: "equals" as const, columnId: "OwnerEmail", userProperty: "Email" as const },
+      permissions: { read: "allow" as const, update: "unspecified" as const } },
+    { condition: { kind: "everyone" as const }, permissions: { read: "deny" as const, update: "unspecified" as const } }
+  ];
+  const plan = resolveAccessRuleMutation(current, { tableId: "Projects" }, "replace", rules);
+  assert.deepEqual(plan.rules.map(rule => rule.rulePos), [9, 10]);
+  assert.deepEqual(plan.ruleRecordIds, [20]);
+  assert.throws(() => resolveAccessRuleMutation(
+    snapshot([resource, sibling], [makeRule(20, 2, 1), makeRule(30, 3, Number.MAX_SAFE_INTEGER)]),
+    { tableId: "Projects" }, "replace", rules
+  ), /safe native ACL rule positions/);
 });

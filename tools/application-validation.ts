@@ -2481,6 +2481,118 @@ async function validateFromEmptyStageTopology(
   await checkPeriods(context.teacherBKey, [periodA]);
   await expectStageIds(context.teacherAKey, [stageA, stageC]);
   await expectStageIds(context.teacherBKey, [stageA, stageB]);
+  // Replace the provisional Stages policy with the four source-derived
+  // ordinary groups. The same synthetic role identities remain in use.
+  const stageActive = {kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId: "Acces_Stages_Actif"};
+  const assignedStage = {kind: "all", conditions: [
+    stageActive, {kind: "match_user_attribute", operator: "equals", columnId: "Suivi_par",
+      attributeName: "Personnel", attributeColumnId: "id"}
+  ]};
+  const ppStage = ppFor("Classe");
+  const notDirection = {kind: "all", conditions: [
+    {kind: "user_access", operator: "not_equals", role: "owner"},
+    {kind: "any", conditions: [
+      {kind: "not", condition: stageActive},
+      {kind: "not", condition: {kind: "user_attribute_flag", attributeName: "Personnel",
+        attributeColumnId: "Acces_Direction"}}
+    ]}
+  ]};
+  const assignedFormula = "user.Personnel.Acces_Stages_Actif and rec.Suivi_par == user.Personnel.id";
+  const restrictionFormula = "user.Access != OWNER and (not user.Personnel.Acces_Stages_Actif or not user.Personnel.Acces_Direction)";
+  const stageSourcePolicies = [
+    {mode: "replace", target: {tableId: "Stages"}, rules: [
+      {condition: owner, permissions: all}, {condition: direction, permissions: all},
+      {condition: ppStage, permissions: readOnly}, {condition: assignedStage, permissions: readOnly},
+      {condition: everyone, permissions: none}
+    ], expected: [["user.Access==OWNER", "+CRUD"], [dirFormula, "+CRUD"],
+      [ppFormula("Classe"), "+R-CUD"], [assignedFormula, "+R-CUD"], ["", "-CRUD"]]},
+    {mode: "ensure", target: {tableId: "Stages", columnIds: ["Type_de_contact", "Ponctualite", "Implication", "Commentaire"]},
+      rules: [{condition: assignedStage, permissions: {read: "unspecified", update: "allow"}}],
+      expected: [[assignedFormula, "+U"]]},
+    {mode: "ensure", target: {tableId: "Stages", columnIds: ["Classe", "Structure_de_stage_Statut", "Commune"]},
+      rules: [{condition: ppStage, permissions: read}, {condition: assignedStage, permissions: read},
+        {condition: notDirection, permissions: {read: "deny", update: "deny"}}],
+      expected: [[ppFormula("Classe"), "+R"], [assignedFormula, "+R"], [restrictionFormula, "-RU"]]},
+    {mode: "replace", target: {tableId: "Stages", columnIds: ["Suivi_par"]}, rules: [
+      {condition: ppStage, permissions: {read: "allow", update: "allow"}},
+      {condition: assignedStage, permissions: read},
+      {condition: notDirection, permissions: {read: "deny", update: "deny"}}
+    ], expected: [[ppFormula("Classe"), "+RU"], [assignedFormula, "+R"], [restrictionFormula, "-RU"]]}
+  ];
+  for (const {mode, target, rules, expected} of stageSourcePolicies) {
+    const mutate = (intent: string) => callTool(bridge, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: intent, target, rules
+    }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean}>;
+    const first = await mutate(mode), replay = await mutate("ensure");
+    assertThat(first.changed && first.persistedDefinitionVerified &&
+      !replay.changed && replay.persistedDefinitionVerified, "witness_stage_source_acl_not_reconciled");
+    const resources = (await metadata("_grist_ACLResources")).filter(row =>
+      row.fields.tableId === target.tableId && (target.columnIds === undefined ?
+        row.fields.colIds === "*" : typeof row.fields.colIds === "string" &&
+        JSON.stringify(row.fields.colIds.split(",").sort()) === JSON.stringify([...target.columnIds].sort())));
+    assertThat(resources.length === 1, "witness_stage_source_acl_resource_wrong");
+    const native = (await metadata("_grist_ACLRules"))
+      .filter(row => row.fields.resource === resources[0]!.id)
+      .sort((a,b) => Number(a.fields.rulePos) - Number(b.fields.rulePos));
+    assertThat(native.length === expected.length && native.every((rule, i) =>
+      compactFormula(rule.fields.aclFormula) === compactFormula(expected[i]![0]) &&
+      rule.fields.permissionsText === expected[i]![1]), "witness_stage_source_acl_native_wrong");
+  }
+  await expectStageIds(context.teacherAKey, [stageA, stageC]);
+  await expectStageIds(context.teacherBKey, [stageA, stageB]);
+  const stageRecord = async (id: number) => (await metadata("Stages")).find(row => row.id === id)!.fields;
+  const originalStage = await stageRecord(stageA);
+  const ownContact = await updateStage(roleContext, context.teacherAKey, stageA, {Commentaire: "Contact synthétique"});
+  const afterContact = await stageRecord(stageA);
+  assertThat(ownContact >= 200 && ownContact < 300 && afterContact.Commentaire === "Contact synthétique",
+    "witness_stage_source_acl_contact_denied");
+  assertThat(await updateStage(roleContext, context.teacherAKey, stageA, {Cle: "cle-interdite"}) === 403 &&
+    JSON.stringify(await stageRecord(stageA)) === JSON.stringify(afterContact),
+    "witness_stage_source_acl_unlisted_update_allowed");
+  assertThat(await updateStage(roleContext, context.teacherAKey, stageA, {Suivi_par: teacherB}) === 403 &&
+    JSON.stringify(await stageRecord(stageA)) === JSON.stringify(afterContact),
+    "witness_stage_source_acl_ordinary_reassignment_allowed");
+  assertThat(await updateStage(roleContext, context.teacherBKey, stageA, {Commentaire: "Interdit PP"}) === 403 &&
+    JSON.stringify(await stageRecord(stageA)) === JSON.stringify(afterContact),
+    "witness_stage_source_acl_pp_foreign_contact_allowed");
+  const foreignStage = await stageRecord(stageC);
+  assertThat(await updateStage(roleContext, context.teacherBKey, stageC, {Suivi_par: teacherB}) === 403 &&
+    JSON.stringify(await stageRecord(stageC)) === JSON.stringify(foreignStage),
+    "witness_stage_source_acl_pp_outside_class_reassignment_allowed");
+  const ppAssignment = await updateStage(roleContext, context.teacherBKey, stageA, {Suivi_par: teacherB});
+  assertThat(ppAssignment >= 200 && ppAssignment < 300 && (await stageRecord(stageA)).Suivi_par === teacherB,
+    "witness_stage_source_acl_pp_reassignment_denied");
+  await expectStageIds(context.teacherAKey, [stageC]);
+  await updateWitnessRow("Stages", stageA, {Suivi_par: teacherA, Commentaire: originalStage.Commentaire});
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: true});
+  await expectStageIds(context.teacherBKey, [stageA, stageB, stageC]);
+  const directionStage = await updateStage(roleContext, context.teacherBKey, stageC, {Commentaire: "Direction synthétique"});
+  assertThat(directionStage >= 200 && directionStage < 300 && (await stageRecord(stageC)).Commentaire === "Direction synthétique",
+    "witness_stage_source_acl_direction_write_denied");
+  await updateWitnessRow("Stages", stageC, {Commentaire: foreignStage.Commentaire});
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Stages_Actif: false});
+  await expectStageIds(context.teacherBKey, []);
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Stages_Actif: true, Acces_Direction: false});
+  await expectStageIds(context.teacherBKey, [stageA, stageB]);
+  await expectStageIds(context.teacherAKey, [stageA, stageC]);
+  const stageFormPrivacy = await anonymous(stagePublicPath + "/tables/Stages/records");
+  if (stageFormPrivacy.ok) {
+    assertThat(recordsFrom(await stageFormPrivacy.json()).length === 0, "witness_stage_source_acl_public_rows_disclosed");
+  } else {
+    await stageFormPrivacy.body?.cancel();
+    assertThat(stageFormPrivacy.status === 403 || stageFormPrivacy.status === 404,
+      "witness_stage_source_acl_public_privacy_unverified");
+  }
+  const finalStageSubmit = await anonymous(stagePublicPath + "/tables/Stages/records", {
+    records: [{fields: {Eleve: studentC, Structure_de_stage: recordIds.get("Structures_de_stage"), Periode: periodB}}]
+  });
+  await finalStageSubmit.body?.cancel();
+  const finalStageRows = await metadata("Stages");
+  assertThat(finalStageSubmit.ok && finalStageRows.length === 4 &&
+    finalStageRows.some(row => row.id !== stageC && row.fields.Eleve === studentC && row.fields.Periode === periodB),
+    "witness_stage_source_acl_public_submit_denied");
+  console.log("from-empty witness: four stage ACL groups, scoped PP assignment, narrow contact writes, public Form and replay: PASS");
+
   console.log("from-empty witness: Classes and Periodes_de_stage policies, class-statistic column confidentiality, native PP/direction permissions and replay: PASS");
 
 }
