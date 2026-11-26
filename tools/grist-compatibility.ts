@@ -4239,6 +4239,40 @@ async function run(): Promise<void> {
     assert(allowedMembers.records.length === 1 && allowedMembers.records[0]?.id === alpha.id &&
       deniedMembers.records.length === 0, "native_ref_list_user_attribute_row_filter_mismatch");
 
+    // The stage witness uses rec.id == user.Personnel.id on the lookup table
+    // itself. Test real viewer isolation, including unrelated control access.
+    const identityRule = {
+      action: "access_rule_group", documentId, mode: "ensure",
+      target: {tableId: ACL_TABLE_ID},
+      rules: [{condition: {kind: "all", conditions: [nonOwner, {
+        kind: "match_user_attribute", operator: "not_equals", columnId: "id",
+        attributeName: "CompatMember", attributeColumnId: "id"
+      }]}, permissions: {read: "deny", update: "unspecified"}}]
+    };
+    const identityCreated = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      identityRule), "native_same_table_attribute_identity_create");
+    const identityRepeated = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      identityRule), "native_same_table_attribute_identity_replay");
+    assert(identityCreated.changed === true && identityCreated.persistedDefinitionVerified === true &&
+      identityRepeated.changed === false && identityRepeated.persistedDefinitionVerified === true,
+      "native_same_table_attribute_identity_not_reconciled");
+    const deniedPrincipal = principals.records.find(row => row.fields.ShareToken === deniedFlagEmail);
+    assert(deniedPrincipal, "native_same_table_attribute_identity_fixture_missing");
+    for (const [key, expectedId] of [[allowedFlagKey, allowedPrincipal.id],
+      [deniedFlagKey, deniedPrincipal.id]] as const) {
+      assert(await gristStatus(gristBaseUrl, key, controlPath, {method: "GET"}) === 200,
+        "native_same_table_attribute_identity_control_denied");
+      const own = await gristApi(gristBaseUrl, key, nativeRecordPath) as MetaRecords;
+      assert(own.records.length === 1 && own.records[0]?.id === expectedId,
+        "native_same_table_attribute_identity_isolation_failed");
+    }
+    assert((await readNativeAcl()).some(row => typeof row.fields.aclFormula === "string" &&
+      row.fields.aclFormula.includes("rec.id != user.CompatMember.id")),
+      "native_same_table_attribute_identity_formula_missing");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
+      ...identityRule, mode: "replace", target: flagTarget
+    });
+
     // Fixed native -S policy is independent of ordinary typed table/column ACLs.
     // Exercise a real editor schema mutation BEFORE the guard and its denial AFTER.
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {

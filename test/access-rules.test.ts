@@ -1756,6 +1756,43 @@ test("user-attribute ACL references require compatible Ref IDs and unambiguous d
       permissions: { read: "allow", update: "unspecified" } }]), /unsupported or sensitive/);
 });
 
+test("native same-table user attribute identity is writable, not a cross-table numeric comparison", () => {
+  const meta = baseMetadata();
+  meta.tables.records.push({id: 2, fields: {tableId: "Other"}});
+  const resources = [{id: 1, fields: {tableId: "*", colIds: "*"}},
+    {id: 2, fields: {tableId: "Projects", colIds: "*"}}];
+  const definition = {id: 10, fields: {resource: 1, rulePos: 1, aclFormula: "",
+    aclFormulaParsed: "", permissionsText: "", userAttributes: JSON.stringify({
+      name: "Mentor", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
+    })}};
+  const condition = {kind: "match_user_attribute", operator: "equals", columnId: "id",
+    attributeName: "Mentor", attributeColumnId: "id"} as const;
+  const permissions = {read: "allow", update: "unspecified"} as const;
+  const make = (formula: string, parsed: string) => normalizeAccessRulesSnapshot(
+    {records: resources}, {records: [definition, {id: 20, fields: {resource: 2, rulePos: 1,
+      aclFormula: formula, aclFormulaParsed: parsed, permissionsText: "+R"}}]},
+    meta.tables, meta.columns);
+  const before = make("user.Mentor.id == rec.id",
+    '["Eq",["Attr",["Attr",["Name","user"],"Mentor"],"id"],["Attr",["Name","rec"],"id"]]');
+  const group = (projectAccessRules(before) as any).groups[0];
+  assert.equal(group.editable, true);
+  assert.deepEqual(group.rules[0].condition, condition);
+  const repeat = resolveAccessRuleMutation(before, {tableId: "Projects"}, "replace",
+    [{condition, permissions}]);
+  assert.equal(repeat.mode, "noop");
+  assert.equal(repeat.rules[0]?.aclFormula, "rec.id == user.Mentor.id");
+  for (const invalid of [
+    {...condition, attributeColumnId: "UserId"},
+    {...condition, record: "newRec" as const}
+  ]) {
+    assert.throws(() => resolveAccessRuleMutation(before, {tableId: "Projects"}, "replace",
+      [{condition: invalid, permissions: {read: "unspecified", update: "allow"}}]),
+      /comparable stable fields/);
+  }
+  assert.throws(() => resolveAccessRuleMutation(before, {tableId: "Other"}, "create",
+    [{condition, permissions}]), /comparable stable fields/);
+});
+
 test("E1-D1 projects only verified typed ACL dependencies, including nested and proposed-row conditions", () => {
   const resources = [
     { id: 1, fields: { tableId: "*", colIds: "*" } },
