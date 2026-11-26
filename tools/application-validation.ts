@@ -3,6 +3,7 @@ import {
   callTool,
   containsValue,
   countKeyValue,
+  createTestApiKey,
   gristApi,
   gristStatus,
   recordsFrom,
@@ -1688,6 +1689,171 @@ async function validateFromEmptyStageTopology(
       "full_witness_public_row_privacy_unverified_after_acl");
   }
   console.log("from-empty full witness: native authenticated teacher, class PP, direction, disabled role and public Form coexistence: PASS");
+
+  // The disposable home database supplies an existing org member with no
+  // inherited document role. Only Gia changes this member's document access.
+  // This identity has no Personnel row and must not bypass stage ACLs.
+  const recipient = "test-witness-recipient@example.invalid";
+  const recipientKey = await createTestApiKey(context.baseUrl, recipient, "Witness recipient");
+  const nativeDoc = await gristApi(context.baseUrl, context.ownerKey, path) as {
+    workspace?: {org?: {id?: number}}
+  };
+  const orgId = nativeDoc.workspace?.org?.id;
+  assertThat(Number.isSafeInteger(orgId) && (orgId ?? 0) > 0,
+    "full_witness_share_org_missing");
+  await gristApi(context.baseUrl, context.ownerKey, "/api/orgs/" + orgId + "/access", {
+    method: "PATCH", body: JSON.stringify({delta: {users: {[recipient]: "members"}}})
+  });
+  type AccessSnapshot = {
+    users: Array<{email?: string; id?: number; access?: string | null;
+      parentAccess?: string | null; isMember?: boolean}>;
+    maxInheritedRole?: string | null
+  };
+  const access = () => gristApi(context.baseUrl, context.ownerKey, path + "/access") as Promise<AccessSnapshot>;
+  const initialAccess = await access();
+  const originalRecipient = initialAccess.users.find(user => user.email === recipient);
+  assertThat(originalRecipient?.isMember === true && originalRecipient.access === null &&
+    originalRecipient.parentAccess == null && Number.isSafeInteger(originalRecipient.id) &&
+    (originalRecipient.id ?? 0) > 0, "full_witness_share_recipient_not_eligible");
+  const unrelated = (snapshot: AccessSnapshot) => JSON.stringify(snapshot.users
+    .filter(user => user.email !== recipient).sort((a, b) => (a.id ?? 0) - (b.id ?? 0)));
+  const assertAccess = async (role: "viewers" | "editors" | null) => {
+    const snapshot = await access();
+    const target = snapshot.users.find(user => user.email === recipient);
+    assertThat(role === null && !target || target?.id === originalRecipient.id &&
+      target?.access === role && target?.parentAccess == null, "full_witness_share_target_wrong");
+    assertThat(snapshot.maxInheritedRole === initialAccess.maxInheritedRole &&
+      unrelated(snapshot) === unrelated(initialAccess), "full_witness_share_unrelated_changed");
+  };
+  const grant = () => callTool(bridge, "grist_change_structure", {
+    action: "grant_document_user", documentId, email: recipient, role: "viewers"
+  }) as Promise<{changed: boolean; persistedGrantVerified: boolean}>;
+  const changeRole = (expectedRole: "viewers" | "editors", role: "viewers" | "editors") =>
+    callTool(bridge, "grist_change_structure", {
+      action: "change_document_user_role", documentId, email: recipient, expectedRole, role,
+      confirmRoleChange: true
+    }) as Promise<{changed: boolean; persistedRoleVerified: boolean}>;
+  const revoke = () => callTool(bridge, "grist_change_structure", {
+    action: "revoke_document_user", documentId, email: recipient, expectedRole: "viewers",
+    confirmRevocation: true
+  }) as Promise<{changed: boolean; persistedRevocationVerified: boolean}>;
+  const structurePath = path + "/tables/Structures_de_stage/records";
+  const structureId = recordIds.get("Structures_de_stage")!;
+  const writeStructure = (label: string) => gristStatus(context.baseUrl, recipientKey, structurePath, {
+    method: "PATCH", body: JSON.stringify({records: [{id: structureId, fields: {Adresse: label}}]})
+  });
+  const assertNoDocumentRead = async () => {
+    const status = await gristStatus(context.baseUrl, recipientKey, structurePath, {method: "GET"});
+    assertThat(status === 403 || status === 404, "full_witness_share_ungranted_read_allowed");
+  };
+  await assertNoDocumentRead();
+  const granted = await grant();
+  assertThat(granted.changed && granted.persistedGrantVerified && !(await grant()).changed,
+    "full_witness_share_grant_not_reconciled");
+  await assertAccess("viewers");
+  // A fresh direct role may be visible to the home database before a doc
+  // worker forgets its earlier negative authorization. Probe only reads;
+  // never retry the grant. The disposable fixture's 10 s polling budget
+  // is an experimental limit, not a production enforcement guarantee.
+  const started = Date.now();
+  let workerRead = await gristStatus(context.baseUrl, recipientKey, structurePath, {method: "GET"});
+  while (workerRead === 403 && Date.now() - started < 10_000) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    workerRead = await gristStatus(context.baseUrl, recipientKey, structurePath, {method: "GET"});
+  }
+  const homeRead = await gristStatus(context.baseUrl, recipientKey, path, {method: "GET"});
+  console.log("full_witness_share_grant_propagation:" + homeRead + ":" + workerRead + ":" +
+    (Date.now() - started));
+  assertThat(homeRead === 200 && workerRead === 200,
+    "full_witness_share_viewer_effect_not_verified");
+  const visibleStructures = recordsFrom(await gristApi(context.baseUrl, recipientKey, structurePath));
+  assertThat(visibleStructures.some(row => row.id === structureId),
+    "full_witness_share_viewer_read_denied");
+  await expectStageIds(recipientKey, []);
+  assertThat(await writeStructure("Interdit lecteur") === 403, "full_witness_share_viewer_write_allowed");
+
+  const promoted = await changeRole("viewers", "editors");
+  assertThat(promoted.changed && promoted.persistedRoleVerified &&
+    !(await changeRole("viewers", "editors")).changed, "full_witness_share_role_not_reconciled");
+  await assertAccess("editors");
+  const editorLabel = "Adresse synthétique modifiée";
+  const promotionStarted = Date.now();
+  let editorWrite = await writeStructure(editorLabel);
+  // The fixture retries only a definitive authorization refusal, never an
+  // uncertain write. Stop on the first successful or unexpected response.
+  while (editorWrite === 403 && Date.now() - promotionStarted < 10_000) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    editorWrite = await writeStructure(editorLabel);
+  }
+  console.log("full_witness_share_promotion_propagation:" + editorWrite + ":" +
+    (Date.now() - promotionStarted));
+  assertThat(editorWrite >= 200 && editorWrite < 300, "full_witness_share_editor_write_denied");
+  await expectStageIds(recipientKey, []);
+  assertThat(await updateStage(roleContext, recipientKey, stageA,
+    {Commentaire: "Interdit sans attribut"}) === 403, "full_witness_share_editor_bypassed_acl");
+  const restored = await changeRole("editors", "viewers");
+  assertThat(restored.changed && restored.persistedRoleVerified &&
+    !(await changeRole("editors", "viewers")).changed, "full_witness_share_downgrade_not_reconciled");
+  await assertAccess("viewers");
+  // Grist 1.7.19 caches effective authorization for a nominal 5000 ms
+  // (HomeDBManager.getDocAuthCached), independently of persisted shares.
+  // The owner explicitly selected delayed native enforcement qualification.
+  // Preserve the immediate probe as evidence, not an instant-revocation PASS.
+  // The fixed 6 s interval is fixture-only, not a Gia runtime delay or SLA.
+  const staleMarker = "Modification synthétique pendant propagation";
+  const downgradeStarted = Date.now();
+  const downgradeStatus = await writeStructure(staleMarker);
+  const staleWriteAccepted = downgradeStatus >= 200 && downgradeStatus < 300;
+  console.log("full_witness_share_immediate_downgrade_status:" + downgradeStatus +
+    ":" + (Date.now() - downgradeStarted));
+  assertThat(staleWriteAccepted || downgradeStatus === 403,
+    "full_witness_share_unexpected_downgrade_status");
+  const readAddress = async () => (await metadata("Structures_de_stage"))
+    .find(row => row.id === structureId)?.fields.Adresse;
+  assertThat(await readAddress() === (staleWriteAccepted ? staleMarker : editorLabel),
+    "full_witness_share_immediate_write_effect_wrong");
+  await new Promise(resolve => setTimeout(resolve, 6_000));
+  const settledDowngrade = await writeStructure("Interdit après propagation");
+  console.log("full_witness_share_settled_downgrade_status:" + settledDowngrade +
+    ":" + (Date.now() - downgradeStarted));
+  assertThat(settledDowngrade === 403, "full_witness_share_downgrade_not_enforced_after_propagation");
+  assertThat(await readAddress() === (staleWriteAccepted ? staleMarker : editorLabel),
+    "full_witness_share_denied_write_changed_state");
+  if (staleWriteAccepted) {
+    await updateWitnessRow("Structures_de_stage", structureId, {Adresse: editorLabel});
+  }
+  // Prove the downgraded identity still has viewer access (and no protected
+  // stage access); this also warms the native authorization cache for revoke.
+  const downgradedRows = recordsFrom(await gristApi(context.baseUrl, recipientKey, structurePath));
+  assertThat(downgradedRows.some(row => row.id === structureId),
+    "full_witness_share_downgraded_viewer_read_denied");
+  await expectStageIds(recipientKey, []);
+
+  const revoked = await revoke();
+  assertThat(revoked.changed && revoked.persistedRevocationVerified,
+    "full_witness_share_revocation_not_verified");
+  await assertAccess(null);
+  const revocationStarted = Date.now();
+  const immediateRevocation = await gristStatus(context.baseUrl, recipientKey, structurePath, {method: "GET"});
+  console.log("full_witness_share_immediate_revocation_status:" + immediateRevocation +
+    ":" + (Date.now() - revocationStarted));
+  assertThat([200, 403, 404].includes(immediateRevocation),
+    "full_witness_share_unexpected_revocation_status");
+  await new Promise(resolve => setTimeout(resolve, 6_000));
+  const settledRevocation = await gristStatus(context.baseUrl, recipientKey, structurePath, {method: "GET"});
+  console.log("full_witness_share_settled_revocation_status:" + settledRevocation +
+    ":" + (Date.now() - revocationStarted));
+  assertThat(settledRevocation === 403 || settledRevocation === 404,
+    "full_witness_share_revocation_not_enforced_after_propagation");
+  assertThat(await writeStructure("Interdit après révocation") === 403,
+    "full_witness_share_revoked_write_allowed");
+  await assertAccess(null);
+  const persistedStructures = await metadata("Structures_de_stage");
+  assertThat(persistedStructures.find(row => row.id === structureId)?.fields.Adresse === editorLabel,
+    "full_witness_share_denied_write_changed_state");
+  await expectStageIds(context.teacherAKey, [stageA, stageC]);
+  await expectStageIds(context.teacherBKey, [stageA, stageB]);
+  console.log("from-empty full witness: persisted direct sharing, authenticated access/ACL isolation and delayed native restrictions: PASS; immediate enforcement NOT QUALIFIED");
 
 }
 
