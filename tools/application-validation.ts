@@ -2292,6 +2292,91 @@ async function validateFromEmptyStageTopology(
   await expectStageIds(context.teacherBKey, [stageA, stageB]);
   console.log("from-empty witness: three source-derived table ACL groups, no-write replay, teacher/direction native permissions and public Form coexistence: PASS");
 
+  // Source-derived allocation policy: PP reads only its class allocations;
+  // direction edits the four input columns, not computed counts.
+  const assignmentA = recordIds.get("Affectation")!;
+  const assignmentB = await ensureWitnessRow("Affectation", {
+    Cle: "synthetique-affectation-b", Classe: classB, Periode: periodB,
+    Enseignant: teacherB, Stage_a_suivre: 1
+  });
+  const assignmentDirFormula = "user.Personnel.Acces_Stages_Actif and user.Personnel.Acces_Direction";
+  const assignmentPP = {kind: "all", conditions: [
+    {kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId: "Acces_Stages_Actif"},
+    {kind: "record_in_user_attribute_ref_list", operator: "in", columnId: "Classe",
+      attributeName: "Personnel", attributeColumnId: "Classes_PP"}
+  ]};
+  const allocationPolicies = [
+    {target: {tableId: "Affectation"}, rules: [
+      {condition: owner, permissions: all},
+      {condition: direction, permissions: readOnly},
+      {condition: {kind: "not", condition: {kind: "user_attribute_flag",
+        attributeName: "Personnel", attributeColumnId: "Est_PP"}}, permissions: none},
+      {condition: assignmentPP, permissions: readOnly},
+      {condition: everyone, permissions: none}
+    ], expected: [["user.Access==OWNER", "+CRUD"], [assignmentDirFormula, "+R-CUD"],
+      ["not user.Personnel.Est_PP", "-CRUD"],
+      ["user.Personnel.Acces_Stages_Actif and rec.Classe in user.Personnel.Classes_PP", "+R-CUD"], ["", "-CRUD"]]},
+    {target: {tableId: "Affectation", columnIds: ["Classe", "Stage_a_suivre", "Enseignant", "Periode"]},
+      rules: [{condition: direction, permissions: {read: "unspecified", update: "allow"}}],
+      expected: [[assignmentDirFormula, "+U"]]},
+    {target: {tableId: "Affectation", columnIds: ["Stages_attribues", "Reste_a_attribuer"]},
+      rules: [{condition: direction, permissions: {read: "unspecified", update: "deny"}}],
+      expected: [[assignmentDirFormula, "-U"]]}
+  ];
+  for (const {target, rules, expected} of allocationPolicies) {
+    const ensure = () => callTool(bridge, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "ensure", target, rules
+    }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean}>;
+    const first = await ensure(), replay = await ensure();
+    assertThat(first.changed && first.persistedDefinitionVerified &&
+      !replay.changed && replay.persistedDefinitionVerified, "witness_allocation_acl_not_reconciled");
+    const resources = (await metadata("_grist_ACLResources")).filter(row =>
+      row.fields.tableId === target.tableId && (target.columnIds === undefined ?
+        row.fields.colIds === "*" : typeof row.fields.colIds === "string" &&
+        JSON.stringify(row.fields.colIds.split(",").sort()) === JSON.stringify([...target.columnIds].sort())));
+    assertThat(resources.length === 1, "witness_allocation_acl_resource_wrong");
+    const native = (await metadata("_grist_ACLRules"))
+      .filter(row => row.fields.resource === resources[0]!.id)
+      .sort((a, b) => Number(a.fields.rulePos) - Number(b.fields.rulePos));
+    assertThat(native.length === expected.length && native.every((rule, i) =>
+      compactFormula(rule.fields.aclFormula) === compactFormula(expected[i]![0]) &&
+      rule.fields.permissionsText === expected[i]![1]), "witness_allocation_acl_native_wrong");
+  }
+  await updateWitnessRow("Enseignants", teacherA, {Classes_PP: ["L"]});
+  await updateWitnessRow("Enseignants", teacherB, {Classes_PP: ["L", classA]});
+  const assignmentIds = async (key: string) =>
+    (await readTable(key, "Affectation")).map(row => row.id).sort((a,b) => a-b);
+  assertThat((await assignmentIds(context.teacherAKey)).length === 0,
+    "witness_allocation_ordinary_teacher_read_allowed");
+  assertThat(JSON.stringify(await assignmentIds(context.teacherBKey)) === JSON.stringify([assignmentA]),
+    "witness_allocation_pp_scope_wrong");
+  const allocationRecord = async () => (await metadata("Affectation")).find(row => row.id === assignmentA)!.fields;
+  const initialAllocation = await allocationRecord();
+  const patchAllocation = (key: string, fields: Record<string, unknown>) =>
+    gristStatus(context.baseUrl, key, path + "/tables/Affectation/records", {
+      method: "PATCH", body: JSON.stringify({records: [{id: assignmentA, fields}]})
+    });
+  const updatedCount = Number(initialAllocation.Stage_a_suivre) + 1;
+  assertThat(await patchAllocation(context.teacherBKey, {Stage_a_suivre: updatedCount}) === 403 &&
+    JSON.stringify(await allocationRecord()) === JSON.stringify(initialAllocation),
+    "witness_allocation_pp_write_allowed");
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: true});
+  assertThat(JSON.stringify(await assignmentIds(context.teacherBKey)) ===
+    JSON.stringify([assignmentA, assignmentB].sort((a,b) => a-b)), "witness_allocation_direction_scope_wrong");
+  const assignmentWrite = await patchAllocation(context.teacherBKey, {Stage_a_suivre: updatedCount});
+  const afterAllocation = await allocationRecord();
+  assertThat(assignmentWrite >= 200 && assignmentWrite < 300 && afterAllocation.Stage_a_suivre === updatedCount &&
+    afterAllocation.Stages_attribues === initialAllocation.Stages_attribues,
+    "witness_allocation_direction_write_wrong");
+  assertThat(await patchAllocation(context.teacherBKey, {Cle: "cle-interdite"}) === 403 &&
+    JSON.stringify(await allocationRecord()) === JSON.stringify(afterAllocation),
+    "witness_allocation_unlisted_write_allowed");
+  await updateWitnessRow("Affectation", assignmentA, {Stage_a_suivre: initialAllocation.Stage_a_suivre});
+  await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: false});
+  assertThat(JSON.stringify(await assignmentIds(context.teacherBKey)) === JSON.stringify([assignmentA]),
+    "witness_allocation_direction_restriction_not_restored");
+  console.log("from-empty witness: three allocation ACL groups, PP isolation, narrow direction updates, denial preservation and replay: PASS");
+
   // Source-derived Classes and Periodes_de_stage table policies, and the
   // separate ordered column rule that prevents leaking class statistics.
   const ppFor = (columnId: string) => ({kind: "all", conditions: [
