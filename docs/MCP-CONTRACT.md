@@ -687,7 +687,17 @@ For Ref/RefList columns, `grist_change_structure(action="update_columns")` addit
 
 Calendars remain one public widget concept, `calendar`. `grist_change_ui(action="update_widget")` accepts `calendarConfig: {titleColumnId,startDateColumnId,endDateColumnId?,allDayColumnId?,typeColumnId?}`; all values are stable column IDs on the widget table. Gia follows Grist's calendar mapping types: start/end are strict `Date|DateTime`, all-day is strict `Bool`, title accepts the native non-strict `Text|Any` semantics, and type accepts the native non-strict `Choice|ChoiceList|Any` semantics. Gia preserves untargeted widget options/mappings and verifies the normalized mapping after write. Calendar creation/configuration adapts internally across the supported Grist Community matrix: legacy persisted `custom.calendar` is used when the old bundled calendar is discoverable, otherwise native `calendar` is used. Inspection normalizes either representation back to public `calendar`. The compatibility probe exercises document type conversion, relation display and configured calendars on every supported Grist Community version 1.7.16–1.7.20.
 
-## Page order
+## Page order and layout
+
+`grist_change_ui(action="update_layout")` updates a page's complete bounded
+widget layout using stable widget IDs, nested groups, optional finite
+nonnegative sizes and explicit collapsed widget IDs. Every existing widget
+must be placed or collapsed exactly once. Incomplete current layout is
+refused before mutation. An equivalent normalized layout returns
+`changed:false` without rewriting native layout metadata (including
+unprojected collapsed sizes); otherwise the native write is verified by
+re-read and returns `changed:true`. Unknown or uncertain effects require
+reconciliation before replay.
 
 Gia keeps the ten-tool MCP v2 surface unchanged. `grist_change_ui(action="reorder_pages")` accepts one complete ordered list of the stable page IDs currently eligible for normal navigation.
 
