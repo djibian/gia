@@ -25,26 +25,64 @@ import {
 } from "./application-fixtures.js";
 
 // Reserved inert origins qualify native metadata only, never remote code.
-const witnessWidgets = [
+const witnessWidgets: ReadonlyArray<{
+  key: string;
+  page: string;
+  section: string;
+  tableId: string;
+  direct: boolean;
+  reciprocal: boolean;
+  access: "read table" | "full";
+  columnsMapping: Record<string, string | null>;
+  optionsPatch?: Record<string, string[]>;
+}> = [
   {key: "structures-map", page: "Consultation structures", section: "carte",
-    tableId: "Structures_de_stage", columnId: "Nom_usuel", direct: true, reciprocal: true},
+    tableId: "Structures_de_stage", direct: true, reciprocal: true, access: "read table",
+    columnsMapping: {Name: "Nom_usuel", Longitude: "Longitude", Latitude: "Latitude",
+      Address: "Adresse", Geocode: null, GeocodedAddress: "Adresse"}},
   {key: "teacher-geocoder", page: "Liste des enseignants", section: "geocodeur",
-    tableId: "Enseignants", columnId: "Adresse", direct: true, reciprocal: false},
-  {key: "teacher-map", page: "Liste des enseignants", section: "carte",
-    tableId: "Enseignants", columnId: "Identite", direct: false, reciprocal: false},
+    tableId: "Enseignants", direct: false, reciprocal: false, access: "full",
+    columnsMapping: {address: "Adresse", longitude: "Longitude", latitude: "Latitude",
+      address_normalisee: "Adresse_normalisee"}},
+  {key: "teacher-mail", page: "Liste des enseignants", section: "carte",
+    tableId: "Enseignants", direct: true, reciprocal: false, access: "read table",
+    columnsMapping: {Recipient: "Email", Subject: "Sujet_Lien_Stages",
+      Body: "Corps_Lien_Stages", Link: "Lien_Stages"}},
   {key: "structure-assistant", page: "Assistant structures", section: "assistant",
-    tableId: "Structures_de_stage", columnId: "Nom_usuel", direct: true, reciprocal: true},
+    tableId: "Structures_de_stage", direct: true, reciprocal: true, access: "full",
+    columnsMapping: {Nom: "Nom_usuel", Adresse: "Adresse", SIRET: "Numero_d_immatriculation",
+      RaisonSociale: "Raison_sociale", AdresseNormalisee: "Adresse", NomCommercial: "Nom_usuel",
+      Longitude: "Longitude", Latitude: "Latitude", CodePostal: null, SIREN: "Numero_d_immatriculation",
+      SirenSiret: "Numero_d_immatriculation", Telephone: "Telephone", Courriel: "Courriel", SiteWeb: "Site_web"},
+    optionsPatch: {departments: ["44", "49", "85"]}},
   {key: "assignment-assistant", page: "Affectation des stages", section: "assistant",
-    tableId: "Classes", columnId: "Classe", direct: true, reciprocal: false}
-] as const;
+    tableId: "Classes", direct: true, reciprocal: false, access: "full",
+    columnsMapping: {ClassLabel: "Classe", PeriodCount: "Nombre_de_periodes_de_stage"}}
+];
+const assignmentReferences = {
+  tables: {Classe: "Classes", Eleves: "Eleves", Enseignant: "Enseignants",
+    Affectation: "Affectation", Stage: "Stages", Structures_de_stage: "Structures_de_stage"},
+  columns: {teacherLatitude: "Latitude", teacherLongitude: "Longitude",
+    teacherLocationValidated: "Localisation_validee", quotaPeriod: "Periode",
+    quotaTarget: "Stage_a_suivre", stagePeriod: "Periode",
+    structureLatitude: "Latitude", structureLongitude: "Longitude"}
+};
+const assignmentOption = {
+  key: "internshipSupervisorAssignmentV11", version: 6,
+  tableSlots: Object.keys(assignmentReferences.tables),
+  columnSlots: {teacherLatitude: "Enseignant", teacherLongitude: "Enseignant",
+    teacherLocationValidated: "Enseignant", quotaPeriod: "Affectation", quotaTarget: "Affectation",
+    stagePeriod: "Stage", structureLatitude: "Structures_de_stage", structureLongitude: "Structures_de_stage"},
+  defaults: {optimization: {geography: {enabled: true, priority: "forte"},
+    diversity: {enabled: true, priority: "moyenne"}}}
+} as const;
 const widgetFixtureUrl = (key: string) => `https://${key}.invalid/v1.0.0/index.html`;
 const widgetFixtureRegistry = JSON.stringify(witnessWidgets.map(spec => ({
   key: spec.key, name: spec.key, widgetId: `@test/${spec.key}`,
   revision: "v1.0.0", url: widgetFixtureUrl(spec.key),
   ...(spec.direct ? {directUrl: true} : {}),
   ...(spec.reciprocal ? {allowSelectBy: true, allowReciprocalCursor: true} : {}),
-  referenceOption: {key: "fixtureConfig", version: 1,
-    tableSlots: ["source"], columnSlots: {display: "source"}}
+  ...(spec.key === "assignment-assistant" ? {referenceOption: assignmentOption} : {})
 })));
 
 async function validateExistingGeneric(bridge: string, context: FixtureContext): Promise<void> {
@@ -1499,7 +1537,7 @@ async function validateFromEmptyStageTopology(
       assertThat(section?.fields.parentKey === widget.type, "stage_topology_native_widget_type_wrong");
       if (widget.type === "custom") {
         blankCustomSections++;
-        const custom = JSON.parse(String(section?.fields.options || "{}")).customView;
+        const custom = JSON.parse(JSON.parse(String(section?.fields.options || "{}")).customView || "{}");
         assertThat(!custom || ((!custom.url && !custom.widgetId) &&
           (!custom.access || custom.access === "none")), "stage_topology_custom_section_not_blank");
       }
@@ -1529,26 +1567,49 @@ async function validateFromEmptyStageTopology(
     installed.set(widgetId, spec);
     const install = {action: "install_trusted_widget", documentId, pageId, widgetId,
       trustedKey: spec.key, confirmExternalWidget: true};
-    const configure = {action: "configure_trusted_widget_references", documentId, pageId, widgetId,
-      trustedKey: spec.key, confirmExternalWidget: true,
-      tables: {source: spec.tableId}, columns: {display: spec.columnId}};
     const result = await callTool(bridge, "grist_change_ui", install) as {
       changed: boolean; persistedWidgetVerified: boolean; remoteCodeExecutionQualified: boolean
     };
     assertThat(result.changed && result.persistedWidgetVerified &&
       result.remoteCodeExecutionQualified === false, "witness_widget_install_unverified");
-    const config = await callTool(bridge, "grist_change_ui", configure) as {
-      changed: boolean; persistedOptionsVerified: boolean; remoteCodeExecutionQualified: boolean
-    };
-    assertThat(config.changed && config.persistedOptionsVerified &&
-      config.remoteCodeExecutionQualified === false, "witness_widget_binding_unverified");
+    if (spec.key === "assignment-assistant") {
+      const configure = {action: "configure_trusted_widget_references", documentId, pageId, widgetId,
+        trustedKey: spec.key, confirmExternalWidget: true, ...assignmentReferences};
+      const config = await callTool(bridge, "grist_change_ui", configure) as {
+        changed: boolean; persistedOptionsVerified: boolean; remoteCodeExecutionQualified: boolean
+      };
+      const configReplay = await callTool(bridge, "grist_change_ui", configure) as {changed: boolean};
+      assertThat(config.changed && config.persistedOptionsVerified &&
+        config.remoteCodeExecutionQualified === false && !configReplay.changed,
+      "witness_widget_binding_unverified");
+    }
     const replay = await callTool(bridge, "grist_change_ui", install) as {changed: boolean};
-    const configReplay = await callTool(bridge, "grist_change_ui", configure) as {changed: boolean};
-    assertThat(!replay.changed && !configReplay.changed, "witness_widget_replay_changed_state");
+    assertThat(!replay.changed, "witness_widget_install_replay_changed_state");
+    const settings = {action: "update_widget", documentId, pageId, widgetId, update: {
+      customWidgetSettings: {columnsMapping: spec.columnsMapping,
+        ...(spec.optionsPatch ? {optionsPatch: spec.optionsPatch} : {})}
+    }};
+    await callTool(bridge, "grist_change_ui", settings);
+    const configured = (await metadata("_grist_Views_section")).find(row => row.id === widgetId);
+    await callTool(bridge, "grist_change_ui", settings);
+    const repeated = (await metadata("_grist_Views_section")).find(row => row.id === widgetId);
+    assertThat(configured && JSON.stringify(repeated) === JSON.stringify(configured),
+      "witness_widget_settings_replay_changed_state");
   }
   const configuredSections = await metadata("_grist_Views_section");
   assertThat(installed.size === 5 && configuredSections.length === sections.length,
     "witness_widget_native_count_wrong");
+  const tableRefFor = (tableId: string) => {
+    const tableRef = tables.find(table => table.fields.tableId === tableId)?.id;
+    assertThat(tableRef, "witness_widget_native_table_missing:" + tableId);
+    return tableRef;
+  };
+  const columnRefFor = (tableRef: number, columnId: string) => {
+    const columnRef = columns.find(column => column.fields.parentId === tableRef &&
+      column.fields.colId === columnId)?.id;
+    assertThat(columnRef, "witness_widget_native_column_missing:" + columnId);
+    return columnRef;
+  };
   for (const before of sections) {
     const after = configuredSections.find(row => row.id === before.id);
     assertThat(after, "witness_widget_collateral_section_removed");
@@ -1568,17 +1629,49 @@ async function validateFromEmptyStageTopology(
       ? view.url === widgetFixtureUrl(spec.key) && view.widgetId == null && view.widgetDef == null
       : view.widgetId === `@test/${spec.key}` && view.widgetDef?.url === widgetFixtureUrl(spec.key) &&
         view.url == null), "witness_widget_native_identity_or_access_wrong");
-    const tableRef = tables.find(table => table.fields.tableId === spec.tableId)?.id;
-    const columnRef = columns.find(column => column.fields.parentId === tableRef &&
-      column.fields.colId === spec.columnId)?.id;
-    assertThat(tableRef && columnRef, "witness_widget_native_binding_missing");
-    assertThat(JSON.stringify(view.widgetOptions?.fixtureConfig) === JSON.stringify({
-      version: 1, tables: {source: tableRef}, bindings: {display: {tableRef, columnRef}}
-    }), "witness_widget_native_binding_wrong");
+    const tableRef = tableRefFor(spec.tableId);
+    const mappings = Object.fromEntries(Object.entries(spec.columnsMapping).map(([slot, columnId]) =>
+      [slot, columnId === null ? null : columnRefFor(tableRef, columnId)]));
+    assertThat(JSON.stringify(view.columnsMapping) === JSON.stringify(mappings),
+      "witness_widget_native_column_mappings_wrong:" + spec.key);
+    if (spec.key === "assignment-assistant") {
+      const tableBindings = Object.fromEntries(Object.entries(assignmentReferences.tables).map(([slot, tableId]) =>
+        [slot, tableRefFor(tableId)]));
+      const columnBindings = Object.fromEntries(Object.entries(assignmentOption.columnSlots).map(([slot, table]) => {
+        const tableRef = tableBindings[table]!;
+        return [slot, {tableRef, columnRef: columnRefFor(tableRef,
+          assignmentReferences.columns[slot as keyof typeof assignmentReferences.columns])}];
+      }));
+      assertThat(JSON.stringify(view.widgetOptions?.[assignmentOption.key]) === JSON.stringify({
+        ...assignmentOption.defaults, version: assignmentOption.version,
+        tables: tableBindings, bindings: columnBindings
+      }), "witness_widget_assignment_binding_wrong");
+    } else {
+      assertThat(JSON.stringify(view.widgetOptions ?? null) === JSON.stringify(spec.optionsPatch ?? null),
+        "witness_widget_native_literal_options_wrong:" + spec.key);
+    }
+    await callTool(bridge, "grist_change_ui", {
+      action: "update_widget", documentId, pageId: Number(after!.fields.parentId), widgetId: before.id,
+      update: {customWidgetSettings: {access: spec.access, confirmDataAccess: true}}
+    });
   }
-  // Close the two source-derived reciprocal cursor pairs, after separately
-  // granting synthetic read access to their explicitly approved inert revisions.
-  // No real widget URL, source ID or source data is transferred.
+  const activeSections = await metadata("_grist_Views_section");
+  for (const before of configuredSections) {
+    const after = activeSections.find(row => row.id === before.id);
+    const spec = installed.get(before.id);
+    if (!spec) {
+      assertThat(JSON.stringify(after) === JSON.stringify(before), "witness_widget_access_changed_unrelated_section");
+      continue;
+    }
+    const beforeOptions = JSON.parse(String(before.fields.options));
+    const expectedOptions = {...beforeOptions,
+      customView: JSON.stringify({...JSON.parse(beforeOptions.customView), access: spec.access})};
+    assertThat(JSON.stringify(after) === JSON.stringify({...before,
+      fields: {...before.fields, options: JSON.stringify(expectedOptions)}}),
+      "witness_widget_native_data_access_wrong:" + spec.key);
+  }
+  console.log("from-empty witness: five inert widget mappings, assignment references, literal settings and confirmed access: PASS");
+  // Close the source-derived reciprocal cursor pairs using approved inert revisions.
   for (const spec of witnessWidgets.filter(widget => widget.reciprocal)) {
     const pageIndex = pages.findIndex(page => page.name === spec.page);
     const pageSpec = pages[pageIndex]!;
@@ -1590,17 +1683,12 @@ async function validateFromEmptyStageTopology(
       pageSpec.widgets[sourceIndex]?.type === "record", "witness_cursor_pair_target_missing");
     const customId = actual.widgetIds[customIndex]!, gridId = actual.widgetIds[sourceIndex]!;
     const request = {action: "update_widget", documentId, pageId: actual.pageId};
-    await callTool(bridge, "grist_change_ui", {
-      ...request, widgetId: customId, update: {
-        customWidgetSettings: {access: "read table", confirmDataAccess: true}
-      }
-    });
     const before = await metadata("_grist_Views_section");
     const custom = before.find(row => row.id === customId);
     const grid = before.find(row => row.id === gridId);
     assertThat(custom?.fields.linkSrcSectionRef === gridId &&
       grid?.fields.linkSrcSectionRef === 0 &&
-      JSON.parse(JSON.parse(String(custom?.fields.options)).customView).access === "read table",
+      JSON.parse(JSON.parse(String(custom?.fields.options)).customView).access === spec.access,
       "witness_cursor_pair_precondition_wrong");
     const close = {...request, widgetId: gridId,
       update: {selectBy: {sourceWidgetId: customId, trustedSourceKey: spec.key}}};
