@@ -2110,6 +2110,109 @@ async function validateFromEmptyStageTopology(
   await expectStageIds(context.teacherBKey, [stageA, stageB]);
   console.log("from-empty full witness: persisted direct sharing, authenticated access/ACL isolation and delayed native restrictions: PASS; immediate enforcement NOT QUALIFIED");
 
+  // Apply three source-derived ordinary table policies only after the
+  // independent document-share propagation experiment, whose editor probe
+  // deliberately required an otherwise writable table. The final witness
+  // uses the stricter policies. The synthetic Personnel lookup remains Email.
+  const owner = {kind: "user_access", operator: "equals", role: "owner"};
+  const direction = {kind: "all", conditions: [
+    {kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId: "Acces_Stages_Actif"},
+    {kind: "user_attribute_flag", attributeName: "Personnel", attributeColumnId: "Acces_Direction"}
+  ]};
+  const everyone = {kind: "everyone"};
+  const all = {read: "allow", create: "allow", update: "allow", delete: "allow"};
+  const readOnly = {read: "allow", create: "deny", update: "deny", delete: "deny"};
+  const none = {read: "deny", create: "deny", update: "deny", delete: "deny"};
+  const referencePolicies = ["Structures_de_stage", "Activites", "Verrou"].map(tableId => ({
+    tableId, rules: [
+      {condition: owner, permissions: all},
+      {condition: direction, permissions: tableId === "Verrou" ? readOnly : all},
+      {condition: everyone, permissions: tableId === "Verrou" ? none : readOnly}
+    ]
+  }));
+  const compactFormula = (value: unknown) => String(value).replace(/[\s()]/g, "");
+  for (const {tableId, rules} of referencePolicies) {
+    const ensure = () => callTool(bridge, "grist_change_structure", {
+      action: "access_rule_group", documentId, mode: "ensure", target: {tableId}, rules
+    }) as Promise<{changed: boolean; persistedDefinitionVerified: boolean}>;
+    const applied = await ensure();
+    const replay = await ensure();
+    assertThat(applied.changed && applied.persistedDefinitionVerified &&
+      !replay.changed && replay.persistedDefinitionVerified, "witness_reference_acl_not_reconciled:" + tableId);
+    const resources = (await metadata("_grist_ACLResources"))
+      .filter(row => row.fields.tableId === tableId && row.fields.colIds === "*");
+    assertThat(resources.length === 1, "witness_reference_acl_resource_wrong:" + tableId);
+    const native = (await metadata("_grist_ACLRules"))
+      .filter(row => row.fields.resource === resources[0]!.id)
+      .sort((a, b) => Number(a.fields.rulePos) - Number(b.fields.rulePos));
+    const expected = [
+      ["user.Access==OWNER", "+CRUD"],
+      ["user.Personnel.Acces_Stages_Actif and user.Personnel.Acces_Direction",
+        tableId === "Verrou" ? "+R-CUD" : "+CRUD"],
+      ["", tableId === "Verrou" ? "-CRUD" : "+R-CUD"]
+    ];
+    assertThat(native.length === expected.length && native.every((rule, i) =>
+      compactFormula(rule.fields.aclFormula) === compactFormula(expected[i]![0]) &&
+      rule.fields.permissionsText === expected[i]![1]), "witness_reference_acl_native_wrong:" + tableId);
+  }
+  const readTable = async (key: string, tableId: string) => {
+    const endpoint = path + "/tables/" + tableId + "/records";
+    const status = await gristStatus(context.baseUrl, key, endpoint, {method: "GET"});
+    if (status === 403) return [];
+    assertThat(status === 200, "witness_reference_acl_read_status:" + tableId + ":" + status);
+    return recordsFrom(await gristApi(context.baseUrl, key, endpoint));
+  };
+  const patchTable = (key: string, tableId: string, columnId: string, value: string) =>
+    gristStatus(context.baseUrl, key, path + "/tables/" + tableId + "/records", {
+      method: "PATCH", body: JSON.stringify({records: [{
+        id: recordIds.get(tableId), fields: {[columnId]: value}
+      }]})
+    });
+  for (const [tableId, columnId] of [
+    ["Structures_de_stage", "Adresse"], ["Activites", "Nom"], ["Verrou", "A"]
+  ] as const) {
+    const id = recordIds.get(tableId)!;
+    const original = (await metadata(tableId)).find(row => row.id === id)!.fields[columnId];
+    const teacherRows = await readTable(context.teacherAKey, tableId);
+    assertThat(tableId === "Verrou" ? teacherRows.length === 0 : teacherRows.some(row => row.id === id),
+      "witness_reference_acl_teacher_read_wrong:" + tableId);
+    assertThat(await patchTable(context.teacherAKey, tableId, columnId, "Modification interdite") === 403,
+      "witness_reference_acl_teacher_write_allowed:" + tableId);
+    assertThat(JSON.stringify((await metadata(tableId)).find(row => row.id === id)!.fields[columnId]) ===
+      JSON.stringify(original), "witness_reference_acl_denial_changed_data:" + tableId);
+    await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: true});
+    assertThat((await readTable(context.teacherBKey, tableId)).some(row => row.id === id),
+      "witness_reference_acl_direction_read_denied:" + tableId);
+    const marker = "Modification synthétique direction";
+    const changed = await patchTable(context.teacherBKey, tableId, columnId, marker);
+    assertThat(tableId === "Verrou" ? changed === 403 : changed >= 200 && changed < 300,
+      "witness_reference_acl_direction_write_wrong:" + tableId);
+    const actual = (await metadata(tableId)).find(row => row.id === id)!.fields[columnId];
+    assertThat(JSON.stringify(actual) === JSON.stringify(tableId === "Verrou" ? original : marker),
+      "witness_reference_acl_direction_state_wrong:" + tableId);
+    if (tableId !== "Verrou") await updateWitnessRow(tableId, id, {[columnId]: original});
+    await updateWitnessRow("Enseignants", teacherB, {Acces_Direction: false});
+  }
+  const finalFormName = "Structure fictive après politique";
+  const finalSubmission = await anonymous(publicPath + "/tables/Structures_de_stage/records", {
+    records: [{fields: {Nom_usuel: finalFormName, Adresse: "Adresse fictive"}}]
+  });
+  await finalSubmission.body?.cancel();
+  assertThat(finalSubmission.ok && (await metadata("Structures_de_stage")).filter(row =>
+    row.fields.Nom_usuel === finalFormName && row.fields.Statut === "à vérifier").length === 1,
+    "witness_reference_acl_public_form_submission_failed");
+  const finalPublicRows = await anonymous(publicPath + "/tables/Structures_de_stage/records");
+  if (finalPublicRows.ok) {
+    assertThat(recordsFrom(await finalPublicRows.json()).length === 0, "witness_reference_acl_public_rows_disclosed");
+  } else {
+    await finalPublicRows.body?.cancel();
+    assertThat(finalPublicRows.status === 403 || finalPublicRows.status === 404,
+      "witness_reference_acl_public_privacy_unverified");
+  }
+  await expectStageIds(context.teacherAKey, [stageA, stageC]);
+  await expectStageIds(context.teacherBKey, [stageA, stageB]);
+  console.log("from-empty witness: three source-derived table ACL groups, no-write replay, teacher/direction native permissions and public Form coexistence: PASS");
+
 }
 
 async function run(): Promise<void> {
