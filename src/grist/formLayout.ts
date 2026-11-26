@@ -4,7 +4,7 @@ import { existingWidgetFields } from "./widgetFields.js";
 
 type JsonRecord = Record<string, unknown>;
 type FormParagraph = { type: "paragraph"; text: string; alignment?: "left" | "center" | "right" | undefined };
-type FormLink = { type: "form_link"; label: string; targetPageId: number; targetWidgetId: number; alignment?: "left" | "center" | "right" | undefined };
+type FormLink = { type: "form_link"; label: string; prefix?: string | undefined; targetPageId: number; targetWidgetId: number; alignment?: "left" | "center" | "right" | undefined };
 type FormField = { type: "field"; columnId: string };
 type FormSection = { type: "section"; children: readonly (FormField | FormParagraph | FormLink)[] };
 type FormSubmit = { type: "submit" };
@@ -37,14 +37,26 @@ function safeText(value: unknown, label: string): string {
   return value;
 }
 
+/** Plain instructional prose, not Markdown syntax that can alter the verified link. */
+function safeLinkPrefix(value: unknown): string {
+  const text = safeText(value, "Form link prefix");
+  if (text.length < 1 || text.length > 160 ||
+      !/^\p{L}[\p{L}\p{N}\p{Zs}.,;:'’\-]*$/u.test(text)) {
+    throw new Error("Form link prefix must be bounded plain prose.");
+  }
+  return text;
+}
+
 /** Permit only the private Grist Form-link format emitted by Gia. */
 function safePreviousParagraph(value: unknown, publicPaths: ReadonlySet<string>): void {
   if (typeof value !== "string") throw new Error("Malformed native Form paragraph.");
   if (safeNativeFormText(value, 300) === value) return;
-  const match = /^\[([^\[\]()\r\n]{1,100})\]\((\/forms\/[a-zA-Z0-9_-]{1,100}\/[1-9]\d{0,9})\)$/.exec(value);
-  if (!match || !publicPaths.has(match[2]!) || safeNativeFormText(match[1]!, 100) !== match[1]) {
+  const match = /^([^\[\]\r\n]{0,160})\[([^\[\]()\r\n]{1,100})\]\((\/forms\/[a-zA-Z0-9_-]{1,100}\/[1-9]\d{0,9})\)$/.exec(value);
+  if (value.length > 300 || !match || !publicPaths.has(match[3]!) ||
+      safeNativeFormText(match[2]!, 100) !== match[2]) {
     throw new Error("Pre-existing Form link is protected or malformed.");
   }
+  if (match[1]) safeLinkPrefix(match[1]);
 }
 
 /** Refuse to replace unsupported native attributes, links or unresolvable field references. */
@@ -175,7 +187,8 @@ export function resolveFormLayoutUpdate(
           node.label.length > 100 || /[()\r\n]/.test(node.label)) {
         throw new Error("Form link label must be bounded, nonempty Markdown-safe text.");
       }
-      text = "[" + safeText(node.label, "Form link label") + "](" + path + ")";
+      const prefix = node.prefix === undefined ? "" : safeLinkPrefix(node.prefix);
+      text = prefix + "[" + safeText(node.label, "Form link label") + "](" + path + ")";
       if (text.length > 300) throw new Error("Form link exceeds the native text budget.");
     } else text = safeText(node.text, "Form paragraph");
     return {id:"gia_paragraph_" + position,type:"Paragraph",text,alignment:node.alignment ?? "left"};

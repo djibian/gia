@@ -84,6 +84,33 @@ test("Typed Form links require confirmation and a verified private native share 
   },paths));
 });
 
+test("Form links support bounded plain instructional prefix, preserving link authority", () => {
+  const link = {type:"form_link" as const,label:"Second step",prefix:"Continuez avec cette ",targetPageId:9,targetWidgetId:17};
+  const layout: FormLayoutInput = {children:[link,requested.children[1]!,{type:"submit"}],confirmPublicLink:true};
+  const paths = new Map([["9:17","/forms/syntheticShareKey/17"]]);
+  const resolved = resolveFormLayoutUpdate(widget(),tables,fields,layout,paths);
+  assert.equal((resolved.layoutSpec.children as Array<{text?:string}>)[0]?.text,
+    "Continuez avec cette [Second step](/forms/syntheticShareKey/17)");
+  assert.deepEqual(resolveFormLayoutUpdate(widget(resolved.layoutSpec),tables,fields,layout,paths).layoutSpec,
+    resolved.layoutSpec);
+  assert.throws(()=>resolveFormLayoutUpdate(widget(resolved.layoutSpec),tables,fields,layout,
+    new Map([["9:17","/forms/differentBoundKey/17"]])),/protected or malformed/);
+  for (const prefix of ["", "x".repeat(161), "    ", "    Continuez ", "- Continuez ", "1. Continuez ", "!", "![image]", "https://unsafe.invalid ",
+    "[another](unsafe) ", "foo\n", "<img> ", "foo_"]) {
+    assert.throws(()=>resolveFormLayoutUpdate(widget(),tables,fields,
+      {...layout,children:[{...link,prefix},requested.children[1]!,{type:"submit"}]},paths));
+  }
+  for (const text of ["    [Second step](/forms/syntheticShareKey/17)", "- [Second step](/forms/syntheticShareKey/17)",
+    "1. [Second step](/forms/syntheticShareKey/17)", "![Second step](/forms/syntheticShareKey/17)",
+    "https://unsafe.invalid [Second step](/forms/syntheticShareKey/17)"]) {
+    const children = [...resolved.layoutSpec.children as Array<Record<string,unknown>>];
+    children[0] = {...children[0],text};
+    assert.throws(()=>resolveFormLayoutUpdate(widget({...resolved.layoutSpec,children}),tables,fields,layout,paths));
+  }
+  const inspected = inspectNativeForm(widget(resolved.layoutSpec),tables,fields,{forms:1,nodes:20,text:1000});
+  assert.ok(!JSON.stringify(inspected).includes("syntheticShareKey"));
+});
+
 test("Form layout refuses unknown, duplicate or computed fields and absent submit", () => {
   for (const bad of [
     [{ type: "section", children: [{ type: "field", columnId: "Unknown" }] }, { type: "submit" }],

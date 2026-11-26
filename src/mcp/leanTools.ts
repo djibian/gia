@@ -543,6 +543,7 @@ const formFieldSchema = z.object({
 }).strict();
 const formLinkSchema = z.object({
   type: z.literal("form_link"), label: z.string().min(1).max(100),
+  prefix: z.string().min(1).max(160).optional(),
   targetPageId: positiveIdSchema, targetWidgetId: positiveIdSchema,
   alignment: z.enum(["left", "center", "right"]).optional()
 }).strict();

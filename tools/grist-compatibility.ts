@@ -4546,7 +4546,7 @@ async function run(): Promise<void> {
       const target = await makeForm("Target");
       const linkedLayout = {
         children: [
-          { type: "form_link", label: "Étape suivante", targetPageId: target.pageId, targetWidgetId: target.widgetId },
+          { type: "form_link", label: "Étape suivante", prefix: "Continuez vers cette ", targetPageId: target.pageId, targetWidgetId: target.widgetId },
           { type: "section", children: [{ type: "field", columnId: "Name" }] },
           { type: "submit" }
         ],
@@ -4576,7 +4576,7 @@ async function run(): Promise<void> {
         publicDocPath + "/tables/_grist_Views_section/records?hidden=true") as MetaRecords;
       const sourceLayout = JSON.parse(String(publicSections.records.find(row => row.id === source.widgetId)
         ?.fields.layoutSpec)) as { children: Array<{ text?: string }>; successURL?: string };
-      const nativeLink = /^\[Étape suivante\]\(\/forms\/([a-zA-Z0-9_-]{1,100})\/([1-9]\d*)\)$/
+      const nativeLink = /^Continuez vers cette \[Étape suivante\]\(\/forms\/([a-zA-Z0-9_-]{1,100})\/([1-9]\d*)\)$/
         .exec(sourceLayout.children[0]?.text ?? "");
       assert(nativeLink && Number(nativeLink[2]) === target.widgetId, "native_public_form_link_wrong_target");
       const key = nativeLink[1]!;
