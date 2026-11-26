@@ -2521,12 +2521,18 @@ export function resolveUserAttributeMutation(
     }
   }
   const defaultResourceId = defaultResources[0]?.id;
-  const positions = snapshot.rules
-    .filter(rule => rule.resourceId === defaultResourceId)
-    .map(rule => rule.rulePos ?? 0);
-  const nextPosition = Math.max(0, ...positions) + 1;
-  if (!Number.isSafeInteger(nextPosition) || nextPosition < 1) {
-    throw new Error("Cannot allocate a finite native user-attribute rule position.");
+  // Native Grist may assign fractional rule positions when inserting rows.
+  // Existing definitions do not allocate a new position on replay, replace
+  // or delete. A new definition is appended after all current default rules.
+  let rulePos = selected[0]?.rulePos ?? 1;
+  if (!existing) {
+    const positions = snapshot.rules
+      .filter(rule => rule.resourceId === defaultResourceId)
+      .map(rule => rule.rulePos ?? 0);
+    rulePos = Math.floor(Math.max(0, ...positions)) + 1;
+    if (!Number.isSafeInteger(rulePos) || rulePos < 1) {
+      throw new Error("Cannot allocate a finite native user-attribute rule position.");
+    }
   }
   const charId = definition?.source.kind === "user_property"
     ? definition.source.property
@@ -2562,7 +2568,7 @@ export function resolveUserAttributeMutation(
     ...(selectedRuleId === undefined ? {} : { targetRuleId: selectedRuleId }),
     ...(defaultResourceId === undefined ? {} : { defaultResourceId }),
     createDefaultResource: writeMode === "create" && defaultResourceId === undefined,
-    rulePos: selected[0]?.rulePos ?? nextPosition,
+    rulePos,
     ...(nativeDefinition === undefined ? {} : { nativeDefinition })
   };
 }
