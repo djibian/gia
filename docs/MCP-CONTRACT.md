@@ -627,7 +627,7 @@ Increment the MCP contract major version when a model-facing change is incompati
 
 Compatible clarifications, descriptions, implementation fixes and additional result detail that existing clients may safely ignore do not require a major contract increment. New capabilities should first be justified by the roadmap; versioning is not permission to grow the surface speculatively.
 
-Gia package/runtime version **0.11.0** implements MCP contract major **2**.
+Gia package/runtime version **0.12.0** implements MCP contract major **2**.
 
 Column discovery additionally reports `dropdownCondition: {status:"protected"|"incomplete"}`
 for a valid opaque native dropdown predicate or malformed/oversized column
@@ -709,7 +709,7 @@ or `timezone`. The result records `status: "supported" | "incomplete" | "protect
 An unavailable setting is omitted, without inferring a locale or timezone
 from a server or client default. Other native settings stay internal.
 
-Gia 0.11.0 retains three bounded end-to-end capabilities without adding an MCP tool or capability.
+Gia 0.12.0 retains three bounded end-to-end capabilities without adding an MCP tool or capability.
 
 `grist_change_structure(action="update_document")` accepts an explicit `documentId` and an `update` object containing `name?` and/or `type?: "normal"|"template"|"tutorial"`, or a separate `{timezone}` update. Public `normal` maps to Grist's native null type. Both modes use existing `doc.schema:write` and are semantically idempotent. Name/type updates verify `{id,name,type}` by rereading native document metadata. The timezone write supports `UTC` and `Europe/Paris`, which are qualified across the supported Grist versions. It changes only the native timezone cell and returns the verified settings and whether a write occurred. The separate call keeps each request within a single native metadata path. Transport-ambiguous writes must be reconciled before replay.
 
