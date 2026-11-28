@@ -922,4 +922,9 @@ test("local ACL patch accepts a typed expected rule and permissions, not native 
   assert.deepEqual(observed[2], [input.documentId, input.target, input.expected, {swapWith: swapInput.swapWith}]);
   assert.throws(() => tool.options.inputSchema!.parse({...swapInput, rulePos: 3}));
   assert.throws(() => tool.options.inputSchema!.parse({...swapInput, swapWith: {ruleId: 3}}));
+  const removal = {...rest, action: "remove_access_rule"};
+  await tool.callback(tool.options.inputSchema!.parse(removal));
+  assert.deepEqual(observed[3], [input.documentId, input.target, input.expected, {remove: true}]);
+  assert.throws(() => tool.options.inputSchema!.parse({...removal, ruleId: 3}));
+  assert.throws(() => tool.options.inputSchema!.parse({...removal, expected: undefined}));
 });

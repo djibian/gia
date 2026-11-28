@@ -27,7 +27,7 @@ const principal: Principal = {
 };
 
 function harness(options: { applyWrite?: boolean; persistedPredicate?: string;
-  aclChangesBeforeWrite?: boolean; existingGroup?: boolean; existingAttribute?: boolean } = {}) {
+  aclChangesBeforeWrite?: boolean; existingGroup?: boolean; existingAttribute?: boolean; mixedGroup?: boolean } = {}) {
   const resources: Array<{ id: number; fields: Record<string, unknown> }> = [
     { id: 1, fields: { tableId: "*", colIds: "*" } }
   ];
@@ -44,10 +44,14 @@ function harness(options: { applyWrite?: boolean; persistedPredicate?: string;
       }
     }
   ];
-  if (options.existingGroup) {
+  if (options.existingGroup || options.mixedGroup) {
     resources.push({ id: 3, fields: { tableId: "Projects", colIds: "*" } });
     rules.push({ id: 12, fields: { resource: 3, aclFormula: "",
       aclFormulaParsed: "", permissionsText: "+R", rulePos: 3 } });
+  }
+  if (options.mixedGroup) {
+    rules.push({id: 14, fields: {resource: 3, aclFormula: "user.Access == VIEWER",
+      aclFormulaParsed: nativeAclFixture("user.Access == VIEWER"), permissionsText: "-R", rulePos: 2}});
   }
   if (options.existingAttribute) {
     rules.push({ id: 13, fields: { resource: 1, aclFormula: "",
@@ -127,6 +131,10 @@ function harness(options: { applyWrite?: boolean; persistedPredicate?: string;
       patches.push(plan);
       if (options.applyWrite === false) return;
       const index = rules.findIndex(r => r.id === plan.ruleId);
+      if ("remove" in plan) {
+        rules.splice(index, 1);
+        return;
+      }
       const rule = rules[index]!;
       rules[index] = {...rule, fields: {...rule.fields, ...plan.fields}};
     },
@@ -428,6 +436,31 @@ test("local ACL permission patch uses Owner/schema authorization and shared stal
   assert.equal(good.patches.length, 1);
   const lost = harness({existingGroup: true, applyWrite: false});
   await assert.rejects(() => lost.service.patchAccessRule("doc-1", target, expected, {permissions: replacement}),
+    AccessRuleWriteVerificationError);
+  assert.equal(lost.patches.length, 1);
+});
+
+test("local ACL removal shares authorization, stale-state guard and uncertain effect reporting", async () => {
+  const target = {tableId: "Projects"};
+  const expected = {condition: {kind: "user_access", operator: "equals", role: "viewer"},
+    permissions: {read: "deny", update: "unspecified"}} as const;
+  const stale = harness({mixedGroup: true, aclChangesBeforeWrite: true});
+  await assert.rejects(() => stale.service.patchAccessRule("doc-1", target, expected, {remove: true}),
+    /state changed before mutation/);
+  assert.deepEqual(stale.patches, []);
+  const good = harness({mixedGroup: true});
+  const result = await good.service.patchAccessRule("doc-1", target, expected, {remove: true}) as any;
+  assert.equal(result.changed, true);
+  assert.equal(result.persistedDefinitionVerified, true);
+  assert.equal(result.effectiveEnforcementVerified, false);
+  assert.deepEqual(good.capabilities, ["doc.schema:write"]);
+  assert.deepEqual(good.ownerChecks, ["doc-1"]);
+  assert.deepEqual(good.patches, [{ruleId: 14, changed: true, remove: true}]);
+  await assert.rejects(() => good.service.patchAccessRule("doc-1", target, expected, {remove: true}),
+    /absent or ambiguous/);
+  assert.equal(good.patches.length, 1);
+  const lost = harness({mixedGroup: true, applyWrite: false});
+  await assert.rejects(() => lost.service.patchAccessRule("doc-1", target, expected, {remove: true}),
     AccessRuleWriteVerificationError);
   assert.equal(lost.patches.length, 1);
 });
