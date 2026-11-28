@@ -2094,24 +2094,41 @@ export class AuthorizedGristService {
   }
 
   /** Observe a native row ID without returning cells or predicting policy. */
-  async observeRecordAccess(documentId: string, tableId: string, recordId: number): Promise<unknown> {
+  async observeRecordAccess(documentId: string, tableId: string, recordId: number,
+    columnId?: string): Promise<unknown> {
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(documentId) ||
         !Number.isSafeInteger(recordId) || recordId < 1) {
       throw new Error("A plain document ID and positive safe record ID are required.");
     }
     assertPublicTableId(tableId);
+    if (columnId !== undefined && !/^(?!_grist_|gristHelper_|id$)[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(columnId)) {
+      throw new Error("A plain public field ID is required.");
+    }
     return this.execute("query_records", documentId, 1, async id => {
       const scope = {documentId: id, tableId, recordId, operation: "read",
-        channel: "native_rest_api", identity: "current_grist_credential", policyAttested: false};
+        channel: "native_rest_api", identity: "current_grist_credential", policyAttested: false,
+        ...(columnId === undefined ? {} : {columnId, fieldObservation: "unknown"})};
       try {
         const response = await this.inner.queryRecords(id, tableId, {
-          filter: {id: [recordId]}, limit: 1, hidden: false
+          filter: {id: [recordId]}, limit: 1, hidden: false,
+          ...(columnId === undefined ? {} : {cellFormat: "typed"})
         });
         const records = (response as {records?: unknown} | null)?.records;
         if (!Array.isArray(records)) return {...scope, observation: "unknown"};
         if (records.length === 0) return {...scope, observation: "not_returned"};
         if (records.length === 1 && records[0]?.id === recordId) {
-          return {...scope, observation: "visible"};
+          if (columnId === undefined) return {...scope, observation: "visible"};
+          const fields = records[0].fields;
+          if (fields === null || typeof fields !== "object" || Array.isArray(fields)) {
+            return {...scope, observation: "visible"};
+          }
+          if (!Object.prototype.hasOwnProperty.call(fields, columnId)) {
+            return {...scope, observation: "visible", fieldObservation: "not_returned"};
+          }
+          const value: unknown = fields[columnId];
+          const fieldObservation = Array.isArray(value) && value[0] === "C"
+            ? (value.length === 1 ? "censored" : "unknown") : "returned";
+          return {...scope, observation: "visible", fieldObservation};
         }
         return {...scope, observation: "unknown"};
       } catch (error) {

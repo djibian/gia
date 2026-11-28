@@ -267,3 +267,39 @@ test("native record observation preserves authority and distinguishes scoped obs
   await assert.rejects(() => guarded.service.observeRecordAccess("doc-1", "Items", 0), /positive safe record ID/);
   assert.deepEqual(guarded.queriedTables, []);
 });
+
+
+test("native field observation reports only the requested field's typed disclosure", async () => {
+  const scope = {documentId: "doc-1", tableId: "Items", recordId: 7, columnId: "Secret",
+    operation: "read", channel: "native_rest_api", identity: "current_grist_credential",
+    policyAttested: false};
+  const cases = [
+    [{records: [{id: 7, fields: {Secret: "private-value", Other: "private-other"}}]}, "visible", "returned"],
+    [{records: [{id: 7, fields: {Secret: null}}]}, "visible", "returned"],
+    [{records: [{id: 7, fields: {Secret: "C"}}]}, "visible", "returned"],
+    [{records: [{id: 7, fields: {Secret: ["C"]}}]}, "visible", "censored"],
+    [{records: [{id: 7, fields: {Secret: ["C", "private-value"]}}]}, "visible", "unknown"],
+    [{records: [{id: 7, fields: {Other: "private-value"}}]}, "visible", "not_returned"],
+    [{records: [{id: 7}]}, "visible", "unknown"],
+    [{records: []}, "not_returned", "unknown"],
+    [{records: [{id: 8, fields: {Secret: "private-value"}}]}, "unknown", "unknown"],
+    [new GristApiError("private error", 403, "private response"), "http_403", "unknown"]
+  ] as const;
+  for (const [response, observation, fieldObservation] of cases) {
+    const {service} = harness(async (...args) => {
+      assert.deepEqual(args, ["doc-1", "Items", {filter: {id: [7]}, limit: 1, hidden: false, cellFormat: "typed"}]);
+      if (response instanceof Error) throw response;
+      return response;
+    });
+    assert.deepEqual(await service.observeRecordAccess("doc-1", "Items", 7, "Secret"),
+      {...scope, observation, fieldObservation});
+  }
+  const guarded = harness();
+  for (const column of ["id", "_grist_Secret", "gristHelper_Display", "secret=value"]) {
+    await assert.rejects(() => guarded.service.observeRecordAccess("doc-1", "Items", 7, column), /public field ID/);
+  }
+  assert.deepEqual(guarded.queriedTables, []);
+  const forbidden = harness(undefined, true);
+  await assert.rejects(() => forbidden.service.observeRecordAccess("doc-1", "Items", 7, "Secret"), /bridge grant denied/);
+  assert.deepEqual(forbidden.queriedTables, []);
+});

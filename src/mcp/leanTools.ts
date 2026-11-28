@@ -889,7 +889,8 @@ export function registerLeanTools(
           action: z.literal("observe_record_access"),
           documentId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
           tableId: tableIdSchema,
-          recordId: positiveIdSchema
+          recordId: positiveIdSchema,
+          columnId: z.string().regex(/^(?!_grist_|gristHelper_|id$)[A-Za-z_][A-Za-z0-9_]{0,127}$/).optional()
         }).strict(),
         z.object({
           documentId: documentIdSchema,
@@ -910,7 +911,7 @@ export function registerLeanTools(
     async (input) => {
       try {
         if ("action" in input) {
-          return textResult(await grist.observeRecordAccess(input.documentId, input.tableId, input.recordId));
+          return textResult(await grist.observeRecordAccess(input.documentId, input.tableId, input.recordId, input.columnId));
         }
         const { documentId, tableId, filter, sort, limit, hidden, cellFormat } = input;
         return textResult(
