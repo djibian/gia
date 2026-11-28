@@ -41,6 +41,15 @@ returned. No identity override or LinkKey context is accepted. A missing
 row is not proof of ACL denial, existence or column confidentiality; use
 separately authorized controls and observations. This is one native read
 observation, not whole-policy qualification or web-client evidence.
+With optional `columnId` (a plain public field ID of up to 128 ASCII identifier
+characters, excluding id, internal metadata and helper prefixes), the same
+query requests typed cells. The result also identifies that column and reports
+`fieldObservation`: `returned` (the visible row has the field), `censored`
+(the exact native `["C"]` marker), `not_returned` (field absent), or `unknown`
+(row not observed or response unusable). No value or error detail is returned.
+A returned field is not proof of its semantic validity; an absent field is not
+proof of its existence or the reason for omission. Only the observed field
+and channel are covered, not indirect disclosure or other contexts.
 
 `grist_add_structure(action="create_tables")` requires a nonempty `columns` array per new table, matching native Grist TablePost. Missing or empty arrays are refused before any native write; Gia does not invent application columns.
 
