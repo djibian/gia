@@ -791,8 +791,10 @@ uniquely in the same group and neither may be unconditional. This explicitly
 swaps their native order (including across opaque siblings), leaving
 every other native ACL field and identity unchanged. Grist may allocate
 fractional positions for the selected rules. Only the two positions are
-submitted in one fixed native bulk update; the full native order and all
-untargeted fields are verified by reread. Ambiguous positions or gaps too
+submitted in one fixed native bulk update; the full allocated native order
+and all untargeted fields are verified by reread. The legacy unallocated
+ACL row on the empty resource is preserved, not treated as a positioned
+rule. Ambiguous positions or gaps too
 small for an insertion without relabeling are refused before writing.
 The original ordered request is refused on immediate replay; reverse the
 selectors only to request an intentional reverse swap. No raw positions or
