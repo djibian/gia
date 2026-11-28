@@ -908,7 +908,10 @@ entire ordered rule list belongs to Gia's closed normalized subset, it reports
 `userAttributeFields` (pairs of attribute name and stable lookup-field ID,
 including `id`). The original ordered `rules` remain the only source of
 condition/permission order. For a protected or otherwise unnormalizable
-group, `dependencies:{coverage:"unknown"}` contains no inferred identifiers.
+group, `dependencies.coverage` remains `"unknown"`. If independently validated
+typed rules are present in unambiguous bounded order, the same dependency
+arrays report their known references only. Otherwise only the coverage
+field is returned. Missing references do not imply absence from opaque rules.
 These are syntactic references only: no raw ACL formulas, lookup values or
 LinkKey values are inspected or exposed; neither effective permissions nor
 native dependency completeness outside this subset are asserted.
@@ -997,7 +1000,7 @@ policy safety certificate.
 
 Opaque formulas, memos, unsupported user-attribute definitions, default/special/schema-edit policy and other unsupported persisted semantics are preserved but not copied into editable model content. Before reading ACL metadata, the bridge performs a fresh native document metadata read and requires `access === "owners"`; this prevents censored non-owner metadata from being mistaken for an empty policy. The bridge also refuses incomplete/censored/truncated ACL metadata, duplicate or overlapping stable targets, and any selected group it cannot normalize without loss.
 
-An ordinary group is editable only when its bounded formula text and native parsed predicate normalize to the same supported condition for every rule. Malformed, oversized, unsupported or contradictory parsed predicates protect the group from mutation and leave condition dependencies, diagnostics and simulation unknown. Gia keeps raw predicate metadata private and applies the same consistency check when verifying a persisted write.
+An ordinary group is editable only when its bounded formula text and native parsed predicate normalize to the same supported condition for every rule. Malformed, oversized, unsupported or contradictory parsed predicates protect the group from whole-group mutation and leave dependency coverage, diagnostics and simulation unknown. Gia keeps raw predicate metadata private and applies the same consistency check when verifying a persisted write.
 
 For protected ordinary groups, the additive read-only `nativeRuleObservations`
 array describes up to 20 persisted rules in unambiguous native order (otherwise

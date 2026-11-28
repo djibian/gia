@@ -1862,9 +1862,6 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
     specialPolicy: projectSpecialPolicy(snapshot, attributeTables),
     userAttributes,
     groups: snapshot.groups.map((group) => {
-      const dependencies = group.normalizedRules
-        ? projectGroupDependencies(group.normalizedRules)
-        : { coverage: "unknown" as const };
       const ordered = group.ruleRecordIds.map(id => nativeRules.get(id));
       const positions = ordered.map(rule => rule?.rulePos);
       const orderKnown = positions.every(pos => pos !== undefined) &&
@@ -1873,6 +1870,13 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
       // Mixed groups retain their existing whole-group protection. Only uniquely
       // identifiable, independently validated typed rules are patch candidates.
       const candidates = !group.normalizedRules ? rulePatchCandidates(snapshot, group) : [];
+      // Preserve independently validated references without claiming complete
+      // coverage or changing the whole-group mutation/simulation boundary.
+      const dependencies = group.normalizedRules
+        ? projectGroupDependencies(group.normalizedRules)
+        : candidates.length
+          ? { ...projectGroupDependencies(candidates.map(c => c.normalized)), coverage: "unknown" as const }
+          : { coverage: "unknown" as const };
       const patchableRules = candidates.filter(c => candidates.filter(other =>
         sameNormalizedRules([c.normalized], [other.normalized])).length === 1).map(c => c.normalized);
       return {
@@ -1895,8 +1899,8 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
           : {
               unsupportedReason: group.unsupportedReason ?? "Unsupported persisted ACL semantics.",
               ...(patchableRules.length ? { patchableRules } : {}),
-              // Keep the legacy whole-group editability and dependency semantics.
-              // A stored parsed tree may be stale or inconsistent with formula text.
+              // Stored parsed trees alone are not evidence of dependencies:
+              // they may be stale or inconsistent with formula text.
               nativeRuleObservations: table && orderKnown &&
                 ordered.length <= MAX_ACCESS_RULES_PER_GROUP
                 ? ordered.map(rule => ({

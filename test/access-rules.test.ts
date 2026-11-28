@@ -1988,7 +1988,10 @@ test("E1-D2 does not partially lint an opaque group or leak its literals", () =>
     ]
   );
   const group = (projectAccessRules(state) as any).groups[0];
-  assert.deepEqual(group.dependencies, { coverage: "unknown" });
+  assert.deepEqual(group.dependencies, {
+    coverage: "unknown", recordColumnIds: ["Title"], newRecordColumnIds: [],
+    userProperties: ["Email"], linkKeyNames: [], userAttributeFields: []
+  });
   assert.equal(group.diagnostics, null);
   assert.equal(group.rules, undefined);
   const known = ["Eq", ["Attr", ["Name", "rec"], "Title"], ["Attr", ["Name", "user"], "Email"]];
@@ -2134,6 +2137,14 @@ test("schema impact preserves independently typed references within an opaque gr
       aclFormulaParsed: nativeAclFixture(opaque), permissionsText: "-U"}}
   ];
   const state = snapshot(resources, rules);
+  const group = (projectAccessRules(state) as any).groups[0];
+  assert.equal(group.editable, false);
+  assert.deepEqual(group.dependencies, {
+    coverage: "unknown", recordColumnIds: ["OwnerEmail"], newRecordColumnIds: [],
+    userProperties: [], linkKeyNames: [],
+    userAttributeFields: [{attributeName: "Mentor", attributeColumnId: "OwnerEmail"}]
+  });
+  assert.doesNotMatch(JSON.stringify(group.dependencies), /Title|opaque-private|aclFormula/);
   const impact = (columnId: string) => projectAccessRuleSchemaImpact(state,
     {kind: "column", tableId: "Projects", columnId}) as any;
   assert.deepEqual(impact("OwnerEmail").affectedGroups, [{
@@ -2151,6 +2162,8 @@ test("schema impact preserves independently typed references within an opaque gr
     fields: {...rules[1]!.fields, aclFormulaParsed: nativeAclFixture("user.Access == OWNER")}}, rules[2]!]);
   assert.deepEqual((projectAccessRuleSchemaImpact(inconsistent,
     {kind: "column", tableId: "Projects", columnId: "OwnerEmail"}) as any).affectedGroups, []);
+  assert.deepEqual((projectAccessRules(inconsistent) as any).groups[0].dependencies,
+    {coverage: "unknown"});
 });
 
 test("ACL group replacement allocates ordered positions beyond fractional siblings", () => {
