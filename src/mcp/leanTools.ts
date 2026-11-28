@@ -885,8 +885,13 @@ export function registerLeanTools(
     "grist_query",
     {
       ...getLeanToolMetadata("grist_query"),
-      inputSchema: z
-        .object({
+      inputSchema: z.union([z.object({
+          action: z.literal("observe_record_access"),
+          documentId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+          tableId: tableIdSchema,
+          recordId: positiveIdSchema
+        }).strict(),
+        z.object({
           documentId: documentIdSchema,
           tableId: tableIdSchema,
           filter: dictionarySchema(z.array(z.unknown())).optional(),
@@ -900,10 +905,14 @@ export function registerLeanTools(
           hidden: z.boolean().optional(),
           cellFormat: z.enum(["normal", "typed"]).optional()
         })
-        .strict()
+        .strict()])
     },
-    async ({ documentId, tableId, filter, sort, limit, hidden, cellFormat }) => {
+    async (input) => {
       try {
+        if ("action" in input) {
+          return textResult(await grist.observeRecordAccess(input.documentId, input.tableId, input.recordId));
+        }
+        const { documentId, tableId, filter, sort, limit, hidden, cellFormat } = input;
         return textResult(
           await grist.queryRecords(documentId, tableId, {
             ...(filter ? { filter } : {}),

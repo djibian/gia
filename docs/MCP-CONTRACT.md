@@ -14,7 +14,7 @@ A v2 server exposes exactly these ten tools:
 | --- | --- |
 | `grist_discover` | discover explicitly allowed workspaces, documents, tables or columns |
 | `grist_inspect` | inspect compact semantic document/page/widget/access-rule context |
-| `grist_query` | query a bounded set of records |
+| `grist_query` | query a bounded set of records or observe one native row ID without cell values |
 | `grist_add_records` | create a bounded record batch |
 | `grist_change_records` | update or delete explicitly targeted records |
 | `grist_add_structure` | create an empty document, copy an authorized source as a template or full data, or create bounded tables/columns |
@@ -26,6 +26,21 @@ A v2 server exposes exactly these ten tools:
 `grist_help` returns `contractVersion: "2"` so a client can identify the contract without relying on implementation version strings.
 
 Unselected `grist_help({})` remains a compact ten-tool index. Selecting named tools returns actionable closed actions, key request shapes, fixed semantic safeguards, synthetic schema-validated examples, and the deployment-configured read/write/schema limits separately from fixed ACL bounds. It is guidance, not a second authorization source: the registered input schema, service checks and native Grist permissions remain authoritative. Client-side flattening of nested schema types does not authorize permissive inputs.
+
+The additive `grist_query(action="observe_record_access")` takes a plain document
+ID (not a URL), public table ID and one positive record ID. It runs the same
+authorized native REST records query with the current Grist credential, a
+fixed ID filter, limit one and hidden columns disabled. The result identifies
+the requested document/table/record, read operation, native REST channel and
+current-credential context; `policyAttested:false` explicitly excludes a
+policy snapshot guarantee. Observations are `visible` (the requested row ID
+was returned), `not_returned` (empty record list), `http_403` (native HTTP
+refusal, cause not established), or `unknown` (other errors or inconsistent
+response). Cell values, native error bodies, credentials and LinkKeys are not
+returned. No identity override or LinkKey context is accepted. A missing
+row is not proof of ACL denial, existence or column confidentiality; use
+separately authorized controls and observations. This is one native read
+observation, not whole-policy qualification or web-client evidence.
 
 `grist_add_structure(action="create_tables")` requires a nonempty `columns` array per new table, matching native Grist TablePost. Missing or empty arrays are refused before any native write; Gia does not invent application columns.
 

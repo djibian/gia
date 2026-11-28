@@ -31,6 +31,7 @@ import {
   type AccessUserAttributeDefinitionInput,
   type AccessRulesSnapshot
 } from "./accessRules.js";
+import { GristApiError } from "./client.js";
 import type {
   GristColumnSpec,
   GristColumnUpdate,
@@ -2089,6 +2090,36 @@ export class AuthorizedGristService {
     return this.execute("query_records", documentIdOrUrl, undefined, (id) => {
       assertPublicTableId(tableId);
       return this.inner.queryRecords(id, tableId, options);
+    });
+  }
+
+  /** Observe a native row ID without returning cells or predicting policy. */
+  async observeRecordAccess(documentId: string, tableId: string, recordId: number): Promise<unknown> {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(documentId) ||
+        !Number.isSafeInteger(recordId) || recordId < 1) {
+      throw new Error("A plain document ID and positive safe record ID are required.");
+    }
+    assertPublicTableId(tableId);
+    return this.execute("query_records", documentId, 1, async id => {
+      const scope = {documentId: id, tableId, recordId, operation: "read",
+        channel: "native_rest_api", identity: "current_grist_credential", policyAttested: false};
+      try {
+        const response = await this.inner.queryRecords(id, tableId, {
+          filter: {id: [recordId]}, limit: 1, hidden: false
+        });
+        const records = (response as {records?: unknown} | null)?.records;
+        if (!Array.isArray(records)) return {...scope, observation: "unknown"};
+        if (records.length === 0) return {...scope, observation: "not_returned"};
+        if (records.length === 1 && records[0]?.id === recordId) {
+          return {...scope, observation: "visible"};
+        }
+        return {...scope, observation: "unknown"};
+      } catch (error) {
+        // HTTP refusal is not proof of its cause. Never expose native bodies
+        // or convert transport failures into negative ACL evidence.
+        return {...scope, observation: error instanceof GristApiError && error.status === 403
+          ? "http_403" : "unknown"};
+      }
     });
   }
 
