@@ -101,6 +101,8 @@ const predicates: Record<string, Node | null> = {
     ["Eq", attr("user", "Access"), name("EDITOR")],
   "user.Access == OWNER":
     ["Eq", attr("user", "Access"), name("OWNER")],
+  "user.Access == VIEWER":
+    ["Eq", attr("user", "Access"), name("VIEWER")],
   "user.Access in [EDITOR, VIEWER]":
     ["In", attr("user", "Access"), ["List", name("EDITOR"), name("VIEWER")]],
   "user.Access in [OWNER, ADMIN]":
