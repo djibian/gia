@@ -2389,7 +2389,7 @@ function rulePatchCandidates(snapshot: AccessRulesSnapshot, group: AccessRuleGro
 // The PositionNumber default is +Infinity, excluded from the native position
 // index (and serialized as null by JSON). It is not an ordered application
 // rule. Preserve its full raw fields, but do not include it in insertion gaps.
-function positionedAclRules(snapshot: AccessRulesSnapshot): PersistedRule[] {
+function positionedAclRules(snapshot: AccessRulesSnapshot, ambiguity: string): PersistedRule[] {
   return snapshot.rules.filter(rule => {
     if (rule.rulePos !== undefined) return true;
     const resource = snapshot.resources.find(r => r.id === rule.resourceId);
@@ -2399,15 +2399,16 @@ function positionedAclRules(snapshot: AccessRulesSnapshot): PersistedRule[] {
         rule.aclFormula === "" && rule.aclFormulaParsed === "" &&
         rule.permissionsText === "" && typeof raw.principals === "string" &&
         raw.principals !== "" && !raw.userAttributes) return false;
-    throw new Error("Native ACL positions are ambiguous; cannot safely edit order.");
+    throw new Error(ambiguity);
   });
 }
 
-function orderedAclRules(snapshot: AccessRulesSnapshot): PersistedRule[] {
-  const rules = positionedAclRules(snapshot);
+function orderedAclRules(snapshot: AccessRulesSnapshot,
+  ambiguity = "Native ACL positions are ambiguous; cannot safely edit order."): PersistedRule[] {
+  const rules = positionedAclRules(snapshot, ambiguity);
   const positions = rules.map(r => r.rulePos!);
   if (positions.some(p => p < 0) || new Set(positions).size !== positions.length) {
-    throw new Error("Native ACL positions are ambiguous; cannot safely edit order.");
+    throw new Error(ambiguity);
   }
   return rules.sort((a,b) => a.rulePos! - b.rulePos!);
 }
@@ -2530,7 +2531,7 @@ export function verifyAccessRulePatch(before: AccessRulesSnapshot,
     const rule = added[0]!;
     const group = after.groups.find(g => g.resourceRecordId === plan.insert.resource);
     const candidate = group && rulePatchCandidates(after, group).find(c => c.rule.id === rule.id);
-    const expectedOrder = orderedAclRules(before).map(r => r.id);
+    const expectedOrder = orderedAclRules(before, "Native ACL order postcondition is ambiguous.").map(r => r.id);
     const anchor = expectedOrder.indexOf(plan.ruleId);
     if (anchor < 0 || !candidate || rule.resourceId !== plan.insert.resource ||
         rule.aclFormula !== plan.insert.aclFormula || rule.permissionsText !== plan.insert.permissionsText ||
@@ -2539,7 +2540,7 @@ export function verifyAccessRulePatch(before: AccessRulesSnapshot,
     }
     expectedOrder.splice(anchor, 0, rule.id);
     if (rule.rulePos === undefined || rule.rulePos <= 0 ||
-        stableJson(expectedOrder) !== stableJson(orderedAclRules(after).map(r => r.id))) {
+        stableJson(expectedOrder) !== stableJson(orderedAclRules(after, "Native ACL order postcondition is ambiguous.").map(r => r.id))) {
       throw new Error("Native ACL insertion order postcondition differs from the requested effect.");
     }
   }
@@ -2547,7 +2548,7 @@ export function verifyAccessRulePatch(before: AccessRulesSnapshot,
     // Native PositionNumber may allocate a fractional position. Verify the
     // entire native order with exactly the two selected identities exchanged.
     const orderedIds = (snapshot: AccessRulesSnapshot) => {
-      const ordered = orderedAclRules(snapshot);
+      const ordered = orderedAclRules(snapshot, "Native ACL order postcondition is ambiguous.");
       if (ordered.some(r => (r.id === plan.ruleId || r.id === plan.swap.ruleId) && r.rulePos! <= 0)) {
         throw new Error("Native ACL order postcondition is ambiguous.");
       }
