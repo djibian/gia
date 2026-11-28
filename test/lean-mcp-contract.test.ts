@@ -936,8 +936,11 @@ test("native record observation is a closed read-only query action", async () =>
   const schema = tool.options.inputSchema!;
   const request = {action: "observe_record_access", documentId: "doc-1", tableId: "Items", recordId: 7};
   await tool.callback(schema.parse(request));
-  assert.deepEqual(calls, [["doc-1", "Items", 7]]);
+  await tool.callback(schema.parse({...request, columnId: "Secret"}));
+  assert.deepEqual(calls, [["doc-1", "Items", 7, undefined], ["doc-1", "Items", 7, "Secret"]]);
   for (const invalid of [
+    {...request, columnId: "id"}, {...request, columnId: "_grist_Secret"},
+    {...request, columnId: "gristHelper_Display"}, {...request, columnId: "secret=value"},
     {...request, role: "owner"}, {...request, linkKeys: {}}, {...request, filter: {id: [8]}},
     {...request, documentId: "https://example.invalid/doc/doc-1?secret_=private"}, {...request, recordId: 0}
   ]) assert.throws(() => schema.parse(invalid));
