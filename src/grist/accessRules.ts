@@ -2355,10 +2355,12 @@ export function projectAccessRuleSimulation(
 
 // A local patch selects one typed rule, never a raw native row ID.
 export type AccessRulePatchReplacement =
-  Pick<AccessRuleInput, "permissions"> | Pick<AccessRuleInput, "condition">;
+  Pick<AccessRuleInput, "permissions"> | Pick<AccessRuleInput, "condition"> |
+  { swapWith: AccessRuleInput };
 export type AccessRulePatchPlan = { ruleId: number; changed: boolean } & (
   { fields: { permissionsText: string } } |
-  { fields: { aclFormula: string }; expectedCondition: AccessRuleCondition }
+  { fields: { aclFormula: string }; expectedCondition: AccessRuleCondition } |
+  { fields: { rulePos: number }; swap: { ruleId: number; rulePos: number } }
 );
 
 function rulePatchCandidates(snapshot: AccessRulesSnapshot, group: AccessRuleGroupState) {
@@ -2376,6 +2378,24 @@ function rulePatchCandidates(snapshot: AccessRulesSnapshot, group: AccessRuleGro
   });
 }
 
+// Grist initializes a legacy ACL row on the empty resource without rulePos.
+// The PositionNumber default is +Infinity, excluded from the native position
+// index (and serialized as null by JSON). It is not an ordered application
+// rule. Preserve its full raw fields, but do not include it in insertion gaps.
+function positionedAclRules(snapshot: AccessRulesSnapshot): PersistedRule[] {
+  return snapshot.rules.filter(rule => {
+    if (rule.rulePos !== undefined) return true;
+    const resource = snapshot.resources.find(r => r.id === rule.resourceId);
+    const raw = rule.fields;
+    if (resource?.tableId === "" && resource.colIds === "" &&
+        (raw.rulePos === null || raw.rulePos === undefined) &&
+        rule.aclFormula === "" && rule.aclFormulaParsed === "" &&
+        rule.permissionsText === "" && typeof raw.principals === "string" &&
+        raw.principals !== "" && !raw.userAttributes) return false;
+    throw new Error("Native ACL positions are ambiguous; cannot safely swap.");
+  });
+}
+
 export function resolveAccessRulePatch(
   snapshot: AccessRulesSnapshot, targetInput: AccessRuleTarget,
   expected: AccessRuleInput, replacement: AccessRulePatchReplacement
@@ -2387,11 +2407,44 @@ export function resolveAccessRulePatch(
   const table = snapshot.tables.get(target.tableId)!;
   const attributes = userAttributeReferenceContext(snapshot);
   const prior = normalizeRequestedRules([expected], target, table, attributes).normalized[0]!;
-  const next = normalizeRequestedRules([{...expected, ...replacement}], target, table, attributes);
   const candidates = rulePatchCandidates(snapshot, group);
   const matching = candidates.filter(c => sameNormalizedRules([c.normalized], [prior]));
   if (matching.length !== 1) throw new Error("Expected supported ACL rule is absent or ambiguous; inspect again.");
   const selected = matching[0]!;
+  if ("swapWith" in replacement) {
+    const other = normalizeRequestedRules([replacement.swapWith], target, table, attributes).normalized[0]!;
+    const matches = candidates.filter(c => sameNormalizedRules([c.normalized], [other]));
+    if (matches.length !== 1 || matches[0]!.rule.id === selected.rule.id) {
+      throw new Error("Second supported ACL rule is absent, identical or ambiguous; inspect again.");
+    }
+    const second = matches[0]!;
+    if (selected.rule.rulePos! >= second.rule.rulePos!) {
+      throw new Error("Expected ACL rule order differs; inspect again.");
+    }
+    if (prior.condition.kind === "everyone" || other.condition.kind === "everyone") {
+      throw new Error("An everyone access rule must remain the final rule in its group.");
+    }
+    // Grist PositionNumber inserts before the requested position, potentially
+    // relabeling neighbors if there is no representable gap. Refuse that case
+    // using the complete ACL position column, not just this resource.
+    const positions = positionedAclRules(snapshot).map(r => r.rulePos!);
+    if (positions.some(p => p < 0) ||
+        new Set(positions).size !== positions.length ||
+        selected.rule.rulePos! <= 0 || second.rule.rulePos! <= 0) {
+      throw new Error("Native ACL positions are ambiguous; cannot safely swap.");
+    }
+    const sorted = (positions as number[]).sort((a,b) => a-b);
+    for (const pos of [selected.rule.rulePos!, second.rule.rulePos!]) {
+      const previous = sorted[sorted.indexOf(pos) - 1] ?? 0;
+      const midpoint = previous + (pos - previous) / 2;
+      if (!(previous < midpoint && midpoint < pos)) {
+        throw new Error("Native ACL position gap is too small for a safe swap.");
+      }
+    }
+    return {ruleId: selected.rule.id, changed: true, fields: {rulePos: second.rule.rulePos!},
+      swap: {ruleId: second.rule.id, rulePos: selected.rule.rulePos!}};
+  }
+  const next = normalizeRequestedRules([{...expected, ...replacement}], target, table, attributes);
   const changed = !sameNormalizedRules([prior], next.normalized);
   if (changed && candidates.some(c => c.rule.id !== selected.rule.id &&
       sameNormalizedRules([c.normalized], next.normalized))) {
@@ -2414,6 +2467,11 @@ export function verifyAccessRulePatch(before: AccessRulesSnapshot,
   const sorted = (snapshot: AccessRulesSnapshot, apply: boolean) => ({
     resources: snapshot.resources.map(r => ({id: r.id, fields: r.fields})).sort((a,b) => a.id - b.id),
     rules: snapshot.rules.map(r => {
+      if ("swap" in plan && (r.id === plan.ruleId || r.id === plan.swap.ruleId)) {
+        const fields = {...r.fields};
+        delete fields.rulePos;
+        return {id: r.id, fields};
+      }
       if (r.id !== plan.ruleId) return {id: r.id, fields: r.fields};
       const fields: JsonRecord = {...r.fields, ...(apply ? plan.fields : {})};
       // Grist derives the parsed predicate from formula text. Check it semantically below.
@@ -2423,6 +2481,25 @@ export function verifyAccessRulePatch(before: AccessRulesSnapshot,
   });
   if (stableJson(sorted(before, true)) !== stableJson(sorted(after, false))) {
     throw new Error("Native ACL patch or preservation postcondition differs from the requested effect.");
+  }
+  if ("swap" in plan) {
+    // Native PositionNumber may allocate a fractional position. Verify the
+    // entire native order with exactly the two selected identities exchanged.
+    const orderedIds = (snapshot: AccessRulesSnapshot) => {
+      const ordered = positionedAclRules(snapshot);
+      const positions = ordered.map(r => r.rulePos!);
+      if (positions.some(p => p < 0) ||
+          new Set(positions).size !== positions.length ||
+          ordered.some(r => (r.id === plan.ruleId || r.id === plan.swap.ruleId) && r.rulePos! <= 0)) {
+        throw new Error("Native ACL order postcondition is ambiguous.");
+      }
+      return ordered.sort((a,b) => a.rulePos! - b.rulePos!).map(r => r.id);
+    };
+    const expected = orderedIds(before).map(id => id === plan.ruleId ? plan.swap.ruleId :
+      id === plan.swap.ruleId ? plan.ruleId : id);
+    if (stableJson(expected) !== stableJson(orderedIds(after))) {
+      throw new Error("Native ACL order postcondition differs from the requested swap.");
+    }
   }
   if ("expectedCondition" in plan) {
     const group = after.groups.find(g => g.ruleRecordIds.includes(plan.ruleId));

@@ -122,7 +122,10 @@ export function verifyOwnerSchemaGuard(
     }
   } else {
     if (!current.guard || !current.resource ||
-        current.guard.rulePos !== plan.rulePos || previous.guard ||
+        previous.guard ||
+        // PositionNumber is allocated by Grist. Only ordering within the
+        // default resource matters here; other resources must stay intact.
+        previous.rules.some(rule => rule.rulePos! >= current.guard!.rulePos!) ||
         (plan.defaultResourceId !== undefined &&
           current.resource.id !== plan.defaultResourceId)) {
       throw new Error("Native schema guard creation was not verified.");

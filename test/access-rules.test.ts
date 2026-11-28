@@ -2188,4 +2188,58 @@ test("local ACL permission patch preserves opaque siblings and native rule ident
   assert.equal(resolveAccessRulePatch(before, target, expected, {condition: expected.condition}).changed, false);
   assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque,
     {...edited, id: 22, fields: {...edited.fields, rulePos: 3}}]), target, expected, {condition}), /duplicate/);
+
+  const second = {...edited, id: 22, fields: {...edited.fields, rulePos: 3}};
+  const swapWith = {...expected, condition};
+  const mixed = snapshot(resources, [rule, opaque, second]);
+  const swap = resolveAccessRulePatch(mixed, target, expected, {swapWith});
+  assert.deepEqual(swap, {ruleId: 20, changed: true, fields: {rulePos: 3},
+    swap: {ruleId: 22, rulePos: 1}});
+  const moved = {...rule, fields: {...rule.fields, rulePos: 3}};
+  const movedSecond = {...second, fields: {...second.fields, rulePos: 1}};
+  const swapped = snapshot(resources, [moved, opaque, movedSecond]);
+  verifyAccessRulePatch(mixed, swapped, swap);
+  // Grist allocates positions between existing rows rather than storing the request verbatim.
+  verifyAccessRulePatch(mixed, snapshot(resources, [
+    {...moved, fields: {...moved.fields, rulePos: 2.5}}, opaque,
+    {...movedSecond, fields: {...movedSecond.fields, rulePos: 0.5}}
+  ]), swap);
+  assert.throws(() => verifyAccessRulePatch(mixed, snapshot(resources, [
+    {...moved, fields: {...moved.fields, rulePos: 1.5}}, opaque, movedSecond
+  ]), swap), /postcondition/);
+  assert.throws(() => verifyAccessRulePatch(mixed, snapshot(resources, [
+    moved, {...opaque, fields: {...opaque.fields, rulePos: 2.1}}, movedSecond
+  ]), swap), /postcondition/);
+  // Fresh Grist documents retain a legacy ACL row without an allocated
+  // PositionNumber. It is outside the native position index, not an
+  // ambiguous application rule, and its complete raw fields stay intact.
+  const legacyResource = {id: 1, fields: {tableId: "", colIds: ""}};
+  const legacy = {id: 1, fields: {resource: 1, rulePos: null,
+    aclFormula: "", aclFormulaParsed: "", permissionsText: "",
+    permissions: 1, principals: "[1]"}};
+  const withLegacy = [...resources, legacyResource];
+  const legacyBefore = snapshot(withLegacy, [legacy, rule, opaque, second]);
+  assert.deepEqual(resolveAccessRulePatch(legacyBefore, target, expected, {swapWith}), swap);
+  verifyAccessRulePatch(legacyBefore, snapshot(withLegacy, [legacy, moved, opaque, movedSecond]), swap);
+  assert.throws(() => verifyAccessRulePatch(legacyBefore, snapshot(withLegacy, [
+    {...legacy, fields: {...legacy.fields, principals: "[2]"}}, moved, opaque, movedSecond
+  ]), swap), /preservation/);
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque, second,
+    {...opaque, id: 23, fields: {...opaque.fields, rulePos: null}}]), target, expected, {swapWith}),
+    /ambiguous/);
+  const dense = snapshot(resources, [rule, opaque,
+    {...second, fields: {...second.fields, rulePos: 2 + Number.EPSILON * 2}}]);
+  assert.throws(() => resolveAccessRulePatch(dense, target, expected, {swapWith}), /gap/);
+  assert.throws(() => verifyAccessRulePatch(mixed, snapshot(resources, [moved, opaque, second]), swap), /postcondition/);
+  assert.throws(() => verifyAccessRulePatch(mixed, snapshot(resources,
+    [moved, {...opaque, fields: {...opaque.fields, memo: "changed"}}, movedSecond]), swap), /postcondition/);
+  assert.throws(() => resolveAccessRulePatch(swapped, target, expected, {swapWith}), /order differs/);
+  assert.equal(resolveAccessRulePatch(swapped, target, swapWith, {swapWith: expected}).changed, true);
+  assert.throws(() => resolveAccessRulePatch(mixed, target, expected, {swapWith: expected}), /identical/);
+  assert.throws(() => resolveAccessRulePatch(before, target, expected, {swapWith}), /absent/);
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque, second,
+    {...second, id: 23, fields: {...second.fields, rulePos: 4}}]), target, expected, {swapWith}), /ambiguous/);
+  const unconditional = {...second, fields: {...second.fields, aclFormula: "", aclFormulaParsed: ""}};
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque, unconditional]),
+    target, expected, {swapWith: {...expected, condition: {kind: "everyone"}}}), /final rule/);
 });

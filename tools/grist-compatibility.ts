@@ -4365,7 +4365,9 @@ async function run(): Promise<void> {
         ["AddRecord", "_grist_ACLRules", null, {resource: -1, rulePos: startPos,
           aclFormula: "user.Access == VIEWER", permissionsText: "+R"}],
         ["AddRecord", "_grist_ACLRules", null, {resource: -1, rulePos: startPos + 1,
-          aclFormula: "rec.Name == 'synthetic-opaque'", permissionsText: "-U", memo: "opaque"}]
+          aclFormula: "rec.Name == 'synthetic-opaque'", permissionsText: "-U", memo: "opaque"}],
+        ["AddRecord", "_grist_ACLRules", null, {resource: -1, rulePos: startPos + 2,
+          aclFormula: "user.Access != OWNER", permissionsText: "+R"}]
       ])
     });
     const patchPath = `${docPath}/tables/${patchTable}/records`;
@@ -4396,6 +4398,44 @@ async function run(): Promise<void> {
       {...patchRequest, expected: {...patchRequest.expected, permissions: patchRequest.permissions}}),
       "native_acl_patch_noop");
     assert(patchNoop.changed === false, "native_acl_patch_noop_changed");
+
+    // Swap only two supported positions across the opaque neighbor. Real
+    // viewer access changes with the native first matching permission.
+    const orderBefore = await readNativeAcl();
+    const later = orderBefore.find(r => r.fields.resource === patchRow.fields.resource &&
+      r.fields.rulePos === startPos + 2 && r.fields.aclFormula === "user.Access != OWNER");
+    assert(later, "native_acl_order_fixture_missing");
+    const aclSwapRequest = {action: "swap_access_rule_order", documentId, target: patchRequest.target,
+      expected: {...patchRequest.expected, permissions: patchRequest.permissions},
+      swapWith: {condition: nonOwner, permissions: patchRequest.expected.permissions}};
+    const orderResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", aclSwapRequest),
+      "native_acl_order_swap");
+    assert(orderResult.changed === true && orderResult.persistedDefinitionVerified === true &&
+      orderResult.effectiveEnforcementVerified === false, "native_acl_order_unverified");
+    const nativeOrder = (rows: Awaited<ReturnType<typeof readNativeAcl>>) =>
+      [...rows].sort((a,b) => Number(a.fields.rulePos) - Number(b.fields.rulePos)).map(r => r.id);
+    const otherFields = (rows: Awaited<ReturnType<typeof readNativeAcl>>) => byId(rows.map(r => {
+      const fields = {...r.fields};
+      if (r.id === patchRow.id || r.id === later.id) delete fields.rulePos;
+      return {...r, fields};
+    }));
+    const orderAfter = await readNativeAcl();
+    assert(isDeepStrictEqual(otherFields(orderAfter), otherFields(orderBefore)) &&
+      isDeepStrictEqual(nativeOrder(orderAfter), nativeOrder(orderBefore).map(id =>
+        id === patchRow.id ? later.id : id === later.id ? patchRow.id : id)),
+      "native_acl_order_neighbor_changed");
+    assert((await gristApi(gristBaseUrl, allowedFlagKey, patchPath) as MetaRecords).records.length === 1,
+      "native_acl_order_viewer_not_restored");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", aclSwapRequest);
+    const reverseOrder = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      {...aclSwapRequest, expected: aclSwapRequest.swapWith, swapWith: aclSwapRequest.expected}),
+      "native_acl_order_reverse");
+    const reversed = await readNativeAcl();
+    assert(reverseOrder.changed === true && reverseOrder.persistedDefinitionVerified === true &&
+      isDeepStrictEqual(otherFields(reversed), otherFields(orderBefore)) &&
+      isDeepStrictEqual(nativeOrder(reversed), nativeOrder(orderBefore)), "native_acl_order_reverse_unverified");
+    assert(await gristStatus(gristBaseUrl, allowedFlagKey, patchPath, {method: "GET"}) === 403,
+      "native_acl_order_viewer_not_denied");
 
     // Change only the predicate: native Grist derives its parsed tree; the
     // opaque neighbor, permissions and row identity must remain unchanged.
@@ -4446,26 +4486,9 @@ async function run(): Promise<void> {
       `${docPath}/apply`, schemaWrite("BeforeSchemaGuard"));
     assert(editorBefore === 200, `native_schema_editor_baseline:${editorBefore}`);
     const priorRules = await readNativeAcl();
-    let guardResult: Record<string, unknown>;
-    try {
-      guardResult = await callTool(bridgeBaseUrl, "grist_change_structure", {
-        action: "ensure_owner_schema_guard", documentId, confirmSchemaRestriction: true
-      });
-    } catch (error) {
-      // Only the synthetic fixed special-rule metadata, never other ACL
-      // formulas, user-attribute values, URLs or share keys, enters CI logs.
-      const diagnostics = await readNativeAcl();
-      const special = diagnostics.filter(rule => rule.fields.permissionsText === "-S");
-      console.error("schema_guard_native_diagnostic", JSON.stringify({
-        beforeCount: priorRules.length, afterCount: diagnostics.length,
-        special: special.map(rule => ({
-          formulaMatches: rule.fields.aclFormula === "user.Access != OWNER",
-          formulaParsed: rule.fields.aclFormulaParsed, rulePos: rule.fields.rulePos,
-          keys: Object.keys(rule.fields).sort()
-        }))
-      }));
-      throw error;
-    }
+    const guardResult = await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "ensure_owner_schema_guard", documentId, confirmSchemaRestriction: true
+    });
     const nativeSchemaGuard = resultJson(guardResult, "native_owner_schema_guard_create") as {
         changed: boolean; persistedDefinitionVerified: boolean;
         effectiveEnforcementVerified: boolean;
