@@ -1738,8 +1738,69 @@ function projectGroupDiagnostics(
   return diagnostics;
 }
 
+// Read-only structural view of the persisted Grist predicate tree, not a
+// second parser/evaluator and never an input to mutation or dependency proofs.
+// Native node vocabulary: grist-core sandbox/grist/predicate_formula.py.
+function projectNativePredicate(
+  rule: PersistedRule, table: TableInfo, attributes: ReadonlyMap<string, TableInfo>
+): unknown {
+  if (!rule.aclFormulaParsed) return rule.aclFormula === "" ? ["Always"] : ["Unknown"];
+  if (rule.aclFormulaParsed.length > MAX_NATIVE_ACL_AST_LENGTH) return ["Unknown"];
+  let parsed: unknown;
+  try { parsed = JSON.parse(rule.aclFormulaParsed); } catch { return ["Unknown"]; }
+  let budget = 128;
+  const isName = (node: unknown, name: string): boolean =>
+    Array.isArray(node) && node.length === 2 && node[0] === "Name" && node[1] === name;
+  const binary = new Set(["Add", "Sub", "Mult", "Div", "Mod", "Eq", "NotEq",
+    "Lt", "LtE", "Gt", "GtE", "Is", "IsNot", "In", "NotIn"]);
+  function visit(node: unknown, depth: number): unknown {
+    if (--budget < 0 || depth > 12 || !Array.isArray(node)) return ["Unknown"];
+    const [kind, base, field] = node;
+    if (kind === "Name" && node.length === 2) {
+      return typeof base === "string" &&
+        (["rec", "newRec", "user"].includes(base) || NATIVE_ROLE.has(base))
+        ? ["Name", base] : ["Redacted"];
+    }
+    if (kind === "Const" && node.length === 2) return ["Const", ["Redacted"]];
+    if (kind === "Attr" && node.length === 3 && typeof field === "string") {
+      let known = false;
+      if (isName(base, "rec") || isName(base, "newRec")) {
+        known = field === "id" || table.columns.has(field);
+      } else if (isName(base, "user")) {
+        known = field === "Access" || ACCESS_RULE_USER_PROPERTIES.some(p => p === field) ||
+          attributes.has(field);
+      } else if (Array.isArray(base) && base.length === 3 && base[0] === "Attr" &&
+                 isName(base[1], "user") && typeof base[2] === "string") {
+        const attribute = attributes.get(base[2]);
+        known = attribute !== undefined && (field === "id" || attribute.columns.has(field));
+      }
+      return ["Attr", visit(base, depth + 1), known ? field : ["Redacted"]];
+    }
+    if ((kind === "Not" && node.length === 2) || (kind === "Comment" && node.length === 3)) {
+      return [kind, visit(base, depth + 1)];
+    }
+    if ((typeof kind === "string" && binary.has(kind) && node.length === 3) ||
+        ((kind === "And" || kind === "Or") && node.length >= 3 && node.length <= 21) ||
+        (kind === "List" && node.length <= 21) ||
+        (kind === "Call" && node.length >= 2 && node.length <= 21)) {
+      return [kind, ...node.slice(1).map(child => visit(child, depth + 1))];
+    }
+    return ["Unknown"];
+  }
+  return visit(parsed, 0);
+}
+
 export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
   const userAttributes = projectUserAttributes(snapshot);
+  const nativeRules = new Map(snapshot.rules.map(rule => [rule.id, rule]));
+  const attributeTables = new Map<string, TableInfo>();
+  // An opaque definition could shadow a name: never resolve through it.
+  if (userAttributes.protectedDefinitionCount === 0) {
+    for (const attribute of userAttributes.definitions) {
+      const table = snapshot.tables.get(attribute.tableId);
+      if (table) attributeTables.set(attribute.name, table);
+    }
+  }
   const linkKeyDrivenAttributes = new Set(userAttributes.definitions
     .filter((attribute) => attribute.source.kind === "link_key")
     .map((attribute) => attribute.name));
@@ -1752,6 +1813,11 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
       const dependencies = group.normalizedRules
         ? projectGroupDependencies(group.normalizedRules)
         : { coverage: "unknown" as const };
+      const ordered = group.ruleRecordIds.map(id => nativeRules.get(id));
+      const positions = ordered.map(rule => rule?.rulePos);
+      const orderKnown = positions.every(pos => pos !== undefined) &&
+        new Set(positions).size === positions.length;
+      const table = snapshot.tables.get(group.target.tableId);
       return {
         target:
           group.target.columnIds.length === 0
@@ -1769,7 +1835,19 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
           : null,
         ...(group.normalizedRules
           ? { rules: group.normalizedRules }
-          : { unsupportedReason: group.unsupportedReason ?? "Unsupported persisted ACL semantics." })
+          : {
+              unsupportedReason: group.unsupportedReason ?? "Unsupported persisted ACL semantics.",
+              // Keep the legacy whole-group editability and dependency semantics.
+              // A stored parsed tree may be stale or inconsistent with formula text.
+              nativeRuleObservations: table && orderKnown &&
+                ordered.length <= MAX_ACCESS_RULES_PER_GROUP
+                ? ordered.map(rule => ({
+                    condition: projectNativePredicate(rule!, table, attributeTables),
+                    permissions: parsePermissions(rule!.permissionsText,
+                      group.target.columnIds.length > 0) ?? null
+                  }))
+                : null
+            })
       };
     }),
     note:

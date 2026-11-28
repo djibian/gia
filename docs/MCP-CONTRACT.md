@@ -919,6 +919,19 @@ Opaque formulas, memos, unsupported user-attribute definitions, default/special/
 
 An ordinary group is editable only when its bounded formula text and native parsed predicate normalize to the same supported condition for every rule. Malformed, oversized, unsupported or contradictory parsed predicates protect the group from mutation and leave condition dependencies, diagnostics and simulation unknown. Gia keeps raw predicate metadata private and applies the same consistency check when verifying a persisted write.
 
+For protected ordinary groups, the additive read-only `nativeRuleObservations`
+array describes up to 20 persisted rules in unambiguous native order (otherwise
+`null`). Each item has a redacted structural `condition` projected from the
+stored native parsed predicate and a bounded `permissions` projection or
+`null`. Native operator tags and schema-verified record/user-attribute field
+names, built-in user properties and roles are structural; all literal values,
+comments, unverified names and LinkKey operands are redacted. Unknown or
+over-budget subtrees are marked `["Unknown"]`; redaction is marked
+`["Redacted"]`. This is persisted AST observation only: formula/AST agreement,
+dependency completeness, reachability and effective enforcement are not
+asserted. It is not writable input, and group editability, diagnostics,
+dependency coverage and simulation remain unchanged.
+
 Mutations require local `doc.schema:write` and remain subject to Grist's native Owner enforcement. The bridge verifies the requested persisted definition and an internal fingerprint of all untargeted persisted ACL state after re-read. A successful result explicitly does **not** claim effective enforcement verification; persisted rule rows alone are not treated as a confidentiality proof. Native `user.LinkKey` context exists in the Grist web client but not in API calls, so Gia's persisted LinkKey-rule verification is deliberately not presented as an end-to-end LinkKey authorization test. If post-write persisted verification fails, the MCP result preserves the operation's `UNCERTAIN` effect knowledge with `retryWholeOperation: false` rather than collapsing it into a generic failure.
 
 ## Document bootstrap
