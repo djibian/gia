@@ -2122,7 +2122,7 @@ test("schema impact preserves independently typed references within an opaque gr
     {id: 2, fields: {tableId: "Projects", colIds: "*"}}
   ];
   const typed = "rec.OwnerEmail == user.Mentor.OwnerEmail";
-  const opaque = "rec.Title == 'private-opaque'";
+  const opaque = "rec.Title == 'opaque-private'";
   const rules = [
     {id: 10, fields: {resource: 1, rulePos: 1, aclFormula: "", aclFormulaParsed: "",
       permissionsText: "", userAttributes: JSON.stringify({
@@ -2145,7 +2145,7 @@ test("schema impact preserves independently typed references within an opaque gr
   }]);
   assert.equal(impact("OwnerEmail").unknownCoverage.protectedOrdinaryGroupCount, 1);
   assert.deepEqual(impact("Title").affectedGroups, []);
-  assert.doesNotMatch(JSON.stringify(impact("OwnerEmail")), /private-opaque|aclFormula|charId/);
+  assert.doesNotMatch(JSON.stringify(impact("OwnerEmail")), /opaque-private|aclFormula|charId/);
   // A parsed tree contradicting the formula text must not become a known dependency.
   const inconsistent = snapshot(resources, [rules[0]!, {...rules[1]!,
     fields: {...rules[1]!.fields, aclFormulaParsed: nativeAclFixture("user.Access == OWNER")}}, rules[2]!]);
