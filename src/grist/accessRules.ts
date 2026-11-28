@@ -2406,6 +2406,22 @@ export function resolveAccessRulePatch(
     if (prior.condition.kind === "everyone" || other.condition.kind === "everyone") {
       throw new Error("An everyone access rule must remain the final rule in its group.");
     }
+    // Grist PositionNumber inserts before the requested position, potentially
+    // relabeling neighbors if there is no representable gap. Refuse that case
+    // using the complete ACL position column, not just this resource.
+    const positions = snapshot.rules.map(r => r.rulePos);
+    if (positions.some(p => p === undefined || p <= 0) ||
+        new Set(positions).size !== positions.length) {
+      throw new Error("Native ACL positions are ambiguous; cannot safely swap.");
+    }
+    const sorted = (positions as number[]).sort((a,b) => a-b);
+    for (const pos of [selected.rule.rulePos!, second.rule.rulePos!]) {
+      const previous = sorted[sorted.indexOf(pos) - 1] ?? 0;
+      const midpoint = previous + (pos - previous) / 2;
+      if (!(previous < midpoint && midpoint < pos)) {
+        throw new Error("Native ACL position gap is too small for a safe swap.");
+      }
+    }
     return {ruleId: selected.rule.id, changed: true, fields: {rulePos: second.rule.rulePos!},
       swap: {ruleId: second.rule.id, rulePos: selected.rule.rulePos!}};
   }
@@ -2432,8 +2448,10 @@ export function verifyAccessRulePatch(before: AccessRulesSnapshot,
   const sorted = (snapshot: AccessRulesSnapshot, apply: boolean) => ({
     resources: snapshot.resources.map(r => ({id: r.id, fields: r.fields})).sort((a,b) => a.id - b.id),
     rules: snapshot.rules.map(r => {
-      if ("swap" in plan && r.id === plan.swap.ruleId) {
-        return {id: r.id, fields: apply ? {...r.fields, rulePos: plan.swap.rulePos} : r.fields};
+      if ("swap" in plan && (r.id === plan.ruleId || r.id === plan.swap.ruleId)) {
+        const fields = {...r.fields};
+        delete fields.rulePos;
+        return {id: r.id, fields};
       }
       if (r.id !== plan.ruleId) return {id: r.id, fields: r.fields};
       const fields: JsonRecord = {...r.fields, ...(apply ? plan.fields : {})};
@@ -2444,6 +2462,23 @@ export function verifyAccessRulePatch(before: AccessRulesSnapshot,
   });
   if (stableJson(sorted(before, true)) !== stableJson(sorted(after, false))) {
     throw new Error("Native ACL patch or preservation postcondition differs from the requested effect.");
+  }
+  if ("swap" in plan) {
+    // Native PositionNumber may allocate a fractional position. Verify the
+    // entire native order with exactly the two selected identities exchanged.
+    const orderedIds = (snapshot: AccessRulesSnapshot) => {
+      const positions = snapshot.rules.map(r => r.rulePos);
+      if (positions.some(p => p === undefined || p <= 0) ||
+          new Set(positions).size !== positions.length) {
+        throw new Error("Native ACL order postcondition is ambiguous.");
+      }
+      return [...snapshot.rules].sort((a,b) => a.rulePos! - b.rulePos!).map(r => r.id);
+    };
+    const expected = orderedIds(before).map(id => id === plan.ruleId ? plan.swap.ruleId :
+      id === plan.swap.ruleId ? plan.ruleId : id);
+    if (stableJson(expected) !== stableJson(orderedIds(after))) {
+      throw new Error("Native ACL order postcondition differs from the requested swap.");
+    }
   }
   if ("expectedCondition" in plan) {
     const group = after.groups.find(g => g.ruleRecordIds.includes(plan.ruleId));

@@ -2199,6 +2199,20 @@ test("local ACL permission patch preserves opaque siblings and native rule ident
   const movedSecond = {...second, fields: {...second.fields, rulePos: 1}};
   const swapped = snapshot(resources, [moved, opaque, movedSecond]);
   verifyAccessRulePatch(mixed, swapped, swap);
+  // Grist allocates positions between existing rows rather than storing the request verbatim.
+  verifyAccessRulePatch(mixed, snapshot(resources, [
+    {...moved, fields: {...moved.fields, rulePos: 2.5}}, opaque,
+    {...movedSecond, fields: {...movedSecond.fields, rulePos: 0.5}}
+  ]), swap);
+  assert.throws(() => verifyAccessRulePatch(mixed, snapshot(resources, [
+    {...moved, fields: {...moved.fields, rulePos: 1.5}}, opaque, movedSecond
+  ]), swap), /postcondition/);
+  assert.throws(() => verifyAccessRulePatch(mixed, snapshot(resources, [
+    moved, {...opaque, fields: {...opaque.fields, rulePos: 2.1}}, movedSecond
+  ]), swap), /postcondition/);
+  const dense = snapshot(resources, [rule, opaque,
+    {...second, fields: {...second.fields, rulePos: 2 + Number.EPSILON * 2}}]);
+  assert.throws(() => resolveAccessRulePatch(dense, target, expected, {swapWith}), /gap/);
   assert.throws(() => verifyAccessRulePatch(mixed, snapshot(resources, [moved, opaque, second]), swap), /postcondition/);
   assert.throws(() => verifyAccessRulePatch(mixed, snapshot(resources,
     [moved, {...opaque, fields: {...opaque.fields, memo: "changed"}}, movedSecond]), swap), /postcondition/);

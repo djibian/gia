@@ -4412,9 +4412,17 @@ async function run(): Promise<void> {
       "native_acl_order_swap");
     assert(orderResult.changed === true && orderResult.persistedDefinitionVerified === true &&
       orderResult.effectiveEnforcementVerified === false, "native_acl_order_unverified");
-    assert(isDeepStrictEqual(byId(await readNativeAcl()), byId(orderBefore.map(r =>
-      r.id === patchRow.id ? {...r, fields: {...r.fields, rulePos: startPos + 2}} :
-      r.id === later.id ? {...r, fields: {...r.fields, rulePos: startPos}} : r))),
+    const nativeOrder = (rows: Awaited<ReturnType<typeof readNativeAcl>>) =>
+      [...rows].sort((a,b) => Number(a.fields.rulePos) - Number(b.fields.rulePos)).map(r => r.id);
+    const otherFields = (rows: Awaited<ReturnType<typeof readNativeAcl>>) => byId(rows.map(r => {
+      const fields = {...r.fields};
+      if (r.id === patchRow.id || r.id === later.id) delete fields.rulePos;
+      return {...r, fields};
+    }));
+    const orderAfter = await readNativeAcl();
+    assert(isDeepStrictEqual(otherFields(orderAfter), otherFields(orderBefore)) &&
+      isDeepStrictEqual(nativeOrder(orderAfter), nativeOrder(orderBefore).map(id =>
+        id === patchRow.id ? later.id : id === later.id ? patchRow.id : id)),
       "native_acl_order_neighbor_changed");
     assert((await gristApi(gristBaseUrl, allowedFlagKey, patchPath) as MetaRecords).records.length === 1,
       "native_acl_order_viewer_not_restored");
@@ -4422,8 +4430,10 @@ async function run(): Promise<void> {
     const reverseOrder = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
       {...aclSwapRequest, expected: aclSwapRequest.swapWith, swapWith: aclSwapRequest.expected}),
       "native_acl_order_reverse");
+    const reversed = await readNativeAcl();
     assert(reverseOrder.changed === true && reverseOrder.persistedDefinitionVerified === true &&
-      isDeepStrictEqual(byId(await readNativeAcl()), byId(orderBefore)), "native_acl_order_reverse_unverified");
+      isDeepStrictEqual(otherFields(reversed), otherFields(orderBefore)) &&
+      isDeepStrictEqual(nativeOrder(reversed), nativeOrder(orderBefore)), "native_acl_order_reverse_unverified");
     assert(await gristStatus(gristBaseUrl, allowedFlagKey, patchPath, {method: "GET"}) === 403,
       "native_acl_order_viewer_not_denied");
 

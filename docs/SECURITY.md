@@ -126,7 +126,10 @@ A local typed condition patch shares this selector and guard, preserves
 permissions and all unrelated fields, and independently validates the native
 derived parsed predicate. A bounded order swap selects two distinct supported
 rules in the explicitly expected relative order and changes only their native
-positions in one bulk update. Unconditional rules cannot be swapped.
+positions in one bulk update. Native position allocation is checked by
+the resulting full order and exact preservation of untargeted fields;
+ambiguous or insufficient position gaps are refused before writing.
+Unconditional rules cannot be swapped.
 Opaque rules are never accepted as writable selectors or rewritten.
 Deletion and non-noop replacement refuse existing native ACL dependencies,
 including opaque or noncanonical predicate forms. Typed `match_user_attribute`

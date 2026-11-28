@@ -788,9 +788,12 @@ The bounded `grist_change_structure(action="swap_access_rule_order")`
 accepts the same target and two distinct typed rules, `expected` and
 `swapWith`. The former must currently precede the latter; both must resolve
 uniquely in the same group and neither may be unconditional. This explicitly
-swaps their native positions (including across opaque siblings), leaving
-every other native ACL field and identity unchanged. Only the two positions
-are submitted in one fixed native bulk update and verified by reread.
+swaps their native order (including across opaque siblings), leaving
+every other native ACL field and identity unchanged. Grist may allocate
+fractional positions for the selected rules. Only the two positions are
+submitted in one fixed native bulk update; the full native order and all
+untargeted fields are verified by reread. Ambiguous positions or gaps too
+small for an insertion without relabeling are refused before writing.
 The original ordered request is refused on immediate replay; reverse the
 selectors only to request an intentional reverse swap. No raw positions or
 IDs are accepted. The same Owner/schema authority and preflight apply.
