@@ -985,13 +985,16 @@ function emptyPermissions(): ResolvedAccessRulePermissions {
 
 function parsePermissions(
   permissionsText: string,
-  columnScope: boolean
-): ResolvedAccessRulePermissions | undefined {
+  columnScope: boolean,
+  generalScope = false
+): (ResolvedAccessRulePermissions & { schema?: AccessPermissionValue }) | undefined {
   if (!permissionsText || permissionsText === "all" || permissionsText === "none") {
     return undefined;
   }
   const allowedBits = new Set<string>(columnScope ? COLUMN_PERMISSION_BITS : TABLE_PERMISSION_BITS);
-  const result = emptyPermissions();
+  if (generalScope) allowedBits.add("S");
+  const result: ResolvedAccessRulePermissions & { schema?: AccessPermissionValue } = emptyPermissions();
+  if (generalScope) result.schema = "unspecified";
   let state: AccessPermissionValue | null = null;
   const seen = new Set<string>();
 
@@ -1010,6 +1013,7 @@ function parsePermissions(
     else if (ch === "U") result.update = state;
     else if (ch === "C") result.create = state;
     else if (ch === "D") result.delete = state;
+    else if (ch === "S") result.schema = state;
   }
 
   if (seen.size === 0) return undefined;
@@ -1742,7 +1746,7 @@ function projectGroupDiagnostics(
 // second parser/evaluator and never an input to mutation or dependency proofs.
 // Native node vocabulary: grist-core sandbox/grist/predicate_formula.py.
 function projectNativePredicate(
-  rule: PersistedRule, table: TableInfo, attributes: ReadonlyMap<string, TableInfo>
+  rule: PersistedRule, table: TableInfo | undefined, attributes: ReadonlyMap<string, TableInfo>
 ): unknown {
   if (!rule.aclFormulaParsed) return rule.aclFormula === "" ? ["Always"] : ["Unknown"];
   if (rule.aclFormulaParsed.length > MAX_NATIVE_ACL_AST_LENGTH) return ["Unknown"];
@@ -1765,7 +1769,7 @@ function projectNativePredicate(
     if (kind === "Attr" && node.length === 3 && typeof field === "string") {
       let known = false;
       if (isName(base, "rec") || isName(base, "newRec")) {
-        known = field === "id" || table.columns.has(field);
+        known = table !== undefined && (field === "id" || table.columns.has(field));
       } else if (isName(base, "user")) {
         known = field === "Access" || ACCESS_RULE_USER_PROPERTIES.some(p => p === field) ||
           attributes.has(field);
@@ -1790,6 +1794,34 @@ function projectNativePredicate(
   return visit(parsed, 0);
 }
 
+// A general resource has no table context. Keep attribute rows in native
+// order without interpreting their blank predicates as unconditional grants.
+function projectGeneralPolicy(snapshot: AccessRulesSnapshot, attributes: ReadonlyMap<string, TableInfo>): unknown {
+  const resources = snapshot.resources.filter(r => r.tableId === "*" && r.colIds === "*");
+  if (resources.length === 0) return { state: "not_persisted", nativeRuleObservations: null };
+  if (resources.length !== 1) return { state: "unknown", nativeRuleObservations: null };
+  const rules = snapshot.rules.filter(r => r.resourceId === resources[0]!.id);
+  const positions = rules.map(r => r.rulePos);
+  if (rules.length > MAX_ACCESS_RULES_PER_GROUP || positions.some(p => p === undefined) ||
+      new Set(positions).size !== positions.length) {
+    return { state: "unknown", nativeRuleObservations: null };
+  }
+  return {
+    state: "persisted",
+    nativeRuleObservations: [...rules].sort((a, b) => a.rulePos! - b.rulePos!).map(rule => {
+      const raw = rule.fields.userAttributes;
+      if (raw !== undefined && raw !== null && raw !== "") {
+        return { kind: "user_attribute_or_mixed", condition: ["Unknown"], permissions: null };
+      }
+      return {
+        kind: "rule",
+        condition: projectNativePredicate(rule, undefined, attributes),
+        permissions: parsePermissions(rule.permissionsText, false, true) ?? null
+      };
+    })
+  };
+}
+
 export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
   const userAttributes = projectUserAttributes(snapshot);
   const nativeRules = new Map(snapshot.rules.map(rule => [rule.id, rule]));
@@ -1808,6 +1840,7 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
     policyState: "persisted",
     effectiveEnforcementVerified: false,
     protectedPersistedGroupCount: snapshot.protectedPersistedGroupCount,
+    generalPolicy: projectGeneralPolicy(snapshot, attributeTables),
     userAttributes,
     groups: snapshot.groups.map((group) => {
       const dependencies = group.normalizedRules
@@ -1851,7 +1884,7 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
       };
     }),
     note:
-      "Gia exposes only bounded persisted ordinary table/column groups and structurally verified user-attribute definitions (writable only through the separate bounded access-rule mutation target when supported). Defaults, special rules, schema-edit policy, memos, unsupported user attributes and opaque formulas remain protected. Grist remains authoritative for effective enforcement."
+      "Gia exposes bounded persisted ordinary table/column groups, read-only general policy observations and structurally verified user-attribute definitions. General observations do not authorize writes; existing mutation boundaries, special resources, memos, unsupported user attributes and opaque formulas remain protected. Grist remains authoritative for effective enforcement."
   };
 }
 

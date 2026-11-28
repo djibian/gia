@@ -932,6 +932,18 @@ dependency completeness, reachability and effective enforcement are not
 asserted. It is not writable input, and group editability, diagnostics,
 dependency coverage and simulation remain unchanged.
 
+The additive read-only `generalPolicy` observes the persisted default (*, *)
+resource, with state `not_persisted`, `unknown` (duplicate resource, ambiguous
+order or excessive rule count), or `persisted`. Only the last state supplies
+ordered `nativeRuleObservations`, using the same redaction rules without a
+record-table context. Ordinary rule observations have `kind:"rule"` and
+the permission projection includes the schema-edit `S` bit as `schema`.
+Rows carrying user-attribute metadata are marked
+`kind:"user_attribute_or_mixed"` with unknown condition and null permissions,
+rather than misinterpreting a definition as a grant. No implicit defaults,
+other special resources, effective permissions or mutation authority are
+inferred from this observation.
+
 Mutations require local `doc.schema:write` and remain subject to Grist's native Owner enforcement. The bridge verifies the requested persisted definition and an internal fingerprint of all untargeted persisted ACL state after re-read. A successful result explicitly does **not** claim effective enforcement verification; persisted rule rows alone are not treated as a confidentiality proof. Native `user.LinkKey` context exists in the Grist web client but not in API calls, so Gia's persisted LinkKey-rule verification is deliberately not presented as an end-to-end LinkKey authorization test. If post-write persisted verification fails, the MCP result preserves the operation's `UNCERTAIN` effect knowledge with `retryWholeOperation: false` rather than collapsing it into a generic failure.
 
 ## Document bootstrap

@@ -4410,6 +4410,16 @@ async function run(): Promise<void> {
     assert(priorRules.every(original => currentRules.some(row =>
       row.id === original.id && isDeepStrictEqual(row.fields, original.fields))),
       "native_special_acl_modified_other_rules");
+    const generalInspection = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+      action: "access_rules", documentId
+    }), "native_general_policy_observation");
+    const generalPolicy = generalInspection.generalPolicy as {
+      state: string; nativeRuleObservations: Array<{kind: string; condition: unknown; permissions: {schema?: string} | null}> | null
+    };
+    assert(generalPolicy?.state === "persisted" && generalPolicy.nativeRuleObservations?.some(rule =>
+      rule.kind === "rule" && rule.permissions?.schema === "deny" &&
+      JSON.stringify(rule.condition) === JSON.stringify(["NotEq", ["Attr", ["Name", "user"], "Access"], ["Name", "OWNER"]])),
+      "native_general_schema_policy_not_observed");
     const repeatedSchemaGuard = resultJson(await callTool(bridgeBaseUrl,
       "grist_change_structure", {
         action: "ensure_owner_schema_guard", documentId, confirmSchemaRestriction: true
