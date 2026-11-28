@@ -4431,6 +4431,28 @@ async function run(): Promise<void> {
     await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`,
       schemaWrite("OwnerAfterSchemaGuard"));
 
+    // SeedRule is persisted special metadata, not an effective document grant.
+    // Native test-only actions; the public Gia boundary remains read-only.
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
+      method: "POST", body: JSON.stringify([
+        ["AddRecord", "_grist_ACLResources", -71, { tableId: "*SPECIAL", colIds: "SeedRule" }],
+        ["AddRecord", "_grist_ACLRules", null, { resource: -71, rulePos: 1000,
+          aclFormula: "user.Access == OWNER", permissionsText: "+R" }]
+      ])
+    });
+    const specialInspection = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+      action: "access_rules", documentId
+    }), "native_special_policy_observation");
+    const specialPolicy = specialInspection.specialPolicy as {
+      resources: Array<{name: string; observation: {state: string;
+        nativeRuleObservations: Array<{kind: string; condition: unknown; permissions: {read?: string} | null}> | null}}>
+    };
+    const seed = specialPolicy?.resources.find(entry => entry.name === "SeedRule")?.observation;
+    assert(seed?.state === "persisted" && seed.nativeRuleObservations?.some(rule =>
+      rule.kind === "rule" && rule.permissions?.read === "allow" &&
+      JSON.stringify(rule.condition) === JSON.stringify(["Eq", ["Attr", ["Name", "user"], "Access"], ["Name", "OWNER"]])),
+      "native_seed_policy_not_observed");
+
     // #295: one bounded native batch makes mixed Form/Custom/Grid sections from zero.
     const batchPageResponse = resultJson(await callTool(bridgeBaseUrl, "grist_add_ui", {
       action:"create_page",documentId,tableId:TABLE_ID,name:"Compat Widget Batch"
