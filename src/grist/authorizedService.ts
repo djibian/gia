@@ -15,6 +15,8 @@ import {
   projectAccessRuleSchemaImpact,
   projectAccessRuleSimulation,
   resolveAccessRuleMutation,
+  resolveAccessRulePermissionPatch,
+  verifyAccessRulePermissionPatch,
   resolveUserAttributeMutation,
   verifyAccessRuleMutation,
   verifyUserAttributeMutation,
@@ -2598,6 +2600,31 @@ export class AuthorizedGristService {
           "Native document revocation may be partial or uncertain: " +
           (error instanceof Error ? error.message : "unknown result")
         );
+      }
+    });
+  }
+
+  async patchAccessRulePermissions(
+    documentIdOrUrl: string, target: AccessRuleTarget,
+    expected: AccessRuleInput, permissions: AccessRuleInput["permissions"]
+  ): Promise<unknown> {
+    return this.execute("change_access_rule_group", documentIdOrUrl, 1, async id => {
+      await this.inner.assertDocumentOwner(id);
+      const before = await this.loadAccessRulesSnapshot(id);
+      const plan = resolveAccessRulePermissionPatch(before, target, expected, permissions);
+      const result = {documentId: id, target, changed: plan.changed,
+        persistedDefinitionVerified: true, effectiveEnforcementVerified: false};
+      if (!plan.changed) return result;
+      if (!isDeepStrictEqual(before, await this.loadAccessRulesSnapshot(id))) {
+        throw new Error("Native access-rule state changed before mutation; reconcile first.");
+      }
+      await this.uiActions.patchAccessRulePermissions(id, plan);
+      try {
+        verifyAccessRulePermissionPatch(before, await this.loadAccessRulesSnapshot(id), plan);
+        return result;
+      } catch (error) {
+        throw new AccessRuleWriteVerificationError(error instanceof Error
+          ? error.message : "Native ACL permission patch could not be verified.");
       }
     });
   }

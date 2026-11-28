@@ -8,6 +8,8 @@ import {
   projectAccessRuleSchemaImpact,
   projectAccessRuleSimulation,
   resolveAccessRuleMutation,
+  resolveAccessRulePermissionPatch,
+  verifyAccessRulePermissionPatch,
   resolveUserAttributeMutation,
   verifyAccessRuleMutation,
   verifyUserAttributeMutation
@@ -2133,4 +2135,40 @@ test("ACL group replacement allocates ordered positions beyond fractional siblin
     snapshot([resource, sibling], [makeRule(20, 2, 1), makeRule(30, 3, Number.MAX_SAFE_INTEGER)]),
     { tableId: "Projects" }, "replace", rules
   ), /safe native ACL rule positions/);
+});
+
+test("local ACL permission patch preserves opaque siblings and native rule identity", () => {
+  const target = { tableId: "Projects" };
+  const resources = [{id: 2, fields: {...target, colIds: "*"}}];
+  const expected = {condition: {kind: "user_access", operator: "equals", role: "viewer"},
+    permissions: {read: "allow", update: "unspecified"}} as const;
+  const replacement = {read: "deny", update: "unspecified"} as const;
+  const formula = "user.Access == VIEWER";
+  const rule = {id: 20, fields: {resource: 2, rulePos: 1, aclFormula: formula,
+    aclFormulaParsed: nativeAclFixture(formula), permissionsText: "+R"}};
+  const opaqueFormula = "rec.Title == 'private-opaque'";
+  const opaque = {id: 21, fields: {resource: 2, rulePos: 2, aclFormula: opaqueFormula,
+    aclFormulaParsed: JSON.stringify(["Eq", ["Attr", ["Name", "rec"], "Title"], ["Const", "private-opaque"]]),
+    permissionsText: "-U", memo: "private-memo"}};
+  const before = snapshot(resources, [rule, opaque]);
+  const group = (projectAccessRules(before) as any).groups[0];
+  assert.equal(group.editable, false);
+  assert.equal(group.patchableRules.length, 1);
+  assert.doesNotMatch(JSON.stringify(group), /private-opaque|private-memo|aclFormula/);
+  const plan = resolveAccessRulePermissionPatch(before, target, expected, replacement);
+  assert.deepEqual(plan, {ruleId: 20, permissionsText: "-R", changed: true});
+  const changed = {...rule, fields: {...rule.fields, permissionsText: "-R"}};
+  const after = snapshot(resources, [changed, opaque]);
+  verifyAccessRulePermissionPatch(before, after, plan);
+  assert.throws(() => verifyAccessRulePermissionPatch(before,
+    snapshot(resources, [changed, {...opaque, fields: {...opaque.fields, memo: "different"}}]), plan), /postcondition/);
+  assert.throws(() => verifyAccessRulePermissionPatch(before,
+    snapshot(resources, [{...changed, id: 22}, opaque]), plan), /postcondition/);
+  assert.throws(() => resolveAccessRulePermissionPatch(after, target, expected, replacement), /absent or ambiguous/);
+  assert.equal(resolveAccessRulePermissionPatch(after, target,
+    {...expected, permissions: replacement}, replacement).changed, false);
+  assert.throws(() => resolveAccessRulePermissionPatch(snapshot(resources, [rule, opaque,
+    {...rule, id: 22, fields: {...rule.fields, rulePos: 3}}]), target, expected, replacement), /ambiguous/);
+  assert.throws(() => resolveAccessRulePermissionPatch(snapshot(resources, [rule, opaque,
+    {...changed, id: 22, fields: {...changed.fields, rulePos: 3}}]), target, expected, replacement), /duplicate/);
 });

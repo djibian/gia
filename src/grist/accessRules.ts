@@ -1870,6 +1870,11 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
       const orderKnown = positions.every(pos => pos !== undefined) &&
         new Set(positions).size === positions.length;
       const table = snapshot.tables.get(group.target.tableId);
+      // Mixed groups retain their existing whole-group protection. Only uniquely
+      // identifiable, independently validated typed rules are patch candidates.
+      const candidates = !group.normalizedRules ? permissionPatchCandidates(snapshot, group) : [];
+      const patchableRules = candidates.filter(c => candidates.filter(other =>
+        sameNormalizedRules([c.normalized], [other.normalized])).length === 1).map(c => c.normalized);
       return {
         target:
           group.target.columnIds.length === 0
@@ -1889,6 +1894,7 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
           ? { rules: group.normalizedRules }
           : {
               unsupportedReason: group.unsupportedReason ?? "Unsupported persisted ACL semantics.",
+              ...(patchableRules.length ? { patchableRules } : {}),
               // Keep the legacy whole-group editability and dependency semantics.
               // A stored parsed tree may be stale or inconsistent with formula text.
               nativeRuleObservations: table && orderKnown &&
@@ -2345,6 +2351,66 @@ export function projectAccessRuleSimulation(
     permissionDecisions,
     note: disclaimer
   };
+}
+
+// A local permission patch selects a single typed rule, never a raw native row ID.
+export interface AccessRulePermissionPatchPlan {
+  ruleId: number;
+  permissionsText: string;
+  changed: boolean;
+}
+
+function permissionPatchCandidates(snapshot: AccessRulesSnapshot, group: AccessRuleGroupState) {
+  const resource = snapshot.resources.find(r => r.id === group.resourceRecordId)!;
+  const table = snapshot.tables.get(group.target.tableId)!;
+  const ordered = group.ruleRecordIds.map(id => snapshot.rules.find(r => r.id === id)!);
+  const positions = ordered.map(r => r.rulePos);
+  if (ordered.length > MAX_ACCESS_RULES_PER_GROUP ||
+      positions.some(p => p === undefined) || new Set(positions).size !== positions.length ||
+      ordered.some((r, i) => r.aclFormula === "" && i !== ordered.length - 1)) return [];
+  const attributes = userAttributeReferenceContext(snapshot);
+  return ordered.flatMap(rule => {
+    const normalized = buildGroupState(resource, [rule], table, attributes).normalizedRules?.[0];
+    return normalized ? [{ rule, normalized }] : [];
+  });
+}
+
+export function resolveAccessRulePermissionPatch(
+  snapshot: AccessRulesSnapshot, targetInput: AccessRuleTarget,
+  expected: AccessRuleInput, permissions: AccessRulePermissions
+): AccessRulePermissionPatchPlan {
+  const target = normalizeRequestedTarget(snapshot, targetInput);
+  const group = snapshot.groups.find(g => sameTarget(g.target, target));
+  if (!group) throw new Error("No native access-rule group exists for this target.");
+  assertNoColumnOverlap(snapshot, target, group.resourceRecordId);
+  const table = snapshot.tables.get(target.tableId)!;
+  const attributes = userAttributeReferenceContext(snapshot);
+  const prior = normalizeRequestedRules([expected], target, table, attributes).normalized[0]!;
+  const next = normalizeRequestedRules([{condition: expected.condition, permissions}],
+    target, table, attributes);
+  const candidates = permissionPatchCandidates(snapshot, group);
+  const matching = candidates.filter(c => sameNormalizedRules([c.normalized], [prior]));
+  if (matching.length !== 1) throw new Error("Expected supported ACL rule is absent or ambiguous; inspect again.");
+  const selected = matching[0]!;
+  const changed = !sameNormalizedRules([prior], next.normalized);
+  if (changed && candidates.some(c => c.rule.id !== selected.rule.id &&
+      sameNormalizedRules([c.normalized], next.normalized))) {
+    throw new Error("Permission patch would duplicate another supported ACL rule.");
+  }
+  return { ruleId: selected.rule.id, changed,
+    permissionsText: changed ? next.writes[0]!.permissionsText : selected.rule.permissionsText };
+}
+
+export function verifyAccessRulePermissionPatch(before: AccessRulesSnapshot,
+  after: AccessRulesSnapshot, plan: AccessRulePermissionPatchPlan): void {
+  const sorted = (snapshot: AccessRulesSnapshot, apply: boolean) => ({
+    resources: snapshot.resources.map(r => ({id: r.id, fields: r.fields})).sort((a,b) => a.id - b.id),
+    rules: snapshot.rules.map(r => ({id: r.id, fields: apply && r.id === plan.ruleId
+      ? {...r.fields, permissionsText: plan.permissionsText} : r.fields})).sort((a,b) => a.id - b.id)
+  });
+  if (stableJson(sorted(before, true)) !== stableJson(sorted(after, false))) {
+    throw new Error("Native ACL permission patch or preservation postcondition differs from the requested effect.");
+  }
 }
 
 export function resolveAccessRuleMutation(

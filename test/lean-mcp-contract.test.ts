@@ -892,3 +892,21 @@ test("ACL schema advertises compact shared finite definitions and retains depth/
   assert.throws(() => parse({ kind: "any", conditions: [leaf] }));
   assert.throws(() => parse({ kind: "not", condition: { ...leaf, linkKeyValue: "SECRET" } }));
 });
+
+test("local ACL patch accepts a typed expected rule and permissions, not native selectors", async () => {
+  const observed: unknown[][] = [];
+  const tool = capture({patchAccessRulePermissions: async (...args: unknown[]) => {
+    observed.push(args);
+    return {changed: true};
+  }}).find(entry => entry.name === "grist_change_structure")!;
+  const input = {action: "patch_access_rule_permissions", documentId: "doc-1",
+    target: {tableId: "Projects"},
+    expected: {condition: {kind: "user_access", operator: "equals", role: "viewer"},
+      permissions: {read: "allow", update: "unspecified"}},
+    permissions: {read: "deny", update: "unspecified"}};
+  await tool.callback(tool.options.inputSchema!.parse(input));
+  assert.deepEqual(observed, [[input.documentId, input.target, input.expected, input.permissions]]);
+  assert.throws(() => tool.options.inputSchema!.parse({...input, ruleId: 1}));
+  assert.throws(() => tool.options.inputSchema!.parse({...input, target: {userAttributeName: "Mentor"}}));
+  assert.throws(() => tool.options.inputSchema!.parse({...input, permissions: {...input.permissions, schema: "allow"}}));
+});

@@ -4352,6 +4352,51 @@ async function run(): Promise<void> {
       ...identityRule, mode: "replace", target: flagTarget
     });
 
+    // Local patch on a mixed native group: neither the opaque literal nor its
+    // memo is a public input; verify unchanged row identity and every ACL field.
+    const patchTable = "Compat_PatchAcl";
+    const startPos = Math.floor(Math.max(0, ...(await readNativeAcl()).map(r =>
+      typeof r.fields.rulePos === "number" ? r.fields.rulePos : 0))) + 1;
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
+      method: "POST", body: JSON.stringify([
+        ["AddTable", patchTable, [{id: "Name", type: "Text"}]],
+        ["AddRecord", patchTable, 1, {Name: "synthetic"}],
+        ["AddRecord", "_grist_ACLResources", -1, {tableId: patchTable, colIds: "*"}],
+        ["AddRecord", "_grist_ACLRules", null, {resource: -1, rulePos: startPos,
+          aclFormula: "user.Access == VIEWER", permissionsText: "+R"}],
+        ["AddRecord", "_grist_ACLRules", null, {resource: -1, rulePos: startPos + 1,
+          aclFormula: "rec.Name == 'synthetic-opaque'", permissionsText: "-U", memo: "opaque"}]
+      ])
+    });
+    const patchPath = `${docPath}/tables/${patchTable}/records`;
+    const patchBefore = await readNativeAcl();
+    const patchRow = patchBefore.find(r => r.fields.rulePos === startPos &&
+      r.fields.aclFormula === "user.Access == VIEWER" && r.fields.permissionsText === "+R");
+    assert(patchRow, "native_acl_patch_fixture_missing");
+    assert((await gristApi(gristBaseUrl, allowedFlagKey, patchPath) as MetaRecords).records.length === 1,
+      "native_acl_patch_viewer_baseline");
+    const patchRequest = {action: "patch_access_rule_permissions", documentId,
+      target: {tableId: patchTable},
+      expected: {condition: {kind: "user_access", operator: "equals", role: "viewer"},
+        permissions: {read: "allow", update: "unspecified"}},
+      permissions: {read: "deny", update: "unspecified"}};
+    const patchResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", patchRequest),
+      "native_acl_patch");
+    assert(patchResult.changed === true && patchResult.persistedDefinitionVerified === true &&
+      patchResult.effectiveEnforcementVerified === false, "native_acl_patch_unverified");
+    const byId = (rows: Awaited<ReturnType<typeof readNativeAcl>>) => rows.sort((a,b) => a.id-b.id);
+    assert(isDeepStrictEqual(byId(await readNativeAcl()), byId(patchBefore.map(r => r.id === patchRow.id
+      ? {...r, fields: {...r.fields, permissionsText: "-R"}} : r))), "native_acl_patch_neighbor_changed");
+    assert(await gristStatus(gristBaseUrl, allowedFlagKey, patchPath, {method: "GET"}) === 403,
+      "native_acl_patch_viewer_not_denied");
+    assert((await gristApi(gristBaseUrl, apiKey, patchPath) as MetaRecords).records.length === 1,
+      "native_acl_patch_owner_data_changed");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", patchRequest);
+    const patchNoop = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      {...patchRequest, expected: {...patchRequest.expected, permissions: patchRequest.permissions}}),
+      "native_acl_patch_noop");
+    assert(patchNoop.changed === false, "native_acl_patch_noop_changed");
+
     // Fixed native -S policy is independent of ordinary typed table/column ACLs.
     // Exercise a real editor schema mutation BEFORE the guard and its denial AFTER.
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {

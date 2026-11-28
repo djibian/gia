@@ -760,6 +760,21 @@ The preflight is stale-state detection, not an atomic compare-and-set
 against external editors or effective native enforcement. Reconcile an
 uncertain native outcome before retrying.
 
+The separate `grist_change_structure(action="patch_access_rule_permissions")`
+accepts an ordinary `target`, one typed `expected` rule (condition and current
+permissions), and complete replacement `permissions` using the same bounded
+R/C/U/D subset. It resolves exactly one supported current rule by semantic
+equality, even within a mixed supported/opaque group. Mixed groups may expose
+`patchableRules` containing uniquely identifiable supported typed rules; this
+does not make the whole group editable. Missing, ambiguous or stale expected
+rules and duplicates are refused. Only native `permissionsText` is updated;
+the predicate, native IDs, positions, resource and all other ACL metadata must
+remain identical on reread. Equal permissions are a no-op. The same Owner,
+`doc.schema:write`, stale-state preflight and uncertain-write rules apply.
+After a changed patch, the old expected rule is not a replay token: reinspect
+before repeating. No raw IDs, predicates, memo edits or new permission types
+are accepted.
+
 Targets use stable table/column IDs; private ACL resource/rule row IDs remain bridge-internal. Writable conditions are a deliberately small typed subset with no arbitrary literal or formula text: everyone, one native Grist role comparison or a bounded two/three-role `user.Access in/not in` membership, a `user.IsLoggedIn` equality/inequality against a native boolean literal, one same-table record-column comparison with a bounded built-in user property, or one equality/inequality comparison between a stable Text/Any record column and a bounded safe `user.LinkKey.<name>` reference, or a same-column equality/inequality comparison of `rec` and `newRec` for update-only decisions, or a Bool column compared with a native boolean `True`/`False` literal, or an existing Int column compared with the finite numeric flag `0`/`1`, or an existing Text column compared with an exact empty string.  The existing `match_user`, `match_link_key` and Bool-literal `match_boolean` leaves accept an optional `record: "newRec"` to compare the proposed post-change row instead of the current `rec` row. It is valid only for create/update permissions (read/delete must be unspecified). Absence of `record` retains the original `rec` form and normalized shape. These leaves may be combined through finite `all` / `any` / `not` boolean trees; other operand pairs, string/numeric literals and non-role membership forms remain unsupported. LinkKey names are structural policy metadata; LinkKey values and secret-bearing URLs are never accepted or returned. Both native operand orders for the supported LinkKey comparison normalize to the same public `match_link_key` condition, while writes use one canonical formula form. Permissions are explicit `allow|deny|unspecified`; native `S`, `all` and `none` forms are outside the writable subset.
 
 A **separate, fixed** special-rule action,

@@ -118,6 +118,11 @@ Ensure creates an absent definition, reuses an equivalent one and refuses
 conflicts. A fresh complete ACL and schema snapshot guards all actual
 ordinary-group and user-attribute writes against detected stale planning
 state; this preflight is not an atomic compare-and-set.
+A local ordinary ACL permission patch selects one uniquely matching supported
+typed rule under the same Owner and schema capability, including within a
+protected mixed group. It changes only native permissionsText and verifies
+all persisted ACL resource/rule fields and identities otherwise unchanged.
+Opaque rules are never accepted as writable selectors or rewritten.
 Deletion and non-noop replacement refuse existing native ACL dependencies,
 including opaque or noncanonical predicate forms. Typed `match_user_attribute`
 ACL leaves accept only existing structurally verified attribute/field names
