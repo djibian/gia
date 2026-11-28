@@ -4400,11 +4400,11 @@ async function run(): Promise<void> {
     // Change only the predicate: native Grist derives its parsed tree; the
     // opaque neighbor, permissions and row identity must remain unchanged.
     const conditionBefore = await readNativeAcl();
-    const conditionRequest = {action: "patch_access_rule_condition", documentId,
+    const aclConditionPatchRequest = {action: "patch_access_rule_condition", documentId,
       target: patchRequest.target,
       expected: {...patchRequest.expected, permissions: patchRequest.permissions},
       condition: {kind: "user_access", operator: "equals", role: "editor"}};
-    const conditionResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", conditionRequest),
+    const conditionResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", aclConditionPatchRequest),
       "native_acl_condition_patch");
     assert(conditionResult.changed === true && conditionResult.persistedDefinitionVerified === true,
       "native_acl_condition_patch_unverified");
@@ -4419,9 +4419,9 @@ async function run(): Promise<void> {
         aclFormulaParsed: conditionRow.fields.aclFormulaParsed}} : r))), "native_acl_condition_patch_neighbor_changed");
     assert((await gristApi(gristBaseUrl, allowedFlagKey, patchPath) as MetaRecords).records.length === 1,
       "native_acl_condition_patch_viewer_not_restored");
-    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", conditionRequest);
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", aclConditionPatchRequest);
     const conditionNoop = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
-      {...conditionRequest, expected: {...conditionRequest.expected, condition: conditionRequest.condition}}),
+      {...aclConditionPatchRequest, expected: {...aclConditionPatchRequest.expected, condition: aclConditionPatchRequest.condition}}),
       "native_acl_condition_patch_noop");
     assert(conditionNoop.changed === false, "native_acl_condition_patch_noop_changed");
 
