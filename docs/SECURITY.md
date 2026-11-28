@@ -129,7 +129,9 @@ rules in the explicitly expected relative order and changes only their native
 positions in one bulk update. Native position allocation is checked by
 the resulting full order and exact preservation of untargeted fields;
 ambiguous or insufficient position gaps are refused before writing.
-Unconditional rules cannot be swapped.
+Unconditional rules cannot be swapped. Local removal selects one supported
+rule explicitly, refuses removal of the last rule in a group and verifies
+exact preservation of all resources and remaining rule fields.
 Opaque rules are never accepted as writable selectors or rewritten.
 Deletion and non-noop replacement refuse existing native ACL dependencies,
 including opaque or noncanonical predicate forms. Typed `match_user_attribute`

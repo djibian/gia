@@ -2151,6 +2151,20 @@ test("local ACL permission patch preserves opaque siblings and native rule ident
     aclFormulaParsed: JSON.stringify(["Eq", ["Attr", ["Name", "rec"], "Title"], ["Const", "private-opaque"]]),
     permissionsText: "-U", memo: "private-memo"}};
   const before = snapshot(resources, [rule, opaque]);
+  const removal = resolveAccessRulePatch(before, target, expected, {remove: true});
+  assert.deepEqual(removal, {ruleId: 20, changed: true, remove: true});
+  const removed = snapshot(resources, [opaque]);
+  verifyAccessRulePatch(before, removed, removal);
+  assert.throws(() => verifyAccessRulePatch(before, before, removal), /postcondition/);
+  assert.throws(() => verifyAccessRulePatch(before,
+    snapshot(resources, [{...opaque, fields: {...opaque.fields, rulePos: 1}}]), removal), /preservation/);
+  assert.throws(() => verifyAccessRulePatch(before, snapshot([], []), removal), /preservation/);
+  assert.throws(() => resolveAccessRulePatch(removed, target, expected, {remove: true}), /absent or ambiguous/);
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule]), target, expected,
+    {remove: true}), /last rule/);
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque,
+    {...rule, id: 22, fields: {...rule.fields, rulePos: 3}}]), target, expected,
+    {remove: true}), /ambiguous/);
   const group = (projectAccessRules(before) as any).groups[0];
   assert.equal(group.editable, false);
   assert.equal(group.patchableRules.length, 1);

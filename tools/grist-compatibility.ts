@@ -4465,6 +4465,30 @@ async function run(): Promise<void> {
       "native_acl_condition_patch_noop");
     assert(conditionNoop.changed === false, "native_acl_condition_patch_noop_changed");
 
+    // Restore the viewer denial, then remove only that rule. The native
+    // fallback allow must take effect, with opaque and other rows untouched.
+    await callTool(bridgeBaseUrl, "grist_change_structure", {
+      ...aclConditionPatchRequest,
+      expected: {...aclConditionPatchRequest.expected, condition: aclConditionPatchRequest.condition},
+      condition: aclConditionPatchRequest.expected.condition
+    });
+    assert(await gristStatus(gristBaseUrl, allowedFlagKey, patchPath, {method: "GET"}) === 403,
+      "native_acl_remove_viewer_baseline");
+    const removalBefore = await readNativeAcl();
+    const removalRequest = {action: "remove_access_rule", documentId,
+      target: patchRequest.target, expected: aclConditionPatchRequest.expected};
+    const removalResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", removalRequest),
+      "native_acl_remove");
+    assert(removalResult.changed === true && removalResult.persistedDefinitionVerified === true &&
+      removalResult.effectiveEnforcementVerified === false, "native_acl_remove_unverified");
+    const removalAfter = await readNativeAcl();
+    assert(isDeepStrictEqual(byId(removalAfter), byId(removalBefore.filter(r => r.id !== patchRow.id))),
+      "native_acl_remove_neighbor_changed");
+    assert((await gristApi(gristBaseUrl, allowedFlagKey, patchPath) as MetaRecords).records.length === 1,
+      "native_acl_remove_viewer_not_restored");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", removalRequest);
+    assert(isDeepStrictEqual(byId(await readNativeAcl()), byId(removalAfter)), "native_acl_remove_replay_changed");
+
     // Fixed native -S policy is independent of ordinary typed table/column ACLs.
     // Exercise a real editor schema mutation BEFORE the guard and its denial AFTER.
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {

@@ -2356,11 +2356,12 @@ export function projectAccessRuleSimulation(
 // A local patch selects one typed rule, never a raw native row ID.
 export type AccessRulePatchReplacement =
   Pick<AccessRuleInput, "permissions"> | Pick<AccessRuleInput, "condition"> |
-  { swapWith: AccessRuleInput };
+  { swapWith: AccessRuleInput } | { remove: true };
 export type AccessRulePatchPlan = { ruleId: number; changed: boolean } & (
   { fields: { permissionsText: string } } |
   { fields: { aclFormula: string }; expectedCondition: AccessRuleCondition } |
-  { fields: { rulePos: number }; swap: { ruleId: number; rulePos: number } }
+  { fields: { rulePos: number }; swap: { ruleId: number; rulePos: number } } |
+  { remove: true }
 );
 
 function rulePatchCandidates(snapshot: AccessRulesSnapshot, group: AccessRuleGroupState) {
@@ -2411,6 +2412,12 @@ export function resolveAccessRulePatch(
   const matching = candidates.filter(c => sameNormalizedRules([c.normalized], [prior]));
   if (matching.length !== 1) throw new Error("Expected supported ACL rule is absent or ambiguous; inspect again.");
   const selected = matching[0]!;
+  if ("remove" in replacement) {
+    if (group.ruleRecordIds.length < 2) {
+      throw new Error("Cannot remove the last rule locally; use the explicit group deletion operation.");
+    }
+    return {ruleId: selected.rule.id, changed: true, remove: true};
+  }
   if ("swapWith" in replacement) {
     const other = normalizeRequestedRules([replacement.swapWith], target, table, attributes).normalized[0]!;
     const matches = candidates.filter(c => sameNormalizedRules([c.normalized], [other]));
@@ -2466,13 +2473,13 @@ export function verifyAccessRulePatch(before: AccessRulesSnapshot,
   after: AccessRulesSnapshot, plan: AccessRulePatchPlan): void {
   const sorted = (snapshot: AccessRulesSnapshot, apply: boolean) => ({
     resources: snapshot.resources.map(r => ({id: r.id, fields: r.fields})).sort((a,b) => a.id - b.id),
-    rules: snapshot.rules.map(r => {
+    rules: snapshot.rules.filter(r => !(apply && "remove" in plan && r.id === plan.ruleId)).map(r => {
       if ("swap" in plan && (r.id === plan.ruleId || r.id === plan.swap.ruleId)) {
         const fields = {...r.fields};
         delete fields.rulePos;
         return {id: r.id, fields};
       }
-      if (r.id !== plan.ruleId) return {id: r.id, fields: r.fields};
+      if ("remove" in plan || r.id !== plan.ruleId) return {id: r.id, fields: r.fields};
       const fields: JsonRecord = {...r.fields, ...(apply ? plan.fields : {})};
       // Grist derives the parsed predicate from formula text. Check it semantically below.
       if ("expectedCondition" in plan) delete fields.aclFormulaParsed;
