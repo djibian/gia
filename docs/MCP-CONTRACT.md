@@ -750,9 +750,13 @@ Gia keeps the ten-tool MCP v2 surface unchanged. `grist_inspect(action="access_r
 `ensure` requires the existing Owner and document-schema authorization and
 the same typed definition as `create`. It creates an absent group or user
 attribute, reuses an equivalent existing definition, and refuses conflicts
-before writing. Rule order and permissions are part of equivalence. Gia
-rechecks the native ACL snapshot before creation and verifies persisted
-definitions and untargeted state. This does not guarantee compare-and-set
+before writing. Rule order and permissions are part of equivalence.
+
+For all ordinary-group and user-attribute modes, Gia rechecks the complete
+native ACL and schema snapshot before any actual write. A detected change
+refuses mutation before submission; an equivalent no-op needs no write.
+After submission, Gia verifies persisted definitions and untargeted state.
+The preflight is stale-state detection, not an atomic compare-and-set
 against external editors or effective native enforcement. Reconcile an
 uncertain native outcome before retrying.
 

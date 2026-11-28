@@ -26,7 +26,7 @@ const principal: Principal = {
 };
 
 function harness(options: { applyWrite?: boolean; persistedPredicate?: string;
-  aclChangesBeforeWrite?: boolean } = {}) {
+  aclChangesBeforeWrite?: boolean; existingGroup?: boolean; existingAttribute?: boolean } = {}) {
   const resources: Array<{ id: number; fields: Record<string, unknown> }> = [
     { id: 1, fields: { tableId: "*", colIds: "*" } }
   ];
@@ -43,6 +43,18 @@ function harness(options: { applyWrite?: boolean; persistedPredicate?: string;
       }
     }
   ];
+  if (options.existingGroup) {
+    resources.push({ id: 3, fields: { tableId: "Projects", colIds: "*" } });
+    rules.push({ id: 12, fields: { resource: 3, aclFormula: "",
+      aclFormulaParsed: "", permissionsText: "+R", rulePos: 3 } });
+  }
+  if (options.existingAttribute) {
+    rules.push({ id: 13, fields: { resource: 1, aclFormula: "",
+      aclFormulaParsed: "", permissionsText: "", rulePos: 4,
+      userAttributes: JSON.stringify({
+        name: "Mentor", tableId: "Projects", lookupColId: "OwnerEmail", charId: "Email"
+      }) } });
+  }
   let nextResourceId = 2;
   let nextRuleId = 20;
   let ruleReads = 0;
@@ -109,6 +121,9 @@ function harness(options: { applyWrite?: boolean; persistedPredicate?: string;
   } as unknown as AuditLogger;
 
   const uiActions = {
+    mutateUserAttribute: async () => {
+      throw new Error("Unexpected user-attribute write");
+    },
     mutateAccessRuleGroup: async (_documentId: string, plan: AccessRuleMutationPlan) => {
       writes.push(plan);
       if (options.applyWrite === false || plan.mode === "noop") return;
@@ -181,14 +196,45 @@ test("ACL policy coverage uses the same read and Owner boundary without writing"
   assert.doesNotMatch(JSON.stringify(result), /do-not-expose|sensitive memo|LinkKey/);
 });
 
-test("ACL ensure detects a changed native policy before creation", async () => {
-  const { service, capabilities, ownerChecks, writes } = harness({ aclChangesBeforeWrite: true });
-  await assert.rejects(() => service.changeAccessRuleGroup("doc-1", { tableId: "Projects" }, "ensure", [
-    { condition: { kind: "everyone" }, permissions: { read: "deny", update: "unspecified" } }
-  ]), /state changed before creation/);
-  assert.deepEqual(capabilities, ["doc.schema:write"]);
-  assert.deepEqual(ownerChecks, ["doc-1"]);
-  assert.deepEqual(writes, []);
+test("Every ordinary ACL mutation detects changed native policy before writing", async () => {
+  for (const mode of ["create", "ensure", "replace", "delete"] as const) {
+    const { service, capabilities, ownerChecks, writes } = harness({
+      aclChangesBeforeWrite: true, existingGroup: mode === "replace" || mode === "delete"
+    });
+    await assert.rejects(() => service.changeAccessRuleGroup("doc-1", { tableId: "Projects" }, mode,
+      mode === "delete" ? undefined : [
+        { condition: { kind: "everyone" }, permissions: { read: "deny", update: "unspecified" } }
+      ]), /state changed before mutation/, mode);
+    assert.deepEqual(capabilities, ["doc.schema:write"]);
+    assert.deepEqual(ownerChecks, ["doc-1"]);
+    assert.deepEqual(writes, []);
+  }
+});
+
+test("Every user-attribute mutation detects changed native policy before writing", async () => {
+  for (const mode of ["create", "ensure", "replace", "delete"] as const) {
+    const { service, capabilities, ownerChecks } = harness({
+      aclChangesBeforeWrite: true, existingAttribute: mode === "replace" || mode === "delete"
+    });
+    await assert.rejects(() => service.changeAccessRuleGroup("doc-1", { userAttributeName: "Mentor" },
+      mode, undefined, mode === "delete" ? undefined : {
+        tableId: "Projects", lookupColId: "ShareToken",
+        source: { kind: "user_property", property: "Email" }
+      }), /state changed before mutation/, mode);
+    assert.deepEqual(capabilities, ["doc.schema:write"]);
+    assert.deepEqual(ownerChecks, ["doc-1"]);
+  }
+});
+
+test("Identical ACL ensure and replace remain read-only no-ops", async () => {
+  for (const mode of ["ensure", "replace"] as const) {
+    const { service, writes } = harness({ existingGroup: true, aclChangesBeforeWrite: true });
+    const result = await service.changeAccessRuleGroup("doc-1", { tableId: "Projects" }, mode, [
+      { condition: { kind: "everyone" }, permissions: { read: "allow", update: "unspecified" } }
+    ]) as { changed: boolean };
+    assert.equal(result.changed, false);
+    assert.deepEqual(writes, []);
+  }
 });
 
 test("ACL mutation requires doc.schema:write and verifies exact persisted target state", async () => {
