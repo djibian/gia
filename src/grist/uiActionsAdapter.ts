@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { GristClient } from "./client.js";
-import type { AccessRuleMutationPlan, AccessRulePermissionPatchPlan, AccessUserAttributeMutationPlan } from "./accessRules.js";
+import type { AccessRuleMutationPlan, AccessRulePatchPlan, AccessUserAttributeMutationPlan } from "./accessRules.js";
 import { GRIST_CHART_TYPES, type GristChartType } from "./chartTypes.js";
 import { OWNER_SCHEMA_FORMULA, type OwnerSchemaGuardPlan } from "./schemaEditGuard.js";
 import {
@@ -249,10 +249,10 @@ export class GristUiActionsAdapter {
     await this.client.applyUserActions(documentId, actions);
   }
 
-  async patchAccessRulePermissions(documentId: string, plan: AccessRulePermissionPatchPlan): Promise<void> {
+  async patchAccessRule(documentId: string, plan: AccessRulePatchPlan): Promise<void> {
     if (!plan.changed) return;
     await this.client.applyUserActions(documentId, [
-      ["UpdateRecord", "_grist_ACLRules", plan.ruleId, {permissionsText: plan.permissionsText}]
+      ["UpdateRecord", "_grist_ACLRules", plan.ruleId, plan.fields]
     ]);
   }
 

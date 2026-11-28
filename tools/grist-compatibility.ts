@@ -4397,6 +4397,34 @@ async function run(): Promise<void> {
       "native_acl_patch_noop");
     assert(patchNoop.changed === false, "native_acl_patch_noop_changed");
 
+    // Change only the predicate: native Grist derives its parsed tree; the
+    // opaque neighbor, permissions and row identity must remain unchanged.
+    const conditionBefore = await readNativeAcl();
+    const aclConditionPatchRequest = {action: "patch_access_rule_condition", documentId,
+      target: patchRequest.target,
+      expected: {...patchRequest.expected, permissions: patchRequest.permissions},
+      condition: {kind: "user_access", operator: "equals", role: "editor"}};
+    const conditionResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure", aclConditionPatchRequest),
+      "native_acl_condition_patch");
+    assert(conditionResult.changed === true && conditionResult.persistedDefinitionVerified === true,
+      "native_acl_condition_patch_unverified");
+    const conditionAfter = await readNativeAcl();
+    const conditionRow = conditionAfter.find(r => r.id === patchRow.id);
+    assert(conditionRow && conditionRow.fields.aclFormula === "user.Access == EDITOR" &&
+      typeof conditionRow.fields.aclFormulaParsed === "string" &&
+      conditionRow.fields.aclFormulaParsed !== patchRow.fields.aclFormulaParsed,
+      "native_acl_condition_patch_predicate");
+    assert(isDeepStrictEqual(byId(conditionAfter), byId(conditionBefore.map(r => r.id === patchRow.id
+      ? {...r, fields: {...r.fields, aclFormula: "user.Access == EDITOR",
+        aclFormulaParsed: conditionRow.fields.aclFormulaParsed}} : r))), "native_acl_condition_patch_neighbor_changed");
+    assert((await gristApi(gristBaseUrl, allowedFlagKey, patchPath) as MetaRecords).records.length === 1,
+      "native_acl_condition_patch_viewer_not_restored");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", aclConditionPatchRequest);
+    const conditionNoop = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      {...aclConditionPatchRequest, expected: {...aclConditionPatchRequest.expected, condition: aclConditionPatchRequest.condition}}),
+      "native_acl_condition_patch_noop");
+    assert(conditionNoop.changed === false, "native_acl_condition_patch_noop_changed");
+
     // Fixed native -S policy is independent of ordinary typed table/column ACLs.
     // Exercise a real editor schema mutation BEFORE the guard and its denial AFTER.
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {

@@ -1872,7 +1872,7 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
       const table = snapshot.tables.get(group.target.tableId);
       // Mixed groups retain their existing whole-group protection. Only uniquely
       // identifiable, independently validated typed rules are patch candidates.
-      const candidates = !group.normalizedRules ? permissionPatchCandidates(snapshot, group) : [];
+      const candidates = !group.normalizedRules ? rulePatchCandidates(snapshot, group) : [];
       const patchableRules = candidates.filter(c => candidates.filter(other =>
         sameNormalizedRules([c.normalized], [other.normalized])).length === 1).map(c => c.normalized);
       return {
@@ -2353,14 +2353,15 @@ export function projectAccessRuleSimulation(
   };
 }
 
-// A local permission patch selects a single typed rule, never a raw native row ID.
-export interface AccessRulePermissionPatchPlan {
-  ruleId: number;
-  permissionsText: string;
-  changed: boolean;
-}
+// A local patch selects one typed rule, never a raw native row ID.
+export type AccessRulePatchReplacement =
+  Pick<AccessRuleInput, "permissions"> | Pick<AccessRuleInput, "condition">;
+export type AccessRulePatchPlan = { ruleId: number; changed: boolean } & (
+  { fields: { permissionsText: string } } |
+  { fields: { aclFormula: string }; expectedCondition: AccessRuleCondition }
+);
 
-function permissionPatchCandidates(snapshot: AccessRulesSnapshot, group: AccessRuleGroupState) {
+function rulePatchCandidates(snapshot: AccessRulesSnapshot, group: AccessRuleGroupState) {
   const resource = snapshot.resources.find(r => r.id === group.resourceRecordId)!;
   const table = snapshot.tables.get(group.target.tableId)!;
   const ordered = group.ruleRecordIds.map(id => snapshot.rules.find(r => r.id === id)!);
@@ -2375,10 +2376,10 @@ function permissionPatchCandidates(snapshot: AccessRulesSnapshot, group: AccessR
   });
 }
 
-export function resolveAccessRulePermissionPatch(
+export function resolveAccessRulePatch(
   snapshot: AccessRulesSnapshot, targetInput: AccessRuleTarget,
-  expected: AccessRuleInput, permissions: AccessRulePermissions
-): AccessRulePermissionPatchPlan {
+  expected: AccessRuleInput, replacement: AccessRulePatchReplacement
+): AccessRulePatchPlan {
   const target = normalizeRequestedTarget(snapshot, targetInput);
   const group = snapshot.groups.find(g => sameTarget(g.target, target));
   if (!group) throw new Error("No native access-rule group exists for this target.");
@@ -2386,30 +2387,49 @@ export function resolveAccessRulePermissionPatch(
   const table = snapshot.tables.get(target.tableId)!;
   const attributes = userAttributeReferenceContext(snapshot);
   const prior = normalizeRequestedRules([expected], target, table, attributes).normalized[0]!;
-  const next = normalizeRequestedRules([{condition: expected.condition, permissions}],
-    target, table, attributes);
-  const candidates = permissionPatchCandidates(snapshot, group);
+  const next = normalizeRequestedRules([{...expected, ...replacement}], target, table, attributes);
+  const candidates = rulePatchCandidates(snapshot, group);
   const matching = candidates.filter(c => sameNormalizedRules([c.normalized], [prior]));
   if (matching.length !== 1) throw new Error("Expected supported ACL rule is absent or ambiguous; inspect again.");
   const selected = matching[0]!;
   const changed = !sameNormalizedRules([prior], next.normalized);
   if (changed && candidates.some(c => c.rule.id !== selected.rule.id &&
       sameNormalizedRules([c.normalized], next.normalized))) {
-    throw new Error("Permission patch would duplicate another supported ACL rule.");
+    throw new Error("ACL patch would duplicate another supported ACL rule.");
   }
-  return { ruleId: selected.rule.id, changed,
-    permissionsText: changed ? next.writes[0]!.permissionsText : selected.rule.permissionsText };
+  const base = {ruleId: selected.rule.id, changed};
+  if ("condition" in replacement) {
+    const expectedCondition = next.normalized[0]!.condition;
+    if (expectedCondition.kind === "everyone" && selected.rule.id !== group.ruleRecordIds.at(-1)) {
+      throw new Error("An everyone access rule must be the final rule in its group.");
+    }
+    return {...base, fields: {aclFormula: changed ? next.writes[0]!.aclFormula : selected.rule.aclFormula},
+      expectedCondition};
+  }
+  return {...base, fields: {permissionsText: changed ? next.writes[0]!.permissionsText : selected.rule.permissionsText}};
 }
 
-export function verifyAccessRulePermissionPatch(before: AccessRulesSnapshot,
-  after: AccessRulesSnapshot, plan: AccessRulePermissionPatchPlan): void {
+export function verifyAccessRulePatch(before: AccessRulesSnapshot,
+  after: AccessRulesSnapshot, plan: AccessRulePatchPlan): void {
   const sorted = (snapshot: AccessRulesSnapshot, apply: boolean) => ({
     resources: snapshot.resources.map(r => ({id: r.id, fields: r.fields})).sort((a,b) => a.id - b.id),
-    rules: snapshot.rules.map(r => ({id: r.id, fields: apply && r.id === plan.ruleId
-      ? {...r.fields, permissionsText: plan.permissionsText} : r.fields})).sort((a,b) => a.id - b.id)
+    rules: snapshot.rules.map(r => {
+      if (r.id !== plan.ruleId) return {id: r.id, fields: r.fields};
+      const fields: JsonRecord = {...r.fields, ...(apply ? plan.fields : {})};
+      // Grist derives the parsed predicate from formula text. Check it semantically below.
+      if ("expectedCondition" in plan) delete fields.aclFormulaParsed;
+      return {id: r.id, fields};
+    }).sort((a,b) => a.id - b.id)
   });
   if (stableJson(sorted(before, true)) !== stableJson(sorted(after, false))) {
-    throw new Error("Native ACL permission patch or preservation postcondition differs from the requested effect.");
+    throw new Error("Native ACL patch or preservation postcondition differs from the requested effect.");
+  }
+  if ("expectedCondition" in plan) {
+    const group = after.groups.find(g => g.ruleRecordIds.includes(plan.ruleId));
+    const selected = group && rulePatchCandidates(after, group).find(c => c.rule.id === plan.ruleId);
+    if (!selected || stableJson(selected.normalized.condition) !== stableJson(plan.expectedCondition)) {
+      throw new Error("Native ACL patch parsed-condition postcondition differs from the requested effect.");
+    }
   }
 }
 

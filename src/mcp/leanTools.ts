@@ -1409,6 +1409,13 @@ export function registerLeanTools(
           expected: accessRuleSchema,
           permissions: accessRuleSchema.shape.permissions
         }).strict(),
+        z.object({
+          action: z.literal("patch_access_rule_condition"),
+          documentId: documentIdSchema,
+          target: accessRuleTargetSchema,
+          expected: accessRuleSchema,
+          condition: accessRuleConditionSchema
+        }).strict(),
         z
           .object({
             action: z.literal("access_rule_group"),
@@ -1566,8 +1573,12 @@ export function registerLeanTools(
               input.documentId, input.email, input.role
             ));
           case "patch_access_rule_permissions":
-            return textResult(await grist.patchAccessRulePermissions(
-              input.documentId, input.target, input.expected, input.permissions
+            return textResult(await grist.patchAccessRule(
+              input.documentId, input.target, input.expected, {permissions: input.permissions}
+            ));
+          case "patch_access_rule_condition":
+            return textResult(await grist.patchAccessRule(
+              input.documentId, input.target, input.expected, {condition: input.condition}
             ));
           case "access_rule_group":
             return textResult(
