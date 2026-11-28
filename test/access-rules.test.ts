@@ -2116,6 +2116,43 @@ test("E1-D3 retains unknown coverage for opaque ACL conditions, without leaked l
 });
 
 
+test("schema impact preserves independently typed references within an opaque group", () => {
+  const resources = [
+    {id: 1, fields: {tableId: "*", colIds: "*"}},
+    {id: 2, fields: {tableId: "Projects", colIds: "*"}}
+  ];
+  const typed = "rec.OwnerEmail == user.Mentor.OwnerEmail";
+  const opaque = "rec.Title == 'private-opaque'";
+  const rules = [
+    {id: 10, fields: {resource: 1, rulePos: 1, aclFormula: "", aclFormulaParsed: "",
+      permissionsText: "", userAttributes: JSON.stringify({
+        name: "Mentor", tableId: "Projects", lookupColId: "ShareToken", charId: "Email"
+      })}},
+    {id: 20, fields: {resource: 2, rulePos: 2, aclFormula: typed,
+      aclFormulaParsed: nativeAclFixture(typed), permissionsText: "+R"}},
+    {id: 21, fields: {resource: 2, rulePos: 3, aclFormula: opaque,
+      aclFormulaParsed: nativeAclFixture(opaque), permissionsText: "-U"}}
+  ];
+  const state = snapshot(resources, rules);
+  const impact = (columnId: string) => projectAccessRuleSchemaImpact(state,
+    {kind: "column", tableId: "Projects", columnId}) as any;
+  assert.deepEqual(impact("OwnerEmail").affectedGroups, [{
+    target: {tableId: "Projects"}, reasons: ["record_condition", "user_attribute_reference"],
+    conditionCoverage: "unknown"
+  }]);
+  assert.deepEqual(impact("ShareToken").affectedGroups, [{
+    target: {tableId: "Projects"}, reasons: ["user_attribute_reference"], conditionCoverage: "unknown"
+  }]);
+  assert.equal(impact("OwnerEmail").unknownCoverage.protectedOrdinaryGroupCount, 1);
+  assert.deepEqual(impact("Title").affectedGroups, []);
+  assert.doesNotMatch(JSON.stringify(impact("OwnerEmail")), /private-opaque|aclFormula|charId/);
+  // A parsed tree contradicting the formula text must not become a known dependency.
+  const inconsistent = snapshot(resources, [rules[0]!, {...rules[1]!,
+    fields: {...rules[1]!.fields, aclFormulaParsed: nativeAclFixture("user.Access == OWNER")}}, rules[2]!]);
+  assert.deepEqual((projectAccessRuleSchemaImpact(inconsistent,
+    {kind: "column", tableId: "Projects", columnId: "OwnerEmail"}) as any).affectedGroups, []);
+});
+
 test("ACL group replacement allocates ordered positions beyond fractional siblings", () => {
   const resource = { id: 2, fields: { tableId: "Projects", colIds: "*" } };
   const sibling = { id: 3, fields: { tableId: "Projects", colIds: "Title" } };

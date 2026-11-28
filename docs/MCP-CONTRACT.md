@@ -904,7 +904,9 @@ An optional `schemaImpact` on `grist_inspect(action="access_rules")`
 accepts one existing table or column stable identity (`kind:"table"` or
 `kind:"column"`). The additive `schemaChangeImpact` result identifies
 known references in ordinary ACL targets, typed `rec`/`newRec` predicates
-and verified user-attribute lookups/fields. It explicitly counts opaque
+and verified user-attribute lookups/fields, including independently
+validated typed rules in mixed groups. The containing mixed group retains
+`conditionCoverage:"unknown"`; opaque predicates are not inferred. It explicitly counts opaque
 ordinary groups, other policy resources and protected user attributes as
 unknown. It is read-only structural context before a possible rename/delete,
 not a forecast of Grist's native schema rewrite, authorization or confidentiality.

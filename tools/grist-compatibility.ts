@@ -4367,9 +4367,21 @@ async function run(): Promise<void> {
         ["AddRecord", "_grist_ACLRules", null, {resource: -1, rulePos: startPos + 1,
           aclFormula: "rec.Name == 'synthetic-opaque'", permissionsText: "-U", memo: "opaque"}],
         ["AddRecord", "_grist_ACLRules", null, {resource: -1, rulePos: startPos + 2,
-          aclFormula: "user.Access != OWNER", permissionsText: "+R"}]
+          aclFormula: "user.Access != OWNER", permissionsText: "+R"}],
+        ["AddRecord", "_grist_ACLRules", null, {resource: -1, rulePos: startPos + 3,
+          aclFormula: "rec.Name == ''", permissionsText: "-U"}]
       ])
     });
+    const mixedImpact = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+      action: "access_rules", documentId, schemaImpact: {kind: "column", tableId: patchTable, columnId: "Name"}
+    }), "native_mixed_schema_impact").schemaChangeImpact as {
+      affectedGroups: Array<{target: {tableId: string}; reasons: string[]; conditionCoverage: string}>;
+      unknownCoverage: {protectedOrdinaryGroupCount: number};
+    };
+    assert(mixedImpact.affectedGroups.some(group => group.target.tableId === patchTable &&
+      group.reasons.includes("record_condition") && group.conditionCoverage === "unknown") &&
+      mixedImpact.unknownCoverage.protectedOrdinaryGroupCount > 0 &&
+      !JSON.stringify(mixedImpact).includes("synthetic-opaque"), "native_mixed_schema_impact_lost_known_reference");
     const patchPath = `${docPath}/tables/${patchTable}/records`;
     const patchBefore = await readNativeAcl();
     const patchRow = patchBefore.find(r => r.fields.rulePos === startPos &&
