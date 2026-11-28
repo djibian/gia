@@ -4495,6 +4495,32 @@ async function run(): Promise<void> {
     });
     assert(await gristStatus(gristBaseUrl, allowedFlagKey, patchPath, {method: "GET"}) === 403,
       "native_acl_remove_viewer_baseline");
+    const insertionBefore = await readNativeAcl();
+    const insertionRequest = {action: "insert_access_rule_before", documentId,
+      target: patchRequest.target, expected: aclConditionPatchRequest.expected,
+      rule: patchRequest.expected};
+    const insertionResult = resultJson(await callTool(bridgeBaseUrl, "grist_change_structure",
+      insertionRequest), "native_acl_insert");
+    const insertionAfter = await readNativeAcl();
+    const addedAclRules = insertionAfter.filter(r => !insertionBefore.some(b => b.id === r.id));
+    assert(insertionResult.changed === true && insertionResult.persistedDefinitionVerified === true &&
+      insertionResult.effectiveEnforcementVerified === false && addedAclRules.length === 1 &&
+      isDeepStrictEqual(byId(insertionAfter.filter(r => r.id !== addedAclRules[0]!.id)), byId(insertionBefore)),
+      "native_acl_insert_preservation");
+    const addedAclRule = addedAclRules[0]!;
+    assert(addedAclRule.fields.resource === patchRow.fields.resource &&
+      addedAclRule.fields.aclFormula === "user.Access == VIEWER" && addedAclRule.fields.permissionsText === "+R" &&
+      nativeOrder(insertionAfter).indexOf(addedAclRule.id) + 1 === nativeOrder(insertionAfter).indexOf(patchRow.id),
+      "native_acl_insert_order");
+    assert((await gristApi(gristBaseUrl, allowedFlagKey, patchPath) as MetaRecords).records.length === 1,
+      "native_acl_insert_viewer_not_allowed");
+    await callToolExpectError(bridgeBaseUrl, "grist_change_structure", insertionRequest);
+    await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "remove_access_rule", documentId, target: patchRequest.target, expected: insertionRequest.rule
+    });
+    assert(isDeepStrictEqual(byId(await readNativeAcl()), byId(insertionBefore)) &&
+      await gristStatus(gristBaseUrl, allowedFlagKey, patchPath, {method: "GET"}) === 403,
+      "native_acl_insert_removal_not_restored");
     // Exercise the public observation tool through a separately started bridge
     // using only the already-authorized synthetic viewer, not the Owner.
     const observationTable = "Compat_ObserveCells";

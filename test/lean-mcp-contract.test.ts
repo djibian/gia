@@ -927,6 +927,11 @@ test("local ACL patch accepts a typed expected rule and permissions, not native 
   assert.deepEqual(observed[3], [input.documentId, input.target, input.expected, {remove: true}]);
   assert.throws(() => tool.options.inputSchema!.parse({...removal, ruleId: 3}));
   assert.throws(() => tool.options.inputSchema!.parse({...removal, expected: undefined}));
+  const insertion = {...rest, action: "insert_access_rule_before", rule: {...input.expected, permissions}};
+  await tool.callback(tool.options.inputSchema!.parse(insertion));
+  assert.deepEqual(observed[4], [input.documentId, input.target, input.expected, {insertBefore: insertion.rule}]);
+  assert.throws(() => tool.options.inputSchema!.parse({...insertion, rulePos: 3}));
+  assert.throws(() => tool.options.inputSchema!.parse({...insertion, rule: {aclFormula: "True"}}));
 });
 
 test("native record observation is a closed read-only query action", async () => {

@@ -251,6 +251,12 @@ export class GristUiActionsAdapter {
 
   async patchAccessRule(documentId: string, plan: AccessRulePatchPlan): Promise<void> {
     if (!plan.changed) return;
+    if ("insert" in plan) {
+      await this.client.applyUserActions(documentId, [
+        ["AddRecord", "_grist_ACLRules", null, plan.insert]
+      ]);
+      return;
+    }
     if ("remove" in plan) {
       await this.client.applyUserActions(documentId, [
         ["RemoveRecord", "_grist_ACLRules", plan.ruleId]

@@ -1427,6 +1427,13 @@ export function registerLeanTools(
           condition: accessRuleConditionSchema
         }).strict(),
         z.object({
+          action: z.literal("insert_access_rule_before"),
+          documentId: documentIdSchema,
+          target: accessRuleTargetSchema,
+          expected: accessRuleSchema,
+          rule: accessRuleSchema
+        }).strict(),
+        z.object({
           action: z.literal("remove_access_rule"),
           documentId: documentIdSchema,
           target: accessRuleTargetSchema,
@@ -1602,6 +1609,10 @@ export function registerLeanTools(
           case "patch_access_rule_condition":
             return textResult(await grist.patchAccessRule(
               input.documentId, input.target, input.expected, {condition: input.condition}
+            ));
+          case "insert_access_rule_before":
+            return textResult(await grist.patchAccessRule(
+              input.documentId, input.target, input.expected, {insertBefore: input.rule}
             ));
           case "remove_access_rule":
             return textResult(await grist.patchAccessRule(
