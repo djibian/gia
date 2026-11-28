@@ -4372,10 +4372,10 @@ async function run(): Promise<void> {
           aclFormula: "rec.Name == ''", permissionsText: "-U"}]
       ])
     });
-    const mixedInspection = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+    const mixedPatchInspection = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
       action: "access_rules", documentId, schemaImpact: {kind: "column", tableId: patchTable, columnId: "Name"}
     }), "native_mixed_schema_impact");
-    const mixedGroupDependencies = (mixedInspection.groups as Array<{
+    const mixedGroupDependencies = (mixedPatchInspection.groups as Array<{
       target: {tableId: string}; editable: boolean; dependencies: unknown;
     }>).find(group => group.target.tableId === patchTable);
     assert(mixedGroupDependencies?.editable === false &&
@@ -4383,7 +4383,7 @@ async function run(): Promise<void> {
         coverage: "unknown", recordColumnIds: ["Name"], newRecordColumnIds: [],
         userProperties: ["Access"], linkKeyNames: [], userAttributeFields: []
       }), "native_mixed_group_dependencies_lost_known_reference");
-    const mixedImpact = mixedInspection.schemaChangeImpact as {
+    const mixedImpact = mixedPatchInspection.schemaChangeImpact as {
       affectedGroups: Array<{target: {tableId: string}; reasons: string[]; conditionCoverage: string}>;
       unknownCoverage: {protectedOrdinaryGroupCount: number};
     };
