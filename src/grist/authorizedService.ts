@@ -15,8 +15,9 @@ import {
   projectAccessRuleSchemaImpact,
   projectAccessRuleSimulation,
   resolveAccessRuleMutation,
-  resolveAccessRulePermissionPatch,
-  verifyAccessRulePermissionPatch,
+  resolveAccessRulePatch,
+  type AccessRulePatchReplacement,
+  verifyAccessRulePatch,
   resolveUserAttributeMutation,
   verifyAccessRuleMutation,
   verifyUserAttributeMutation,
@@ -2611,25 +2612,25 @@ export class AuthorizedGristService {
     }
   }
 
-  async patchAccessRulePermissions(
+  async patchAccessRule(
     documentIdOrUrl: string, target: AccessRuleTarget,
-    expected: AccessRuleInput, permissions: AccessRuleInput["permissions"]
+    expected: AccessRuleInput, replacement: AccessRulePatchReplacement
   ): Promise<unknown> {
     return this.execute("change_access_rule_group", documentIdOrUrl, 1, async id => {
       await this.inner.assertDocumentOwner(id);
       const before = await this.loadAccessRulesSnapshot(id);
-      const plan = resolveAccessRulePermissionPatch(before, target, expected, permissions);
+      const plan = resolveAccessRulePatch(before, target, expected, replacement);
       const result = {documentId: id, target, changed: plan.changed,
         persistedDefinitionVerified: true, effectiveEnforcementVerified: false};
       if (!plan.changed) return result;
       await this.assertAccessRulesUnchanged(id, before);
-      await this.uiActions.patchAccessRulePermissions(id, plan);
+      await this.uiActions.patchAccessRule(id, plan);
       try {
-        verifyAccessRulePermissionPatch(before, await this.loadAccessRulesSnapshot(id), plan);
+        verifyAccessRulePatch(before, await this.loadAccessRulesSnapshot(id), plan);
         return result;
       } catch (error) {
         throw new AccessRuleWriteVerificationError(error instanceof Error
-          ? error.message : "Native ACL permission patch could not be verified.");
+          ? error.message : "Native ACL patch could not be verified.");
       }
     });
   }

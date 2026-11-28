@@ -8,8 +8,8 @@ import {
   projectAccessRuleSchemaImpact,
   projectAccessRuleSimulation,
   resolveAccessRuleMutation,
-  resolveAccessRulePermissionPatch,
-  verifyAccessRulePermissionPatch,
+  resolveAccessRulePatch,
+  verifyAccessRulePatch,
   resolveUserAttributeMutation,
   verifyAccessRuleMutation,
   verifyUserAttributeMutation
@@ -2155,20 +2155,37 @@ test("local ACL permission patch preserves opaque siblings and native rule ident
   assert.equal(group.editable, false);
   assert.equal(group.patchableRules.length, 1);
   assert.doesNotMatch(JSON.stringify(group), /private-opaque|private-memo|aclFormula/);
-  const plan = resolveAccessRulePermissionPatch(before, target, expected, replacement);
-  assert.deepEqual(plan, {ruleId: 20, permissionsText: "-R", changed: true});
+  const plan = resolveAccessRulePatch(before, target, expected, {permissions: replacement});
+  assert.deepEqual(plan, {ruleId: 20, fields: {permissionsText: "-R"}, changed: true});
   const changed = {...rule, fields: {...rule.fields, permissionsText: "-R"}};
   const after = snapshot(resources, [changed, opaque]);
-  verifyAccessRulePermissionPatch(before, after, plan);
-  assert.throws(() => verifyAccessRulePermissionPatch(before,
+  verifyAccessRulePatch(before, after, plan);
+  assert.throws(() => verifyAccessRulePatch(before,
     snapshot(resources, [changed, {...opaque, fields: {...opaque.fields, memo: "different"}}]), plan), /postcondition/);
-  assert.throws(() => verifyAccessRulePermissionPatch(before,
+  assert.throws(() => verifyAccessRulePatch(before,
     snapshot(resources, [{...changed, id: 22}, opaque]), plan), /postcondition/);
-  assert.throws(() => resolveAccessRulePermissionPatch(after, target, expected, replacement), /absent or ambiguous/);
-  assert.equal(resolveAccessRulePermissionPatch(after, target,
-    {...expected, permissions: replacement}, replacement).changed, false);
-  assert.throws(() => resolveAccessRulePermissionPatch(snapshot(resources, [rule, opaque,
-    {...rule, id: 22, fields: {...rule.fields, rulePos: 3}}]), target, expected, replacement), /ambiguous/);
-  assert.throws(() => resolveAccessRulePermissionPatch(snapshot(resources, [rule, opaque,
-    {...changed, id: 22, fields: {...changed.fields, rulePos: 3}}]), target, expected, replacement), /duplicate/);
+  assert.throws(() => resolveAccessRulePatch(after, target, expected, {permissions: replacement}), /absent or ambiguous/);
+  assert.equal(resolveAccessRulePatch(after, target,
+    {...expected, permissions: replacement}, {permissions: replacement}).changed, false);
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque,
+    {...rule, id: 22, fields: {...rule.fields, rulePos: 3}}]), target, expected, {permissions: replacement}), /ambiguous/);
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque,
+    {...changed, id: 22, fields: {...changed.fields, rulePos: 3}}]), target, expected, {permissions: replacement}), /duplicate/);
+
+  const condition = {kind: "user_access", operator: "equals", role: "editor"} as const;
+  const conditionPlan = resolveAccessRulePatch(before, target, expected, {condition});
+  assert.deepEqual(conditionPlan, {ruleId: 20, changed: true,
+    fields: {aclFormula: "user.Access == EDITOR"}, expectedCondition: condition});
+  const edited = {...rule, fields: {...rule.fields, aclFormula: "user.Access == EDITOR",
+    aclFormulaParsed: nativeAclFixture("user.Access == EDITOR")}};
+  verifyAccessRulePatch(before, snapshot(resources, [edited, opaque]), conditionPlan);
+  assert.throws(() => verifyAccessRulePatch(before, snapshot(resources,
+    [{...edited, fields: {...edited.fields, aclFormulaParsed: rule.fields.aclFormulaParsed}}, opaque]), conditionPlan), /parsed-condition/);
+  assert.throws(() => verifyAccessRulePatch(before, snapshot(resources,
+    [{...edited, fields: {...edited.fields, permissionsText: "-R"}}, opaque]), conditionPlan), /preservation/);
+  assert.throws(() => resolveAccessRulePatch(before, target, expected,
+    {condition: {kind: "everyone"}}), /final rule/);
+  assert.equal(resolveAccessRulePatch(before, target, expected, {condition: expected.condition}).changed, false);
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque,
+    {...edited, id: 22, fields: {...edited.fields, rulePos: 3}}]), target, expected, {condition}), /duplicate/);
 });

@@ -8,7 +8,7 @@ import type { GristCapability, Principal } from "../src/auth/principal.js";
 import {
   AccessRuleWriteVerificationError,
   type AccessRuleMutationPlan,
-  type AccessRulePermissionPatchPlan
+  type AccessRulePatchPlan
 } from "../src/grist/accessRules.js";
 import { AuthorizedGristService } from "../src/grist/authorizedService.js";
 import type { GristService } from "../src/grist/service.js";
@@ -62,7 +62,7 @@ function harness(options: { applyWrite?: boolean; persistedPredicate?: string;
   const capabilities: Array<GristCapability | null> = [];
   const ownerChecks: string[] = [];
   const writes: AccessRuleMutationPlan[] = [];
-  const patches: AccessRulePermissionPatchPlan[] = [];
+  const patches: AccessRulePatchPlan[] = [];
 
   const inner = {
     maxReadRecords: 5000,
@@ -123,12 +123,12 @@ function harness(options: { applyWrite?: boolean; persistedPredicate?: string;
   } as unknown as AuditLogger;
 
   const uiActions = {
-    patchAccessRulePermissions: async (_id: string, plan: AccessRulePermissionPatchPlan) => {
+    patchAccessRule: async (_id: string, plan: AccessRulePatchPlan) => {
       patches.push(plan);
       if (options.applyWrite === false) return;
       const index = rules.findIndex(r => r.id === plan.ruleId);
       const rule = rules[index]!;
-      rules[index] = {...rule, fields: {...rule.fields, permissionsText: plan.permissionsText}};
+      rules[index] = {...rule, fields: {...rule.fields, ...plan.fields}};
     },
     mutateUserAttribute: async () => {
       throw new Error("Unexpected user-attribute write");
@@ -411,23 +411,23 @@ test("local ACL permission patch uses Owner/schema authorization and shared stal
     permissions: {read: "allow", update: "unspecified"}} as const;
   const replacement = {read: "deny", update: "unspecified"} as const;
   const stale = harness({existingGroup: true, aclChangesBeforeWrite: true});
-  await assert.rejects(() => stale.service.patchAccessRulePermissions("doc-1", target, expected, replacement),
+  await assert.rejects(() => stale.service.patchAccessRule("doc-1", target, expected, {permissions: replacement}),
     /state changed before mutation/);
   assert.deepEqual(stale.capabilities, ["doc.schema:write"]);
   assert.deepEqual(stale.ownerChecks, ["doc-1"]);
   assert.deepEqual(stale.patches, []);
-  const noOp = await stale.service.patchAccessRulePermissions("doc-1", target, expected, expected.permissions) as any;
+  const noOp = await stale.service.patchAccessRule("doc-1", target, expected, {permissions: expected.permissions}) as any;
   assert.equal(noOp.changed, false);
   assert.deepEqual(stale.patches, []);
 
   const good = harness({existingGroup: true});
-  const result = await good.service.patchAccessRulePermissions("doc-1", target, expected, replacement) as any;
+  const result = await good.service.patchAccessRule("doc-1", target, expected, {permissions: replacement}) as any;
   assert.equal(result.changed, true);
   assert.equal(result.persistedDefinitionVerified, true);
   assert.equal(result.effectiveEnforcementVerified, false);
   assert.equal(good.patches.length, 1);
   const lost = harness({existingGroup: true, applyWrite: false});
-  await assert.rejects(() => lost.service.patchAccessRulePermissions("doc-1", target, expected, replacement),
+  await assert.rejects(() => lost.service.patchAccessRule("doc-1", target, expected, {permissions: replacement}),
     AccessRuleWriteVerificationError);
   assert.equal(lost.patches.length, 1);
 });
