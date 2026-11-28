@@ -986,15 +986,17 @@ function emptyPermissions(): ResolvedAccessRulePermissions {
 function parsePermissions(
   permissionsText: string,
   columnScope: boolean,
-  generalScope = false
+  documentScope = false
 ): (ResolvedAccessRulePermissions & { schema?: AccessPermissionValue }) | undefined {
+  if (documentScope && permissionsText === "all") permissionsText = "+CRUDS";
+  if (documentScope && permissionsText === "none") permissionsText = "-CRUDS";
   if (!permissionsText || permissionsText === "all" || permissionsText === "none") {
     return undefined;
   }
   const allowedBits = new Set<string>(columnScope ? COLUMN_PERMISSION_BITS : TABLE_PERMISSION_BITS);
-  if (generalScope) allowedBits.add("S");
+  if (documentScope) allowedBits.add("S");
   const result: ResolvedAccessRulePermissions & { schema?: AccessPermissionValue } = emptyPermissions();
-  if (generalScope) result.schema = "unspecified";
+  if (documentScope) result.schema = "unspecified";
   let state: AccessPermissionValue | null = null;
   const seen = new Set<string>();
 
@@ -1794,10 +1796,10 @@ function projectNativePredicate(
   return visit(parsed, 0);
 }
 
-// A general resource has no table context. Keep attribute rows in native
-// order without interpreting their blank predicates as unconditional grants.
-function projectGeneralPolicy(snapshot: AccessRulesSnapshot, attributes: ReadonlyMap<string, TableInfo>): unknown {
-  const resources = snapshot.resources.filter(r => r.tableId === "*" && r.colIds === "*");
+// Document-wide resources have no table context. Keep attribute-bearing rows
+// in native order without interpreting their blank predicates as grants.
+function projectDocumentPolicy(snapshot: AccessRulesSnapshot, resources: readonly PersistedResource[],
+  attributes: ReadonlyMap<string, TableInfo>): unknown {
   if (resources.length === 0) return { state: "not_persisted", nativeRuleObservations: null };
   if (resources.length !== 1) return { state: "unknown", nativeRuleObservations: null };
   const rules = snapshot.rules.filter(r => r.resourceId === resources[0]!.id);
@@ -1822,6 +1824,21 @@ function projectGeneralPolicy(snapshot: AccessRulesSnapshot, attributes: Readonl
   };
 }
 
+// Native persisted resource names, not the UI-only SchemaEdit pseudo-resource.
+// Grist v1.7.20 app/common/ACLRuleCollection.ts; no native implementation copied.
+const PERSISTED_SPECIAL_NAMES = ["AccessRules", "DocCopies", "FullCopies", "SeedRule"] as const;
+
+function projectSpecialPolicy(snapshot: AccessRulesSnapshot, attributes: ReadonlyMap<string, TableInfo>): unknown {
+  const resources = snapshot.resources.filter(r => r.tableId === "*SPECIAL");
+  return {
+    resources: PERSISTED_SPECIAL_NAMES.map(name => ({
+      name,
+      observation: projectDocumentPolicy(snapshot, resources.filter(r => r.colIds === name), attributes)
+    })),
+    unknownResourceCount: resources.filter(r => !PERSISTED_SPECIAL_NAMES.some(name => name === r.colIds)).length
+  };
+}
+
 export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
   const userAttributes = projectUserAttributes(snapshot);
   const nativeRules = new Map(snapshot.rules.map(rule => [rule.id, rule]));
@@ -1840,7 +1857,9 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
     policyState: "persisted",
     effectiveEnforcementVerified: false,
     protectedPersistedGroupCount: snapshot.protectedPersistedGroupCount,
-    generalPolicy: projectGeneralPolicy(snapshot, attributeTables),
+    generalPolicy: projectDocumentPolicy(snapshot,
+      snapshot.resources.filter(r => r.tableId === "*" && r.colIds === "*"), attributeTables),
+    specialPolicy: projectSpecialPolicy(snapshot, attributeTables),
     userAttributes,
     groups: snapshot.groups.map((group) => {
       const dependencies = group.normalizedRules
@@ -1884,7 +1903,7 @@ export function projectAccessRules(snapshot: AccessRulesSnapshot): unknown {
       };
     }),
     note:
-      "Gia exposes bounded persisted ordinary table/column groups, read-only general policy observations and structurally verified user-attribute definitions. General observations do not authorize writes; existing mutation boundaries, special resources, memos, unsupported user attributes and opaque formulas remain protected. Grist remains authoritative for effective enforcement."
+      "Gia exposes bounded persisted ordinary table/column groups, read-only general and special policy observations and structurally verified user-attribute definitions. Document-wide observations do not authorize writes; existing mutation boundaries, memos, unsupported user attributes and opaque formulas remain protected. Grist remains authoritative for effective enforcement."
   };
 }
 
