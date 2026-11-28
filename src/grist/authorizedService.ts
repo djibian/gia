@@ -15,6 +15,8 @@ import {
   projectAccessRuleSchemaImpact,
   projectAccessRuleSimulation,
   resolveAccessRuleMutation,
+  resolveAccessRulePermissionPatch,
+  verifyAccessRulePermissionPatch,
   resolveUserAttributeMutation,
   verifyAccessRuleMutation,
   verifyUserAttributeMutation,
@@ -2602,6 +2604,36 @@ export class AuthorizedGristService {
     });
   }
 
+  private async assertAccessRulesUnchanged(id: string, before: AccessRulesSnapshot): Promise<void> {
+    // Detection of stale planning state, not an atomic compare-and-set.
+    if (!isDeepStrictEqual(before, await this.loadAccessRulesSnapshot(id))) {
+      throw new Error("Native access-rule state changed before mutation; reconcile first.");
+    }
+  }
+
+  async patchAccessRulePermissions(
+    documentIdOrUrl: string, target: AccessRuleTarget,
+    expected: AccessRuleInput, permissions: AccessRuleInput["permissions"]
+  ): Promise<unknown> {
+    return this.execute("change_access_rule_group", documentIdOrUrl, 1, async id => {
+      await this.inner.assertDocumentOwner(id);
+      const before = await this.loadAccessRulesSnapshot(id);
+      const plan = resolveAccessRulePermissionPatch(before, target, expected, permissions);
+      const result = {documentId: id, target, changed: plan.changed,
+        persistedDefinitionVerified: true, effectiveEnforcementVerified: false};
+      if (!plan.changed) return result;
+      await this.assertAccessRulesUnchanged(id, before);
+      await this.uiActions.patchAccessRulePermissions(id, plan);
+      try {
+        verifyAccessRulePermissionPatch(before, await this.loadAccessRulesSnapshot(id), plan);
+        return result;
+      } catch (error) {
+        throw new AccessRuleWriteVerificationError(error instanceof Error
+          ? error.message : "Native ACL permission patch could not be verified.");
+      }
+    });
+  }
+
   async changeAccessRuleGroup(
     documentIdOrUrl: string,
     target: AccessRuleTarget | AccessUserAttributeTarget,
@@ -2612,13 +2644,6 @@ export class AuthorizedGristService {
     return this.execute("change_access_rule_group", documentIdOrUrl, 1, async (id) => {
       await this.inner.assertDocumentOwner(id);
       const before = await this.loadAccessRulesSnapshot(id);
-      // Recheck the complete policy and schema immediately before a native write.
-      // This detects stale planning state, not an atomic compare-and-set.
-      const checkBeforeWrite = async () => {
-        if (!isDeepStrictEqual(before, await this.loadAccessRulesSnapshot(id))) {
-          throw new Error("Native access-rule state changed before mutation; reconcile first.");
-        }
-      };
       if ("userAttributeName" in target) {
         if (rules !== undefined) {
           throw new Error("User-attribute mutations do not accept access rules.");
@@ -2629,7 +2654,7 @@ export class AuthorizedGristService {
           return { ...base, changed: false, persistedDefinitionVerified: true,
             effectiveEnforcementVerified: false };
         }
-        await checkBeforeWrite();
+        await this.assertAccessRulesUnchanged(id, before);
         await this.uiActions.mutateUserAttribute(id, plan);
         try {
           const after = await this.loadAccessRulesSnapshot(id);
@@ -2659,7 +2684,7 @@ export class AuthorizedGristService {
         };
       }
 
-      await checkBeforeWrite();
+      await this.assertAccessRulesUnchanged(id, before);
       await this.uiActions.mutateAccessRuleGroup(id, plan);
       try {
         const after = await this.loadAccessRulesSnapshot(id);
