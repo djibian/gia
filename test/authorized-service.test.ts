@@ -6,9 +6,10 @@ import type { AuthorizationService } from "../src/auth/authorizationService.js";
 import type { Principal } from "../src/auth/principal.js";
 import { AuthorizedGristService } from "../src/grist/authorizedService.js";
 import type { GristService } from "../src/grist/service.js";
+import { GristApiError } from "../src/grist/client.js";
 import type { GristUiActionsAdapter } from "../src/grist/uiActionsAdapter.js";
 
-function harness() {
+function harness(publicQuery?: (...args: unknown[]) => Promise<unknown>, denied = false) {
   const queriedTables: string[] = [];
   const inner = {
     maxReadRecords: 5000,
@@ -72,7 +73,7 @@ function harness() {
         }
       ]
     }),
-    queryRecords: async (_documentId: string, tableId: string) => {
+    queryRecords: async (_documentId: string, tableId: string, options?: unknown) => {
       queriedTables.push(tableId);
       if (tableId === "_grist_Pages") {
         return { records: [{ id: 10, fields: { viewRef: 1, indentation: 0, pagePos: 1 } }] };
@@ -103,7 +104,7 @@ function harness() {
           ]
         };
       }
-      return { records: [] };
+      return publicQuery ? publicQuery(_documentId, tableId, options) : { records: [] };
     }
   } as unknown as GristService;
 
@@ -114,6 +115,7 @@ function harness() {
       capability: string
     ) => {
       assert.equal(capability, "doc:read");
+      if (denied) throw new Error("bridge grant denied");
       return documentId;
     }
   } as unknown as AuthorizationService;
@@ -232,4 +234,36 @@ test("semantic page inspection still reads raw internal table references", async
     widgetCount: 1,
     widgetIds: [20]
   });
+});
+
+test("native record observation preserves authority and distinguishes scoped observations without cells", async () => {
+  const scope = {documentId: "doc-1", tableId: "Items", recordId: 7,
+    operation: "read", channel: "native_rest_api", identity: "current_grist_credential",
+    policyAttested: false};
+  const cases = [
+    [{records: [{id: 7, fields: {Secret: "must-not-leak"}}]}, "visible"],
+    [{records: []}, "not_returned"],
+    [{records: [{id: 8}]}, "unknown"],
+    [{records: [{id: 7}, {id: 8}]}, "unknown"],
+    [{unexpected: true}, "unknown"],
+    [new GristApiError("private error", 403, "private response"), "http_403"],
+    [new GristApiError("private error", 404, "private response"), "unknown"],
+    [new Error("private transport failure"), "unknown"]
+  ] as const;
+  for (const [response, observation] of cases) {
+    const {service} = harness(async (...args) => {
+      assert.deepEqual(args, ["doc-1", "Items", {filter: {id: [7]}, limit: 1, hidden: false}]);
+      if (response instanceof Error) throw response;
+      return response;
+    });
+    assert.deepEqual(await service.observeRecordAccess("doc-1", "Items", 7), {...scope, observation});
+  }
+  const forbidden = harness(undefined, true);
+  await assert.rejects(() => forbidden.service.observeRecordAccess("doc-1", "Items", 7), /bridge grant denied/);
+  assert.deepEqual(forbidden.queriedTables, []);
+  const guarded = harness();
+  await assert.rejects(() => guarded.service.observeRecordAccess("doc-1", "_grist_ACLRules", 7), /metadata tables/);
+  await assert.rejects(() => guarded.service.observeRecordAccess("https://example.invalid/doc/doc-1", "Items", 7), /plain document ID/);
+  await assert.rejects(() => guarded.service.observeRecordAccess("doc-1", "Items", 0), /positive safe record ID/);
+  assert.deepEqual(guarded.queriedTables, []);
 });

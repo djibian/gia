@@ -189,9 +189,14 @@ contract. Unknown inputs and unresolved required policy remain unknown.
 The [MCP Contract](MCP-CONTRACT.md) defines the supported scope and trace.
 
 Grist decides live access. Inspection and persisted-write verification expose
-structural or theoretical evidence. Native qualification runs separately on
+structural or theoretical evidence. Native regression qualification runs on
 synthetic disposable Grist and identifies the version, surface and property
-actually exercised. A native API result applies to that API case. A LinkKey
+actually exercised. Model-facing `observe_record_access` reuses the ordinary
+document grant and public-table boundary; it uses only the current native
+credential, returns no cells or native error bodies and accepts no identity
+override or LinkKey. It distinguishes an observed row, an empty result,
+native HTTP 403 and unknown; none proves unobserved permissions or a stable
+policy snapshot. A native API result applies to that API case. A LinkKey
 browser result applies to the tested web-client context. Native production
 qualification is read-only, and any unexercised case remains unqualified.
 

@@ -4474,6 +4474,31 @@ async function run(): Promise<void> {
     });
     assert(await gristStatus(gristBaseUrl, allowedFlagKey, patchPath, {method: "GET"}) === 403,
       "native_acl_remove_viewer_baseline");
+    // Exercise the public observation tool through a separately started bridge
+    // using only the already-authorized synthetic viewer, not the Owner.
+    const observationPort = await freePort();
+    const observationBase = `http://127.0.0.1:${observationPort}`;
+    const observationBridge = startBridge({
+      ...bridgeEnvironment({gristBaseUrl, apiKey: allowedFlagKey, documentId, workspaceId, port: observationPort}),
+      MCP_CAPABILITIES: "doc:read"
+    });
+    try {
+      await waitForUrl(`${observationBase}/healthz`);
+      const observe = async (tableId: string, recordId: number, observation: string) => {
+        const result = resultJson(await callTool(observationBase, "grist_query", {
+          action: "observe_record_access", documentId, tableId, recordId
+        }), "native_record_access_observation");
+        assert(isDeepStrictEqual(result, {documentId, tableId, recordId, operation: "read",
+          channel: "native_rest_api", identity: "current_grist_credential",
+          policyAttested: false, observation}), "native_record_access_observation_wrong_scope_or_result");
+      };
+      await observe(ACL_TABLE_ID, allowedPrincipal.id, "visible");
+      await observe(ACL_TABLE_ID, deniedPrincipal.id, "not_returned");
+      await observe(ACL_TABLE_ID, Math.max(...principals.records.map(row => row.id)) + 1, "not_returned");
+      await observe(patchTable, 1, "http_403");
+    } finally {
+      await stopBridge(observationBridge);
+    }
     const removalBefore = await readNativeAcl();
     const removalRequest = {action: "remove_access_rule", documentId,
       target: patchRequest.target, expected: aclConditionPatchRequest.expected};
