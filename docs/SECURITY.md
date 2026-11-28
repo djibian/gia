@@ -137,10 +137,11 @@ of the persisted parsed AST and recognized permission bits; ambiguous ordering
 or excessive group size gives no observation. Only fixed native node tags,
 verified schema names and fixed built-in symbols may be returned. All literal
 values, comments, unverified names and LinkKey operands remain redacted.
-The same redaction applies to the bounded persisted general resource,
-without resolving record fields or interpreting attribute rows as grants.
-Its schema-edit bit is observational only; absence is not evidence of
-implicit native defaults. This observation is not evidence of formula/AST
+The same redaction applies to bounded persisted general and known special
+resources, without resolving record fields or interpreting attribute rows
+as grants. Unknown special names are counted, not returned. Permission
+bits (including native aliases and schema-edit) are observational only;
+absence is not evidence of implicit defaults or share-generated rules. This observation is not evidence of formula/AST
 agreement or dependencies and cannot authorize mutation or simulation.
 Dependency lists do not imply rule reachability,
 native policy validity or effective confidentiality. Read-only lint reports

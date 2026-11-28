@@ -320,6 +320,35 @@ test("general ACL observations distinguish absent, ambiguous and ordered persist
     { state: "unknown", nativeRuleObservations: null });
 });
 
+test("persisted special ACL observations are bounded, redacted and independent", () => {
+  const resource = (id: number, colIds: string) => ({ id, fields: { tableId: "*SPECIAL", colIds } });
+  const rule = (id: number, resource: number, rulePos: number, permissionsText: string) => ({
+    id, fields: { resource, rulePos, permissionsText,
+      aclFormula: 'user.Email == "private-special-value"',
+      aclFormulaParsed: '["Eq",["Attr",["Name","user"],"Email"],["Const","private-special-value"]]' }
+  });
+  const resources = [resource(1, "AccessRules"), resource(2, "FullCopies"),
+    resource(3, "FullCopies"), resource(4, "private-unknown-resource"), resource(5, "SchemaEdit"),
+    resource(6, "SeedRule")];
+  const rules = [rule(10, 1, 2, "none"), rule(11, 1, 1, "all"), rule(12, 2, 1, "+R"),
+    ...Array.from({ length: 21 }, (_, i) => rule(100 + i, 6, i + 1, "+R"))];
+  const view = (projectAccessRules(snapshot(resources, rules)) as any).specialPolicy;
+  assert.equal(view.unknownResourceCount, 2);
+  const byName = Object.fromEntries(view.resources.map((entry: any) => [entry.name, entry.observation]));
+  assert.deepEqual(byName.DocCopies, { state: "not_persisted", nativeRuleObservations: null });
+  assert.deepEqual(byName.FullCopies, { state: "unknown", nativeRuleObservations: null });
+  assert.deepEqual(byName.SeedRule, { state: "unknown", nativeRuleObservations: null });
+  assert.deepEqual(byName.AccessRules, { state: "persisted", nativeRuleObservations: [
+    { kind: "rule", condition: ["Eq", ["Attr", ["Name", "user"], "Email"], ["Const", ["Redacted"]]],
+      permissions: { read: "allow", update: "allow", create: "allow", delete: "allow", schema: "allow" } },
+    { kind: "rule", condition: ["Eq", ["Attr", ["Name", "user"], "Email"], ["Const", ["Redacted"]]],
+      permissions: { read: "deny", update: "deny", create: "deny", delete: "deny", schema: "deny" } }
+  ] });
+  assert.doesNotMatch(JSON.stringify(view), /private-special-value|private-unknown-resource|SchemaEdit/);
+  const ordinary = { id: 1, fields: { tableId: "Projects", colIds: "*" } };
+  assert.equal((projectAccessRules(snapshot([ordinary], [rule(10, 1, 1, "all")])) as any).groups[0].editable, false);
+});
+
 test("opaque literal conditions are redacted and not editable", () => {
   const state = snapshot(
     [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }],

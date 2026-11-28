@@ -940,9 +940,19 @@ record-table context. Ordinary rule observations have `kind:"rule"` and
 the permission projection includes the schema-edit `S` bit as `schema`.
 Rows carrying user-attribute metadata are marked
 `kind:"user_attribute_or_mixed"` with unknown condition and null permissions,
-rather than misinterpreting a definition as a grant. No implicit defaults,
-other special resources, effective permissions or mutation authority are
-inferred from this observation.
+rather than misinterpreting a definition as a grant.
+
+The additive read-only `specialPolicy` uses the same observation for the
+four persisted native `*SPECIAL` resource names `AccessRules`, `DocCopies`,
+`FullCopies` and `SeedRule` in its `resources` array of
+`{name, observation}` entries. The UI-only SchemaEdit pseudo-resource
+is not a persisted target; other special resource rows are counted in
+`unknownResourceCount` without returning their names or predicates.
+General and special observations recognize native `all` and `none`
+as explicit five-bit permission aliases, without changing ordinary
+editable groups. These are stored bits, not computed effective permissions;
+SeedRule is seed metadata rather than an effective grant. Neither observation
+infers implicit defaults, share-generated rules or mutation authority.
 
 Mutations require local `doc.schema:write` and remain subject to Grist's native Owner enforcement. The bridge verifies the requested persisted definition and an internal fingerprint of all untargeted persisted ACL state after re-read. A successful result explicitly does **not** claim effective enforcement verification; persisted rule rows alone are not treated as a confidentiality proof. Native `user.LinkKey` context exists in the Grist web client but not in API calls, so Gia's persisted LinkKey-rule verification is deliberately not presented as an end-to-end LinkKey authorization test. If post-write persisted verification fails, the MCP result preserves the operation's `UNCERTAIN` effect knowledge with `retryWholeOperation: false` rather than collapsing it into a generic failure.
 
