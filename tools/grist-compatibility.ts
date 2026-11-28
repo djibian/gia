@@ -4497,6 +4497,30 @@ async function run(): Promise<void> {
       "native_acl_remove_viewer_baseline");
     // Exercise the public observation tool through a separately started bridge
     // using only the already-authorized synthetic viewer, not the Owner.
+    const observationTable = "Compat_ObserveCells";
+    await gristApi(gristBaseUrl, apiKey, `${docPath}/apply`, {
+      method: "POST", body: JSON.stringify([
+        ["AddTable", observationTable, [{id: "Mask", type: "Bool"}, {id: "Payload", type: "Text"}]],
+        ["AddRecord", observationTable, 1, {Mask: false, Payload: "synthetic-visible-cell"}],
+        ["AddRecord", observationTable, 2, {Mask: true, Payload: "synthetic-masked-cell"}],
+        ["AddRecord", "_grist_ACLResources", -1, {tableId: observationTable, colIds: "Payload"}],
+        ["AddRecord", "_grist_ACLRules", null, {resource: -1,
+          aclFormula: "user.Access != OWNER and rec.Mask == True", permissionsText: "-R"}]
+      ])
+    });
+    const cellPath = `${docPath}/tables/${observationTable}/records?cellFormat=typed`;
+    const ownerCells = (await gristApi(gristBaseUrl, apiKey, cellPath) as MetaRecords).records;
+    const viewerCells = (await gristApi(gristBaseUrl, allowedFlagKey, cellPath) as MetaRecords).records;
+    const ownerMasked = ownerCells.find(row => row.id === 2);
+    const viewerVisible = viewerCells.find(row => row.id === 1);
+    const viewerMasked = viewerCells.find(row => row.id === 2);
+    assert(ownerMasked?.fields.Payload === "synthetic-masked-cell" &&
+      viewerVisible?.fields.Payload === "synthetic-visible-cell" && viewerMasked?.fields.Mask === true,
+      "native_field_observation_controls");
+    const maskedField = Object.prototype.hasOwnProperty.call(viewerMasked!.fields, "Payload")
+      ? "censored" : "not_returned";
+    assert(maskedField === "not_returned" || isDeepStrictEqual(viewerMasked!.fields.Payload, ["C"]),
+      "native_field_observation_masked_value_exposed_or_unrecognized");
     const observationPort = await freePort();
     const observationBase = `http://127.0.0.1:${observationPort}`;
     const observationBridge = startBridge({
@@ -4517,6 +4541,16 @@ async function run(): Promise<void> {
       await observe(ACL_TABLE_ID, deniedPrincipal.id, "not_returned");
       await observe(ACL_TABLE_ID, Math.max(...principals.records.map(row => row.id)) + 1, "not_returned");
       await observe(patchTable, 1, "http_403");
+      for (const [recordId, fieldObservation] of [[1, "returned"], [2, maskedField]] as const) {
+        const result = resultJson(await callTool(observationBase, "grist_query", {
+          action: "observe_record_access", documentId, tableId: observationTable,
+          recordId, columnId: "Payload"
+        }), "native_field_access_observation");
+        assert(isDeepStrictEqual(result, {documentId, tableId: observationTable, recordId,
+          columnId: "Payload", operation: "read", channel: "native_rest_api",
+          identity: "current_grist_credential", policyAttested: false,
+          observation: "visible", fieldObservation}), "native_field_access_observation_wrong_result");
+      }
     } finally {
       await stopBridge(observationBridge);
     }

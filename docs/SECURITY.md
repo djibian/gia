@@ -199,7 +199,9 @@ document grant and public-table boundary; it uses only the current native
 credential, returns no cells or native error bodies and accepts no identity
 override or LinkKey. It distinguishes an observed row, an empty result,
 native HTTP 403 and unknown; none proves unobserved permissions or a stable
-policy snapshot. A native API result applies to that API case. A LinkKey
+policy snapshot. Optional field observation recognizes the exact typed native
+censorship marker or field presence/absence without returning values; it does
+not establish indirect confidentiality. A native API result applies to that API case. A LinkKey
 browser result applies to the tested web-client context. Native production
 qualification is read-only, and any unexercised case remains unqualified.
 
