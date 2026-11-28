@@ -10,6 +10,8 @@ const containerIdPattern = /^[a-f0-9]{64}$/;
 const fixtureLabel = "com.gia.disposable-grist";
 const imagePrefix = "gristlabs/grist-oss:";
 const tableId = "QualificationItems";
+const projectionTable = "QualificationProjection";
+const sourceMarker = "initial-alpha";
 
 export type QualificationStatus = "PASS" | "FAIL" | "UNKNOWN" | "NOT_TESTED" | "UNSUPPORTED";
 type Decision = "allow" | "deny";
@@ -103,6 +105,7 @@ interface Fixture {
   alpha: { email: string; key: string };
   beta: { email: string; key: string };
   recordsPath: string;
+  projectionPath: string;
 }
 
 async function fixture(baseUrl: string): Promise<Fixture> {
@@ -120,7 +123,7 @@ async function fixture(baseUrl: string): Promise<Fixture> {
   const documentId = await createDoc(baseUrl, owner, workspaceId, "Synthetic policy cases");
   await applyActions(baseUrl, owner, documentId, [
     ["AddTable", tableId, [{ id: "Principal", type: "Text" }, { id: "Value", type: "Text" }]],
-    ["AddRecord", tableId, 1, { Principal: alphaEmail, Value: "initial-alpha" }],
+    ["AddRecord", tableId, 1, { Principal: alphaEmail, Value: sourceMarker }],
     ["AddRecord", tableId, 2, { Principal: betaEmail, Value: "initial-beta" }],
     ["AddRecord", tableId, 3, { Principal: alphaEmail, Value: "control-alpha" }],
     ["AddRecord", tableId, 4, { Principal: betaEmail, Value: "control-beta" }],
@@ -133,22 +136,34 @@ async function fixture(baseUrl: string): Promise<Fixture> {
     }],
     ["AddRecord", "_grist_ACLRules", null, {
       resource: -1, aclFormula: "", permissionsText: "-RCUD"
+    }],
+    ["AddTable", projectionTable, [
+      { id: "Source", type: `Ref:${tableId}` }, { id: "Control", type: "Text" }
+    ]],
+    ["AddColumn", projectionTable, "Exposed", { type: "Text", isFormula: true, formula: "$Source.Value" }],
+    ["AddColumn", projectionTable, "Protected", { type: "Text", isFormula: true, formula: "$Source.Value" }],
+    ["AddRecord", projectionTable, 1, { Source: 1, Control: "projection-control" }],
+    ["AddRecord", "_grist_ACLResources", -2, { tableId: projectionTable, colIds: "Protected" }],
+    ["AddRecord", "_grist_ACLRules", null, {
+      resource: -2, aclFormula: "user.Access != OWNER", permissionsText: "-R"
     }]
   ]);
   return {
     owner, alpha: { email: alphaEmail, key: alphaKey }, beta: { email: betaEmail, key: betaKey },
-    recordsPath: `/api/docs/${encodeURIComponent(documentId)}/tables/${tableId}/records`
+    recordsPath: `/api/docs/${encodeURIComponent(documentId)}/tables/${tableId}/records`,
+    projectionPath: `/api/docs/${encodeURIComponent(documentId)}/tables/${projectionTable}/records?cellFormat=typed`
   };
 }
 
 interface NativeCase {
   id: string;
   operation: Operation;
+  scope?: "disposable_synthetic_indirect_formula";
   expected: Decision;
   run: () => Promise<Observation>;
 }
 
-function nativeCases(baseUrl: string, { owner, alpha, beta, recordsPath }: Fixture): NativeCase[] {
+function nativeCases(baseUrl: string, { owner, alpha, beta, recordsPath, projectionPath }: Fixture): NativeCase[] {
   const read = async (key: string) => recordsFrom(await gristApi(baseUrl, key, recordsPath, { redirect: "error" }));
   const valueAt = async (id: number) => (await read(owner)).find((entry) => entry.id === id)?.fields.Value;
   const readRow = async (key: string, target: number, control: number): Promise<Observation> => {
@@ -156,6 +171,24 @@ function nativeCases(baseUrl: string, { owner, alpha, beta, recordsPath }: Fixtu
     const visible = await read(key);
     if (!visible.some(({ id }) => id === control)) return {};
     return { decision: visible.some(({ id }) => id === target) ? "allow" : "deny" };
+  };
+
+  // A denied source row does not by itself establish confidentiality of
+  // a readable formula that depends on it. Observe both paths as beta,
+  // with an Owner check of the actual synthetic formula results.
+  const readIndirect = async (field: "Exposed" | "Protected"): Promise<Observation> => {
+    if ((await readRow(beta.key, 1, 4)).decision !== "deny" || await valueAt(1) !== sourceMarker) return {};
+    const projection = async (key: string) => recordsFrom(await gristApi(baseUrl, key, projectionPath))
+      .find(row => row.id === 1)?.fields;
+    const ownerFields = await projection(owner);
+    const betaFields = await projection(beta.key);
+    if (ownerFields?.Control !== "projection-control" || ownerFields.Exposed !== sourceMarker ||
+        ownerFields.Protected !== sourceMarker || betaFields?.Control !== "projection-control") return {};
+    if (betaFields[field] === sourceMarker) return { decision: "allow" };
+    if (!Object.prototype.hasOwnProperty.call(betaFields, field) || isDeepStrictEqual(betaFields[field], ["C"])) {
+      return { decision: "deny" };
+    }
+    return {};
   };
 
   type Rows = Awaited<ReturnType<typeof read>>;
@@ -191,6 +224,10 @@ function nativeCases(baseUrl: string, { owner, alpha, beta, recordsPath }: Fixtu
   return [
     { id: "read-allowed-own-row", operation: "read", expected: "allow", run: () => readRow(alpha.key, 1, 3) },
     { id: "read-denied-other-row", operation: "read", expected: "deny", run: () => readRow(beta.key, 1, 4) },
+    { id: "read-exposed-derived-cell", operation: "read", scope: "disposable_synthetic_indirect_formula",
+      expected: "allow", run: () => readIndirect("Exposed") },
+    { id: "read-protected-derived-cell", operation: "read", scope: "disposable_synthetic_indirect_formula",
+      expected: "deny", run: () => readIndirect("Protected") },
     { id: "create-allowed-own-row", operation: "create", expected: "allow", run: () =>
       create(alpha.key, alpha.email, "created-alpha") },
     { id: "create-denied-other-row", operation: "create", expected: "deny", run: () =>
@@ -229,10 +266,10 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  for (const { id, operation, expected, run } of cases) {
+  for (const { id, operation, scope: caseScope, expected, run } of cases) {
     const observation = await run().catch(() => ({} as Observation));
     const status = qualificationStatus(expected, observation);
-    console.log(JSON.stringify({ ...scope, version, id, operation, expected,
+    console.log(JSON.stringify({ ...scope, scope: caseScope ?? scope.scope, version, id, operation, expected,
       observed: observation.decision ?? "UNKNOWN",
       ...(observation.contradictoryEffect ? { effect: "CONTRADICTORY" } : {}), status }));
     if (status !== "PASS") process.exitCode = 1;
