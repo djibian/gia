@@ -2830,6 +2830,9 @@ async function run(): Promise<void> {
             resource: -31, rulePos: 1,
             aclFormula: "user . CompatCreated.ShareToken == rec.ShareToken",
             permissionsText: "+R"
+          }],
+          ["AddRecord", "_grist_ACLRules", null, {
+            resource: -31, rulePos: 2, aclFormula: "user.Access == OWNER", permissionsText: "+R"
           }]
         ])
       });
@@ -2843,6 +2846,21 @@ async function run(): Promise<void> {
     assert(dependent &&
       String(dependent.fields.aclFormulaParsed).includes('"CompatCreated"'),
       "native_user_attribute_spaced_predicate_not_parsed");
+    const mixedInspection = resultJson(await callTool(bridgeBaseUrl, "grist_inspect", {
+      action: "access_rules", documentId
+    }), "native_mixed_rule_observations");
+    const mixedGroup = (mixedInspection.groups as Array<Record<string, unknown>>).find(group => {
+      const target = group.target as { tableId?: string; columnIds?: string[] };
+      return target.tableId === ACL_TABLE_ID && !target.columnIds;
+    });
+    const mixedRules = mixedGroup?.nativeRuleObservations as Array<{condition: unknown}> | undefined;
+    assert(mixedGroup?.editable === false && mixedRules?.length === 2 &&
+      JSON.stringify(mixedRules[0]?.condition) === JSON.stringify(["Eq",
+        ["Attr", ["Attr", ["Name", "user"], "CompatCreated"], "ShareToken"],
+        ["Attr", ["Name", "rec"], "ShareToken"]]) &&
+      JSON.stringify(mixedRules[1]?.condition) === JSON.stringify(["Eq",
+        ["Attr", ["Name", "user"], "Access"], ["Name", "OWNER"]]),
+      "native_mixed_rule_structure_not_observed");
     await callToolExpectError(bridgeBaseUrl, "grist_change_structure", {
       action: "access_rule_group", documentId, mode: "delete",
       target: { userAttributeName: "CompatCreated" }
@@ -2854,11 +2872,15 @@ async function run(): Promise<void> {
     const dependentResourceId = dependent.fields.resource;
     assert(typeof dependentResourceId === "number" && dependentResourceId > 0,
       "native_user_attribute_dependency_resource_missing");
+    const sibling = dependentRows.find(row => row.fields.resource === dependentResourceId &&
+      row.fields.aclFormula === "user.Access == OWNER");
+    assert(sibling, "native_mixed_rule_sibling_missing");
     await gristApi(gristBaseUrl, apiKey,
       `/api/docs/${encodeURIComponent(documentId)}/apply`, {
         method: "POST",
         body: JSON.stringify([
           ["RemoveRecord", "_grist_ACLRules", dependent.id],
+          ["RemoveRecord", "_grist_ACLRules", sibling.id],
           ["RemoveRecord", "_grist_ACLResources", dependentResourceId]
         ])
       });

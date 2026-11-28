@@ -132,7 +132,14 @@ closed typed conditions. It reports stable record/new-record column IDs,
 built-in user-property names, LinkKey names and user-attribute name/field
 pairs, deduplicated within each supported group. A protected or opaque group
 reports unknown coverage without inspecting its raw formula or attempting a
-partial dependency guess. Dependency lists do not imply rule reachability,
+partial dependency guess. Protected ordinary groups additionally expose a bounded ordered observation
+of the persisted parsed AST and recognized permission bits; ambiguous ordering
+or excessive group size gives no observation. Only fixed native node tags,
+verified schema names and fixed built-in symbols may be returned. All literal
+values, comments, unverified names and LinkKey operands remain redacted.
+This observation is not evidence of formula/AST agreement or dependencies
+and cannot authorize mutation or simulation.
+Dependency lists do not imply rule reachability,
 native policy validity or effective confidentiality. Read-only lint reports
 only first-applicable-decision shadowing for the **same normalized condition
 and permission** as `proven`; it never tries to compare arbitrary formulas or

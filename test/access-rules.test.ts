@@ -1936,7 +1936,34 @@ test("E1-D2 does not partially lint an opaque group or leak its literals", () =>
   assert.deepEqual(group.dependencies, { coverage: "unknown" });
   assert.equal(group.diagnostics, null);
   assert.equal(group.rules, undefined);
+  const known = ["Eq", ["Attr", ["Name", "rec"], "Title"], ["Attr", ["Name", "user"], "Email"]];
+  assert.deepEqual(group.nativeRuleObservations.map((rule: any) => rule.condition), [
+    known, ["Eq", ["Attr", ["Name", "rec"], "Title"], ["Const", ["Redacted"]]], known
+  ]);
+  assert.deepEqual(group.nativeRuleObservations.map((rule: any) => rule.permissions.read),
+    ["allow", "deny", "deny"]);
   assert.doesNotMatch(JSON.stringify(group), /opaque-private|aclFormula|shadowed_same_condition_permission/);
+});
+
+test("native rule observations redact arbitrary names, LinkKey names and literals, and refuse ambiguous order", () => {
+  const resources = [{ id: 2, fields: { tableId: "Projects", colIds: "*" } }];
+  const rule = (id: number, rulePos: number, ast: unknown) => ({
+    id, fields: { resource: 2, rulePos, aclFormula: "opaque", aclFormulaParsed: JSON.stringify(ast),
+      permissionsText: "-R" }
+  });
+  const ast = ["And", ["Eq", ["Attr", ["Attr", ["Name", "user"], "LinkKey"], "private-key"],
+    ["Const", "private-token"]], ["Call", ["Name", "private-function"], ["Const", "private-value"]]];
+  const rules = [rule(20, 2, ast), rule(21, 1, ["Eq", ["Attr", ["Name", "rec"], "Title"], ["Const", 123456]])];
+  const group = (projectAccessRules(snapshot(resources, rules)) as any).groups[0];
+  assert.equal(group.editable, false);
+  assert.deepEqual(group.nativeRuleObservations[0].condition,
+    ["Eq", ["Attr", ["Name", "rec"], "Title"], ["Const", ["Redacted"]]]);
+  assert.doesNotMatch(JSON.stringify(group), /private-|LinkKey|123456|aclFormula/);
+  const ambiguous = (projectAccessRules(snapshot(resources, [rules[0]!, rule(21, 2, ast)])) as any).groups[0];
+  assert.equal(ambiguous.nativeRuleObservations, null);
+  const oversized = (projectAccessRules(snapshot(resources,
+    Array.from({length: 21}, (_, i) => rule(30 + i, i + 1, ast)))) as any).groups[0];
+  assert.equal(oversized.nativeRuleObservations, null);
 });
 
 test("E1-D2 warns about indirect web-only LinkKey via a verified user attribute", () => {
