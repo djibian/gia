@@ -115,7 +115,9 @@ local doc.schema:write, refuses all native user-attribute writes whenever any
 definition is opaque/ambiguous, rejects reserved names and missing stable
 lookup columns, and never accepts raw JSON or arbitrary user properties.
 Ensure creates an absent definition, reuses an equivalent one and refuses
-conflicts. A fresh native ACL snapshot guards creation against stale state.
+conflicts. A fresh complete ACL and schema snapshot guards all actual
+ordinary-group and user-attribute writes against detected stale planning
+state; this preflight is not an atomic compare-and-set.
 Deletion and non-noop replacement refuse existing native ACL dependencies,
 including opaque or noncanonical predicate forms. Typed `match_user_attribute`
 ACL leaves accept only existing structurally verified attribute/field names

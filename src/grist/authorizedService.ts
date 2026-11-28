@@ -2612,9 +2612,11 @@ export class AuthorizedGristService {
     return this.execute("change_access_rule_group", documentIdOrUrl, 1, async (id) => {
       await this.inner.assertDocumentOwner(id);
       const before = await this.loadAccessRulesSnapshot(id);
-      const checkBeforeEnsure = async () => {
-        if (mode === "ensure" && !isDeepStrictEqual(before, await this.loadAccessRulesSnapshot(id))) {
-          throw new Error("Native access-rule state changed before creation; reconcile first.");
+      // Recheck the complete policy and schema immediately before a native write.
+      // This detects stale planning state, not an atomic compare-and-set.
+      const checkBeforeWrite = async () => {
+        if (!isDeepStrictEqual(before, await this.loadAccessRulesSnapshot(id))) {
+          throw new Error("Native access-rule state changed before mutation; reconcile first.");
         }
       };
       if ("userAttributeName" in target) {
@@ -2627,7 +2629,7 @@ export class AuthorizedGristService {
           return { ...base, changed: false, persistedDefinitionVerified: true,
             effectiveEnforcementVerified: false };
         }
-        await checkBeforeEnsure();
+        await checkBeforeWrite();
         await this.uiActions.mutateUserAttribute(id, plan);
         try {
           const after = await this.loadAccessRulesSnapshot(id);
@@ -2657,7 +2659,7 @@ export class AuthorizedGristService {
         };
       }
 
-      await checkBeforeEnsure();
+      await checkBeforeWrite();
       await this.uiActions.mutateAccessRuleGroup(id, plan);
       try {
         const after = await this.loadAccessRulesSnapshot(id);
