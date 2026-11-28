@@ -2415,7 +2415,7 @@ export function verifyAccessRulePatch(before: AccessRulesSnapshot,
     resources: snapshot.resources.map(r => ({id: r.id, fields: r.fields})).sort((a,b) => a.id - b.id),
     rules: snapshot.rules.map(r => {
       if (r.id !== plan.ruleId) return {id: r.id, fields: r.fields};
-      const fields = {...r.fields, ...(apply ? plan.fields : {})};
+      const fields: JsonRecord = {...r.fields, ...(apply ? plan.fields : {})};
       // Grist derives the parsed predicate from formula text. Check it semantically below.
       if ("expectedCondition" in plan) delete fields.aclFormulaParsed;
       return {id: r.id, fields};
