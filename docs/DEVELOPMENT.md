@@ -134,7 +134,11 @@ cases use ordinary native API calls with two editors and a separate owner who
 re-reads their effects. Each output row identifies version, surface, scope,
 expected outcome and `PASS`, `FAIL`, `UNKNOWN`, `NOT_TESTED` or
 `UNSUPPORTED`. Case failures leave the run unsuccessful. Output omits
-credentials, document IDs, URLs and native response bodies.
+credentials, document IDs, URLs and native response bodies. A separate synthetic
+indirect-formula scope checks that a denied source row may still be disclosed
+through a readable derived cell, and that a targeted column read restriction
+protects the other derived cell in the exercised native REST context. Owner
+values and a visible control establish the fixture; no cell value is logged.
 
 The native reference-locking step uses the same container guard and evidence
 states. A synthetic editor first proves permitted C/U/D operations while
