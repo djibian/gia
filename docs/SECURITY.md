@@ -129,7 +129,11 @@ rules in the explicitly expected relative order and changes only their native
 positions in one bulk update. Native position allocation is checked by
 the resulting full order and exact preservation of untargeted fields;
 ambiguous or insufficient position gaps are refused before writing.
-Unconditional rules cannot be swapped. Local removal selects one supported
+Unconditional rules cannot be swapped. Local insertion adds one typed
+non-unconditional rule before one unique supported anchor, refusing duplicate
+supported rules, full groups and unsafe native position gaps. It verifies
+the inserted definition and complete native order without changing any
+pre-existing resource or rule. Local removal selects one supported
 rule explicitly, refuses removal of the last rule in a group and verifies
 exact preservation of all resources and remaining rule fields.
 Opaque rules are never accepted as writable selectors or rewritten.

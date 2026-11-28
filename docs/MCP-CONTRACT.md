@@ -824,6 +824,18 @@ The original ordered request is refused on immediate replay; reverse the
 selectors only to request an intentional reverse swap. No raw positions or
 IDs are accepted. The same Owner/schema authority and preflight apply.
 
+The bounded `grist_change_structure(action="insert_access_rule_before")`
+accepts the same target, one uniquely matching typed `expected` anchor and
+one typed `rule`. It adds one non-unconditional rule immediately before that
+anchor in native order, including in a protected mixed group. The existing
+rule bound, duplicate-supported-rule refusal and safe native position gap
+checks apply. One fixed native add action is used; the new rule's normalized
+definition and full native order are verified alongside exact preservation
+of every prior resource and rule field/identity. Replaying the request after
+a successful insertion is refused as a duplicate. No raw ACL position or
+row ID is accepted. The same Owner/schema authority, preflight and
+uncertain-write handling apply.
+
 The bounded `grist_change_structure(action="remove_access_rule")` accepts
 the same target and exactly one typed `expected` rule. It removes only the
 uniquely selected native rule using one fixed native remove action, provided

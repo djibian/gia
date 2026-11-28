@@ -2361,12 +2361,13 @@ export function projectAccessRuleSimulation(
 // A local patch selects one typed rule, never a raw native row ID.
 export type AccessRulePatchReplacement =
   Pick<AccessRuleInput, "permissions"> | Pick<AccessRuleInput, "condition"> |
-  { swapWith: AccessRuleInput } | { remove: true };
+  { swapWith: AccessRuleInput } | { remove: true } | { insertBefore: AccessRuleInput };
 export type AccessRulePatchPlan = { ruleId: number; changed: boolean } & (
   { fields: { permissionsText: string } } |
   { fields: { aclFormula: string }; expectedCondition: AccessRuleCondition } |
   { fields: { rulePos: number }; swap: { ruleId: number; rulePos: number } } |
-  { remove: true }
+  { remove: true } |
+  { insert: AccessRulePersistedWrite & { resource: number }; expectedRule: NormalizedAccessRule }
 );
 
 function rulePatchCandidates(snapshot: AccessRulesSnapshot, group: AccessRuleGroupState) {
@@ -2388,7 +2389,7 @@ function rulePatchCandidates(snapshot: AccessRulesSnapshot, group: AccessRuleGro
 // The PositionNumber default is +Infinity, excluded from the native position
 // index (and serialized as null by JSON). It is not an ordered application
 // rule. Preserve its full raw fields, but do not include it in insertion gaps.
-function positionedAclRules(snapshot: AccessRulesSnapshot): PersistedRule[] {
+function positionedAclRules(snapshot: AccessRulesSnapshot, ambiguity: string): PersistedRule[] {
   return snapshot.rules.filter(rule => {
     if (rule.rulePos !== undefined) return true;
     const resource = snapshot.resources.find(r => r.id === rule.resourceId);
@@ -2398,8 +2399,30 @@ function positionedAclRules(snapshot: AccessRulesSnapshot): PersistedRule[] {
         rule.aclFormula === "" && rule.aclFormulaParsed === "" &&
         rule.permissionsText === "" && typeof raw.principals === "string" &&
         raw.principals !== "" && !raw.userAttributes) return false;
-    throw new Error("Native ACL positions are ambiguous; cannot safely swap.");
+    throw new Error(ambiguity);
   });
+}
+
+function orderedAclRules(snapshot: AccessRulesSnapshot,
+  ambiguity = "Native ACL positions are ambiguous; cannot safely edit order."): PersistedRule[] {
+  const rules = positionedAclRules(snapshot, ambiguity);
+  const positions = rules.map(r => r.rulePos!);
+  if (positions.some(p => p < 0) || new Set(positions).size !== positions.length) {
+    throw new Error(ambiguity);
+  }
+  return rules.sort((a,b) => a.rulePos! - b.rulePos!);
+}
+
+function requireAclPositionGap(ordered: readonly PersistedRule[], position: number): void {
+  const index = ordered.findIndex(r => r.rulePos === position);
+  if (index < 0 || position <= 0) {
+    throw new Error("Native ACL positions are ambiguous; cannot safely edit order.");
+  }
+  const previous = ordered[index - 1]?.rulePos ?? 0;
+  const midpoint = previous + (position - previous) / 2;
+  if (!(previous < midpoint && midpoint < position)) {
+    throw new Error("Native ACL position gap is too small for a safe edit.");
+  }
 }
 
 export function resolveAccessRulePatch(
@@ -2417,6 +2440,22 @@ export function resolveAccessRulePatch(
   const matching = candidates.filter(c => sameNormalizedRules([c.normalized], [prior]));
   if (matching.length !== 1) throw new Error("Expected supported ACL rule is absent or ambiguous; inspect again.");
   const selected = matching[0]!;
+  if ("insertBefore" in replacement) {
+    if (group.ruleRecordIds.length >= MAX_ACCESS_RULES_PER_GROUP) {
+      throw new Error("Native ACL group is at its bounded rule limit.");
+    }
+    const next = normalizeRequestedRules([replacement.insertBefore], target, table, attributes);
+    const expectedRule = next.normalized[0]!;
+    if (expectedRule.condition.kind === "everyone") {
+      throw new Error("An everyone access rule must be the final rule in its group.");
+    }
+    if (candidates.some(c => sameNormalizedRules([c.normalized], [expectedRule]))) {
+      throw new Error("ACL insertion would duplicate a supported ACL rule.");
+    }
+    requireAclPositionGap(orderedAclRules(snapshot), selected.rule.rulePos!);
+    return {ruleId: selected.rule.id, changed: true, expectedRule,
+      insert: {...next.writes[0]!, resource: group.resourceRecordId, rulePos: selected.rule.rulePos!}};
+  }
   if ("remove" in replacement) {
     if (group.ruleRecordIds.length < 2) {
       throw new Error("Cannot remove the last rule locally; use the explicit group deletion operation.");
@@ -2439,20 +2478,9 @@ export function resolveAccessRulePatch(
     // Grist PositionNumber inserts before the requested position, potentially
     // relabeling neighbors if there is no representable gap. Refuse that case
     // using the complete ACL position column, not just this resource.
-    const positions = positionedAclRules(snapshot).map(r => r.rulePos!);
-    if (positions.some(p => p < 0) ||
-        new Set(positions).size !== positions.length ||
-        selected.rule.rulePos! <= 0 || second.rule.rulePos! <= 0) {
-      throw new Error("Native ACL positions are ambiguous; cannot safely swap.");
-    }
-    const sorted = (positions as number[]).sort((a,b) => a-b);
-    for (const pos of [selected.rule.rulePos!, second.rule.rulePos!]) {
-      const previous = sorted[sorted.indexOf(pos) - 1] ?? 0;
-      const midpoint = previous + (pos - previous) / 2;
-      if (!(previous < midpoint && midpoint < pos)) {
-        throw new Error("Native ACL position gap is too small for a safe swap.");
-      }
-    }
+    const ordered = orderedAclRules(snapshot);
+    requireAclPositionGap(ordered, selected.rule.rulePos!);
+    requireAclPositionGap(ordered, second.rule.rulePos!);
     return {ruleId: selected.rule.id, changed: true, fields: {rulePos: second.rule.rulePos!},
       swap: {ruleId: second.rule.id, rulePos: selected.rule.rulePos!}};
   }
@@ -2476,15 +2504,20 @@ export function resolveAccessRulePatch(
 
 export function verifyAccessRulePatch(before: AccessRulesSnapshot,
   after: AccessRulesSnapshot, plan: AccessRulePatchPlan): void {
+  const added = "insert" in plan ? after.rules.filter(r => !before.rules.some(b => b.id === r.id)) : [];
+  if ("insert" in plan && added.length !== 1) {
+    throw new Error("Native ACL insertion postcondition requires exactly one new rule.");
+  }
   const sorted = (snapshot: AccessRulesSnapshot, apply: boolean) => ({
     resources: snapshot.resources.map(r => ({id: r.id, fields: r.fields})).sort((a,b) => a.id - b.id),
-    rules: snapshot.rules.filter(r => !(apply && "remove" in plan && r.id === plan.ruleId)).map(r => {
+    rules: snapshot.rules.filter(r => !(apply && "remove" in plan && r.id === plan.ruleId) &&
+      !(!apply && added.some(a => a.id === r.id))).map(r => {
       if ("swap" in plan && (r.id === plan.ruleId || r.id === plan.swap.ruleId)) {
         const fields = {...r.fields};
         delete fields.rulePos;
         return {id: r.id, fields};
       }
-      if ("remove" in plan || r.id !== plan.ruleId) return {id: r.id, fields: r.fields};
+      if ("remove" in plan || "insert" in plan || r.id !== plan.ruleId) return {id: r.id, fields: r.fields};
       const fields: JsonRecord = {...r.fields, ...(apply ? plan.fields : {})};
       // Grist derives the parsed predicate from formula text. Check it semantically below.
       if ("expectedCondition" in plan) delete fields.aclFormulaParsed;
@@ -2494,18 +2527,32 @@ export function verifyAccessRulePatch(before: AccessRulesSnapshot,
   if (stableJson(sorted(before, true)) !== stableJson(sorted(after, false))) {
     throw new Error("Native ACL patch or preservation postcondition differs from the requested effect.");
   }
+  if ("insert" in plan) {
+    const rule = added[0]!;
+    const group = after.groups.find(g => g.resourceRecordId === plan.insert.resource);
+    const candidate = group && rulePatchCandidates(after, group).find(c => c.rule.id === rule.id);
+    const expectedOrder = orderedAclRules(before, "Native ACL order postcondition is ambiguous.").map(r => r.id);
+    const anchor = expectedOrder.indexOf(plan.ruleId);
+    if (anchor < 0 || !candidate || rule.resourceId !== plan.insert.resource ||
+        rule.aclFormula !== plan.insert.aclFormula || rule.permissionsText !== plan.insert.permissionsText ||
+        !sameNormalizedRules([candidate.normalized], [plan.expectedRule])) {
+      throw new Error("Native ACL insertion definition postcondition differs from the requested rule.");
+    }
+    expectedOrder.splice(anchor, 0, rule.id);
+    if (rule.rulePos === undefined || rule.rulePos <= 0 ||
+        stableJson(expectedOrder) !== stableJson(orderedAclRules(after, "Native ACL order postcondition is ambiguous.").map(r => r.id))) {
+      throw new Error("Native ACL insertion order postcondition differs from the requested effect.");
+    }
+  }
   if ("swap" in plan) {
     // Native PositionNumber may allocate a fractional position. Verify the
     // entire native order with exactly the two selected identities exchanged.
     const orderedIds = (snapshot: AccessRulesSnapshot) => {
-      const ordered = positionedAclRules(snapshot);
-      const positions = ordered.map(r => r.rulePos!);
-      if (positions.some(p => p < 0) ||
-          new Set(positions).size !== positions.length ||
-          ordered.some(r => (r.id === plan.ruleId || r.id === plan.swap.ruleId) && r.rulePos! <= 0)) {
+      const ordered = orderedAclRules(snapshot, "Native ACL order postcondition is ambiguous.");
+      if (ordered.some(r => (r.id === plan.ruleId || r.id === plan.swap.ruleId) && r.rulePos! <= 0)) {
         throw new Error("Native ACL order postcondition is ambiguous.");
       }
-      return ordered.sort((a,b) => a.rulePos! - b.rulePos!).map(r => r.id);
+      return ordered.map(r => r.id);
     };
     const expected = orderedIds(before).map(id => id === plan.ruleId ? plan.swap.ruleId :
       id === plan.swap.ruleId ? plan.ruleId : id);

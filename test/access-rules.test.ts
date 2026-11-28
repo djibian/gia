@@ -2201,6 +2201,32 @@ test("local ACL permission patch preserves opaque siblings and native rule ident
     aclFormulaParsed: JSON.stringify(["Eq", ["Attr", ["Name", "rec"], "Title"], ["Const", "private-opaque"]]),
     permissionsText: "-U", memo: "private-memo"}};
   const before = snapshot(resources, [rule, opaque]);
+  const insertRule = {...expected, permissions: replacement};
+  const insertion = resolveAccessRulePatch(before, target, expected, {insertBefore: insertRule});
+  assert.deepEqual(insertion, {ruleId: 20, changed: true,
+    insert: {resource: 2, rulePos: 1, aclFormula: formula, permissionsText: "-R"},
+    expectedRule: {condition: expected.condition, permissions: {
+      read: "deny", update: "unspecified", create: "unspecified", delete: "unspecified"
+    }}});
+  const inserted = {...rule, id: 24, fields: {...rule.fields, rulePos: 0.5, permissionsText: "-R"}};
+  const insertedState = snapshot(resources, [inserted, rule, opaque]);
+  verifyAccessRulePatch(before, insertedState, insertion);
+  assert.throws(() => resolveAccessRulePatch(insertedState, target, expected, {insertBefore: insertRule}), /duplicate/);
+  assert.throws(() => resolveAccessRulePatch(before, target, expected,
+    {insertBefore: {...expected, condition: {kind: "everyone"}}}), /final rule/);
+  assert.throws(() => verifyAccessRulePatch(before, before, insertion), /postcondition/);
+  assert.throws(() => verifyAccessRulePatch(before, snapshot(resources, [
+    {...inserted, fields: {...inserted.fields, rulePos: 1.5}}, rule, opaque
+  ]), insertion), /order postcondition/);
+  assert.throws(() => verifyAccessRulePatch(before, snapshot(resources, [
+    inserted, rule, {...opaque, fields: {...opaque.fields, memo: "changed"}}
+  ]), insertion), /preservation/);
+  assert.throws(() => verifyAccessRulePatch(before, snapshot(resources, [
+    {...inserted, fields: {...inserted.fields, aclFormulaParsed: nativeAclFixture("user.Access == OWNER")}}, rule, opaque
+  ]), insertion), /definition postcondition/);
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque,
+    {...opaque, id: 25, fields: {...opaque.fields, rulePos: 1 - Number.EPSILON / 2}}]), target, expected,
+    {insertBefore: insertRule}), /gap/);
   const removal = resolveAccessRulePatch(before, target, expected, {remove: true});
   assert.deepEqual(removal, {ruleId: 20, changed: true, remove: true});
   const removed = snapshot(resources, [opaque]);
