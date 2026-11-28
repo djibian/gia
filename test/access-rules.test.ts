@@ -2210,6 +2210,23 @@ test("local ACL permission patch preserves opaque siblings and native rule ident
   assert.throws(() => verifyAccessRulePatch(mixed, snapshot(resources, [
     moved, {...opaque, fields: {...opaque.fields, rulePos: 2.1}}, movedSecond
   ]), swap), /postcondition/);
+  // Fresh Grist documents retain a legacy ACL row without an allocated
+  // PositionNumber. It is outside the native position index, not an
+  // ambiguous application rule, and its complete raw fields stay intact.
+  const legacyResource = {id: 1, fields: {tableId: "", colIds: ""}};
+  const legacy = {id: 1, fields: {resource: 1, rulePos: null,
+    aclFormula: "", aclFormulaParsed: "", permissionsText: "",
+    permissions: 1, principals: "[1]"}};
+  const withLegacy = [...resources, legacyResource];
+  const legacyBefore = snapshot(withLegacy, [legacy, rule, opaque, second]);
+  assert.deepEqual(resolveAccessRulePatch(legacyBefore, target, expected, {swapWith}), swap);
+  verifyAccessRulePatch(legacyBefore, snapshot(withLegacy, [legacy, moved, opaque, movedSecond]), swap);
+  assert.throws(() => verifyAccessRulePatch(legacyBefore, snapshot(withLegacy, [
+    {...legacy, fields: {...legacy.fields, principals: "[2]"}}, moved, opaque, movedSecond
+  ]), swap), /preservation/);
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque, second,
+    {...opaque, id: 23, fields: {...opaque.fields, rulePos: null}}]), target, expected, {swapWith}),
+    /ambiguous/);
   const dense = snapshot(resources, [rule, opaque,
     {...second, fields: {...second.fields, rulePos: 2 + Number.EPSILON * 2}}]);
   assert.throws(() => resolveAccessRulePatch(dense, target, expected, {swapWith}), /gap/);
