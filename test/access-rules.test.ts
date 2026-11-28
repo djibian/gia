@@ -242,6 +242,11 @@ test("normalizes only bounded secret-safe ordinary ACL groups", () => {
 
   const projected = projectAccessRules(state) as any;
   assert.equal(projected.protectedPersistedGroupCount, 2);
+  assert.deepEqual(projected.generalPolicy, { state: "persisted", nativeRuleObservations: [{
+    kind: "rule",
+    condition: ["Eq", ["Attr", ["Attr", ["Name", "user"], ["Redacted"]], ["Redacted"]], ["Const", ["Redacted"]]],
+    permissions: { read: "deny", update: "unspecified", create: "unspecified", delete: "unspecified", schema: "unspecified" }
+  }] });
   assert.equal(projected.effectiveEnforcementVerified, false);
   assert.deepEqual(projected.groups.map(({ dependencies, diagnostics, ...group }: any) => group), [
     {
@@ -294,6 +299,25 @@ test("normalizes only bounded secret-safe ordinary ACL groups", () => {
     }
   ]);
   assert.doesNotMatch(JSON.stringify(projected), /do-not-expose|private memo|LinkKey/);
+});
+
+test("general ACL observations distinguish absent, ambiguous and ordered persisted schema policy", () => {
+  const resource = { id: 1, fields: { tableId: "*", colIds: "*" } };
+  const rule = { id: 10, fields: { resource: 1, rulePos: 2, aclFormula: "user.Access != OWNER",
+    aclFormulaParsed: '["NotEq",["Attr",["Name","user"],"Access"],["Name","OWNER"]]', permissionsText: "-S" } };
+  const attr = { id: 11, fields: { resource: 1, rulePos: 1, aclFormula: "", aclFormulaParsed: "",
+    permissionsText: "", userAttributes: "private-invalid-definition" } };
+  const view = (projectAccessRules(snapshot([resource], [rule, attr])) as any).generalPolicy;
+  assert.equal(view.state, "persisted");
+  assert.deepEqual(view.nativeRuleObservations, [
+    { kind: "user_attribute_or_mixed", condition: ["Unknown"], permissions: null },
+    { kind: "rule", condition: ["NotEq", ["Attr", ["Name", "user"], "Access"], ["Name", "OWNER"]],
+      permissions: { read: "unspecified", update: "unspecified", create: "unspecified", delete: "unspecified", schema: "deny" } }
+  ]);
+  assert.deepEqual((projectAccessRules(snapshot([], [])) as any).generalPolicy,
+    { state: "not_persisted", nativeRuleObservations: null });
+  assert.deepEqual((projectAccessRules(snapshot([resource], [rule, { ...attr, fields: { ...attr.fields, rulePos: 2 } }])) as any).generalPolicy,
+    { state: "unknown", nativeRuleObservations: null });
 });
 
 test("opaque literal conditions are redacted and not editable", () => {
