@@ -172,8 +172,10 @@ raw formulas enter model outputs; explanatory simulation is separate.
 
 Optional read-only `schemaImpact` inspection of one existing table/column
 projects supported structural references only, including user-attribute source
-table, lookup column and referenced attribute field. Unresolved ordinary
-groups, special/default policy and opaque user attributes are explicitly
+table, lookup column and referenced attribute field. Independently validated
+typed rules in mixed groups contribute known references without resolving
+the group's unknown coverage. Unresolved ordinary groups, special/default
+policy and opaque user attributes are explicitly
 unknown; absence of a reported reference is not a safety guarantee. The
 same fresh native Owner proof is required. It neither writes nor simulates
 native schema rewrites, effective access or confidentiality.
