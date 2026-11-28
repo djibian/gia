@@ -4486,26 +4486,9 @@ async function run(): Promise<void> {
       `${docPath}/apply`, schemaWrite("BeforeSchemaGuard"));
     assert(editorBefore === 200, `native_schema_editor_baseline:${editorBefore}`);
     const priorRules = await readNativeAcl();
-    let guardResult: Record<string, unknown>;
-    try {
-      guardResult = await callTool(bridgeBaseUrl, "grist_change_structure", {
-        action: "ensure_owner_schema_guard", documentId, confirmSchemaRestriction: true
-      });
-    } catch (error) {
-      // Only the synthetic fixed special-rule metadata, never other ACL
-      // formulas, user-attribute values, URLs or share keys, enters CI logs.
-      const diagnostics = await readNativeAcl();
-      const special = diagnostics.filter(rule => rule.fields.permissionsText === "-S");
-      console.error("schema_guard_native_diagnostic", JSON.stringify({
-        beforeCount: priorRules.length, afterCount: diagnostics.length,
-        special: special.map(rule => ({
-          formulaMatches: rule.fields.aclFormula === "user.Access != OWNER",
-          formulaParsed: rule.fields.aclFormulaParsed, rulePos: rule.fields.rulePos,
-          keys: Object.keys(rule.fields).sort()
-        }))
-      }));
-      throw error;
-    }
+    const guardResult = await callTool(bridgeBaseUrl, "grist_change_structure", {
+      action: "ensure_owner_schema_guard", documentId, confirmSchemaRestriction: true
+    });
     const nativeSchemaGuard = resultJson(guardResult, "native_owner_schema_guard_create") as {
         changed: boolean; persistedDefinitionVerified: boolean;
         effectiveEnforcementVerified: boolean;

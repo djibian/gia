@@ -91,9 +91,13 @@ test("Owner-only guard avoids native rulePos collisions across resources", () =>
   const before = snapshot([resource, ordinaryResource], [attribute, ordinary, fractional]);
   const plan = planOwnerSchemaGuard(before);
   assert.equal(plan.rulePos, 7);
-  const added = { ...guard(), fields: { ...guard().fields, rulePos: 7 } };
+  // Native Grist may allocate a fractional position among unrelated rules.
+  const added = { ...guard(), fields: { ...guard().fields, rulePos: 6.25 } };
   const after = snapshot([resource, ordinaryResource], [attribute, ordinary, fractional, added]);
   assert.equal(verifyOwnerSchemaGuard(before, after, plan).changed, true);
+  const misplaced = { ...added, fields: { ...added.fields, rulePos: 0.5 } };
+  assert.throws(() => verifyOwnerSchemaGuard(before,
+    snapshot([resource, ordinaryResource], [attribute, ordinary, fractional, misplaced]), plan));
   const changedOrdinary = { ...ordinary, fields: { ...ordinary.fields, rulePos: 2.5 } };
   assert.throws(() => verifyOwnerSchemaGuard(before,
     snapshot([resource, ordinaryResource], [attribute, changedOrdinary, fractional, added]), plan));
