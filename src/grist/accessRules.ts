@@ -1950,25 +1950,26 @@ export function projectAccessRuleSchemaImpact(
         (target.kind === "table" || group.target.columnIds.includes(target.columnId))) {
       reasons.push("resource_target");
     }
-    if (!group.normalizedRules) {
-      protectedOrdinaryGroupCount++;
-    } else {
-      const dependencies = projectGroupDependencies(group.normalizedRules);
-      if (group.target.tableId === target.tableId &&
-          (target.kind === "table"
-            ? dependencies.recordColumnIds.length > 0 || dependencies.newRecordColumnIds.length > 0
-            : dependencies.recordColumnIds.includes(target.columnId) ||
-              dependencies.newRecordColumnIds.includes(target.columnId))) {
-        reasons.push("record_condition");
-      }
-      if (dependencies.userAttributeFields.some((field) => {
-        const definition = definitions.get(field.attributeName);
-        return definition?.tableId === target.tableId &&
-          (target.kind === "table" || definition.lookupColId === target.columnId ||
-            field.attributeColumnId === target.columnId);
-      })) {
-        reasons.push("user_attribute_reference");
-      }
+    if (!group.normalizedRules) protectedOrdinaryGroupCount++;
+    // A protected group can still contain independently validated typed rules.
+    // Keep the group coverage unknown; report only their known references.
+    const knownRules = group.normalizedRules ??
+      rulePatchCandidates(snapshot, group).map(candidate => candidate.normalized);
+    const dependencies = projectGroupDependencies(knownRules);
+    if (group.target.tableId === target.tableId &&
+        (target.kind === "table"
+          ? dependencies.recordColumnIds.length > 0 || dependencies.newRecordColumnIds.length > 0
+          : dependencies.recordColumnIds.includes(target.columnId) ||
+            dependencies.newRecordColumnIds.includes(target.columnId))) {
+      reasons.push("record_condition");
+    }
+    if (dependencies.userAttributeFields.some((field) => {
+      const definition = definitions.get(field.attributeName);
+      return definition?.tableId === target.tableId &&
+        (target.kind === "table" || definition.lookupColId === target.columnId ||
+          field.attributeColumnId === target.columnId);
+    })) {
+      reasons.push("user_attribute_reference");
     }
     if (reasons.length) {
       affectedGroups.push({
