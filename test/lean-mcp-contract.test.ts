@@ -916,4 +916,10 @@ test("local ACL patch accepts a typed expected rule and permissions, not native 
   assert.deepEqual(observed[1], [input.documentId, input.target, input.expected, {condition: conditionInput.condition}]);
   assert.throws(() => tool.options.inputSchema!.parse({...conditionInput, permissions}));
   assert.throws(() => tool.options.inputSchema!.parse({...conditionInput, condition: "user.Access == EDITOR"}));
+  const swapInput = {...rest, action: "swap_access_rule_order",
+    swapWith: {...input.expected, condition: conditionInput.condition}};
+  await tool.callback(tool.options.inputSchema!.parse(swapInput));
+  assert.deepEqual(observed[2], [input.documentId, input.target, input.expected, {swapWith: swapInput.swapWith}]);
+  assert.throws(() => tool.options.inputSchema!.parse({...swapInput, rulePos: 3}));
+  assert.throws(() => tool.options.inputSchema!.parse({...swapInput, swapWith: {ruleId: 3}}));
 });

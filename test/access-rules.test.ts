@@ -2188,4 +2188,27 @@ test("local ACL permission patch preserves opaque siblings and native rule ident
   assert.equal(resolveAccessRulePatch(before, target, expected, {condition: expected.condition}).changed, false);
   assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque,
     {...edited, id: 22, fields: {...edited.fields, rulePos: 3}}]), target, expected, {condition}), /duplicate/);
+
+  const second = {...edited, id: 22, fields: {...edited.fields, rulePos: 3}};
+  const swapWith = {...expected, condition};
+  const mixed = snapshot(resources, [rule, opaque, second]);
+  const swap = resolveAccessRulePatch(mixed, target, expected, {swapWith});
+  assert.deepEqual(swap, {ruleId: 20, changed: true, fields: {rulePos: 3},
+    swap: {ruleId: 22, rulePos: 1}});
+  const moved = {...rule, fields: {...rule.fields, rulePos: 3}};
+  const movedSecond = {...second, fields: {...second.fields, rulePos: 1}};
+  const swapped = snapshot(resources, [moved, opaque, movedSecond]);
+  verifyAccessRulePatch(mixed, swapped, swap);
+  assert.throws(() => verifyAccessRulePatch(mixed, snapshot(resources, [moved, opaque, second]), swap), /postcondition/);
+  assert.throws(() => verifyAccessRulePatch(mixed, snapshot(resources,
+    [moved, {...opaque, fields: {...opaque.fields, memo: "changed"}}, movedSecond]), swap), /postcondition/);
+  assert.throws(() => resolveAccessRulePatch(swapped, target, expected, {swapWith}), /order differs/);
+  assert.equal(resolveAccessRulePatch(swapped, target, swapWith, {swapWith: expected}).changed, true);
+  assert.throws(() => resolveAccessRulePatch(mixed, target, expected, {swapWith: expected}), /identical/);
+  assert.throws(() => resolveAccessRulePatch(before, target, expected, {swapWith}), /absent/);
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque, second,
+    {...second, id: 23, fields: {...second.fields, rulePos: 4}}]), target, expected, {swapWith}), /ambiguous/);
+  const unconditional = {...second, fields: {...second.fields, aclFormula: "", aclFormulaParsed: ""}};
+  assert.throws(() => resolveAccessRulePatch(snapshot(resources, [rule, opaque, unconditional]),
+    target, expected, {swapWith: {...expected, condition: {kind: "everyone"}}}), /final rule/);
 });

@@ -2616,7 +2616,7 @@ export class AuthorizedGristService {
     documentIdOrUrl: string, target: AccessRuleTarget,
     expected: AccessRuleInput, replacement: AccessRulePatchReplacement
   ): Promise<unknown> {
-    return this.execute("change_access_rule_group", documentIdOrUrl, 1, async id => {
+    return this.execute("change_access_rule_group", documentIdOrUrl, "swapWith" in replacement ? 2 : 1, async id => {
       await this.inner.assertDocumentOwner(id);
       const before = await this.loadAccessRulesSnapshot(id);
       const plan = resolveAccessRulePatch(before, target, expected, replacement);

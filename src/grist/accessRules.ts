@@ -2355,10 +2355,12 @@ export function projectAccessRuleSimulation(
 
 // A local patch selects one typed rule, never a raw native row ID.
 export type AccessRulePatchReplacement =
-  Pick<AccessRuleInput, "permissions"> | Pick<AccessRuleInput, "condition">;
+  Pick<AccessRuleInput, "permissions"> | Pick<AccessRuleInput, "condition"> |
+  { swapWith: AccessRuleInput };
 export type AccessRulePatchPlan = { ruleId: number; changed: boolean } & (
   { fields: { permissionsText: string } } |
-  { fields: { aclFormula: string }; expectedCondition: AccessRuleCondition }
+  { fields: { aclFormula: string }; expectedCondition: AccessRuleCondition } |
+  { fields: { rulePos: number }; swap: { ruleId: number; rulePos: number } }
 );
 
 function rulePatchCandidates(snapshot: AccessRulesSnapshot, group: AccessRuleGroupState) {
@@ -2387,11 +2389,27 @@ export function resolveAccessRulePatch(
   const table = snapshot.tables.get(target.tableId)!;
   const attributes = userAttributeReferenceContext(snapshot);
   const prior = normalizeRequestedRules([expected], target, table, attributes).normalized[0]!;
-  const next = normalizeRequestedRules([{...expected, ...replacement}], target, table, attributes);
   const candidates = rulePatchCandidates(snapshot, group);
   const matching = candidates.filter(c => sameNormalizedRules([c.normalized], [prior]));
   if (matching.length !== 1) throw new Error("Expected supported ACL rule is absent or ambiguous; inspect again.");
   const selected = matching[0]!;
+  if ("swapWith" in replacement) {
+    const other = normalizeRequestedRules([replacement.swapWith], target, table, attributes).normalized[0]!;
+    const matches = candidates.filter(c => sameNormalizedRules([c.normalized], [other]));
+    if (matches.length !== 1 || matches[0]!.rule.id === selected.rule.id) {
+      throw new Error("Second supported ACL rule is absent, identical or ambiguous; inspect again.");
+    }
+    const second = matches[0]!;
+    if (selected.rule.rulePos! >= second.rule.rulePos!) {
+      throw new Error("Expected ACL rule order differs; inspect again.");
+    }
+    if (prior.condition.kind === "everyone" || other.condition.kind === "everyone") {
+      throw new Error("An everyone access rule must remain the final rule in its group.");
+    }
+    return {ruleId: selected.rule.id, changed: true, fields: {rulePos: second.rule.rulePos!},
+      swap: {ruleId: second.rule.id, rulePos: selected.rule.rulePos!}};
+  }
+  const next = normalizeRequestedRules([{...expected, ...replacement}], target, table, attributes);
   const changed = !sameNormalizedRules([prior], next.normalized);
   if (changed && candidates.some(c => c.rule.id !== selected.rule.id &&
       sameNormalizedRules([c.normalized], next.normalized))) {
@@ -2414,6 +2432,9 @@ export function verifyAccessRulePatch(before: AccessRulesSnapshot,
   const sorted = (snapshot: AccessRulesSnapshot, apply: boolean) => ({
     resources: snapshot.resources.map(r => ({id: r.id, fields: r.fields})).sort((a,b) => a.id - b.id),
     rules: snapshot.rules.map(r => {
+      if ("swap" in plan && r.id === plan.swap.ruleId) {
+        return {id: r.id, fields: apply ? {...r.fields, rulePos: plan.swap.rulePos} : r.fields};
+      }
       if (r.id !== plan.ruleId) return {id: r.id, fields: r.fields};
       const fields: JsonRecord = {...r.fields, ...(apply ? plan.fields : {})};
       // Grist derives the parsed predicate from formula text. Check it semantically below.

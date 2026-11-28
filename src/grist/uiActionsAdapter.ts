@@ -251,6 +251,13 @@ export class GristUiActionsAdapter {
 
   async patchAccessRule(documentId: string, plan: AccessRulePatchPlan): Promise<void> {
     if (!plan.changed) return;
+    if ("swap" in plan) {
+      await this.client.applyUserActions(documentId, [
+        ["BulkUpdateRecord", "_grist_ACLRules", [plan.ruleId, plan.swap.ruleId],
+          {rulePos: [plan.fields.rulePos, plan.swap.rulePos]}]
+      ]);
+      return;
+    }
     await this.client.applyUserActions(documentId, [
       ["UpdateRecord", "_grist_ACLRules", plan.ruleId, plan.fields]
     ]);

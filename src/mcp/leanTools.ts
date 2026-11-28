@@ -1416,6 +1416,13 @@ export function registerLeanTools(
           expected: accessRuleSchema,
           condition: accessRuleConditionSchema
         }).strict(),
+        z.object({
+          action: z.literal("swap_access_rule_order"),
+          documentId: documentIdSchema,
+          target: accessRuleTargetSchema,
+          expected: accessRuleSchema,
+          swapWith: accessRuleSchema
+        }).strict(),
         z
           .object({
             action: z.literal("access_rule_group"),
@@ -1579,6 +1586,10 @@ export function registerLeanTools(
           case "patch_access_rule_condition":
             return textResult(await grist.patchAccessRule(
               input.documentId, input.target, input.expected, {condition: input.condition}
+            ));
+          case "swap_access_rule_order":
+            return textResult(await grist.patchAccessRule(
+              input.documentId, input.target, input.expected, {swapWith: input.swapWith}
             ));
           case "access_rule_group":
             return textResult(
