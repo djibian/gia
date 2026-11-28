@@ -147,9 +147,10 @@ The lookup's effective results and confidentiality are not asserted.
 The read-only ACL dependency projection traverses only already-normalized
 closed typed conditions. It reports stable record/new-record column IDs,
 built-in user-property names, LinkKey names and user-attribute name/field
-pairs, deduplicated within each supported group. A protected or opaque group
-reports unknown coverage without inspecting its raw formula or attempting a
-partial dependency guess. Protected ordinary groups additionally expose a bounded ordered observation
+pairs, deduplicated within each group. A protected or opaque group retains
+unknown coverage and reports only references from independently validated
+typed rules, never guesses from opaque formulas or unvalidated parsed trees.
+Protected ordinary groups additionally expose a bounded ordered observation
 of the persisted parsed AST and recognized permission bits; ambiguous ordering
 or excessive group size gives no observation. Only fixed native node tags,
 verified schema names and fixed built-in symbols may be returned. All literal
